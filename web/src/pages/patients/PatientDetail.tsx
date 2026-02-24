@@ -1,3 +1,398 @@
+import { useState, useEffect, useCallback } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import {
+  Card,
+  Descriptions,
+  Button,
+  Timeline,
+  Typography,
+  Image,
+  Spin,
+  Empty,
+  Space,
+  message,
+} from 'antd';
+import {
+  EditOutlined,
+  PlusOutlined,
+  DownOutlined,
+  UpOutlined,
+} from '@ant-design/icons';
+import { getPatient } from '../../api/patient';
+import { getFileUrl } from '../../api/upload';
+import { PatientFormModal } from './PatientForm';
+
+const { Text, Paragraph } = Typography;
+
+interface Attachment {
+  id: number;
+  file_type: string;
+  file_name: string;
+  file_path: string;
+  file_size: number;
+}
+
+interface MedicalRecord {
+  id: number;
+  diagnosis: string;
+  treatment: string;
+  notes: string;
+  visit_date: string;
+  attachments: Attachment[];
+}
+
+interface PatientData {
+  id: number;
+  name: string;
+  gender: number;
+  age: number;
+  weight: number;
+  phone: string;
+  id_card: string;
+  created_at: string;
+  medical_records: MedicalRecord[];
+}
+
 export default function PatientDetail() {
-  return <div>PatientDetail</div>;
+  const navigate = useNavigate();
+  const { id } = useParams<{ id: string }>();
+
+  const [patient, setPatient] = useState<PatientData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [expandedRecords, setExpandedRecords] = useState<Set<number>>(new Set());
+  const [editModalVisible, setEditModalVisible] = useState(false);
+
+  const fetchPatient = useCallback(async () => {
+    if (!id) return;
+    setLoading(true);
+    try {
+      const res = await getPatient(Number(id));
+      const body = res as unknown as { data: PatientData };
+      setPatient(body.data);
+    } catch {
+      message.error('加载患者信息失败');
+      navigate('/patients');
+    } finally {
+      setLoading(false);
+    }
+  }, [id, navigate]);
+
+  useEffect(() => {
+    fetchPatient();
+  }, [fetchPatient]);
+
+  const toggleExpand = (recordId: number) => {
+    setExpandedRecords((prev) => {
+      const next = new Set(prev);
+      if (next.has(recordId)) {
+        next.delete(recordId);
+      } else {
+        next.add(recordId);
+      }
+      return next;
+    });
+  };
+
+  const handleEditSuccess = () => {
+    fetchPatient();
+  };
+
+  if (loading) {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          minHeight: 300,
+        }}
+      >
+        <Spin size="large" />
+      </div>
+    );
+  }
+
+  if (!patient) {
+    return <Empty description="患者不存在" />;
+  }
+
+  const records = patient.medical_records || [];
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Top section: Patient basic info */}
+      <Card
+        title="患者信息"
+        extra={
+          <Space>
+            <Button
+              icon={<EditOutlined />}
+              onClick={() => setEditModalVisible(true)}
+            >
+              编辑
+            </Button>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => navigate(`/records/new?patient_id=${patient.id}`)}
+            >
+              新增就诊记录
+            </Button>
+          </Space>
+        }
+      >
+        <Descriptions column={{ xs: 1, sm: 2, md: 3 }}>
+          <Descriptions.Item label="姓名">{patient.name}</Descriptions.Item>
+          <Descriptions.Item label="性别">
+            {patient.gender === 1 ? '男' : patient.gender === 2 ? '女' : '-'}
+          </Descriptions.Item>
+          <Descriptions.Item label="年龄">
+            {patient.age !== undefined ? `${patient.age}岁` : '-'}
+          </Descriptions.Item>
+          <Descriptions.Item label="体重(kg)">
+            {patient.weight ? `${patient.weight}` : '-'}
+          </Descriptions.Item>
+          <Descriptions.Item label="联系电话">
+            {patient.phone || '-'}
+          </Descriptions.Item>
+          <Descriptions.Item label="身份证号">
+            {patient.id_card || '-'}
+          </Descriptions.Item>
+        </Descriptions>
+      </Card>
+
+      {/* Bottom section: Medical records timeline */}
+      <Card title="就诊记录">
+        {records.length === 0 ? (
+          <Empty description="暂无就诊记录" />
+        ) : (
+          <Timeline
+            mode="left"
+            items={records.map((record) => {
+              const isExpanded = expandedRecords.has(record.id);
+              const attachments = record.attachments || [];
+              const imageAttachments = attachments.filter(
+                (a) => a.file_type === 'image'
+              );
+              const audioAttachments = attachments.filter(
+                (a) => a.file_type === 'audio'
+              );
+              const videoAttachments = attachments.filter(
+                (a) => a.file_type === 'video'
+              );
+
+              return {
+                key: record.id,
+                label: (
+                  <Text type="secondary">
+                    {record.visit_date?.slice(0, 10) || '-'}
+                  </Text>
+                ),
+                children: (
+                  <div>
+                    {/* Summary line */}
+                    <div style={{ marginBottom: 8 }}>
+                      {record.diagnosis && (
+                        <div>
+                          <Text strong>诊断：</Text>
+                          <Text>
+                            {record.diagnosis.length > 80 && !isExpanded
+                              ? `${record.diagnosis.slice(0, 80)}...`
+                              : record.diagnosis}
+                          </Text>
+                        </div>
+                      )}
+                      {record.treatment && (
+                        <div>
+                          <Text strong>治疗方案：</Text>
+                          <Text>
+                            {record.treatment.length > 80 && !isExpanded
+                              ? `${record.treatment.slice(0, 80)}...`
+                              : record.treatment}
+                          </Text>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Expand/collapse button */}
+                    <Button
+                      type="link"
+                      size="small"
+                      style={{ padding: 0 }}
+                      onClick={() => toggleExpand(record.id)}
+                      icon={isExpanded ? <UpOutlined /> : <DownOutlined />}
+                    >
+                      {isExpanded ? '收起' : '展开'}
+                    </Button>
+
+                    {/* Expanded content */}
+                    {isExpanded && (
+                      <div
+                        style={{
+                          marginTop: 12,
+                          padding: 12,
+                          background: '#fafafa',
+                          borderRadius: 8,
+                        }}
+                      >
+                        {record.diagnosis && (
+                          <div style={{ marginBottom: 8 }}>
+                            <Text strong>诊断：</Text>
+                            <Paragraph
+                              style={{ marginBottom: 0, whiteSpace: 'pre-wrap' }}
+                            >
+                              {record.diagnosis}
+                            </Paragraph>
+                          </div>
+                        )}
+
+                        {record.treatment && (
+                          <div style={{ marginBottom: 8 }}>
+                            <Text strong>治疗方案：</Text>
+                            <Paragraph
+                              style={{ marginBottom: 0, whiteSpace: 'pre-wrap' }}
+                            >
+                              {record.treatment}
+                            </Paragraph>
+                          </div>
+                        )}
+
+                        {record.notes && (
+                          <div style={{ marginBottom: 8 }}>
+                            <Text strong>备注：</Text>
+                            <Paragraph
+                              style={{ marginBottom: 0, whiteSpace: 'pre-wrap' }}
+                            >
+                              {record.notes}
+                            </Paragraph>
+                          </div>
+                        )}
+
+                        {/* Image attachments */}
+                        {imageAttachments.length > 0 && (
+                          <div style={{ marginBottom: 8 }}>
+                            <Text strong>图片：</Text>
+                            <div style={{ marginTop: 4 }}>
+                              <Image.PreviewGroup>
+                                <Space wrap>
+                                  {imageAttachments.map((att) => (
+                                    <Image
+                                      key={att.id}
+                                      src={getFileUrl(att.file_path)}
+                                      alt={att.file_name}
+                                      width={120}
+                                      height={90}
+                                      style={{
+                                        objectFit: 'cover',
+                                        borderRadius: 4,
+                                      }}
+                                      fallback="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mN8/+F/PQAJpAN42sFkQAAAAABJRU5ErkJggg=="
+                                    />
+                                  ))}
+                                </Space>
+                              </Image.PreviewGroup>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Audio attachments */}
+                        {audioAttachments.length > 0 && (
+                          <div style={{ marginBottom: 8 }}>
+                            <Text strong>音频：</Text>
+                            <div
+                              style={{
+                                marginTop: 4,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 8,
+                              }}
+                            >
+                              {audioAttachments.map((att) => (
+                                <div key={att.id}>
+                                  <Text
+                                    type="secondary"
+                                    style={{ fontSize: 12, display: 'block', marginBottom: 2 }}
+                                  >
+                                    {att.file_name}
+                                  </Text>
+                                  <audio
+                                    controls
+                                    src={getFileUrl(att.file_path)}
+                                    style={{ width: '100%', maxWidth: 400 }}
+                                  >
+                                    您的浏览器不支持音频播放
+                                  </audio>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Video attachments */}
+                        {videoAttachments.length > 0 && (
+                          <div style={{ marginBottom: 8 }}>
+                            <Text strong>视频：</Text>
+                            <div
+                              style={{
+                                marginTop: 4,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 8,
+                              }}
+                            >
+                              {videoAttachments.map((att) => (
+                                <div key={att.id}>
+                                  <Text
+                                    type="secondary"
+                                    style={{ fontSize: 12, display: 'block', marginBottom: 2 }}
+                                  >
+                                    {att.file_name}
+                                  </Text>
+                                  <video
+                                    controls
+                                    src={getFileUrl(att.file_path)}
+                                    style={{
+                                      width: '100%',
+                                      maxWidth: 480,
+                                      borderRadius: 4,
+                                    }}
+                                  >
+                                    您的浏览器不支持视频播放
+                                  </video>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ),
+              };
+            })}
+          />
+        )}
+      </Card>
+
+      {/* Edit patient modal */}
+      <PatientFormModal
+        visible={editModalVisible}
+        onClose={() => setEditModalVisible(false)}
+        onSuccess={handleEditSuccess}
+        initialData={
+          patient
+            ? {
+                id: patient.id,
+                name: patient.name,
+                gender: patient.gender,
+                age: patient.age,
+                weight: patient.weight,
+                phone: patient.phone,
+                id_card: patient.id_card,
+              }
+            : undefined
+        }
+      />
+    </div>
+  );
 }
