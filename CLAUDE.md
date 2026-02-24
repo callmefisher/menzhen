@@ -40,3 +40,65 @@
 
 ### 经验教训（持续更新）
 - 待更新
+
+---
+
+## 项目概述
+
+患者病历管理系统，支持中小诊所局域网部署和多诊所云端共享（多租户架构）。
+
+## 技术栈
+
+| 层 | 技术 |
+|---|------|
+| 前端 | React 18 + TypeScript + Ant Design 5 + React Router |
+| 后端 | Go + Gin + GORM |
+| 数据库 | MySQL 8.0 |
+| 文件存储 | MinIO |
+| 认证 | JWT + RBAC |
+| 部署 | Docker Compose + Nginx |
+
+## 项目结构
+
+```
+menzhen/
+├── server/          # Go 后端
+│   ├── config/      # 配置加载
+│   ├── database/    # DB连接、迁移、种子数据
+│   ├── handler/     # HTTP处理器
+│   ├── middleware/   # JWT认证、RBAC、租户隔离、OpLog
+│   ├── model/       # GORM数据模型
+│   ├── router/      # 路由注册
+│   ├── service/     # 业务逻辑
+│   └── storage/     # MinIO客户端
+├── web/             # React 前端
+│   └── src/
+│       ├── api/     # API调用封装
+│       ├── components/ # 通用组件
+│       ├── pages/   # 页面组件
+│       ├── store/   # 状态管理
+│       └── utils/   # 工具函数
+├── nginx/           # Nginx配置
+├── scripts/         # 备份恢复脚本
+├── docker-compose.yml
+└── deploy.sh        # 一键部署
+```
+
+## 开发环境
+
+```bash
+# 后端
+cd server && go build ./...
+
+# 前端
+cd web && npm install && npm run dev
+
+# 部署
+./deploy.sh                          # 首次部署
+./deploy.sh --restore /path/to/backup  # 从备份恢复
+```
+
+## 详细文档
+
+- [设计方案](docs/plans/2026-02-24-medical-record-system-design.md)
+- [实施计划](docs/plans/2026-02-24-medical-record-system-plan.md)
