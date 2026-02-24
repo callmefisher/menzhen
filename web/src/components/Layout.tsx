@@ -11,6 +11,8 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   LogoutOutlined,
+  ExperimentOutlined,
+  ReadOutlined,
 } from '@ant-design/icons';
 import type { MenuProps as AntMenuProps } from 'antd';
 import { useAuth } from '../store/auth';
@@ -53,6 +55,34 @@ export default function AppLayout() {
       });
     }
 
+    // TCM menu group
+    const canReadHerbs = hasPermission('herb:read');
+    const canReadFormulas = hasPermission('formula:read');
+
+    if (canReadHerbs || canReadFormulas) {
+      const tcmChildren: MenuItem[] = [];
+      if (canReadHerbs) {
+        tcmChildren.push({
+          key: '/herbs',
+          icon: <ExperimentOutlined />,
+          label: '中药查询',
+        });
+      }
+      if (canReadFormulas) {
+        tcmChildren.push({
+          key: '/formulas',
+          icon: <ReadOutlined />,
+          label: '方剂查询',
+        });
+      }
+      items.push({
+        key: '/tcm',
+        icon: <ExperimentOutlined />,
+        label: '中医药',
+        children: tcmChildren,
+      });
+    }
+
     const canManageUsers = hasPermission('user:manage');
     const canManageRoles = hasPermission('role:manage');
 
@@ -90,12 +120,16 @@ export default function AppLayout() {
     if (path.startsWith('/settings/users')) return ['/settings/users'];
     if (path.startsWith('/patients')) return ['/patients'];
     if (path.startsWith('/oplogs')) return ['/oplogs'];
+    if (path.startsWith('/herbs')) return ['/herbs'];
+    if (path.startsWith('/formulas')) return ['/formulas'];
     if (path.startsWith('/records')) return ['/records'];
     return ['/records'];
   }, [location.pathname]);
 
   const openKeys = useMemo(() => {
-    if (location.pathname.startsWith('/settings')) return ['/settings'];
+    const path = location.pathname;
+    if (path.startsWith('/settings')) return ['/settings'];
+    if (path.startsWith('/herbs') || path.startsWith('/formulas')) return ['/tcm'];
     return [];
   }, [location.pathname]);
 

@@ -12,6 +12,8 @@ import PatientForm from './pages/patients/PatientForm';
 import OpLogList from './pages/OpLogList';
 import UserList from './pages/settings/UserList';
 import RoleList from './pages/settings/RoleList';
+import HerbSearch from './pages/herbs/HerbSearch';
+import FormulaSearch from './pages/formulas/FormulaSearch';
 import type { ReactNode } from 'react';
 
 function PrivateRoute({ children }: { children: ReactNode }) {
@@ -59,6 +61,8 @@ function AppRoutes() {
         <Route path="patients" element={<PatientList />} />
         <Route path="patients/new" element={<PatientForm />} />
         <Route path="patients/:id" element={<PatientDetail />} />
+        <Route path="herbs" element={<HerbSearch />} />
+        <Route path="formulas" element={<FormulaSearch />} />
         <Route path="oplogs" element={<OpLogList />} />
         <Route path="settings/users" element={<UserList />} />
         <Route path="settings/roles" element={<RoleList />} />

@@ -38,6 +38,12 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	userHandler := handler.NewUserHandler(db)
 	roleHandler := handler.NewRoleHandler(db)
 
+	// DeepSeek-powered handlers
+	deepSeekService := service.NewDeepSeekService(cfg)
+	herbHandler := handler.NewHerbHandler(db, deepSeekService)
+	formulaHandler := handler.NewFormulaHandler(db, deepSeekService)
+	prescriptionHandler := handler.NewPrescriptionHandler(db)
+
 	// ---------- Route groups ----------
 
 	v1 := r.Group("/api/v1")
@@ -109,6 +115,32 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 
 		// Permissions list route.
 		authenticated.GET("/permissions", middleware.RequirePermission(db, "role:manage"), roleHandler.ListPermissions)
+
+		// Herb routes (global data, authenticated).
+		herbs := authenticated.Group("/herbs")
+		{
+			herbs.GET("", middleware.RequirePermission(db, "herb:read"), herbHandler.List)
+			herbs.GET("/:id", middleware.RequirePermission(db, "herb:read"), herbHandler.Detail)
+		}
+
+		// Formula routes (global data, authenticated).
+		formulas := authenticated.Group("/formulas")
+		{
+			formulas.GET("", middleware.RequirePermission(db, "formula:read"), formulaHandler.List)
+			formulas.GET("/:id", middleware.RequirePermission(db, "formula:read"), formulaHandler.Detail)
+		}
+
+		// Prescription routes (tenant-scoped).
+		prescriptions := authenticated.Group("/prescriptions")
+		{
+			prescriptions.POST("", middleware.RequirePermission(db, "prescription:create"), prescriptionHandler.Create)
+			prescriptions.GET("/:id", middleware.RequirePermission(db, "prescription:read"), prescriptionHandler.Detail)
+			prescriptions.PUT("/:id", middleware.RequirePermission(db, "prescription:create"), prescriptionHandler.Update)
+			prescriptions.DELETE("/:id", middleware.RequirePermission(db, "prescription:create"), prescriptionHandler.Delete)
+		}
+
+		// Prescription list by record (nested under records).
+		records.GET("/:id/prescriptions", middleware.RequirePermission(db, "prescription:read"), prescriptionHandler.ListByRecord)
 	}
 
 	return r

@@ -13,14 +13,26 @@ import {
   Modal,
   InputNumber,
   Radio,
+  Divider,
+  List,
+  Tag,
+  Popconfirm,
 } from 'antd';
-import { PlusOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import { getRecord, createRecord, updateRecord } from '../../api/record';
 import { listPatients, createPatient } from '../../api/patient';
+import {
+  listPrescriptionsByRecord,
+  deletePrescription,
+} from '../../api/prescription';
+import type { PrescriptionData } from '../../api/prescription';
 import FileUpload from '../../components/FileUpload';
 import type { AttachmentInfo } from '../../components/FileUpload';
+import PrescriptionModal from '../../components/PrescriptionModal';
+import PrescriptionPrint from '../../components/PrescriptionPrint';
+import { useAuth } from '../../store/auth';
 
 interface PatientOption {
   id: number;
@@ -52,6 +64,7 @@ export default function RecordForm() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const isEdit = Boolean(id);
+  const { hasPermission } = useAuth();
 
   const [form] = Form.useForm<RecordFormValues>();
   const [patientForm] = Form.useForm<NewPatientFormValues>();
@@ -62,6 +75,15 @@ export default function RecordForm() {
   const [patientLoading, setPatientLoading] = useState(false);
   const [patientModalOpen, setPatientModalOpen] = useState(false);
   const [patientCreating, setPatientCreating] = useState(false);
+
+  // Prescription state
+  const [prescriptions, setPrescriptions] = useState<PrescriptionData[]>([]);
+  const [prescriptionModalOpen, setPrescriptionModalOpen] = useState(false);
+  const [editingPrescription, setEditingPrescription] = useState<PrescriptionData | null>(null);
+
+  // Record data for prescription print
+  const [recordPatient, setRecordPatient] = useState<PatientOption | null>(null);
+  const [recordVisitDate, setRecordVisitDate] = useState<string>('');
 
   // Debounce timer ref for patient search
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -81,6 +103,18 @@ export default function RecordForm() {
       setPatientLoading(false);
     }
   }, []);
+
+  // Load prescriptions for this record
+  const loadPrescriptions = useCallback(async () => {
+    if (!id) return;
+    try {
+      const res = await listPrescriptionsByRecord(Number(id));
+      const body = res as unknown as { data: PrescriptionData[] };
+      setPrescriptions(body.data || []);
+    } catch {
+      // handled
+    }
+  }, [id]);
 
   // Initial load of patients
   useEffect(() => {
@@ -110,8 +144,9 @@ export default function RecordForm() {
 
         const record = body.data;
 
-        // Ensure the patient is in the options list
+        // Store patient & visit date for prescription print
         if (record.patient) {
+          setRecordPatient(record.patient);
           setPatients((prev) => {
             const exists = prev.some((p) => p.id === record.patient.id);
             if (!exists) {
@@ -120,6 +155,7 @@ export default function RecordForm() {
             return prev;
           });
         }
+        setRecordVisitDate(record.visit_date);
 
         form.setFieldsValue({
           patient_id: record.patient_id,
@@ -130,7 +166,6 @@ export default function RecordForm() {
           attachments: record.attachments || [],
         });
       } catch {
-        // Error already handled by request interceptor
         message.error('加载诊疗记录失败');
         navigate('/records');
       } finally {
@@ -139,7 +174,8 @@ export default function RecordForm() {
     };
 
     loadRecord();
-  }, [id, form, navigate]);
+    loadPrescriptions();
+  }, [id, form, navigate, loadPrescriptions]);
 
   const handlePatientSearch = (value: string) => {
     if (searchTimerRef.current) {
@@ -205,6 +241,21 @@ export default function RecordForm() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleDeletePrescription = async (prescriptionId: number) => {
+    try {
+      await deletePrescription(prescriptionId);
+      message.success('处方已删除');
+      loadPrescriptions();
+    } catch {
+      // handled
+    }
+  };
+
+  const handleOpenPrescriptionModal = (prescription?: PrescriptionData) => {
+    setEditingPrescription(prescription || null);
+    setPrescriptionModalOpen(true);
   };
 
   if (loading) {
@@ -312,6 +363,121 @@ export default function RecordForm() {
           </Space>
         </Form.Item>
       </Form>
+
+      {/* 处方区域 - 仅在编辑模式下显示 */}
+      {isEdit && hasPermission('prescription:read') && (
+        <>
+          <Divider />
+          <div style={{ maxWidth: 720 }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: 16,
+              }}
+            >
+              <h3 style={{ margin: 0 }}>处方</h3>
+              {hasPermission('prescription:create') && (
+                <Button
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  onClick={() => handleOpenPrescriptionModal()}
+                >
+                  开方
+                </Button>
+              )}
+            </div>
+
+            {prescriptions.length > 0 ? (
+              <List
+                dataSource={prescriptions}
+                renderItem={(item) => (
+                  <List.Item
+                    actions={[
+                      <PrescriptionPrint
+                        key="print"
+                        prescription={item}
+                        patientName={recordPatient?.name}
+                        patientAge={recordPatient?.age}
+                        visitDate={recordVisitDate}
+                      />,
+                      ...(hasPermission('prescription:create')
+                        ? [
+                            <Button
+                              key="edit"
+                              type="text"
+                              size="small"
+                              icon={<EditOutlined />}
+                              onClick={() => handleOpenPrescriptionModal(item)}
+                            >
+                              编辑
+                            </Button>,
+                            <Popconfirm
+                              key="delete"
+                              title="确定删除此处方？"
+                              onConfirm={() => handleDeletePrescription(item.id)}
+                              okText="删除"
+                              cancelText="取消"
+                            >
+                              <Button type="text" size="small" danger icon={<DeleteOutlined />}>
+                                删除
+                              </Button>
+                            </Popconfirm>,
+                          ]
+                        : []),
+                    ]}
+                  >
+                    <List.Item.Meta
+                      title={
+                        <Space>
+                          <span>{item.formula_name || '自定义处方'}</span>
+                          <Tag color="blue">{item.total_doses} 付</Tag>
+                          {item.creator?.real_name && (
+                            <Tag>{item.creator.real_name}</Tag>
+                          )}
+                        </Space>
+                      }
+                      description={
+                        <div>
+                          <div>
+                            {(item.items || [])
+                              .map((herb) => `${herb.herb_name} ${herb.dosage}${herb.notes ? '(' + herb.notes + ')' : ''}`)
+                              .join('、')}
+                          </div>
+                          {item.notes && (
+                            <div style={{ marginTop: 4, color: '#666' }}>
+                              医嘱：{item.notes}
+                            </div>
+                          )}
+                        </div>
+                      }
+                    />
+                  </List.Item>
+                )}
+              />
+            ) : (
+              <div style={{ color: '#999', textAlign: 'center', padding: 24 }}>
+                暂无处方
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* 开方弹窗 */}
+      {prescriptionModalOpen && (
+        <PrescriptionModal
+          open={prescriptionModalOpen}
+          recordId={Number(id)}
+          editData={editingPrescription}
+          onClose={() => {
+            setPrescriptionModalOpen(false);
+            setEditingPrescription(null);
+          }}
+          onSuccess={loadPrescriptions}
+        />
+      )}
 
       {/* 新建患者弹窗 */}
       <Modal

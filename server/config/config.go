@@ -14,6 +14,11 @@ type Config struct {
 	MinIOSecretKey string
 	MinIOBucket    string
 	ServerPort     string
+
+	// DeepSeek AI configuration
+	DeepSeekAPIKey  string
+	DeepSeekBaseURL string
+	DeepSeekModel   string
 }
 
 func Load() *Config {
@@ -29,6 +34,10 @@ func Load() *Config {
 		MinIOSecretKey: getEnv("MINIO_SECRET_KEY", "minioadmin"),
 		MinIOBucket:    getEnv("MINIO_BUCKET", "menzhen"),
 		ServerPort:     getEnv("SERVER_PORT", "8080"),
+
+		DeepSeekAPIKey:  getEnv("DEEPSEEK_API_KEY", ""),
+		DeepSeekBaseURL: getEnv("DEEPSEEK_BASE_URL", "https://api.qnaigc.com/v1/messages"),
+		DeepSeekModel:   getEnv("DEEPSEEK_MODEL", "deepseek/deepseek-v3.2-251201"),
 	}
 }
 

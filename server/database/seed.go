@@ -19,15 +19,8 @@ func Seed(db *gorm.DB) {
 	log.Println("Seed data check completed")
 }
 
-// seedPermissions inserts all system permissions if the permissions table is empty.
+// seedPermissions upserts all system permissions (creates new ones, skips existing).
 func seedPermissions(db *gorm.DB) {
-	var count int64
-	db.Model(&model.Permission{}).Count(&count)
-	if count > 0 {
-		log.Println("Permissions already seeded, skipping")
-		return
-	}
-
 	permissions := []model.Permission{
 		{Code: "patient:create", Name: "创建患者", Description: "创建患者"},
 		{Code: "patient:read", Name: "查看患者", Description: "查看患者"},
@@ -40,12 +33,22 @@ func seedPermissions(db *gorm.DB) {
 		{Code: "oplog:read", Name: "查看操作日志", Description: "查看操作日志"},
 		{Code: "user:manage", Name: "用户管理", Description: "用户管理"},
 		{Code: "role:manage", Name: "角色管理", Description: "角色管理"},
+		{Code: "herb:read", Name: "查询中药", Description: "查询中药信息"},
+		{Code: "formula:read", Name: "查询方剂", Description: "查询方剂信息"},
+		{Code: "prescription:create", Name: "开方", Description: "创建处方"},
+		{Code: "prescription:read", Name: "查看处方", Description: "查看处方信息"},
 	}
 
-	if err := db.Create(&permissions).Error; err != nil {
-		log.Panicf("failed to seed permissions: %v", err)
+	for _, p := range permissions {
+		var existing model.Permission
+		result := db.Where("code = ?", p.Code).First(&existing)
+		if result.Error != nil {
+			if err := db.Create(&p).Error; err != nil {
+				log.Printf("Warning: failed to create permission %s: %v", p.Code, err)
+			}
+		}
 	}
-	log.Println("Permissions seeded successfully")
+	log.Println("Permissions upsert completed")
 }
 
 // seedDefaultTenant creates the default tenant if it does not already exist.
