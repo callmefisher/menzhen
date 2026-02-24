@@ -51,6 +51,20 @@ services:
     volumes:
       - minio-data:/data
 
+  backup:
+    build:
+      context: ./scripts
+      dockerfile: Dockerfile.backup
+    env_file: .env
+    environment:
+      BACKUP_HOUR: ${BACKUP_HOUR:-2}
+    volumes:
+      - ./backups:/backups
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   mysql-data:
   minio-data:

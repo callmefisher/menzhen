@@ -1,0 +1,8 @@
+FROM alpine:3.19
+RUN apk add --no-cache mysql-client bash curl findutils
+# Install MinIO Client (mc)
+RUN curl -fsSL https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/bin/mc && \
+    chmod +x /usr/local/bin/mc
+COPY backup-loop.sh backup.sh restore.sh /scripts/
+RUN chmod +x /scripts/*.sh
+CMD ["/scripts/backup-loop.sh"]
