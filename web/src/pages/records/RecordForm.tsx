@@ -18,12 +18,13 @@ import {
   Tag,
   Popconfirm,
   Drawer,
+  Tooltip,
 } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, RobotOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, RobotOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import Markdown from 'react-markdown';
-import { getRecord, createRecord, updateRecord, aiAnalyzeDiagnosis } from '../../api/record';
+import { getRecord, createRecord, updateRecord, aiAnalyzeDiagnosis, getCachedAiAnalysis } from '../../api/record';
 import { listPatients, createPatient, getPatient } from '../../api/patient';
 import {
   listPrescriptionsByRecord,
@@ -98,6 +99,7 @@ export default function RecordForm() {
   const [aiAnalyzing, setAiAnalyzing] = useState(false);
   const [aiResult, setAiResult] = useState<string>('');
   const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
+  const [aiCached, setAiCached] = useState(false);
 
   // Search patients by name
   const searchPatients = useCallback(async (name?: string) => {
@@ -221,6 +223,21 @@ export default function RecordForm() {
 
     loadRecord();
     loadPrescriptions();
+
+    // Load cached AI analysis
+    const loadCachedAnalysis = async () => {
+      try {
+        const res = await getCachedAiAnalysis(Number(id));
+        const body = res as unknown as { data: { analysis: string | null; diagnosis: string; cached: boolean } };
+        if (body.data.analysis) {
+          setAiResult(body.data.analysis);
+          setAiCached(true);
+        }
+      } catch {
+        // No cached analysis — ignore
+      }
+    };
+    loadCachedAnalysis();
   }, [id, form, navigate, loadPrescriptions]);
 
   const handlePatientSearch = (value: string) => {
@@ -306,7 +323,7 @@ export default function RecordForm() {
     }
   };
 
-  const handleAiAnalysis = async () => {
+  const handleAiAnalysis = async (force = false) => {
     const diagnosis = form.getFieldValue('diagnosis');
     if (!diagnosis?.trim()) {
       message.warning('请先输入诊断内容');
@@ -315,10 +332,13 @@ export default function RecordForm() {
     setAiAnalyzing(true);
     setAiDrawerOpen(true);
     setAiResult('');
+    setAiCached(false);
     try {
-      const res = await aiAnalyzeDiagnosis(diagnosis.trim());
-      const body = res as unknown as { data: { analysis: string } };
+      const recordId = id ? Number(id) : undefined;
+      const res = await aiAnalyzeDiagnosis(diagnosis.trim(), recordId, force);
+      const body = res as unknown as { data: { analysis: string; cached: boolean } };
       setAiResult(body.data.analysis || '未获取到分析结果');
+      setAiCached(body.data.cached || false);
     } catch {
       setAiResult('AI 分析请求失败，请稍后重试');
     } finally {
@@ -355,6 +375,26 @@ export default function RecordForm() {
         initialValues={{
           attachments: [],
           visit_date: isEdit ? undefined : dayjs(),
+          diagnosis: isEdit ? undefined : `1. 大便：
+2. 小便：
+3. 胃口：
+4. 腹泻，腹胀，腹痛：
+5. 年龄，体重，心率，血压，正在服用的降压药降糖药等：
+6. 口干舌燥，反酸口臭，口苦，烧心，呕吐：
+7. 头痛，头晕，腰膝酸软，水肿情况：
+8. 四肢凉热，出汗，手心脚心发烫情况：
+9. 寒热往来，发热出汗情况等：
+10. 饮食喜好习惯，饮酒吸烟等：
+11. 脾气：
+12. 睡眠：
+13. 胆结石，肾结石等手术史：
+14. 耳鸣/耳聋：
+15. 面色：
+16. 口渴情况：
+17. 肝脏类诊断情况：
+18. 感冒情况等：
+19. 压力和生活工作环境：
+20. 舌苔，舌体情况：`,
         }}
       >
         <div style={{ display: 'flex', gap: 16 }}>
@@ -419,20 +459,31 @@ export default function RecordForm() {
                   size="small"
                   icon={<RobotOutlined />}
                   loading={aiAnalyzing}
-                  onClick={handleAiAnalysis}
+                  onClick={() => handleAiAnalysis()}
                 >
                   AI辅助分析
                 </Button>
+                {aiCached && aiResult && !aiDrawerOpen && (
+                  <Tooltip title="已有缓存的分析结果，点击查看">
+                    <Tag
+                      color="green"
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => setAiDrawerOpen(true)}
+                    >
+                      已有分析
+                    </Tag>
+                  </Tooltip>
+                )}
               </Space>
             }
             name="diagnosis"
             style={{ flex: 1 }}
           >
-            <Input.TextArea rows={3} placeholder="请输入诊断内容" />
+            <Input.TextArea rows={22} placeholder="请输入诊断内容" />
           </Form.Item>
 
           <Form.Item label="治疗方案" name="treatment" style={{ flex: 1 }}>
-            <Input.TextArea rows={3} placeholder="请输入治疗方案" />
+            <Input.TextArea rows={22} placeholder="请输入治疗方案" />
           </Form.Item>
         </div>
 
@@ -580,7 +631,7 @@ export default function RecordForm() {
                         <div>
                           <div>
                             {(item.items || [])
-                              .map((herb) => `${herb.herb_name} ${herb.dosage}${herb.notes ? '(' + herb.notes + ')' : ''}`)
+                              .map((herb) => `${herb.herb_name} ${herb.dosage}克${herb.notes ? '(' + herb.notes + ')' : ''}`)
                               .join('、')}
                           </div>
                           {item.notes && (
@@ -695,6 +746,9 @@ export default function RecordForm() {
           <Space>
             <RobotOutlined style={{ color: '#1677ff' }} />
             <span>AI 辅助辩证论治分析</span>
+            {aiCached && !aiAnalyzing && (
+              <Tag color="green">缓存</Tag>
+            )}
           </Space>
         }
         placement="right"
@@ -704,6 +758,19 @@ export default function RecordForm() {
         styles={{
           body: { padding: 0 },
         }}
+        extra={
+          aiCached && !aiAnalyzing ? (
+            <Tooltip title="忽略缓存，重新调用 AI 分析">
+              <Button
+                size="small"
+                icon={<ReloadOutlined />}
+                onClick={() => handleAiAnalysis(true)}
+              >
+                重新分析
+              </Button>
+            </Tooltip>
+          ) : undefined
+        }
       >
         {aiAnalyzing ? (
           <div style={{
@@ -716,7 +783,7 @@ export default function RecordForm() {
           }}>
             <Spin size="large" />
             <div style={{ color: '#666', fontSize: 15 }}>
-              AI 正在从中医学、西医学、现代医学等多维度进行辩证论治分析...
+              AI 正在从中医学、现代医学等多维度进行辩证论治分析...
             </div>
             <div style={{ color: '#999', fontSize: 13 }}>
               分析较为详尽，请耐心等候（约 30-60 秒）

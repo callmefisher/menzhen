@@ -30,3 +30,7 @@ export function getHerb(id: number) {
 export function deleteHerb(id: number) {
   return request.delete(`/herbs/${id}`);
 }
+
+export function listHerbCategories() {
+  return request.get('/herbs/categories');
+}

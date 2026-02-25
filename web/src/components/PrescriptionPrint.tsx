@@ -88,7 +88,7 @@ export default function PrescriptionPrint({
               {(prescription.items || []).map((item) => (
                 <li key={item.id}>
                   <span className="herb-name">{item.herb_name}</span>
-                  <span className="herb-dosage">{item.dosage}</span>
+                  <span className="herb-dosage">{item.dosage}克</span>
                   <span className="herb-notes">{item.notes || ''}</span>
                 </li>
               ))}

@@ -1,8 +1,8 @@
-import { useState } from 'react';
-import { Input, Table, Tag, message, Button, Popconfirm } from 'antd';
+import { useState, useEffect } from 'react';
+import { Input, Table, Tag, message, Button, Popconfirm, Select } from 'antd';
 import { SearchOutlined, RobotOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { listHerbs, deleteHerb } from '../../api/herb';
+import { listHerbs, deleteHerb, listHerbCategories } from '../../api/herb';
 import type { HerbItem } from '../../api/herb';
 import { useAuth } from '../../store/auth';
 
@@ -13,12 +13,25 @@ export default function HerbSearch() {
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(20);
   const [searchName, setSearchName] = useState('');
+  const [categories, setCategories] = useState<string[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string | undefined>(undefined);
   const { hasPermission } = useAuth();
 
-  const fetchHerbs = async (name: string, p: number, s: number) => {
+  useEffect(() => {
+    listHerbCategories()
+      .then((res) => {
+        const body = res as unknown as { data: string[] };
+        setCategories(body.data || []);
+      })
+      .catch(() => {
+        // ignore
+      });
+  }, []);
+
+  const fetchHerbs = async (name: string, category: string | undefined, p: number, s: number) => {
     setLoading(true);
     try {
-      const res = await listHerbs({ name, page: p, size: s });
+      const res = await listHerbs({ name, category, page: p, size: s });
       const body = res as unknown as {
         data: { list: HerbItem[]; total: number };
       };
@@ -34,7 +47,13 @@ export default function HerbSearch() {
   const handleSearch = (value: string) => {
     setSearchName(value);
     setPage(1);
-    fetchHerbs(value, 1, size);
+    fetchHerbs(value, selectedCategory, 1, size);
+  };
+
+  const handleCategoryChange = (value: string | undefined) => {
+    setSelectedCategory(value);
+    setPage(1);
+    fetchHerbs(searchName, value, 1, size);
   };
 
   const handleTableChange = (pagination: { current?: number; pageSize?: number }) => {
@@ -42,14 +61,14 @@ export default function HerbSearch() {
     const newSize = pagination.pageSize || 20;
     setPage(newPage);
     setSize(newSize);
-    fetchHerbs(searchName, newPage, newSize);
+    fetchHerbs(searchName, selectedCategory, newPage, newSize);
   };
 
   const handleDelete = async (id: number) => {
     try {
       await deleteHerb(id);
       message.success('删除成功');
-      fetchHerbs(searchName, page, size);
+      fetchHerbs(searchName, selectedCategory, page, size);
     } catch {
       // Error handled by interceptor
     }
@@ -133,7 +152,7 @@ export default function HerbSearch() {
 
   return (
     <div>
-      <div style={{ marginBottom: 16 }}>
+      <div style={{ marginBottom: 16, display: 'flex', gap: 12 }}>
         <Input.Search
           placeholder="输入中药名称搜索（支持AI查询）"
           allowClear
@@ -141,6 +160,15 @@ export default function HerbSearch() {
           size="large"
           onSearch={handleSearch}
           style={{ maxWidth: 500 }}
+        />
+        <Select
+          placeholder="按分类筛选"
+          allowClear
+          size="large"
+          style={{ minWidth: 160 }}
+          value={selectedCategory}
+          onChange={handleCategoryChange}
+          options={categories.map((c) => ({ label: c, value: c }))}
         />
       </div>
 

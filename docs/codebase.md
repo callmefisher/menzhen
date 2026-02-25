@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-02-25
+> 最后更新：2026-02-25（补充中药分类接口、AI分析前端、播种脚本）
 
 ---
 
@@ -31,7 +31,7 @@ menzhen/
 │   ├── config/
 │   │   └── config.go                # Config 结构体 + Load()，全部读取环境变量
 │   ├── database/
-│   │   ├── database.go              # InitDB：连接 MySQL + AutoMigrate 全部 14 个模型
+│   │   ├── database.go              # InitDB：连接 MySQL + AutoMigrate 全部 15 个模型
 │   │   └── seed.go                  # Seed：幂等写入 permissions/tenant/admin role/admin user
 │   ├── handler/
 │   │   ├── response.go              # 统一 Success/Error 响应
@@ -39,10 +39,10 @@ menzhen/
 │   │   ├── patient.go               # List/Create/Detail/Update/Delete
 │   │   ├── record.go                # List/Create/Detail/Update/Delete
 │   │   ├── upload.go                # Upload/GetFile（MinIO）
-│   │   ├── herb.go                  # List/Detail/Delete
+│   │   ├── herb.go                  # List/Detail/Delete/Categories
 │   │   ├── formula.go               # List/Detail/Delete
 │   │   ├── prescription.go          # Create/Detail/Update/Delete/ListByRecord
-│   │   ├── ai_analysis.go           # Analyze（AI 辩证论治）
+│   │   ├── ai_analysis.go           # Analyze（AI 辩证论治，含缓存）+ GetCached
 │   │   ├── oplog.go                 # ListOpLogs/DeleteOpLog/BatchDeleteOpLogs
 │   │   ├── user.go                  # List/Update/Delete/AssignRoles
 │   │   ├── role.go                  # List/Create/Update/ListPermissions
@@ -60,7 +60,7 @@ menzhen/
 │   │   ├── auth.go                  # 登录/注册逻辑
 │   │   ├── patient.go               # 患者 CRUD
 │   │   ├── record.go                # 诊疗记录 CRUD
-│   │   ├── herb.go                  # 中药查询（DB + AI 回退 + 自动入库）
+│   │   ├── herb.go                  # 中药查询（DB + AI 回退 + 自动入库 + 分类列表）
 │   │   ├── formula.go               # 方剂查询（DB + AI 回退 + 自动入库）
 │   │   ├── prescription.go          # 处方 CRUD
 │   │   ├── deepseek.go              # DeepSeek API 客户端（chat/chatLong/QueryHerb/QueryFormula/AnalyzeDiagnosis）
@@ -80,8 +80,8 @@ menzhen/
 │       ├── api/                     # API 调用封装
 │       │   ├── auth.ts              # 登录/注册/登出/获取当前用户/修改密码
 │       │   ├── patient.ts           # 患者 CRUD
-│       │   ├── record.ts            # 诊疗记录 CRUD
-│       │   ├── herb.ts              # 中药搜索/详情/删除
+│       │   ├── record.ts            # 诊疗记录 CRUD + AI分析调用/缓存获取
+│       │   ├── herb.ts              # 中药搜索/详情/删除/分类列表
 │       │   ├── formula.ts           # 方剂搜索/详情/删除
 │       │   ├── prescription.ts      # 处方 CRUD + 按记录查询
 │       │   ├── upload.ts            # 文件上传
@@ -105,9 +105,9 @@ menzhen/
 │       │   │   └── PatientForm.tsx
 │       │   ├── records/             # 诊疗记录
 │       │   │   ├── RecordList.tsx
-│       │   │   └── RecordForm.tsx
+│       │   │   └── RecordForm.tsx   # 含 AI 辩证论治 Drawer（缓存加载、重新分析）
 │       │   ├── herbs/               # 中药查询
-│       │   │   ├── HerbSearch.tsx
+│       │   │   ├── HerbSearch.tsx   # 含分类筛选下拉框
 │       │   │   └── __tests__/
 │       │   ├── formulas/            # 方剂查询
 │       │   │   ├── FormulaSearch.tsx
@@ -128,6 +128,7 @@ menzhen/
 │   ├── backup.sh                    # 备份脚本（MySQL dump + MinIO sync + 清理旧 oplog）
 │   ├── backup-loop.sh               # 定时备份守护进程（默认凌晨 2 点）
 │   ├── restore.sh                   # 恢复脚本（MySQL + MinIO + 数据验证）
+│   ├── seed-herbs-formulas.sh       # 中药/方剂数据播种（通过 API 触发 DeepSeek 回退自动入库）
 │   └── Dockerfile.backup            # 备份容器镜像（alpine + mysql-client + mc）
 ├── docker-compose.yml               # 6 个服务：nginx、web、api、mysql、minio、backup
 ├── deploy.sh                        # 一键部署脚本（生成 .env + build + 启动 + 可选恢复）
@@ -318,6 +319,16 @@ menzhen/
 | `new_data` | `json` | 变更后数据 |
 | `created_at` | `time.Time` | 操作时间 |
 
+#### `ai_analyses` — AI 分析缓存（含 BaseModel 软删除）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| BaseModel | — | id, created_at, updated_at, deleted_at |
+| `record_id` | `uint64` | 诊疗记录 ID（唯一索引） |
+| `tenant_id` | `uint64` | 租户 ID（索引） |
+| `diagnosis` | `text` | 输入的诊断文本（用于判断内容是否变化） |
+| `analysis` | `longtext` | AI 返回的 Markdown 分析结果 |
+
 ---
 
 ## API 路由清单
@@ -370,13 +381,15 @@ menzhen/
 
 | 方法 | 路径 | 权限 | 说明 |
 |------|------|------|------|
-| POST | `/api/v1/ai/analyze-diagnosis` | `record:read` | AI 辅助辩证论治分析（超时 120s） |
+| POST | `/api/v1/ai/analyze-diagnosis` | `record:read` | AI 辅助辩证论治分析（支持缓存，超时 120s） |
+| GET | `/api/v1/records/:id/ai-analysis` | `record:read` | 获取已缓存的 AI 分析结果 |
 
 #### 中药查询（全局数据）
 
 | 方法 | 路径 | 权限 | 说明 |
 |------|------|------|------|
 | GET | `/api/v1/herbs` | - | 搜索中药（DB + AI 回退），参数：`name`, `category`, `page`, `size` |
+| GET | `/api/v1/herbs/categories` | - | 获取中药分类列表（从已有数据中聚合） |
 | GET | `/api/v1/herbs/:id` | - | 中药详情 |
 | DELETE | `/api/v1/herbs/:id` | `role:manage` | 删除中药 |
 
@@ -455,21 +468,30 @@ menzhen/
 
 流程与中药查询一致，区别在于方剂额外包含 `composition` JSON 字段（药物组成及剂量）。
 
-### AI 辩证论治分析
+### AI 辩证论治分析（含缓存）
 
 ```
-前端提交诊断文本 (POST /api/v1/ai/analyze-diagnosis)
+前端提交诊断文本 + record_id (POST /api/v1/ai/analyze-diagnosis)
   -> 检查 DeepSeek 是否启用
-  -> 调用 AnalyzeDiagnosis（120s 超时，max_tokens=4096）
-  -> 系统 prompt 为中医药 + 现代医学多角度分析
-  -> 返回 Markdown 格式分析结果
+  -> 若 record_id > 0 且 force=false
+     -> 查 ai_analyses 表是否有该 record_id 的缓存
+     -> 有缓存且 diagnosis 内容一致 -> 返回缓存结果（cached: true）
+  -> 缓存未命中或 force=true
+     -> 调用 AnalyzeDiagnosis（120s 超时，max_tokens=4096）
+     -> upsert 到 ai_analyses 表
+     -> 返回分析结果（cached: false）
+
+前端编辑记录时自动加载缓存 (GET /api/v1/records/:id/ai-analysis)
+  -> 若有缓存 -> 在诊断旁显示「已有分析」标签
+  -> 点击标签可直接查看缓存结果
+  -> Drawer 中提供「重新分析」按钮强制刷新
 ```
 
 ### 租户隔离
 
 - JWT 中嵌入 `tenant_id`，`AuthMiddleware` 解析后存入 Gin Context
 - 查询租户隔离表时，使用 `middleware.TenantScope(c)` GORM scope 自动注入 `WHERE tenant_id = ?`
-- 中药（herbs）和方剂（formulas）为全局数据，不做租户隔离
+- 中药（herbs）和方剂（formulas）为全局数据，不做租户隔离，路由仅需认证无需特定权限
 
 ### RBAC 权限控制
 
@@ -527,6 +549,7 @@ menzhen/
 | `scripts/backup.sh` | 全量备份：MySQL dump + MinIO 文件同步 + 清理 3 月前 oplog + 生成 metadata.json |
 | `scripts/backup-loop.sh` | 定时备份守护：每小时检测，在 `BACKUP_HOUR` 时触发每日备份 |
 | `scripts/restore.sh` | 恢复：导入 MySQL dump + 同步 MinIO 文件 + 验证数据完整性 |
+| `scripts/seed-herbs-formulas.sh` | 中药/方剂数据播种：通过 API 逐条搜索触发 DeepSeek 回退自动入库，支持进度恢复、dry-run |
 | `scripts/Dockerfile.backup` | 备份容器镜像：alpine + mysql-client + MinIO Client (mc) |
 
 ### Docker Compose 服务

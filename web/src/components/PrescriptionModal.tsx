@@ -53,7 +53,7 @@ export default function PrescriptionModal({
     editData?.items?.map((item, idx) => ({
       key: idx,
       herb_name: item.herb_name,
-      dosage: item.dosage,
+      dosage: item.dosage ? item.dosage.replace(/[^\d.]/g, '') : '',
       notes: item.notes || '',
     })) || [{ key: 0, herb_name: '', dosage: '', notes: '' }]
   );
@@ -99,7 +99,7 @@ export default function PrescriptionModal({
       (c: FormulaCompositionItem, idx: number) => ({
         key: idx,
         herb_name: c.herb_name,
-        dosage: c.default_dosage,
+        dosage: c.default_dosage ? c.default_dosage.replace(/[^\d.]/g, '') : '',
         notes: '',
       })
     );
@@ -188,13 +188,19 @@ export default function PrescriptionModal({
       title: '用量',
       dataIndex: 'dosage',
       key: 'dosage',
-      width: 120,
+      width: 140,
       render: (_: string, record: HerbRow) => (
-        <Input
-          value={record.dosage}
-          onChange={(e) => updateHerbRow(record.key, 'dosage', e.target.value)}
-          placeholder="如 9g"
-        />
+        <Space.Compact>
+          <InputNumber
+            value={record.dosage ? Number(record.dosage) || undefined : undefined}
+            onChange={(val) => updateHerbRow(record.key, 'dosage', val != null ? String(val) : '')}
+            placeholder="用量"
+            min={0}
+            max={999}
+            style={{ width: 80 }}
+          />
+          <span style={{ display: 'inline-flex', alignItems: 'center', padding: '0 8px', background: '#fafafa', border: '1px solid #d9d9d9', borderLeft: 'none', borderRadius: '0 6px 6px 0', color: '#666', fontSize: 14 }}>克</span>
+        </Space.Compact>
       ),
     },
     {
