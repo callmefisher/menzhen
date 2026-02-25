@@ -38,6 +38,8 @@
 
 保持CLAUDE.md的行数在合理范围内，如果涉及更长篇幅的文档，需要作为子md文档，外链到CLAUDE.md中
 
+### 8. Codebase 文档同步
+每次项目变更后必须检查并更新 `docs/codebase.md`，确保文档与代码同步。该文档作为任务执行前的上下文扫描入口。
 
 ### 经验教训（持续更新）
 - 前端测试需要在 `src/test/setup.ts` 中 polyfill `ResizeObserver` 和 `window.matchMedia`（antd 组件依赖）
@@ -156,3 +158,4 @@ DeepSeek AI 相关（可选）：
 - [运维操作手册](docs/operations-guide.md)
 - [设计方案](docs/plans/2026-02-24-medical-record-system-design.md)
 - [实施计划](docs/plans/2026-02-24-medical-record-system-plan.md)
+- [Codebase 全局上下文](docs/codebase.md)
