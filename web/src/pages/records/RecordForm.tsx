@@ -17,11 +17,13 @@ import {
   List,
   Tag,
   Popconfirm,
+  Drawer,
 } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, RobotOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
-import { getRecord, createRecord, updateRecord } from '../../api/record';
+import Markdown from 'react-markdown';
+import { getRecord, createRecord, updateRecord, aiAnalyzeDiagnosis } from '../../api/record';
 import { listPatients, createPatient, getPatient } from '../../api/patient';
 import {
   listPrescriptionsByRecord,
@@ -91,6 +93,11 @@ export default function RecordForm() {
 
   // Debounce timer ref for patient search
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // AI analysis state
+  const [aiAnalyzing, setAiAnalyzing] = useState(false);
+  const [aiResult, setAiResult] = useState<string>('');
+  const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
 
   // Search patients by name
   const searchPatients = useCallback(async (name?: string) => {
@@ -299,6 +306,26 @@ export default function RecordForm() {
     }
   };
 
+  const handleAiAnalysis = async () => {
+    const diagnosis = form.getFieldValue('diagnosis');
+    if (!diagnosis?.trim()) {
+      message.warning('请先输入诊断内容');
+      return;
+    }
+    setAiAnalyzing(true);
+    setAiDrawerOpen(true);
+    setAiResult('');
+    try {
+      const res = await aiAnalyzeDiagnosis(diagnosis.trim());
+      const body = res as unknown as { data: { analysis: string } };
+      setAiResult(body.data.analysis || '未获取到分析结果');
+    } catch {
+      setAiResult('AI 分析请求失败，请稍后重试');
+    } finally {
+      setAiAnalyzing(false);
+    }
+  };
+
   const handleOpenPrescriptionModal = (prescription?: PrescriptionData) => {
     setEditingPrescription(prescription || null);
     setPrescriptionModalOpen(true);
@@ -382,7 +409,25 @@ export default function RecordForm() {
         </div>
 
         <div style={{ display: 'flex', gap: 16 }}>
-          <Form.Item label="诊断" name="diagnosis" style={{ flex: 1 }}>
+          <Form.Item
+            label={
+              <Space>
+                <span>诊断</span>
+                <Button
+                  type="primary"
+                  ghost
+                  size="small"
+                  icon={<RobotOutlined />}
+                  loading={aiAnalyzing}
+                  onClick={handleAiAnalysis}
+                >
+                  AI辅助分析
+                </Button>
+              </Space>
+            }
+            name="diagnosis"
+            style={{ flex: 1 }}
+          >
             <Input.TextArea rows={3} placeholder="请输入诊断内容" />
           </Form.Item>
 
@@ -643,6 +688,146 @@ export default function RecordForm() {
           </Form.Item>
         </Form>
       </Modal>
+
+      {/* AI辅助分析抽屉 */}
+      <Drawer
+        title={
+          <Space>
+            <RobotOutlined style={{ color: '#1677ff' }} />
+            <span>AI 辅助辩证论治分析</span>
+          </Space>
+        }
+        placement="right"
+        width={720}
+        open={aiDrawerOpen}
+        onClose={() => setAiDrawerOpen(false)}
+        styles={{
+          body: { padding: 0 },
+        }}
+      >
+        {aiAnalyzing ? (
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            minHeight: 400,
+            gap: 24,
+          }}>
+            <Spin size="large" />
+            <div style={{ color: '#666', fontSize: 15 }}>
+              AI 正在从中医学、西医学、现代医学等多维度进行辩证论治分析...
+            </div>
+            <div style={{ color: '#999', fontSize: 13 }}>
+              分析较为详尽，请耐心等候（约 30-60 秒）
+            </div>
+          </div>
+        ) : (
+          <div style={{ padding: '24px 32px' }}>
+            <div style={{
+              background: 'linear-gradient(135deg, #e8f4fd 0%, #f0e6ff 100%)',
+              borderRadius: 12,
+              padding: '16px 20px',
+              marginBottom: 24,
+              border: '1px solid #d4e8f7',
+            }}>
+              <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>分析依据 — 诊断内容</div>
+              <div style={{ fontSize: 14, color: '#333', fontWeight: 500 }}>
+                {form.getFieldValue('diagnosis') || '—'}
+              </div>
+            </div>
+            <div
+              className="ai-analysis-content"
+              style={{
+                fontSize: 14,
+                lineHeight: 1.8,
+                color: '#333',
+              }}
+            >
+              <Markdown
+                components={{
+                  h1: ({ children }) => (
+                    <h2 style={{
+                      fontSize: 20,
+                      fontWeight: 600,
+                      color: '#1a1a1a',
+                      borderBottom: '2px solid #1677ff',
+                      paddingBottom: 8,
+                      marginTop: 28,
+                      marginBottom: 16,
+                    }}>{children}</h2>
+                  ),
+                  h2: ({ children }) => (
+                    <h3 style={{
+                      fontSize: 17,
+                      fontWeight: 600,
+                      color: '#262626',
+                      borderLeft: '3px solid #1677ff',
+                      paddingLeft: 12,
+                      marginTop: 24,
+                      marginBottom: 12,
+                    }}>{children}</h3>
+                  ),
+                  h3: ({ children }) => (
+                    <h4 style={{
+                      fontSize: 15,
+                      fontWeight: 600,
+                      color: '#434343',
+                      marginTop: 20,
+                      marginBottom: 8,
+                    }}>{children}</h4>
+                  ),
+                  p: ({ children }) => (
+                    <p style={{ margin: '8px 0', lineHeight: 1.8 }}>{children}</p>
+                  ),
+                  ul: ({ children }) => (
+                    <ul style={{ paddingLeft: 20, margin: '8px 0' }}>{children}</ul>
+                  ),
+                  ol: ({ children }) => (
+                    <ol style={{ paddingLeft: 20, margin: '8px 0' }}>{children}</ol>
+                  ),
+                  li: ({ children }) => (
+                    <li style={{ marginBottom: 4, lineHeight: 1.8 }}>{children}</li>
+                  ),
+                  strong: ({ children }) => (
+                    <strong style={{ color: '#1a1a1a' }}>{children}</strong>
+                  ),
+                  blockquote: ({ children }) => (
+                    <blockquote style={{
+                      borderLeft: '4px solid #d9d9d9',
+                      paddingLeft: 16,
+                      margin: '12px 0',
+                      color: '#595959',
+                      fontStyle: 'italic',
+                      background: '#fafafa',
+                      padding: '8px 16px',
+                      borderRadius: '0 4px 4px 0',
+                    }}>{children}</blockquote>
+                  ),
+                  hr: () => (
+                    <hr style={{
+                      border: 'none',
+                      borderTop: '1px solid #f0f0f0',
+                      margin: '20px 0',
+                    }} />
+                  ),
+                }}
+              >
+                {aiResult}
+              </Markdown>
+            </div>
+            <Divider />
+            <div style={{
+              fontSize: 12,
+              color: '#999',
+              textAlign: 'center',
+              padding: '8px 0',
+            }}>
+              以上分析由 AI 生成，仅供参考，请结合临床经验综合判断
+            </div>
+          </div>
+        )}
+      </Drawer>
     </Card>
   );
 }

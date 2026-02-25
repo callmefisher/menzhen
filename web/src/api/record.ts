@@ -36,3 +36,7 @@ export function updateRecord(id: number, data: unknown) {
 export function deleteRecord(id: number) {
   return request.delete(`/records/${id}`);
 }
+
+export function aiAnalyzeDiagnosis(diagnosis: string) {
+  return request.post('/ai/analyze-diagnosis', { diagnosis }, { timeout: 120000 });
+}
