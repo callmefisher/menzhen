@@ -641,10 +641,13 @@ login() {
 
     local response
     local http_code
+    local json_body
+    # Use printf to safely construct JSON, avoiding shell escaping issues with special chars
+    json_body=$(printf '{"username":"%s","password":"%s"}' "$USERNAME" "$PASSWORD")
     response=$(curl -s -w "\n%{http_code}" \
         -X POST "${API_URL}/api/v1/auth/login" \
         -H "Content-Type: application/json" \
-        -d "{\"username\":\"${USERNAME}\",\"password\":\"${PASSWORD}\"}")
+        -d "$json_body")
 
     http_code=$(echo "$response" | tail -1)
     local body
