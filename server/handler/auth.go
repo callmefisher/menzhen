@@ -21,8 +21,9 @@ type LoginRequest struct {
 
 // LoginResponse is returned on successful login.
 type LoginResponse struct {
-	Token string       `json:"token"`
-	User  UserBriefDTO `json:"user"`
+	Token       string       `json:"token"`
+	User        UserBriefDTO `json:"user"`
+	Permissions []string     `json:"permissions"`
 }
 
 // RegisterRequest is the JSON body for POST /api/v1/auth/register.
@@ -46,6 +47,12 @@ type UserBriefDTO struct {
 type MeResponse struct {
 	User        UserBriefDTO `json:"user"`
 	Permissions []string     `json:"permissions"`
+}
+
+// ChangePasswordRequest is the JSON body for POST /api/v1/auth/change-password.
+type ChangePasswordRequest struct {
+	OldPassword string `json:"old_password" binding:"required"`
+	NewPassword string `json:"new_password" binding:"required,min=6"`
 }
 
 // ---------- Handler ----------
@@ -99,6 +106,12 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	// Fetch user permissions for the login response.
+	_, permissions, permErr := h.authService.GetCurrentUser(user.ID)
+	if permErr != nil {
+		permissions = []string{}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"message": "success",
@@ -110,6 +123,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 				RealName: user.RealName,
 				TenantID: user.TenantID,
 			},
+			Permissions: permissions,
 		},
 	})
 }
@@ -218,5 +232,53 @@ func (h *AuthHandler) Me(c *gin.Context) {
 			},
 			Permissions: permissions,
 		},
+	})
+}
+
+// ChangePassword handles POST /api/v1/auth/change-password.
+func (h *AuthHandler) ChangePassword(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if userID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": "unauthorized",
+		})
+		return
+	}
+
+	var req ChangePasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "invalid request: " + err.Error(),
+		})
+		return
+	}
+
+	if err := h.authService.ChangePassword(userID, req.OldPassword, req.NewPassword); err != nil {
+		if errors.Is(err, service.ErrWrongOldPassword) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": err.Error(),
+			})
+			return
+		}
+		if errors.Is(err, service.ErrUserNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"code":    404,
+				"message": "user not found",
+			})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "failed to change password",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "密码修改成功",
 	})
 }

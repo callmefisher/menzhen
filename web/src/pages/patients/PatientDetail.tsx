@@ -49,6 +49,9 @@ interface PatientData {
   weight: number;
   phone: string;
   id_card: string;
+  address: string;
+  native_place: string;
+  notes: string;
   created_at: string;
   medical_records: MedicalRecord[];
 }
@@ -157,6 +160,15 @@ export default function PatientDetail() {
           </Descriptions.Item>
           <Descriptions.Item label="身份证号">
             {patient.id_card || '-'}
+          </Descriptions.Item>
+          <Descriptions.Item label="现居住地">
+            {patient.address || '-'}
+          </Descriptions.Item>
+          <Descriptions.Item label="籍贯">
+            {patient.native_place || '-'}
+          </Descriptions.Item>
+          <Descriptions.Item label="备注" span={3}>
+            {patient.notes || '-'}
           </Descriptions.Item>
         </Descriptions>
       </Card>
@@ -389,6 +401,9 @@ export default function PatientDetail() {
                 weight: patient.weight,
                 phone: patient.phone,
                 id_card: patient.id_card,
+                address: patient.address,
+                native_place: patient.native_place,
+                notes: patient.notes,
               }
             : undefined
         }

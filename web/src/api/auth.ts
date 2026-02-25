@@ -21,3 +21,7 @@ export function getMe() {
 export function logout() {
   return request.post('/auth/logout');
 }
+
+export function changePassword(data: { old_password: string; new_password: string }) {
+  return request.post('/auth/change-password', data);
+}

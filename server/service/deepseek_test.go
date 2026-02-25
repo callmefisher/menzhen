@@ -9,6 +9,15 @@ import (
 	"github.com/callmefisher/menzhen/server/config"
 )
 
+// mockAIResponse creates an Anthropic Messages API format response.
+func mockAIResponse(text string) aiResponse {
+	return aiResponse{
+		Content: []aiContentBlock{
+			{Type: "text", Text: text},
+		},
+	}
+}
+
 func TestDeepSeekService_IsEnabled(t *testing.T) {
 	// Without API key
 	cfg := &config.Config{}
@@ -38,19 +47,17 @@ func TestDeepSeekService_QueryHerb(t *testing.T) {
 	responseJSON, _ := json.Marshal(herbResponse)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify request
 		if r.Method != "POST" {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
 		if r.Header.Get("Authorization") != "Bearer test-key" {
 			t.Errorf("expected Bearer test-key, got %s", r.Header.Get("Authorization"))
 		}
-
-		resp := deepSeekResponse{
-			Choices: []deepSeekChoice{
-				{Message: deepSeekMessage{Role: "assistant", Content: string(responseJSON)}},
-			},
+		if r.Header.Get("anthropic-version") != "2023-06-01" {
+			t.Errorf("expected anthropic-version header, got %s", r.Header.Get("anthropic-version"))
 		}
+
+		resp := mockAIResponse(string(responseJSON))
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 	}))
@@ -77,14 +84,9 @@ func TestDeepSeekService_QueryHerb(t *testing.T) {
 }
 
 func TestDeepSeekService_QueryHerbWithCodeBlock(t *testing.T) {
-	// Test that JSON wrapped in markdown code block is parsed correctly
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		content := "```json\n{\"name\":\"当归\",\"alias\":\"干归\",\"category\":\"补血\",\"properties\":\"甘辛温\",\"effects\":\"补血活血\",\"indications\":\"血虚\"}\n```"
-		resp := deepSeekResponse{
-			Choices: []deepSeekChoice{
-				{Message: deepSeekMessage{Role: "assistant", Content: content}},
-			},
-		}
+		resp := mockAIResponse(content)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 	}))
@@ -121,11 +123,7 @@ func TestDeepSeekService_QueryFormula(t *testing.T) {
 	responseJSON, _ := json.Marshal(formulaResponse)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := deepSeekResponse{
-			Choices: []deepSeekChoice{
-				{Message: deepSeekMessage{Role: "assistant", Content: string(responseJSON)}},
-			},
-		}
+		resp := mockAIResponse(string(responseJSON))
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 	}))

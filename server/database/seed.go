@@ -77,15 +77,21 @@ func seedDefaultTenant(db *gorm.DB) model.Tenant {
 func seedAdminRole(db *gorm.DB, tenantID uint64) model.Role {
 	var role model.Role
 	result := db.Where("name = ? AND tenant_id = ?", "管理员", tenantID).First(&role)
-	if result.Error == nil {
-		log.Println("Admin role already exists, skipping")
-		return role
-	}
 
 	// Fetch all permissions to assign to the admin role.
 	var permissions []model.Permission
 	if err := db.Find(&permissions).Error; err != nil {
 		log.Panicf("failed to fetch permissions for admin role: %v", err)
+	}
+
+	if result.Error == nil {
+		// Role already exists — sync permissions to latest full set.
+		if err := db.Model(&role).Association("Permissions").Replace(permissions); err != nil {
+			log.Printf("Warning: failed to update admin role permissions: %v", err)
+		} else {
+			log.Println("Admin role permissions synced")
+		}
+		return role
 	}
 
 	role = model.Role{

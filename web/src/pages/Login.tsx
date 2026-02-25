@@ -22,7 +22,7 @@ export default function Login() {
   const handleSubmit = async (values: LoginFormValues) => {
     setLoading(true);
     try {
-      await login(values.username, values.password);
+      await login(values.username, values.password, values.remember);
       message.success('登录成功');
       navigate('/records', { replace: true });
     } catch {

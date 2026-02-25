@@ -28,6 +28,9 @@ interface PatientItem {
   weight: number;
   phone: string;
   id_card: string;
+  address: string;
+  native_place: string;
+  notes: string;
   created_at: string;
 }
 
@@ -253,6 +256,9 @@ export default function PatientList() {
                 weight: editingPatient.weight,
                 phone: editingPatient.phone,
                 id_card: editingPatient.id_card,
+                address: editingPatient.address,
+                native_place: editingPatient.native_place,
+                notes: editingPatient.notes,
               }
             : undefined
         }

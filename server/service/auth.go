@@ -13,6 +13,7 @@ var (
 	ErrUserDisabled       = errors.New("user account is disabled")
 	ErrUsernameExists     = errors.New("username already exists in this tenant")
 	ErrUserNotFound       = errors.New("user not found")
+	ErrWrongOldPassword   = errors.New("旧密码错误")
 )
 
 // AuthService handles authentication-related business logic.
@@ -109,4 +110,28 @@ func (s *AuthService) GetCurrentUser(userID uint64) (*model.User, []string, erro
 	}
 
 	return &user, permissions, nil
+}
+
+// ChangePassword verifies the old password and updates to the new one.
+func (s *AuthService) ChangePassword(userID uint64, oldPassword, newPassword string) error {
+	var user model.User
+	if err := s.DB.First(&user, userID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrUserNotFound
+		}
+		return err
+	}
+
+	// Verify old password.
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(oldPassword)); err != nil {
+		return ErrWrongOldPassword
+	}
+
+	// Hash new password.
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+
+	return s.DB.Model(&user).Update("password_hash", string(hash)).Error
 }

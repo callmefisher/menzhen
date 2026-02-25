@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Layout as AntLayout, Menu, Button, theme, Dropdown } from 'antd';
+import { Layout as AntLayout, Menu, Button, theme, Dropdown, Modal, Form, Input, message } from 'antd';
 import {
   MedicineBoxOutlined,
   UserOutlined,
@@ -11,11 +11,13 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   LogoutOutlined,
+  KeyOutlined,
   ExperimentOutlined,
   ReadOutlined,
 } from '@ant-design/icons';
 import type { MenuProps as AntMenuProps } from 'antd';
 import { useAuth } from '../store/auth';
+import { changePassword } from '../api/auth';
 
 const { Header, Sider, Content } = AntLayout;
 
@@ -23,6 +25,9 @@ type MenuItem = Required<AntMenuProps>['items'][number];
 
 export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(false);
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [passwordForm] = Form.useForm();
   const { user, logout, hasPermission } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -142,7 +147,31 @@ export default function AppLayout() {
     navigate('/login');
   };
 
+  const handleChangePassword = async () => {
+    try {
+      const values = await passwordForm.validateFields();
+      setPasswordLoading(true);
+      await changePassword({
+        old_password: values.old_password,
+        new_password: values.new_password,
+      });
+      message.success('密码修改成功');
+      setPasswordModalOpen(false);
+      passwordForm.resetFields();
+    } catch {
+      // Validation or API error
+    } finally {
+      setPasswordLoading(false);
+    }
+  };
+
   const userMenuItems: AntMenuProps['items'] = [
+    {
+      key: 'change-password',
+      icon: <KeyOutlined />,
+      label: '修改密码',
+      onClick: () => setPasswordModalOpen(true),
+    },
     {
       key: 'logout',
       icon: <LogoutOutlined />,
@@ -220,6 +249,65 @@ export default function AppLayout() {
           <Outlet />
         </Content>
       </AntLayout>
+
+      {/* Change password modal */}
+      <Modal
+        title="修改密码"
+        open={passwordModalOpen}
+        onOk={handleChangePassword}
+        onCancel={() => {
+          setPasswordModalOpen(false);
+          passwordForm.resetFields();
+        }}
+        confirmLoading={passwordLoading}
+        okText="确认修改"
+        cancelText="取消"
+        destroyOnClose
+      >
+        <Form
+          form={passwordForm}
+          layout="vertical"
+          autoComplete="off"
+        >
+          <Form.Item
+            label="旧密码"
+            name="old_password"
+            rules={[{ required: true, message: '请输入旧密码' }]}
+          >
+            <Input.Password placeholder="请输入旧密码" />
+          </Form.Item>
+
+          <Form.Item
+            label="新密码"
+            name="new_password"
+            rules={[
+              { required: true, message: '请输入新密码' },
+              { min: 6, message: '密码至少 6 个字符' },
+            ]}
+          >
+            <Input.Password placeholder="请输入新密码" />
+          </Form.Item>
+
+          <Form.Item
+            label="确认新密码"
+            name="confirm_password"
+            dependencies={['new_password']}
+            rules={[
+              { required: true, message: '请确认新密码' },
+              ({ getFieldValue }) => ({
+                validator(_, value) {
+                  if (!value || getFieldValue('new_password') === value) {
+                    return Promise.resolve();
+                  }
+                  return Promise.reject(new Error('两次输入的密码不一致'));
+                },
+              }),
+            ]}
+          >
+            <Input.Password placeholder="请再次输入新密码" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </AntLayout>
   );
 }

@@ -8,7 +8,7 @@ const request = axios.create({
 
 // Request interceptor: attach JWT token
 request.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
+  const token = localStorage.getItem('token') || sessionStorage.getItem('token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -21,6 +21,7 @@ request.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
+      sessionStorage.removeItem('token');
       window.location.href = '/login';
     }
     const msg = error.response?.data?.message || '请求失败';
