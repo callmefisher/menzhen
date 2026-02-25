@@ -37,13 +37,7 @@ export default function AppLayout() {
   } = theme.useToken();
 
   const menuItems = useMemo(() => {
-    const items: MenuItem[] = [
-      {
-        key: '/records',
-        icon: <MedicineBoxOutlined />,
-        label: '病历列表',
-      },
-    ];
+    const items: MenuItem[] = [];
 
     if (hasPermission('patient:read')) {
       items.push({
@@ -52,6 +46,12 @@ export default function AppLayout() {
         label: '患者管理',
       });
     }
+
+    items.push({
+      key: '/records',
+      icon: <MedicineBoxOutlined />,
+      label: '病历列表',
+    });
 
     if (hasPermission('oplog:read')) {
       items.push({

@@ -44,6 +44,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	formulaHandler := handler.NewFormulaHandler(db, deepSeekService)
 	prescriptionHandler := handler.NewPrescriptionHandler(db)
 	tenantHandler := handler.NewTenantHandler(db)
+	aiAnalysisHandler := handler.NewAIAnalysisHandler(deepSeekService)
 
 	// ---------- Route groups ----------
 
@@ -93,6 +94,9 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 
 		// File upload route (authenticated, no specific permission).
 		authenticated.POST("/upload", uploadHandler.Upload)
+
+		// AI analysis route (authenticated, requires record:read permission).
+		authenticated.POST("/ai/analyze-diagnosis", middleware.RequirePermission(db, "record:read"), aiAnalysisHandler.Analyze)
 
 		// Operation log routes.
 		oplogs := authenticated.Group("/oplogs")

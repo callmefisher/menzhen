@@ -48,7 +48,7 @@
 
 ## 项目概述
 
-患者病历管理系统，支持中小诊所局域网部署和多诊所云端共享（多租户架构）。包含中医药查询（对接 DeepSeek AI）和开方功能。
+患者病历管理系统，支持中小诊所局域网部署和多诊所云端共享（多租户架构）。包含中医药查询（对接 DeepSeek AI）、AI 辅助辩证论治分析和开方功能。
 
 ## 技术栈
 
@@ -59,7 +59,7 @@
 | 数据库 | MySQL 8.0 |
 | 文件存储 | MinIO |
 | 认证 | JWT + RBAC |
-| AI | DeepSeek API（中药/方剂查询回退） |
+| AI | DeepSeek API（中药/方剂查询回退 + AI辅助辩证论治） |
 | 测试 | Go test (后端) + Vitest + Testing Library (前端) |
 | 部署 | Docker Compose + Nginx |
 
@@ -122,6 +122,11 @@ menzhen/
 | PUT | `/api/v1/prescriptions/:id` | prescription:create | 更新处方 |
 | DELETE | `/api/v1/prescriptions/:id` | prescription:create | 删除处方 |
 | GET | `/api/v1/records/:id/prescriptions` | prescription:read | 某次就诊处方列表 |
+
+### AI 分析
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| POST | `/api/v1/ai/analyze-diagnosis` | record:read | AI 辅助辩证论治分析 |
 
 ## 开发环境
 

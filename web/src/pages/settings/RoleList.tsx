@@ -43,12 +43,20 @@ const PERMISSION_GROUPS: { label: string; codes: string[] }[] = [
     codes: ['record:create', 'record:read', 'record:update', 'record:delete'],
   },
   {
+    label: '中医药查询',
+    codes: ['herb:read', 'formula:read'],
+  },
+  {
+    label: '处方管理',
+    codes: ['prescription:create', 'prescription:read'],
+  },
+  {
     label: '操作日志',
     codes: ['oplog:read'],
   },
   {
     label: '系统管理',
-    codes: ['user:manage', 'role:manage'],
+    codes: ['user:manage', 'role:manage', 'tenant:manage'],
   },
 ];
 
