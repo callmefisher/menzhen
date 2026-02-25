@@ -32,3 +32,7 @@ export function getFormula(id: number) {
 export function deleteFormula(id: number) {
   return request.delete(`/formulas/${id}`);
 }
+
+export function updateFormulaComposition(id: number, composition: FormulaCompositionItem[]) {
+  return request.put(`/formulas/${id}/composition`, { composition });
+}

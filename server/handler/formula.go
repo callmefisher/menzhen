@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/callmefisher/menzhen/server/model"
 	"github.com/callmefisher/menzhen/server/service"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -90,6 +91,35 @@ func (h *FormulaHandler) Delete(c *gin.Context) {
 			return
 		}
 		Error(c, http.StatusInternalServerError, "failed to delete formula")
+		return
+	}
+
+	Success(c, nil)
+}
+
+// UpdateComposition handles PUT /api/v1/formulas/:id/composition
+func (h *FormulaHandler) UpdateComposition(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		Error(c, http.StatusBadRequest, "invalid formula id")
+		return
+	}
+
+	var req struct {
+		Composition model.FormulaComposition `json:"composition" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	svc := service.NewFormulaService(h.db, h.deepSeek)
+	if err := svc.UpdateComposition(id, req.Composition); err != nil {
+		if errors.Is(err, service.ErrFormulaNotFound) {
+			Error(c, http.StatusNotFound, "formula not found")
+			return
+		}
+		Error(c, http.StatusInternalServerError, "failed to update composition")
 		return
 	}
 
