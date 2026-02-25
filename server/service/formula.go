@@ -81,6 +81,18 @@ func (s *FormulaService) DeleteByID(id uint64) error {
 	return nil
 }
 
+// UpdateComposition updates the composition of a formula by ID.
+func (s *FormulaService) UpdateComposition(id uint64, composition model.FormulaComposition) error {
+	var formula model.Formula
+	if err := s.DB.First(&formula, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrFormulaNotFound
+		}
+		return err
+	}
+	return s.DB.Model(&formula).Update("composition", composition).Error
+}
+
 // isValidFormulaResult checks whether the AI result contains a valid formula.
 // A valid formula must have at least one composition item (herb).
 func isValidFormulaResult(result *FormulaAIResult) bool {

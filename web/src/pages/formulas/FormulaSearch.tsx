@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { Input, Table, Tag, message, Button, Popconfirm } from 'antd';
-import { SearchOutlined, RobotOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Input, Table, Tag, message, Button, Popconfirm, Modal, Space } from 'antd';
+import { SearchOutlined, RobotOutlined, DeleteOutlined, EditOutlined, PlusOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { listFormulas, deleteFormula } from '../../api/formula';
+import { listFormulas, deleteFormula, updateFormulaComposition } from '../../api/formula';
 import type { FormulaItem, FormulaCompositionItem } from '../../api/formula';
 import { useAuth } from '../../store/auth';
 
@@ -14,6 +14,13 @@ export default function FormulaSearch() {
   const [size, setSize] = useState(20);
   const [searchName, setSearchName] = useState('');
   const { hasPermission } = useAuth();
+
+  // Composition edit modal state
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editFormulaId, setEditFormulaId] = useState<number | null>(null);
+  const [editFormulaName, setEditFormulaName] = useState('');
+  const [editComposition, setEditComposition] = useState<FormulaCompositionItem[]>([]);
+  const [saving, setSaving] = useState(false);
 
   const fetchFormulas = async (name: string, p: number, s: number) => {
     setLoading(true);
@@ -52,6 +59,53 @@ export default function FormulaSearch() {
       fetchFormulas(searchName, page, size);
     } catch {
       // Error handled by interceptor
+    }
+  };
+
+  const openEditModal = (record: FormulaItem) => {
+    setEditFormulaId(record.id);
+    setEditFormulaName(record.name);
+    setEditComposition(
+      (record.composition || []).map((c) => ({ ...c }))
+    );
+    setEditModalOpen(true);
+  };
+
+  const addRow = () => {
+    setEditComposition([...editComposition, { herb_name: '', default_dosage: '' }]);
+  };
+
+  const removeRow = (index: number) => {
+    setEditComposition(editComposition.filter((_, i) => i !== index));
+  };
+
+  const updateRow = (index: number, field: keyof FormulaCompositionItem, value: string) => {
+    const updated = editComposition.map((item, i) =>
+      i === index ? { ...item, [field]: value } : item
+    );
+    setEditComposition(updated);
+  };
+
+  const handleSaveComposition = async () => {
+    if (editFormulaId === null) return;
+
+    // Validate: filter out empty rows, require at least herb_name
+    const valid = editComposition.filter((c) => c.herb_name.trim() !== '');
+    if (valid.length === 0) {
+      message.warning('请至少添加一味药物');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await updateFormulaComposition(editFormulaId, valid);
+      message.success('组成更新成功');
+      setEditModalOpen(false);
+      fetchFormulas(searchName, page, size);
+    } catch {
+      // Error handled by interceptor
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -122,6 +176,47 @@ export default function FormulaSearch() {
       : []),
   ];
 
+  const editColumns: ColumnsType<FormulaCompositionItem & { key: number }> = [
+    {
+      title: '药物',
+      dataIndex: 'herb_name',
+      key: 'herb_name',
+      render: (_: unknown, _record: FormulaCompositionItem & { key: number }, index: number) => (
+        <Input
+          value={editComposition[index]?.herb_name}
+          onChange={(e) => updateRow(index, 'herb_name', e.target.value)}
+          placeholder="药名"
+        />
+      ),
+    },
+    {
+      title: '用量',
+      dataIndex: 'default_dosage',
+      key: 'default_dosage',
+      width: 150,
+      render: (_: unknown, _record: FormulaCompositionItem & { key: number }, index: number) => (
+        <Input
+          value={editComposition[index]?.default_dosage}
+          onChange={(e) => updateRow(index, 'default_dosage', e.target.value)}
+          placeholder="如 10g"
+        />
+      ),
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 60,
+      render: (_: unknown, _record: FormulaCompositionItem & { key: number }, index: number) => (
+        <Button
+          type="text"
+          danger
+          icon={<MinusCircleOutlined />}
+          onClick={() => removeRow(index)}
+        />
+      ),
+    },
+  ];
+
   return (
     <div>
       <div style={{ marginBottom: 16 }}>
@@ -170,16 +265,56 @@ export default function FormulaSearch() {
                 ) : (
                   <span>无组成信息</span>
                 )}
-                {record.source === 'deepseek' && (
-                  <Tag icon={<RobotOutlined />} color="blue" style={{ marginTop: 8 }}>
-                    数据来源：DeepSeek AI（仅供参考，请结合临床经验）
-                  </Tag>
-                )}
+                <Space style={{ marginTop: 8 }}>
+                  {record.source === 'deepseek' && (
+                    <Tag icon={<RobotOutlined />} color="blue">
+                      数据来源：DeepSeek AI（仅供参考，请结合临床经验）
+                    </Tag>
+                  )}
+                  {hasPermission('role:manage') && (
+                    <Button
+                      type="primary"
+                      size="small"
+                      icon={<EditOutlined />}
+                      onClick={() => openEditModal(record)}
+                    >
+                      编辑组成
+                    </Button>
+                  )}
+                </Space>
               </div>
             );
           },
         }}
       />
+
+      <Modal
+        title={`编辑组成 - ${editFormulaName}`}
+        open={editModalOpen}
+        onCancel={() => setEditModalOpen(false)}
+        onOk={handleSaveComposition}
+        confirmLoading={saving}
+        okText="保存"
+        cancelText="取消"
+        width={600}
+        destroyOnClose
+      >
+        <Table
+          dataSource={editComposition.map((c, idx) => ({ ...c, key: idx }))}
+          columns={editColumns}
+          pagination={false}
+          size="small"
+          bordered
+        />
+        <Button
+          type="dashed"
+          onClick={addRow}
+          icon={<PlusOutlined />}
+          style={{ width: '100%', marginTop: 8 }}
+        >
+          添加药物
+        </Button>
+      </Modal>
     </div>
   );
 }

@@ -150,6 +150,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			formulas.GET("", formulaHandler.List)
 			formulas.GET("/:id", formulaHandler.Detail)
 			formulas.DELETE("/:id", middleware.RequirePermission(db, "role:manage"), formulaHandler.Delete)
+			formulas.PUT("/:id/composition", middleware.RequirePermission(db, "role:manage"), formulaHandler.UpdateComposition)
 		}
 
 		// Prescription routes (tenant-scoped).

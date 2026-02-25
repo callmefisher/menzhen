@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-02-25（补充中药分类接口、AI分析前端、播种脚本）
+> 最后更新：2026-02-25（新增方剂组成编辑功能）
 
 ---
 
@@ -40,7 +40,7 @@ menzhen/
 │   │   ├── record.go                # List/Create/Detail/Update/Delete
 │   │   ├── upload.go                # Upload/GetFile（MinIO）
 │   │   ├── herb.go                  # List/Detail/Delete/Categories
-│   │   ├── formula.go               # List/Detail/Delete
+│   │   ├── formula.go               # List/Detail/Delete/UpdateComposition
 │   │   ├── prescription.go          # Create/Detail/Update/Delete/ListByRecord
 │   │   ├── ai_analysis.go           # Analyze（AI 辩证论治，含缓存）+ GetCached
 │   │   ├── oplog.go                 # ListOpLogs/DeleteOpLog/BatchDeleteOpLogs
@@ -82,7 +82,7 @@ menzhen/
 │       │   ├── patient.ts           # 患者 CRUD
 │       │   ├── record.ts            # 诊疗记录 CRUD + AI分析调用/缓存获取
 │       │   ├── herb.ts              # 中药搜索/详情/删除/分类列表
-│       │   ├── formula.ts           # 方剂搜索/详情/删除
+│       │   ├── formula.ts           # 方剂搜索/详情/删除/更新组成
 │       │   ├── prescription.ts      # 处方 CRUD + 按记录查询
 │       │   ├── upload.ts            # 文件上传
 │       │   ├── oplog.ts             # 操作日志查询/删除
@@ -399,6 +399,7 @@ menzhen/
 |------|------|------|------|
 | GET | `/api/v1/formulas` | - | 搜索方剂（DB + AI 回退），参数：`name`, `page`, `size` |
 | GET | `/api/v1/formulas/:id` | - | 方剂详情 |
+| PUT | `/api/v1/formulas/:id/composition` | `role:manage` | 更新方剂药物组成 |
 | DELETE | `/api/v1/formulas/:id` | `role:manage` | 删除方剂 |
 
 #### 处方管理（租户隔离）
