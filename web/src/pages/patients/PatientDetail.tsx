@@ -11,14 +11,19 @@ import {
   Empty,
   Space,
   message,
+  Popconfirm,
+  Tag,
 } from 'antd';
 import {
   EditOutlined,
   PlusOutlined,
   DownOutlined,
   UpOutlined,
+  DeleteOutlined,
 } from '@ant-design/icons';
 import { getPatient } from '../../api/patient';
+import { deleteRecord } from '../../api/record';
+import type { PrescriptionData } from '../../api/prescription';
 import { getFileUrl } from '../../api/upload';
 import { PatientFormModal } from './PatientForm';
 
@@ -39,6 +44,7 @@ interface MedicalRecord {
   notes: string;
   visit_date: string;
   attachments: Attachment[];
+  prescriptions: PrescriptionData[];
 }
 
 interface PatientData {
@@ -94,6 +100,16 @@ export default function PatientDetail() {
       }
       return next;
     });
+  };
+
+  const handleDeleteRecord = async (recordId: number) => {
+    try {
+      await deleteRecord(recordId);
+      message.success('诊疗记录已删除');
+      fetchPatient();
+    } catch {
+      // handled
+    }
   };
 
   const handleEditSuccess = () => {
@@ -183,6 +199,7 @@ export default function PatientDetail() {
             items={records.map((record) => {
               const isExpanded = expandedRecords.has(record.id);
               const attachments = record.attachments || [];
+              const prescriptions = record.prescriptions || [];
               const imageAttachments = attachments.filter(
                 (a) => a.file_type === 'image'
               );
@@ -226,16 +243,52 @@ export default function PatientDetail() {
                       )}
                     </div>
 
-                    {/* Expand/collapse button */}
-                    <Button
-                      type="link"
-                      size="small"
-                      style={{ padding: 0 }}
-                      onClick={() => toggleExpand(record.id)}
-                      icon={isExpanded ? <UpOutlined /> : <DownOutlined />}
-                    >
-                      {isExpanded ? '收起' : '展开'}
-                    </Button>
+                    {/* Prescription summary - always visible */}
+                    {prescriptions.length > 0 && (
+                      <div style={{ marginBottom: 8 }}>
+                        {prescriptions.map((rx) => (
+                          <Tag key={rx.id} color="geekblue" style={{ marginBottom: 4 }}>
+                            {rx.formula_name || '自定义处方'} {rx.total_doses}付
+                            {rx.items && rx.items.length > 0 && (
+                              <span style={{ marginLeft: 4, fontSize: 12, opacity: 0.8 }}>
+                                ({rx.items.slice(0, 3).map(i => i.herb_name).join('、')}{rx.items.length > 3 ? '...' : ''})
+                              </span>
+                            )}
+                          </Tag>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Action buttons */}
+                    <Space size="small">
+                      <Button
+                        type="link"
+                        size="small"
+                        style={{ padding: 0 }}
+                        onClick={() => toggleExpand(record.id)}
+                        icon={isExpanded ? <UpOutlined /> : <DownOutlined />}
+                      >
+                        {isExpanded ? '收起' : '展开'}
+                      </Button>
+                      <Button
+                        type="link"
+                        size="small"
+                        icon={<EditOutlined />}
+                        onClick={() => navigate(`/records/${record.id}`)}
+                      >
+                        编辑
+                      </Button>
+                      <Popconfirm
+                        title="确定删除此诊疗记录？"
+                        onConfirm={() => handleDeleteRecord(record.id)}
+                        okText="确定"
+                        cancelText="取消"
+                      >
+                        <Button type="link" size="small" danger icon={<DeleteOutlined />}>
+                          删除
+                        </Button>
+                      </Popconfirm>
+                    </Space>
 
                     {/* Expanded content */}
                     {isExpanded && (
@@ -371,6 +424,31 @@ export default function PatientDetail() {
                                   >
                                     您的浏览器不支持视频播放
                                   </video>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Prescriptions */}
+                        {prescriptions.length > 0 && (
+                          <div style={{ marginBottom: 8 }}>
+                            <Text strong>处方：</Text>
+                            <div style={{ marginTop: 4 }}>
+                              {prescriptions.map((rx) => (
+                                <div key={rx.id} style={{ marginBottom: 8, padding: 8, background: '#fff', borderRadius: 4, border: '1px solid #e8e8e8' }}>
+                                  <Space>
+                                    <Text strong>{rx.formula_name || '自定义处方'}</Text>
+                                    <Tag color="blue">{rx.total_doses} 付</Tag>
+                                  </Space>
+                                  <div style={{ marginTop: 4, fontSize: 13 }}>
+                                    {(rx.items || []).map((item) => `${item.herb_name} ${item.dosage}`).join('、')}
+                                  </div>
+                                  {rx.notes && (
+                                    <div style={{ marginTop: 4, color: '#666', fontSize: 12 }}>
+                                      医嘱：{rx.notes}
+                                    </div>
+                                  )}
                                 </div>
                               ))}
                             </div>

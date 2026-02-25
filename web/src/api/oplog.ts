@@ -22,3 +22,11 @@ export interface OpLogItem {
 export function listOpLogs(params: OpLogListParams) {
   return request.get('/oplogs', { params });
 }
+
+export function deleteOpLog(id: number) {
+  return request.delete(`/oplogs/${id}`);
+}
+
+export function batchDeleteOpLogs(ids: number[]) {
+  return request.post('/oplogs/batch-delete', { ids });
+}

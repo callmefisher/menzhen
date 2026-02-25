@@ -15,6 +15,8 @@ type UpdateUserRequest struct {
 	RealName *string `json:"real_name"`
 	Phone    *string `json:"phone"`
 	Status   *int8   `json:"status"`
+	TenantID *uint64 `json:"tenant_id"`
+	Notes    *string `json:"notes"`
 }
 
 // AssignRolesRequest is the input for assigning roles to a user.
@@ -32,24 +34,23 @@ func NewUserService(db *gorm.DB) *UserService {
 	return &UserService{DB: db}
 }
 
-// ListUsers returns a paginated list of users for the given tenant.
-// Results include preloaded Roles and are ordered by created_at DESC.
-func (s *UserService) ListUsers(tenantID uint64, page, size int) ([]model.User, int64, error) {
+// ListUsers returns a paginated list of all users across tenants.
+// Results include preloaded Roles and Tenant, ordered by created_at DESC.
+func (s *UserService) ListUsers(page, size int) ([]model.User, int64, error) {
 	var users []model.User
 	var total int64
 
-	query := s.DB.Model(&model.User{}).Where("tenant_id = ?", tenantID)
+	query := s.DB.Model(&model.User{})
 
-	// Get total count before pagination.
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	// Fetch paginated results with preloaded Roles.
 	if err := query.Order("created_at DESC").
 		Offset((page - 1) * size).
 		Limit(size).
 		Preload("Roles").
+		Preload("Tenant").
 		Find(&users).Error; err != nil {
 		return nil, 0, err
 	}
@@ -58,9 +59,14 @@ func (s *UserService) ListUsers(tenantID uint64, page, size int) ([]model.User, 
 }
 
 // UpdateUser updates an existing user's profile fields (real_name, phone, status).
+// When tenantID is 0, the update is cross-tenant (for admins with user:manage).
 func (s *UserService) UpdateUser(tenantID, id uint64, req *UpdateUserRequest) (*model.User, error) {
 	var user model.User
-	if err := s.DB.Where("tenant_id = ?", tenantID).First(&user, id).Error; err != nil {
+	query := s.DB
+	if tenantID > 0 {
+		query = query.Where("tenant_id = ?", tenantID)
+	}
+	if err := query.First(&user, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrUserNotFound
 		}
@@ -78,6 +84,12 @@ func (s *UserService) UpdateUser(tenantID, id uint64, req *UpdateUserRequest) (*
 	if req.Status != nil {
 		updates["status"] = *req.Status
 	}
+	if req.TenantID != nil {
+		updates["tenant_id"] = *req.TenantID
+	}
+	if req.Notes != nil {
+		updates["notes"] = *req.Notes
+	}
 
 	if len(updates) > 0 {
 		if err := s.DB.Model(&user).Updates(updates).Error; err != nil {
@@ -85,8 +97,8 @@ func (s *UserService) UpdateUser(tenantID, id uint64, req *UpdateUserRequest) (*
 		}
 	}
 
-	// Reload to get the updated record with roles.
-	if err := s.DB.Where("tenant_id = ?", tenantID).Preload("Roles").First(&user, id).Error; err != nil {
+	// Reload to get the updated record with roles and tenant.
+	if err := s.DB.Preload("Roles").Preload("Tenant").First(&user, id).Error; err != nil {
 		return nil, err
 	}
 
@@ -94,9 +106,14 @@ func (s *UserService) UpdateUser(tenantID, id uint64, req *UpdateUserRequest) (*
 }
 
 // DeleteUser disables a user by setting status to 0 (soft disable, not actual delete).
+// When tenantID is 0, the operation is cross-tenant.
 func (s *UserService) DeleteUser(tenantID, id uint64) error {
 	var user model.User
-	if err := s.DB.Where("tenant_id = ?", tenantID).First(&user, id).Error; err != nil {
+	query := s.DB
+	if tenantID > 0 {
+		query = query.Where("tenant_id = ?", tenantID)
+	}
+	if err := query.First(&user, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrUserNotFound
 		}
@@ -112,21 +129,24 @@ func (s *UserService) DeleteUser(tenantID, id uint64) error {
 }
 
 // AssignRoles replaces a user's roles with the given role IDs.
-// It verifies that all specified roles belong to the same tenant.
+// It verifies that all specified roles belong to the user's tenant.
 func (s *UserService) AssignRoles(tenantID, userID uint64, roleIDs []uint64) error {
-	// Verify user exists in tenant.
+	// Verify user exists.
 	var user model.User
-	if err := s.DB.Where("tenant_id = ?", tenantID).First(&user, userID).Error; err != nil {
+	if err := s.DB.First(&user, userID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrUserNotFound
 		}
 		return err
 	}
 
-	// Verify all roles belong to the tenant.
+	// Use the user's own tenant for role verification.
+	userTenantID := user.TenantID
+
+	// Verify all roles belong to the user's tenant.
 	var roles []model.Role
 	if len(roleIDs) > 0 {
-		if err := s.DB.Where("id IN ? AND tenant_id = ?", roleIDs, tenantID).Find(&roles).Error; err != nil {
+		if err := s.DB.Where("id IN ? AND tenant_id = ?", roleIDs, userTenantID).Find(&roles).Error; err != nil {
 			return err
 		}
 		if len(roles) != len(roleIDs) {

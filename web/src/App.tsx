@@ -12,6 +12,7 @@ import PatientForm from './pages/patients/PatientForm';
 import OpLogList from './pages/OpLogList';
 import UserList from './pages/settings/UserList';
 import RoleList from './pages/settings/RoleList';
+import TenantList from './pages/settings/TenantList';
 import HerbSearch from './pages/herbs/HerbSearch';
 import FormulaSearch from './pages/formulas/FormulaSearch';
 import type { ReactNode } from 'react';
@@ -66,6 +67,7 @@ function AppRoutes() {
         <Route path="oplogs" element={<OpLogList />} />
         <Route path="settings/users" element={<UserList />} />
         <Route path="settings/roles" element={<RoleList />} />
+        <Route path="settings/tenants" element={<TenantList />} />
       </Route>
       <Route path="*" element={<Navigate to="/records" replace />} />
     </Routes>

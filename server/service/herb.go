@@ -72,7 +72,25 @@ func (s *HerbService) GetByID(id uint64) (*model.Herb, error) {
 	return &herb, nil
 }
 
-// queryAndSaveFromAI queries DeepSeek for herb info and saves the result to DB.
+// isValidHerbResult checks whether the AI result contains meaningful herb data.
+// A valid herb must have at least effects or indications.
+func isValidHerbResult(result *HerbAIResult) bool {
+	return result.Effects != "" || result.Indications != ""
+}
+
+// DeleteByID deletes a herb by ID.
+func (s *HerbService) DeleteByID(id uint64) error {
+	result := s.DB.Delete(&model.Herb{}, id)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrHerbNotFound
+	}
+	return nil
+}
+
+// queryAndSaveFromAI queries DeepSeek for herb info. Only saves valid results to DB.
 func (s *HerbService) queryAndSaveFromAI(name string) (*model.Herb, error) {
 	result, err := s.DeepSeek.QueryHerb(name)
 	if err != nil {
@@ -87,6 +105,12 @@ func (s *HerbService) queryAndSaveFromAI(name string) (*model.Herb, error) {
 		Effects:     result.Effects,
 		Indications: result.Indications,
 		Source:      "deepseek",
+	}
+
+	// Only save valid results (with meaningful herb data) to the database
+	if !isValidHerbResult(result) {
+		log.Printf("AI herb result for %q is invalid (no effects/indications), skipping save", name)
+		return &herb, nil
 	}
 
 	if err := s.DB.Create(&herb).Error; err != nil {

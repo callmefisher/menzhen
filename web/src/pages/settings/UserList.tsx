@@ -12,6 +12,7 @@ import {
   Input,
   Radio,
   Checkbox,
+  Select,
 } from 'antd';
 import {
   EditOutlined,
@@ -20,6 +21,12 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { listUsers, updateUser, assignRoles } from '../../api/user';
 import { listRoles } from '../../api/role';
+import { listTenants } from '../../api/tenant';
+
+interface TenantItem {
+  id: number;
+  name: string;
+}
 
 interface RoleItem {
   id: number;
@@ -31,7 +38,10 @@ interface UserItem {
   username: string;
   real_name: string;
   phone: string;
+  notes: string;
   status: number;
+  tenant_id: number;
+  tenant?: TenantItem;
   roles: RoleItem[];
   created_at: string;
 }
@@ -52,6 +62,7 @@ export default function UserList() {
   const [editingUser, setEditingUser] = useState<UserItem | null>(null);
   const [editForm] = Form.useForm();
   const [editLoading, setEditLoading] = useState(false);
+  const [allTenants, setAllTenants] = useState<TenantItem[]>([]);
 
   // Role assignment modal state
   const [roleModalVisible, setRoleModalVisible] = useState(false);
@@ -87,14 +98,24 @@ export default function UserList() {
   }, [params, fetchData]);
 
   // --- Edit user ---
-  const handleEdit = (record: UserItem) => {
+  const handleEdit = async (record: UserItem) => {
     setEditingUser(record);
     editForm.setFieldsValue({
       real_name: record.real_name,
       phone: record.phone,
       status: record.status,
+      tenant_id: record.tenant_id,
+      notes: record.notes,
     });
     setEditModalVisible(true);
+    // Load tenants for selector
+    try {
+      const res = await listTenants({ page: 1, size: 100 });
+      const body = res as unknown as { data: { list: TenantItem[] } };
+      setAllTenants(body.data.list || []);
+    } catch {
+      // handled
+    }
   };
 
   const handleEditSubmit = async () => {
@@ -105,6 +126,8 @@ export default function UserList() {
         real_name: values.real_name,
         phone: values.phone,
         status: values.status,
+        tenant_id: values.tenant_id,
+        notes: values.notes,
       });
       message.success('更新成功');
       setEditModalVisible(false);
@@ -180,6 +203,20 @@ export default function UserList() {
       dataIndex: 'phone',
       key: 'phone',
       width: 140,
+      render: (val: string) => val || '-',
+    },
+    {
+      title: '所属诊所',
+      key: 'tenant',
+      width: 120,
+      render: (_: unknown, record: UserItem) => record.tenant?.name || '-',
+    },
+    {
+      title: '备注',
+      dataIndex: 'notes',
+      key: 'notes',
+      width: 150,
+      ellipsis: true,
       render: (val: string) => val || '-',
     },
     {
@@ -299,6 +336,18 @@ export default function UserList() {
           </Form.Item>
           <Form.Item name="phone" label="手机号">
             <Input placeholder="请输入手机号" />
+          </Form.Item>
+          <Form.Item name="tenant_id" label="所属诊所">
+            <Select
+              placeholder="请选择所属诊所"
+              options={allTenants.map((t) => ({
+                value: t.id,
+                label: t.name,
+              }))}
+            />
+          </Form.Item>
+          <Form.Item name="notes" label="备注">
+            <Input.TextArea rows={2} placeholder="请输入备注" />
           </Form.Item>
           <Form.Item name="status" label="状态">
             <Radio.Group>

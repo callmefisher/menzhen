@@ -11,7 +11,7 @@ import (
 var (
 	ErrInvalidCredentials = errors.New("invalid username or password")
 	ErrUserDisabled       = errors.New("user account is disabled")
-	ErrUsernameExists     = errors.New("username already exists in this tenant")
+	ErrUsernameExists     = errors.New("该用户名已被注册")
 	ErrUserNotFound       = errors.New("user not found")
 	ErrWrongOldPassword   = errors.New("旧密码错误")
 )
@@ -52,10 +52,10 @@ func (s *AuthService) Login(username, password string) (*model.User, error) {
 
 // Register creates a new user within the specified tenant.
 func (s *AuthService) Register(tenantID uint64, username, password, realName, phone string) (*model.User, error) {
-	// Check username uniqueness within the tenant.
+	// Check username uniqueness globally (login uses username without tenant context).
 	var count int64
 	s.DB.Model(&model.User{}).
-		Where("tenant_id = ? AND username = ?", tenantID, username).
+		Where("username = ?", username).
 		Count(&count)
 	if count > 0 {
 		return nil, ErrUsernameExists

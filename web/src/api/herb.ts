@@ -26,3 +26,7 @@ export function listHerbs(params: HerbListParams) {
 export function getHerb(id: number) {
   return request.get(`/herbs/${id}`);
 }
+
+export function deleteHerb(id: number) {
+  return request.delete(`/herbs/${id}`);
+}

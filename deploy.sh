@@ -58,7 +58,10 @@ done
 
 # 4. Build and start services
 echo ">> 构建服务..."
-docker compose build
+docker compose build --no-cache web api
+
+echo ">> 停止旧服务..."
+docker compose down
 
 echo ">> 启动服务..."
 docker compose up -d

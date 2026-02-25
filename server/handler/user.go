@@ -23,8 +23,6 @@ func NewUserHandler(db *gorm.DB) *UserHandler {
 
 // List handles GET /api/v1/users.
 func (h *UserHandler) List(c *gin.Context) {
-	tenantID := middleware.GetTenantID(c)
-
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	if page < 1 {
 		page = 1
@@ -35,7 +33,7 @@ func (h *UserHandler) List(c *gin.Context) {
 	}
 
 	svc := service.NewUserService(h.db)
-	users, total, err := svc.ListUsers(tenantID, page, size)
+	users, total, err := svc.ListUsers(page, size)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -58,7 +56,6 @@ func (h *UserHandler) List(c *gin.Context) {
 
 // Update handles PUT /api/v1/users/:id.
 func (h *UserHandler) Update(c *gin.Context) {
-	tenantID := middleware.GetTenantID(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -78,7 +75,7 @@ func (h *UserHandler) Update(c *gin.Context) {
 	}
 
 	svc := service.NewUserService(h.db)
-	user, err := svc.UpdateUser(tenantID, id, &req)
+	user, err := svc.UpdateUser(0, id, &req)
 	if err != nil {
 		if errors.Is(err, service.ErrUserNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{
@@ -94,6 +91,8 @@ func (h *UserHandler) Update(c *gin.Context) {
 		return
 	}
 
+	middleware.LogOperation(h.db, c, "update", "user", id, nil, user)
+
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"message": "success",
@@ -104,7 +103,6 @@ func (h *UserHandler) Update(c *gin.Context) {
 // Delete handles DELETE /api/v1/users/:id.
 // This disables the user (sets status to 0) rather than actually deleting.
 func (h *UserHandler) Delete(c *gin.Context) {
-	tenantID := middleware.GetTenantID(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -115,7 +113,7 @@ func (h *UserHandler) Delete(c *gin.Context) {
 	}
 
 	svc := service.NewUserService(h.db)
-	if err := svc.DeleteUser(tenantID, id); err != nil {
+	if err := svc.DeleteUser(0, id); err != nil {
 		if errors.Is(err, service.ErrUserNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{
 				"code":    404,

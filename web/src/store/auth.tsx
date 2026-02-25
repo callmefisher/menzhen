@@ -13,6 +13,7 @@ interface User {
   username: string;
   real_name: string;
   tenant_id: number;
+  tenant_name?: string;
 }
 
 interface AuthState {
@@ -61,6 +62,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             permissions: body.data.permissions || [],
             loading: false,
           }));
+          if (body.data.user.tenant_name) {
+            document.title = body.data.user.tenant_name;
+          }
         })
         .catch(() => {
           clearStoredToken();
@@ -96,6 +100,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       token: body.data.token,
       loading: false,
     });
+    if (body.data.user.tenant_name) {
+      document.title = body.data.user.tenant_name;
+    }
   }, []);
 
   const logout = useCallback(async () => {

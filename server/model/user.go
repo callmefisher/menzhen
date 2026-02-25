@@ -10,6 +10,7 @@ type User struct {
 	PasswordHash string    `gorm:"column:password_hash;type:varchar(255);not null" json:"-"`
 	RealName     string    `gorm:"column:real_name;type:varchar(50);not null" json:"real_name"`
 	Phone        string    `gorm:"column:phone;type:varchar(20)" json:"phone"`
+	Notes        string    `gorm:"column:notes;type:text" json:"notes"`
 	Status       int8      `gorm:"column:status;type:tinyint;default:1;not null;comment:1=enabled 0=disabled" json:"status"`
 	CreatedAt    time.Time `json:"created_at"`
 

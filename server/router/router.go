@@ -43,6 +43,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	herbHandler := handler.NewHerbHandler(db, deepSeekService)
 	formulaHandler := handler.NewFormulaHandler(db, deepSeekService)
 	prescriptionHandler := handler.NewPrescriptionHandler(db)
+	tenantHandler := handler.NewTenantHandler(db)
 
 	// ---------- Route groups ----------
 
@@ -97,6 +98,8 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		oplogs := authenticated.Group("/oplogs")
 		{
 			oplogs.GET("", middleware.RequirePermission(db, "oplog:read"), oplogHandler.ListOpLogs)
+			oplogs.DELETE("/:id", middleware.RequirePermission(db, "role:manage"), oplogHandler.DeleteOpLog)
+			oplogs.POST("/batch-delete", middleware.RequirePermission(db, "role:manage"), oplogHandler.BatchDeleteOpLogs)
 		}
 
 		// User management routes.
@@ -119,18 +122,29 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		// Permissions list route.
 		authenticated.GET("/permissions", middleware.RequirePermission(db, "role:manage"), roleHandler.ListPermissions)
 
-		// Herb routes (global data, authenticated).
-		herbs := authenticated.Group("/herbs")
+		// Tenant management routes.
+		tenants := authenticated.Group("/tenants")
 		{
-			herbs.GET("", middleware.RequirePermission(db, "herb:read"), herbHandler.List)
-			herbs.GET("/:id", middleware.RequirePermission(db, "herb:read"), herbHandler.Detail)
+			tenants.GET("", middleware.RequirePermission(db, "tenant:manage"), tenantHandler.List)
+			tenants.POST("", middleware.RequirePermission(db, "tenant:manage"), tenantHandler.Create)
+			tenants.PUT("/:id", middleware.RequirePermission(db, "tenant:manage"), tenantHandler.Update)
+			tenants.DELETE("/:id", middleware.RequirePermission(db, "tenant:manage"), tenantHandler.Delete)
 		}
 
-		// Formula routes (global data, authenticated).
+		// Herb routes (global data, authenticated, no permission required for read).
+		herbs := authenticated.Group("/herbs")
+		{
+			herbs.GET("", herbHandler.List)
+			herbs.GET("/:id", herbHandler.Detail)
+			herbs.DELETE("/:id", middleware.RequirePermission(db, "role:manage"), herbHandler.Delete)
+		}
+
+		// Formula routes (global data, authenticated, no permission required for read).
 		formulas := authenticated.Group("/formulas")
 		{
-			formulas.GET("", middleware.RequirePermission(db, "formula:read"), formulaHandler.List)
-			formulas.GET("/:id", middleware.RequirePermission(db, "formula:read"), formulaHandler.Detail)
+			formulas.GET("", formulaHandler.List)
+			formulas.GET("/:id", formulaHandler.Detail)
+			formulas.DELETE("/:id", middleware.RequirePermission(db, "role:manage"), formulaHandler.Delete)
 		}
 
 		// Prescription routes (tenant-scoped).
