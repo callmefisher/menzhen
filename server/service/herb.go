@@ -60,6 +60,17 @@ func (s *HerbService) Search(name, category string, page, size int) ([]model.Her
 	return herbs, total, nil
 }
 
+// ListCategories returns all distinct non-empty category values.
+func (s *HerbService) ListCategories() ([]string, error) {
+	var categories []string
+	err := s.DB.Model(&model.Herb{}).
+		Where("category != ''").
+		Distinct("category").
+		Order("category").
+		Pluck("category", &categories).Error
+	return categories, err
+}
+
 // GetByID retrieves a single herb by ID.
 func (s *HerbService) GetByID(id uint64) (*model.Herb, error) {
 	var herb model.Herb

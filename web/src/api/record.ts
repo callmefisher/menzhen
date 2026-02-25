@@ -37,6 +37,10 @@ export function deleteRecord(id: number) {
   return request.delete(`/records/${id}`);
 }
 
-export function aiAnalyzeDiagnosis(diagnosis: string) {
-  return request.post('/ai/analyze-diagnosis', { diagnosis }, { timeout: 120000 });
+export function aiAnalyzeDiagnosis(diagnosis: string, recordId?: number, force?: boolean) {
+  return request.post('/ai/analyze-diagnosis', { diagnosis, record_id: recordId, force }, { timeout: 120000 });
+}
+
+export function getCachedAiAnalysis(recordId: number) {
+  return request.get(`/records/${recordId}/ai-analysis`);
 }

@@ -54,6 +54,18 @@ func (h *HerbHandler) List(c *gin.Context) {
 	})
 }
 
+// Categories handles GET /api/v1/herbs/categories
+func (h *HerbHandler) Categories(c *gin.Context) {
+	svc := service.NewHerbService(h.db, h.deepSeek)
+	categories, err := svc.ListCategories()
+	if err != nil {
+		Error(c, http.StatusInternalServerError, "failed to list categories")
+		return
+	}
+
+	Success(c, categories)
+}
+
 // Detail handles GET /api/v1/herbs/:id
 func (h *HerbHandler) Detail(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)

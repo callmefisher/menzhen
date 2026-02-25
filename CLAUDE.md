@@ -38,6 +38,8 @@
 
 保持CLAUDE.md的行数在合理范围内，如果涉及更长篇幅的文档，需要作为子md文档，外链到CLAUDE.md中
 
+### 8. Codebase 文档同步
+每次项目变更后必须检查并更新 `docs/codebase.md`，确保文档与代码同步。该文档作为任务执行前的上下文扫描入口。
 
 ### 经验教训（持续更新）
 - 前端测试需要在 `src/test/setup.ts` 中 polyfill `ResizeObserver` 和 `window.matchMedia`（antd 组件依赖）
@@ -105,18 +107,22 @@ menzhen/
 - `prescriptions` — 处方（租户隔离，关联诊疗记录）
 - `prescription_items` — 处方药物明细
 
+### AI 相关表
+- `ai_analyses` — AI辩证论治分析缓存（租户隔离，record_id 唯一索引）
+
 ### 权限码
-`patient:create/read/update/delete`, `record:create/read/update/delete`, `oplog:read`, `user:manage`, `role:manage`, `herb:read`, `formula:read`, `prescription:create`, `prescription:read`
+`patient:create/read/update/delete`, `record:create/read/update/delete`, `oplog:read`, `user:manage`, `role:manage`, `herb:read`, `formula:read`, `prescription:create`, `prescription:read`, `tenant:manage`
 
 ## API 路由
 
 ### 中医药相关
 | 方法 | 路径 | 权限 | 说明 |
 |------|------|------|------|
-| GET | `/api/v1/herbs` | herb:read | 搜索中药（DB+AI回退） |
-| GET | `/api/v1/herbs/:id` | herb:read | 中药详情 |
-| GET | `/api/v1/formulas` | formula:read | 搜索方剂（DB+AI回退） |
-| GET | `/api/v1/formulas/:id` | formula:read | 方剂详情 |
+| GET | `/api/v1/herbs` | - | 搜索中药（DB+AI回退） |
+| GET | `/api/v1/herbs/categories` | - | 中药分类列表 |
+| GET | `/api/v1/herbs/:id` | - | 中药详情 |
+| GET | `/api/v1/formulas` | - | 搜索方剂（DB+AI回退） |
+| GET | `/api/v1/formulas/:id` | - | 方剂详情 |
 | POST | `/api/v1/prescriptions` | prescription:create | 创建处方 |
 | GET | `/api/v1/prescriptions/:id` | prescription:read | 处方详情 |
 | PUT | `/api/v1/prescriptions/:id` | prescription:create | 更新处方 |
@@ -126,7 +132,8 @@ menzhen/
 ### AI 分析
 | 方法 | 路径 | 权限 | 说明 |
 |------|------|------|------|
-| POST | `/api/v1/ai/analyze-diagnosis` | record:read | AI 辅助辩证论治分析 |
+| POST | `/api/v1/ai/analyze-diagnosis` | record:read | AI 辅助辩证论治分析（支持缓存） |
+| GET | `/api/v1/records/:id/ai-analysis` | record:read | 获取已缓存的 AI 分析结果 |
 
 ## 开发环境
 
@@ -156,3 +163,4 @@ DeepSeek AI 相关（可选）：
 - [运维操作手册](docs/operations-guide.md)
 - [设计方案](docs/plans/2026-02-24-medical-record-system-design.md)
 - [实施计划](docs/plans/2026-02-24-medical-record-system-plan.md)
+- [Codebase 全局上下文](docs/codebase.md)

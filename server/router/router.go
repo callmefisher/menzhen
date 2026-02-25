@@ -44,7 +44,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	formulaHandler := handler.NewFormulaHandler(db, deepSeekService)
 	prescriptionHandler := handler.NewPrescriptionHandler(db)
 	tenantHandler := handler.NewTenantHandler(db)
-	aiAnalysisHandler := handler.NewAIAnalysisHandler(deepSeekService)
+	aiAnalysisHandler := handler.NewAIAnalysisHandler(deepSeekService, db)
 
 	// ---------- Route groups ----------
 
@@ -139,6 +139,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		herbs := authenticated.Group("/herbs")
 		{
 			herbs.GET("", herbHandler.List)
+			herbs.GET("/categories", herbHandler.Categories)
 			herbs.GET("/:id", herbHandler.Detail)
 			herbs.DELETE("/:id", middleware.RequirePermission(db, "role:manage"), herbHandler.Delete)
 		}
@@ -162,6 +163,9 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 
 		// Prescription list by record (nested under records).
 		records.GET("/:id/prescriptions", middleware.RequirePermission(db, "prescription:read"), prescriptionHandler.ListByRecord)
+
+		// Cached AI analysis for a record (nested under records).
+		records.GET("/:id/ai-analysis", middleware.RequirePermission(db, "record:read"), aiAnalysisHandler.GetCached)
 	}
 
 	return r
