@@ -77,12 +77,13 @@ export default function Register() {
           onFinish={handleSubmit}
           autoComplete="off"
           size="large"
+          initialValues={{ tenant_code: 'default' }}
         >
           <Form.Item
             name="tenant_code"
             rules={[{ required: true, message: '请输入诊所编码' }]}
           >
-            <Input prefix={<BankOutlined />} placeholder="诊所编码" />
+            <Input prefix={<BankOutlined />} placeholder="诊所编码（默认：default）" />
           </Form.Item>
 
           <Form.Item

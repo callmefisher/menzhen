@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Form,
   Input,
@@ -22,7 +22,7 @@ import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import { getRecord, createRecord, updateRecord } from '../../api/record';
-import { listPatients, createPatient } from '../../api/patient';
+import { listPatients, createPatient, getPatient } from '../../api/patient';
 import {
   listPrescriptionsByRecord,
   deletePrescription,
@@ -58,11 +58,15 @@ interface NewPatientFormValues {
   weight?: number;
   phone?: string;
   id_card?: string;
+  address?: string;
+  native_place?: string;
+  notes?: string;
 }
 
 export default function RecordForm() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
   const isEdit = Boolean(id);
   const { hasPermission } = useAuth();
 
@@ -92,7 +96,7 @@ export default function RecordForm() {
   const searchPatients = useCallback(async (name?: string) => {
     setPatientLoading(true);
     try {
-      const res = await listPatients({ name, page: 1, size: 50 });
+      const res = await listPatients({ name, page: 1, size: 10 });
       const body = res as unknown as {
         data: { list: PatientOption[]; total: number };
       };
@@ -120,6 +124,41 @@ export default function RecordForm() {
   useEffect(() => {
     searchPatients();
   }, [searchPatients]);
+
+  // Auto-fill patient from URL query param (e.g., ?patient_id=123)
+  useEffect(() => {
+    if (isEdit) return; // Only for new records
+    const patientIdParam = searchParams.get('patient_id');
+    if (!patientIdParam) return;
+    const patientId = Number(patientIdParam);
+    if (!patientId) return;
+
+    // Check if patient is already in the loaded list
+    const found = patients.find((p) => p.id === patientId);
+    if (found) {
+      form.setFieldValue('patient_id', patientId);
+    } else {
+      // Fetch the specific patient and add to options
+      getPatient(patientId)
+        .then((res) => {
+          const body = res as unknown as { data: PatientOption };
+          const p = body.data;
+          if (p) {
+            setPatients((prev) => {
+              const exists = prev.some((item) => item.id === p.id);
+              if (!exists) return [p, ...prev];
+              return prev;
+            });
+            form.setFieldValue('patient_id', p.id);
+          }
+        })
+        .catch(() => {
+          // Patient not found or no access — ignore
+        });
+    }
+    // Only run when patients list is first loaded
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patients.length]);
 
   // Load record data in edit mode
   useEffect(() => {
@@ -231,11 +270,18 @@ export default function RecordForm() {
           attachments: payload.attachments,
         });
         message.success('诊疗记录更新成功');
+        navigate('/records');
       } else {
-        await createRecord(payload);
+        const res = await createRecord(payload);
+        const body = res as unknown as { data: { id: number } };
         message.success('诊疗记录创建成功');
+        // Redirect to edit page so user can immediately add prescriptions
+        if (body.data?.id) {
+          navigate(`/records/${body.data.id}`);
+        } else {
+          navigate('/records');
+        }
       }
-      navigate('/records');
     } catch {
       // Error already handled by request interceptor
     } finally {
@@ -535,6 +581,18 @@ export default function RecordForm() {
 
           <Form.Item label="身份证号" name="id_card">
             <Input placeholder="请输入身份证号" />
+          </Form.Item>
+
+          <Form.Item label="现居住地" name="address">
+            <Input placeholder="请输入现居住地" />
+          </Form.Item>
+
+          <Form.Item label="籍贯" name="native_place">
+            <Input placeholder="请输入籍贯" />
+          </Form.Item>
+
+          <Form.Item label="备注" name="notes">
+            <Input.TextArea rows={3} placeholder="请输入备注" />
           </Form.Item>
         </Form>
       </Modal>

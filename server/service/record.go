@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/callmefisher/menzhen/server/model"
@@ -155,7 +156,12 @@ func (s *RecordService) ListRecords(tenantID uint64, name, date string, page, si
 		query = query.Where("patients.name LIKE ?", "%"+name+"%")
 	}
 	if date != "" {
-		query = query.Where("medical_records.visit_date = ?", date)
+		dates := strings.Split(date, ",")
+		if len(dates) == 2 {
+			query = query.Where("medical_records.visit_date BETWEEN ? AND ?", dates[0], dates[1])
+		} else {
+			query = query.Where("medical_records.visit_date = ?", date)
+		}
 	}
 
 	// Get total count before pagination.

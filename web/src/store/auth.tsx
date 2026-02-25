@@ -23,18 +23,27 @@ interface AuthState {
 }
 
 interface AuthContextValue extends AuthState {
-  login: (username: string, password: string) => Promise<void>;
+  login: (username: string, password: string, remember?: boolean) => Promise<void>;
   logout: () => Promise<void>;
   hasPermission: (code: string) => boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+function getStoredToken(): string | null {
+  return localStorage.getItem('token') || sessionStorage.getItem('token');
+}
+
+function clearStoredToken() {
+  localStorage.removeItem('token');
+  sessionStorage.removeItem('token');
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({
     user: null,
     permissions: [],
-    token: localStorage.getItem('token'),
+    token: getStoredToken(),
     loading: true,
   });
 
@@ -43,7 +52,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (state.token) {
       getMe()
         .then((res) => {
-          // response interceptor already unwraps response.data
           const body = res as unknown as {
             data: { user: User; permissions: string[] };
           };
@@ -55,7 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }));
         })
         .catch(() => {
-          localStorage.removeItem('token');
+          clearStoredToken();
           setState({
             user: null,
             permissions: [],
@@ -70,13 +78,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const login = useCallback(async (username: string, password: string) => {
+  const login = useCallback(async (username: string, password: string, remember?: boolean) => {
     const res = await loginApi({ username, password });
-    // response interceptor already unwraps response.data
     const body = res as unknown as {
       data: { token: string; user: User; permissions: string[] };
     };
-    localStorage.setItem('token', body.data.token);
+    // Clear both storages first, then store in the appropriate one
+    clearStoredToken();
+    if (remember) {
+      localStorage.setItem('token', body.data.token);
+    } else {
+      sessionStorage.setItem('token', body.data.token);
+    }
     setState({
       user: body.data.user,
       permissions: body.data.permissions || [],
@@ -89,7 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await logoutApi();
     } finally {
-      localStorage.removeItem('token');
+      clearStoredToken();
       setState({
         user: null,
         permissions: [],

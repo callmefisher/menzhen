@@ -9,5 +9,5 @@ export function uploadFile(file: File) {
 }
 
 export function getFileUrl(key: string) {
-  return `/api/v1/files/${encodeURIComponent(key)}`;
+  return `/api/v1/files/${key}`;
 }

@@ -44,25 +44,27 @@ func (s *DeepSeekService) IsEnabled() bool {
 	return s.APIKey != ""
 }
 
-// DeepSeek API request/response types
+// API request/response types (Anthropic Messages API format)
 
-type deepSeekMessage struct {
+type aiMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
 
-type deepSeekRequest struct {
-	Model    string            `json:"model"`
-	Messages []deepSeekMessage `json:"messages"`
-	MaxTokens int             `json:"max_tokens,omitempty"`
+type aiRequest struct {
+	Model     string      `json:"model"`
+	System    string      `json:"system,omitempty"`
+	Messages  []aiMessage `json:"messages"`
+	MaxTokens int         `json:"max_tokens"`
 }
 
-type deepSeekChoice struct {
-	Message deepSeekMessage `json:"message"`
+type aiContentBlock struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
 }
 
-type deepSeekResponse struct {
-	Choices []deepSeekChoice `json:"choices"`
+type aiResponse struct {
+	Content []aiContentBlock `json:"content"`
 }
 
 // HerbAIResult is the parsed result from DeepSeek for herb queries.
@@ -169,12 +171,12 @@ JSON格式如下:
 	return &result, nil
 }
 
-// chat sends a request to the DeepSeek API and returns the response content.
+// chat sends a request to the AI API (Anthropic Messages format) and returns the response text.
 func (s *DeepSeekService) chat(systemPrompt, userPrompt string) (string, error) {
-	reqBody := deepSeekRequest{
-		Model: s.Model,
-		Messages: []deepSeekMessage{
-			{Role: "system", Content: systemPrompt},
+	reqBody := aiRequest{
+		Model:  s.Model,
+		System: systemPrompt,
+		Messages: []aiMessage{
 			{Role: "user", Content: userPrompt},
 		},
 		MaxTokens: 2000,
@@ -192,6 +194,7 @@ func (s *DeepSeekService) chat(systemPrompt, userPrompt string) (string, error) 
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+s.APIKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
 
 	resp, err := s.Client.Do(req)
 	if err != nil {
@@ -209,16 +212,27 @@ func (s *DeepSeekService) chat(systemPrompt, userPrompt string) (string, error) 
 		return "", fmt.Errorf("%w: status %d", ErrDeepSeekFailed, resp.StatusCode)
 	}
 
-	var deepResp deepSeekResponse
-	if err := json.Unmarshal(respBody, &deepResp); err != nil {
+	var aiResp aiResponse
+	if err := json.Unmarshal(respBody, &aiResp); err != nil {
 		return "", fmt.Errorf("failed to parse API response: %w", err)
 	}
 
-	if len(deepResp.Choices) == 0 {
-		return "", fmt.Errorf("%w: no choices returned", ErrDeepSeekFailed)
+	if len(aiResp.Content) == 0 {
+		return "", fmt.Errorf("%w: no content returned", ErrDeepSeekFailed)
 	}
 
-	return deepResp.Choices[0].Message.Content, nil
+	// Concatenate all text blocks
+	var textParts []string
+	for _, block := range aiResp.Content {
+		if block.Type == "text" {
+			textParts = append(textParts, block.Text)
+		}
+	}
+	if len(textParts) == 0 {
+		return "", fmt.Errorf("%w: no text content returned", ErrDeepSeekFailed)
+	}
+
+	return strings.Join(textParts, ""), nil
 }
 
 // parseJSONFromContent extracts and parses JSON from AI response content.

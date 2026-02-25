@@ -13,23 +13,29 @@ var (
 
 // CreatePatientRequest is the input for creating a new patient.
 type CreatePatientRequest struct {
-	Name   string  `json:"name" binding:"required"`
-	Gender int8    `json:"gender" binding:"required,oneof=1 2"`
-	Age    int     `json:"age" binding:"required,min=0"`
-	Weight float64 `json:"weight"`
-	Phone  string  `json:"phone"`
-	IDCard string  `json:"id_card"`
+	Name        string  `json:"name" binding:"required"`
+	Gender      int8    `json:"gender" binding:"required,oneof=1 2"`
+	Age         int     `json:"age" binding:"required,min=0"`
+	Weight      float64 `json:"weight"`
+	Phone       string  `json:"phone"`
+	IDCard      string  `json:"id_card"`
+	Address     string  `json:"address"`
+	NativePlace string  `json:"native_place"`
+	Notes       string  `json:"notes"`
 }
 
 // UpdatePatientRequest is the input for updating an existing patient.
 // All fields are pointers so that we can distinguish between "not provided" and "zero value".
 type UpdatePatientRequest struct {
-	Name   *string  `json:"name"`
-	Gender *int8    `json:"gender"`
-	Age    *int     `json:"age"`
-	Weight *float64 `json:"weight"`
-	Phone  *string  `json:"phone"`
-	IDCard *string  `json:"id_card"`
+	Name        *string  `json:"name"`
+	Gender      *int8    `json:"gender"`
+	Age         *int     `json:"age"`
+	Weight      *float64 `json:"weight"`
+	Phone       *string  `json:"phone"`
+	IDCard      *string  `json:"id_card"`
+	Address     *string  `json:"address"`
+	NativePlace *string  `json:"native_place"`
+	Notes       *string  `json:"notes"`
 }
 
 // PatientService handles patient-related business logic.
@@ -45,14 +51,17 @@ func NewPatientService(db *gorm.DB) *PatientService {
 // CreatePatient creates a new patient record.
 func (s *PatientService) CreatePatient(tenantID, createdBy uint64, req *CreatePatientRequest) (*model.Patient, error) {
 	patient := model.Patient{
-		TenantID:  tenantID,
-		Name:      req.Name,
-		Gender:    req.Gender,
-		Age:       req.Age,
-		Weight:    req.Weight,
-		Phone:     req.Phone,
-		IDCard:    req.IDCard,
-		CreatedBy: createdBy,
+		TenantID:    tenantID,
+		Name:        req.Name,
+		Gender:      req.Gender,
+		Age:         req.Age,
+		Weight:      req.Weight,
+		Phone:       req.Phone,
+		IDCard:      req.IDCard,
+		Address:     req.Address,
+		NativePlace: req.NativePlace,
+		Notes:       req.Notes,
+		CreatedBy:   createdBy,
 	}
 
 	if err := s.DB.Create(&patient).Error; err != nil {
@@ -144,6 +153,15 @@ func (s *PatientService) UpdatePatient(tenantID uint64, id uint64, req *UpdatePa
 	}
 	if req.IDCard != nil {
 		updates["id_card"] = *req.IDCard
+	}
+	if req.Address != nil {
+		updates["address"] = *req.Address
+	}
+	if req.NativePlace != nil {
+		updates["native_place"] = *req.NativePlace
+	}
+	if req.Notes != nil {
+		updates["notes"] = *req.Notes
 	}
 
 	if len(updates) > 0 {

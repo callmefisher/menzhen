@@ -55,6 +55,9 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		auth.POST("/register", authHandler.Register)
 	}
 
+	// Public file download route (no JWT required — browser <img> tags can't send Authorization headers).
+	v1.GET("/files/*key", uploadHandler.GetFile)
+
 	// Authenticated routes.
 	authenticated := v1.Group("")
 	authenticated.Use(middleware.AuthMiddleware(cfg.JWTSecret))
@@ -64,6 +67,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		{
 			authAuth.POST("/logout", authHandler.Logout)
 			authAuth.GET("/me", authHandler.Me)
+			authAuth.POST("/change-password", authHandler.ChangePassword)
 		}
 
 		// Patient routes.
@@ -86,9 +90,8 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			records.DELETE("/:id", middleware.RequirePermission(db, "record:delete"), recordHandler.Delete)
 		}
 
-		// File upload/download routes (authenticated, no specific permission).
+		// File upload route (authenticated, no specific permission).
 		authenticated.POST("/upload", uploadHandler.Upload)
-		authenticated.GET("/files/*key", uploadHandler.GetFile)
 
 		// Operation log routes.
 		oplogs := authenticated.Group("/oplogs")

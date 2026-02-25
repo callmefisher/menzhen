@@ -20,6 +20,9 @@ interface PatientFormValues {
   weight?: number;
   phone?: string;
   id_card?: string;
+  address?: string;
+  native_place?: string;
+  notes?: string;
 }
 
 interface PatientFormModalProps {
@@ -91,6 +94,18 @@ function PatientFormFields({ form }: { form: ReturnType<typeof Form.useForm<Pati
       <Form.Item label="身份证号" name="id_card">
         <Input placeholder="请输入身份证号" />
       </Form.Item>
+
+      <Form.Item label="现居住地" name="address">
+        <Input placeholder="请输入现居住地" />
+      </Form.Item>
+
+      <Form.Item label="籍贯" name="native_place">
+        <Input placeholder="请输入籍贯" />
+      </Form.Item>
+
+      <Form.Item label="备注" name="notes">
+        <Input.TextArea rows={3} placeholder="请输入备注" />
+      </Form.Item>
     </Form>
   );
 }
@@ -116,6 +131,9 @@ export function PatientFormModal({
         weight: initialData.weight,
         phone: initialData.phone,
         id_card: initialData.id_card,
+        address: initialData.address,
+        native_place: initialData.native_place,
+        notes: initialData.notes,
       });
     } else if (visible) {
       form.resetFields();
