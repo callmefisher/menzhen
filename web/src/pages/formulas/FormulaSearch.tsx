@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Input, Table, Tag, message } from 'antd';
-import { SearchOutlined, RobotOutlined } from '@ant-design/icons';
+import { Input, Table, Tag, message, Button, Popconfirm } from 'antd';
+import { SearchOutlined, RobotOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { listFormulas } from '../../api/formula';
+import { listFormulas, deleteFormula } from '../../api/formula';
 import type { FormulaItem, FormulaCompositionItem } from '../../api/formula';
+import { useAuth } from '../../store/auth';
 
 export default function FormulaSearch() {
   const [formulas, setFormulas] = useState<FormulaItem[]>([]);
@@ -12,6 +13,7 @@ export default function FormulaSearch() {
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(20);
   const [searchName, setSearchName] = useState('');
+  const { hasPermission } = useAuth();
 
   const fetchFormulas = async (name: string, p: number, s: number) => {
     setLoading(true);
@@ -41,6 +43,16 @@ export default function FormulaSearch() {
     setPage(newPage);
     setSize(newSize);
     fetchFormulas(searchName, newPage, newSize);
+  };
+
+  const handleDelete = async (id: number) => {
+    try {
+      await deleteFormula(id);
+      message.success('删除成功');
+      fetchFormulas(searchName, page, size);
+    } catch {
+      // Error handled by interceptor
+    }
   };
 
   const columns: ColumnsType<FormulaItem> = [
@@ -87,6 +99,27 @@ export default function FormulaSearch() {
           <Tag color="green">本地</Tag>
         ),
     },
+    ...(hasPermission('role:manage')
+      ? [
+          {
+            title: '操作',
+            key: 'action',
+            width: 80,
+            render: (_: unknown, record: FormulaItem) => (
+              <Popconfirm
+                title="确定删除此方剂？"
+                onConfirm={() => handleDelete(record.id)}
+                okText="删除"
+                cancelText="取消"
+              >
+                <Button type="text" danger size="small" icon={<DeleteOutlined />}>
+                  删除
+                </Button>
+              </Popconfirm>
+            ),
+          },
+        ]
+      : []),
   ];
 
   return (

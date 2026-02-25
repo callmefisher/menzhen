@@ -74,3 +74,24 @@ func (h *FormulaHandler) Detail(c *gin.Context) {
 
 	Success(c, formula)
 }
+
+// Delete handles DELETE /api/v1/formulas/:id
+func (h *FormulaHandler) Delete(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		Error(c, http.StatusBadRequest, "invalid formula id")
+		return
+	}
+
+	svc := service.NewFormulaService(h.db, h.deepSeek)
+	if err := svc.DeleteByID(id); err != nil {
+		if errors.Is(err, service.ErrFormulaNotFound) {
+			Error(c, http.StatusNotFound, "formula not found")
+			return
+		}
+		Error(c, http.StatusInternalServerError, "failed to delete formula")
+		return
+	}
+
+	Success(c, nil)
+}

@@ -4,7 +4,7 @@ export function listUsers(params: { page?: number; size?: number }) {
   return request.get('/users', { params });
 }
 
-export function updateUser(id: number, data: { real_name?: string; phone?: string; status?: number }) {
+export function updateUser(id: number, data: { real_name?: string; phone?: string; status?: number; tenant_id?: number; notes?: string }) {
   return request.put(`/users/${id}`, data);
 }
 

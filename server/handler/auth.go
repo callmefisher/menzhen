@@ -37,10 +37,11 @@ type RegisterRequest struct {
 
 // UserBriefDTO is a compact user representation.
 type UserBriefDTO struct {
-	ID       uint64 `json:"id"`
-	Username string `json:"username"`
-	RealName string `json:"real_name"`
-	TenantID uint64 `json:"tenant_id"`
+	ID         uint64 `json:"id"`
+	Username   string `json:"username"`
+	RealName   string `json:"real_name"`
+	TenantID   uint64 `json:"tenant_id"`
+	TenantName string `json:"tenant_name"`
 }
 
 // MeResponse is returned by GET /api/v1/auth/me.
@@ -112,16 +113,24 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		permissions = []string{}
 	}
 
+	// Fetch tenant name for display.
+	var tenantName string
+	var tenant model.Tenant
+	if err := h.db.First(&tenant, user.TenantID).Error; err == nil {
+		tenantName = tenant.Name
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"message": "success",
 		"data": LoginResponse{
 			Token: token,
 			User: UserBriefDTO{
-				ID:       user.ID,
-				Username: user.Username,
-				RealName: user.RealName,
-				TenantID: user.TenantID,
+				ID:         user.ID,
+				Username:   user.Username,
+				RealName:   user.RealName,
+				TenantID:   user.TenantID,
+				TenantName: tenantName,
 			},
 			Permissions: permissions,
 		},
@@ -220,15 +229,23 @@ func (h *AuthHandler) Me(c *gin.Context) {
 		return
 	}
 
+	// Fetch tenant name for display.
+	var tenantName string
+	var tenant model.Tenant
+	if err := h.db.First(&tenant, user.TenantID).Error; err == nil {
+		tenantName = tenant.Name
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"message": "success",
 		"data": MeResponse{
 			User: UserBriefDTO{
-				ID:       user.ID,
-				Username: user.Username,
-				RealName: user.RealName,
-				TenantID: user.TenantID,
+				ID:         user.ID,
+				Username:   user.Username,
+				RealName:   user.RealName,
+				TenantID:   user.TenantID,
+				TenantName: tenantName,
 			},
 			Permissions: permissions,
 		},

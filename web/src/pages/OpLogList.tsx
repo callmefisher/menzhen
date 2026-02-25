@@ -7,12 +7,15 @@ import {
   Space,
   Card,
   Tag,
+  Popconfirm,
+  message,
 } from 'antd';
-import { SearchOutlined } from '@ant-design/icons';
+import { SearchOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { Dayjs } from 'dayjs';
-import { listOpLogs } from '../api/oplog';
+import { listOpLogs, deleteOpLog, batchDeleteOpLogs } from '../api/oplog';
 import type { OpLogItem, OpLogListParams } from '../api/oplog';
+import { useAuth } from '../store/auth';
 
 const { RangePicker } = DatePicker;
 
@@ -25,7 +28,10 @@ const ACTION_MAP: Record<string, { label: string; color: string }> = {
 const RESOURCE_TYPE_MAP: Record<string, string> = {
   patient: '患者',
   record: '诊疗记录',
+  medical_record: '诊疗记录',
   attachment: '附件',
+  prescription: '处方',
+  user: '用户',
 };
 
 export default function OpLogList() {
@@ -36,6 +42,9 @@ export default function OpLogList() {
     page: 1,
     size: 20,
   });
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  const { hasPermission } = useAuth();
+  const canDelete = hasPermission('role:manage');
 
   // Search form local state
   const [searchName, setSearchName] = useState('');
@@ -87,6 +96,29 @@ export default function OpLogList() {
     setParams({ page: 1, size: 20 });
   };
 
+  const handleDelete = async (id: number) => {
+    try {
+      await deleteOpLog(id);
+      message.success('删除成功');
+      setSelectedRowKeys((prev) => prev.filter((k) => k !== id));
+      fetchData(params);
+    } catch {
+      // Error handled by interceptor
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if (selectedRowKeys.length === 0) return;
+    try {
+      await batchDeleteOpLogs(selectedRowKeys as number[]);
+      message.success(`成功删除 ${selectedRowKeys.length} 条记录`);
+      setSelectedRowKeys([]);
+      fetchData(params);
+    } catch {
+      // Error handled by interceptor
+    }
+  };
+
   const columns: ColumnsType<OpLogItem> = [
     {
       title: '操作时间',
@@ -124,6 +156,27 @@ export default function OpLogList() {
       key: 'resource_id',
       width: 100,
     },
+    ...(canDelete
+      ? [
+          {
+            title: '操作',
+            key: 'action_col',
+            width: 80,
+            render: (_: unknown, record: OpLogItem) => (
+              <Popconfirm
+                title="确定删除此日志？"
+                onConfirm={() => handleDelete(record.id)}
+                okText="删除"
+                cancelText="取消"
+              >
+                <Button type="text" danger size="small" icon={<DeleteOutlined />}>
+                  删除
+                </Button>
+              </Popconfirm>
+            ),
+          } as ColumnsType<OpLogItem>[number],
+        ]
+      : []),
   ];
 
   const renderDiff = (record: OpLogItem) => (
@@ -208,6 +261,18 @@ export default function OpLogList() {
           </Button>
           <Button onClick={handleReset}>重置</Button>
         </Space>
+        {canDelete && selectedRowKeys.length > 0 && (
+          <Popconfirm
+            title={`确定删除选中的 ${selectedRowKeys.length} 条日志？`}
+            onConfirm={handleBatchDelete}
+            okText="删除"
+            cancelText="取消"
+          >
+            <Button danger icon={<DeleteOutlined />}>
+              批量删除 ({selectedRowKeys.length})
+            </Button>
+          </Popconfirm>
+        )}
       </div>
 
       <Table<OpLogItem>
@@ -215,6 +280,14 @@ export default function OpLogList() {
         columns={columns}
         dataSource={data}
         loading={loading}
+        rowSelection={
+          canDelete
+            ? {
+                selectedRowKeys,
+                onChange: (keys) => setSelectedRowKeys(keys),
+              }
+            : undefined
+        }
         expandable={{
           expandedRowRender: renderDiff,
         }}

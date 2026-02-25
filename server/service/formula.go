@@ -69,7 +69,25 @@ func (s *FormulaService) GetByID(id uint64) (*model.Formula, error) {
 	return &formula, nil
 }
 
-// queryAndSaveFromAI queries DeepSeek for formula info and saves the result to DB.
+// DeleteByID deletes a formula by ID.
+func (s *FormulaService) DeleteByID(id uint64) error {
+	result := s.DB.Delete(&model.Formula{}, id)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrFormulaNotFound
+	}
+	return nil
+}
+
+// isValidFormulaResult checks whether the AI result contains a valid formula.
+// A valid formula must have at least one composition item (herb).
+func isValidFormulaResult(result *FormulaAIResult) bool {
+	return len(result.Composition) > 0
+}
+
+// queryAndSaveFromAI queries DeepSeek for formula info. Only saves valid results to DB.
 func (s *FormulaService) queryAndSaveFromAI(name string) (*model.Formula, error) {
 	result, err := s.DeepSeek.QueryFormula(name)
 	if err != nil {
@@ -90,6 +108,12 @@ func (s *FormulaService) queryAndSaveFromAI(name string) (*model.Formula, error)
 		Indications: result.Indications,
 		Composition: composition,
 		Source:      "deepseek",
+	}
+
+	// Only save valid results (with herb composition) to the database
+	if !isValidFormulaResult(result) {
+		log.Printf("AI formula result for %q is invalid (no composition), skipping save", name)
+		return &formula, nil
 	}
 
 	if err := s.DB.Create(&formula).Error; err != nil {

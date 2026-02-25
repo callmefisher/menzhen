@@ -325,17 +325,18 @@ export default function RecordForm() {
         form={form}
         layout="vertical"
         onFinish={handleSubmit}
-        style={{ maxWidth: 720 }}
         initialValues={{
           attachments: [],
+          visit_date: isEdit ? undefined : dayjs(),
         }}
       >
-        {/* 患者选择 */}
-        <Form.Item
-          label="患者"
-          name="patient_id"
-          rules={[{ required: true, message: '请选择患者' }]}
-        >
+        <div style={{ display: 'flex', gap: 16 }}>
+          <Form.Item
+            label="患者"
+            name="patient_id"
+            rules={[{ required: true, message: '请选择患者' }]}
+            style={{ flex: 1 }}
+          >
           <Select
             showSearch
             placeholder="搜索患者姓名"
@@ -370,34 +371,41 @@ export default function RecordForm() {
           />
         </Form.Item>
 
-        {/* 就诊日期 */}
-        <Form.Item
-          label="就诊日期"
-          name="visit_date"
-          rules={[{ required: true, message: '请选择就诊日期' }]}
-        >
-          <DatePicker style={{ width: '100%' }} />
-        </Form.Item>
+          <Form.Item
+            label="就诊日期"
+            name="visit_date"
+            rules={[{ required: true, message: '请选择就诊日期' }]}
+            style={{ width: 200 }}
+          >
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+        </div>
 
-        {/* 诊断 */}
-        <Form.Item label="诊断" name="diagnosis">
-          <Input.TextArea rows={4} placeholder="请输入诊断内容" />
-        </Form.Item>
+        <div style={{ display: 'flex', gap: 16 }}>
+          <Form.Item label="诊断" name="diagnosis" style={{ flex: 1 }}>
+            <Input.TextArea rows={3} placeholder="请输入诊断内容" />
+          </Form.Item>
 
-        {/* 治疗方案 */}
-        <Form.Item label="治疗方案" name="treatment">
-          <Input.TextArea rows={4} placeholder="请输入治疗方案" />
-        </Form.Item>
+          <Form.Item label="治疗方案" name="treatment" style={{ flex: 1 }}>
+            <Input.TextArea rows={3} placeholder="请输入治疗方案" />
+          </Form.Item>
+        </div>
 
-        {/* 备注 */}
-        <Form.Item label="备注" name="notes">
-          <Input.TextArea rows={2} placeholder="请输入备注" />
-        </Form.Item>
+        <div style={{ display: 'flex', gap: 16, alignItems: 'stretch' }}>
+          <Form.Item label="备注" name="notes" style={{ flex: 1, marginBottom: 0 }}>
+            <Input.TextArea
+              rows={6}
+              placeholder="请输入备注"
+              style={{ resize: 'none', height: '100%', minHeight: 160 }}
+            />
+          </Form.Item>
 
-        {/* 附件上传 */}
-        <Form.Item label="附件上传" name="attachments">
-          <FileUpload />
-        </Form.Item>
+          <Form.Item label="附件上传" name="attachments" style={{ flex: 1, marginBottom: 0 }}>
+            <FileUpload />
+          </Form.Item>
+        </div>
+
+        <div style={{ height: 16 }} />
 
         {/* 按钮 */}
         <Form.Item>
@@ -405,12 +413,51 @@ export default function RecordForm() {
             <Button type="primary" htmlType="submit" loading={submitting}>
               保存
             </Button>
+            {hasPermission('prescription:create') && (
+              <Button
+                type="primary"
+                ghost
+                icon={<PlusOutlined />}
+                onClick={async () => {
+                  if (!isEdit) {
+                    // For new records, save first, then open prescription modal
+                    try {
+                      const values = await form.validateFields();
+                      setSubmitting(true);
+                      const payload = {
+                        patient_id: values.patient_id,
+                        visit_date: values.visit_date.format('YYYY-MM-DD'),
+                        diagnosis: values.diagnosis || '',
+                        treatment: values.treatment || '',
+                        notes: values.notes || '',
+                        attachments: values.attachments || [],
+                      };
+                      const res = await createRecord(payload);
+                      const body = res as unknown as { data: { id: number } };
+                      message.success('诊疗记录已保存');
+                      if (body.data?.id) {
+                        navigate(`/records/${body.data.id}`);
+                      }
+                    } catch {
+                      // validation error
+                    } finally {
+                      setSubmitting(false);
+                    }
+                  } else {
+                    handleOpenPrescriptionModal();
+                  }
+                }}
+                loading={submitting}
+              >
+                开方
+              </Button>
+            )}
             <Button onClick={() => navigate('/records')}>取消</Button>
           </Space>
         </Form.Item>
       </Form>
 
-      {/* 处方区域 - 仅在编辑模式下显示 */}
+      {/* 处方区域 - 编辑模式下显示处方列表 */}
       {isEdit && hasPermission('prescription:read') && (
         <>
           <Divider />

@@ -37,6 +37,7 @@ func seedPermissions(db *gorm.DB) {
 		{Code: "formula:read", Name: "查询方剂", Description: "查询方剂信息"},
 		{Code: "prescription:create", Name: "开方", Description: "创建处方"},
 		{Code: "prescription:read", Name: "查看处方", Description: "查看处方信息"},
+		{Code: "tenant:manage", Name: "诊所管理", Description: "管理租户/诊所"},
 	}
 
 	for _, p := range permissions {

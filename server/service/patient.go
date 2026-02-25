@@ -72,7 +72,7 @@ func (s *PatientService) CreatePatient(tenantID, createdBy uint64, req *CreatePa
 }
 
 // GetPatient retrieves a patient by ID within the given tenant scope.
-// It preloads MedicalRecords (ordered by visit_date DESC) and their Attachments.
+// It preloads MedicalRecords (ordered by visit_date DESC), their Attachments, and Prescriptions with items.
 func (s *PatientService) GetPatient(tenantID uint64, id uint64) (*model.Patient, error) {
 	var patient model.Patient
 	err := s.DB.
@@ -81,6 +81,8 @@ func (s *PatientService) GetPatient(tenantID uint64, id uint64) (*model.Patient,
 			return db.Order("visit_date DESC")
 		}).
 		Preload("MedicalRecords.Attachments").
+		Preload("MedicalRecords.Prescriptions").
+		Preload("MedicalRecords.Prescriptions.Items").
 		First(&patient, id).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

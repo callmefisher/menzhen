@@ -14,6 +14,7 @@ import {
   KeyOutlined,
   ExperimentOutlined,
   ReadOutlined,
+  BankOutlined,
 } from '@ant-design/icons';
 import type { MenuProps as AntMenuProps } from 'antd';
 import { useAuth } from '../store/auth';
@@ -60,38 +61,31 @@ export default function AppLayout() {
       });
     }
 
-    // TCM menu group
-    const canReadHerbs = hasPermission('herb:read');
-    const canReadFormulas = hasPermission('formula:read');
-
-    if (canReadHerbs || canReadFormulas) {
-      const tcmChildren: MenuItem[] = [];
-      if (canReadHerbs) {
-        tcmChildren.push({
-          key: '/herbs',
-          icon: <ExperimentOutlined />,
-          label: '中药查询',
-        });
-      }
-      if (canReadFormulas) {
-        tcmChildren.push({
-          key: '/formulas',
-          icon: <ReadOutlined />,
-          label: '方剂查询',
-        });
-      }
-      items.push({
-        key: '/tcm',
+    // TCM menu group - accessible to all authenticated users
+    const tcmChildren: MenuItem[] = [
+      {
+        key: '/herbs',
         icon: <ExperimentOutlined />,
-        label: '中医药',
-        children: tcmChildren,
-      });
-    }
+        label: '中药查询',
+      },
+      {
+        key: '/formulas',
+        icon: <ReadOutlined />,
+        label: '方剂查询',
+      },
+    ];
+    items.push({
+      key: '/tcm',
+      icon: <ExperimentOutlined />,
+      label: '中医药',
+      children: tcmChildren,
+    });
 
     const canManageUsers = hasPermission('user:manage');
     const canManageRoles = hasPermission('role:manage');
+    const canManageTenants = hasPermission('tenant:manage');
 
-    if (canManageUsers || canManageRoles) {
+    if (canManageUsers || canManageRoles || canManageTenants) {
       const settingsChildren: MenuItem[] = [];
       if (canManageUsers) {
         settingsChildren.push({
@@ -105,6 +99,13 @@ export default function AppLayout() {
           key: '/settings/roles',
           icon: <SafetyOutlined />,
           label: '角色管理',
+        });
+      }
+      if (canManageTenants) {
+        settingsChildren.push({
+          key: '/settings/tenants',
+          icon: <BankOutlined />,
+          label: '诊所管理',
         });
       }
       items.push({
@@ -123,6 +124,7 @@ export default function AppLayout() {
     const path = location.pathname;
     if (path.startsWith('/settings/roles')) return ['/settings/roles'];
     if (path.startsWith('/settings/users')) return ['/settings/users'];
+    if (path.startsWith('/settings/tenants')) return ['/settings/tenants'];
     if (path.startsWith('/patients')) return ['/patients'];
     if (path.startsWith('/oplogs')) return ['/oplogs'];
     if (path.startsWith('/herbs')) return ['/herbs'];

@@ -25,7 +25,8 @@ func (s *OpLogService) CreateOpLog(tenantID, userID uint64, userName, action, re
 	if oldData != nil {
 		b, err := json.Marshal(oldData)
 		if err != nil {
-			return err
+			// If marshaling fails, store the error message instead of losing the log.
+			b = []byte(`{"_marshal_error":"` + err.Error() + `"}`)
 		}
 		oldJSON = datatypes.JSON(b)
 	}
@@ -33,7 +34,7 @@ func (s *OpLogService) CreateOpLog(tenantID, userID uint64, userName, action, re
 	if newData != nil {
 		b, err := json.Marshal(newData)
 		if err != nil {
-			return err
+			b = []byte(`{"_marshal_error":"` + err.Error() + `"}`)
 		}
 		newJSON = datatypes.JSON(b)
 	}
@@ -85,4 +86,25 @@ func (s *OpLogService) QueryOpLogs(tenantID uint64, name string, startDate, endD
 	}
 
 	return logs, total, nil
+}
+
+// DeleteOpLog deletes a single operation log by ID within the given tenant.
+func (s *OpLogService) DeleteOpLog(tenantID, id uint64) error {
+	result := s.DB.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&model.OpLog{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+// BatchDeleteOpLogs deletes multiple operation logs by IDs within the given tenant.
+func (s *OpLogService) BatchDeleteOpLogs(tenantID uint64, ids []uint64) (int64, error) {
+	result := s.DB.Where("id IN ? AND tenant_id = ?", ids, tenantID).Delete(&model.OpLog{})
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return result.RowsAffected, nil
 }

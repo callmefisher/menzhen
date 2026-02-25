@@ -28,3 +28,7 @@ export function listFormulas(params: FormulaListParams) {
 export function getFormula(id: number) {
   return request.get(`/formulas/${id}`);
 }
+
+export function deleteFormula(id: number) {
+  return request.delete(`/formulas/${id}`);
+}

@@ -14,10 +14,11 @@ type MedicalRecord struct {
 	CreatedBy uint64    `gorm:"column:created_by;not null" json:"created_by"`
 
 	// Associations
-	Patient     Patient            `gorm:"foreignKey:PatientID" json:"patient,omitempty"`
-	Tenant      Tenant             `gorm:"foreignKey:TenantID" json:"tenant,omitempty"`
-	Creator     User               `gorm:"foreignKey:CreatedBy" json:"creator,omitempty"`
-	Attachments []RecordAttachment `gorm:"foreignKey:RecordID" json:"attachments,omitempty"`
+	Patient       Patient            `gorm:"foreignKey:PatientID" json:"patient,omitempty"`
+	Tenant        Tenant             `gorm:"foreignKey:TenantID" json:"tenant,omitempty"`
+	Creator       User               `gorm:"foreignKey:CreatedBy" json:"creator,omitempty"`
+	Attachments   []RecordAttachment `gorm:"foreignKey:RecordID" json:"attachments,omitempty"`
+	Prescriptions []Prescription     `gorm:"foreignKey:RecordID" json:"prescriptions,omitempty"`
 }
 
 func (MedicalRecord) TableName() string {

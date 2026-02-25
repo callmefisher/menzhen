@@ -75,3 +75,24 @@ func (h *HerbHandler) Detail(c *gin.Context) {
 
 	Success(c, herb)
 }
+
+// Delete handles DELETE /api/v1/herbs/:id
+func (h *HerbHandler) Delete(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		Error(c, http.StatusBadRequest, "invalid herb id")
+		return
+	}
+
+	svc := service.NewHerbService(h.db, h.deepSeek)
+	if err := svc.DeleteByID(id); err != nil {
+		if errors.Is(err, service.ErrHerbNotFound) {
+			Error(c, http.StatusNotFound, "herb not found")
+			return
+		}
+		Error(c, http.StatusInternalServerError, "failed to delete herb")
+		return
+	}
+
+	Success(c, nil)
+}

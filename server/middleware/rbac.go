@@ -45,10 +45,11 @@ func RequirePermission(db *gorm.DB, permCodes ...string) gin.HandlerFunc {
 			}
 		}
 
-		// None of the required permissions were found.
+		// None of the required permissions were found — include which permissions are needed.
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
-			"code":    403,
-			"message": "没有操作权限",
+			"code":               403,
+			"message":            "没有操作权限",
+			"required_permissions": permCodes,
 		})
 	}
 }
