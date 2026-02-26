@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Input, Table, Tag, message, Button, Popconfirm, Space } from 'antd';
 import { SearchOutlined, RobotOutlined, DeleteOutlined, EditOutlined, PlusOutlined, MinusCircleOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
@@ -28,6 +28,11 @@ export default function FormulaSearch() {
   const [inlineEditId, setInlineEditId] = useState<number | null>(null);
   const [inlineComposition, setInlineComposition] = useState<FormulaCompositionItem[]>([]);
   const [inlineSaving, setInlineSaving] = useState(false);
+
+  // Load all formulas on mount
+  useEffect(() => {
+    fetchFormulas('', 1, size);
+  }, []);
 
   const fetchFormulas = async (name: string, p: number, s: number) => {
     setLoading(true);

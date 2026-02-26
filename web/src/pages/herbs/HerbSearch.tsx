@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Input, Table, Tag, message, Button, Popconfirm, Select, Space } from 'antd';
-import { SearchOutlined, RobotOutlined, DeleteOutlined, EditOutlined, SaveOutlined, CloseOutlined } from '@ant-design/icons';
+import { SearchOutlined, RobotOutlined, DeleteOutlined, EditOutlined, SaveOutlined, CloseOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { listHerbs, deleteHerb, listHerbCategories, updateHerb } from '../../api/herb';
+import { listHerbs, deleteHerb, listHerbCategories, updateHerb, aiRefreshHerb } from '../../api/herb';
 import type { HerbItem } from '../../api/herb';
 import { useAuth } from '../../store/auth';
 
@@ -18,6 +18,7 @@ export default function HerbSearch() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingData, setEditingData] = useState<Partial<HerbItem>>({});
   const [expandedRowKeys, setExpandedRowKeys] = useState<number[]>([]);
+  const [aiRefreshing, setAiRefreshing] = useState(false);
   const { hasPermission } = useAuth();
 
   useEffect(() => {
@@ -29,6 +30,8 @@ export default function HerbSearch() {
       .catch(() => {
         // ignore
       });
+    // Load all herbs on mount
+    fetchHerbs('', undefined, 1, size);
   }, []);
 
   const fetchHerbs = async (name: string, category: string | undefined, p: number, s: number) => {
@@ -102,6 +105,30 @@ export default function HerbSearch() {
       fetchHerbs(searchName, selectedCategory, page, size);
     } catch {
       // Error handled by interceptor
+    }
+  };
+
+  const handleAiRefresh = async () => {
+    if (!editingId) return;
+    setAiRefreshing(true);
+    try {
+      const res = await aiRefreshHerb(editingId);
+      const body = res as unknown as { data: HerbItem };
+      const herb = body.data;
+      setEditingData({
+        name: herb.name,
+        alias: herb.alias,
+        category: herb.category,
+        properties: herb.properties,
+        effects: herb.effects,
+        indications: herb.indications,
+        origin: herb.origin,
+      });
+      message.success('AI查询完成，数据已填充，请确认后保存');
+    } catch {
+      message.error('AI查询失败');
+    } finally {
+      setAiRefreshing(false);
     }
   };
 
@@ -270,6 +297,7 @@ export default function HerbSearch() {
                   </div>
                   <Space>
                     <Button type="primary" size="small" icon={<SaveOutlined />} onClick={handleSave}>保存</Button>
+                    <Button size="small" icon={<ThunderboltOutlined />} loading={aiRefreshing} onClick={handleAiRefresh}>AI查询</Button>
                     <Button size="small" icon={<CloseOutlined />} onClick={() => setEditingId(null)}>取消</Button>
                   </Space>
                 </>

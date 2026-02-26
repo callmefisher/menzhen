@@ -167,3 +167,26 @@ func (h *HerbHandler) Update(c *gin.Context) {
 
 	Success(c, nil)
 }
+
+// AIRefresh handles POST /api/v1/herbs/:id/ai-refresh
+// Queries DeepSeek for updated herb information and merges it into the existing record.
+func (h *HerbHandler) AIRefresh(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		Error(c, http.StatusBadRequest, "invalid herb id")
+		return
+	}
+
+	svc := service.NewHerbService(h.db, h.deepSeek)
+	herb, err := svc.AIRefresh(id)
+	if err != nil {
+		if errors.Is(err, service.ErrHerbNotFound) {
+			Error(c, http.StatusNotFound, "herb not found")
+			return
+		}
+		Error(c, http.StatusInternalServerError, "AI查询失败: "+err.Error())
+		return
+	}
+
+	Success(c, herb)
+}

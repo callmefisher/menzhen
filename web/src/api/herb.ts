@@ -39,3 +39,7 @@ export function listHerbCategories() {
 export function updateHerb(id: number, data: Partial<Omit<HerbItem, 'id' | 'source' | 'created_at'>>) {
   return request.put(`/herbs/${id}`, data);
 }
+
+export function aiRefreshHerb(id: number) {
+  return request.post(`/herbs/${id}/ai-refresh`);
+}
