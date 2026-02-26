@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-02-26（AI分析缓存完整修复 + 中药方剂默认加载 + AI重查询 + 名称搜索 + 菜单展开）
+> 最后更新：2026-02-26（方剂新增备注字段 + 药物组成表格美化）
 
 ---
 
@@ -40,7 +40,7 @@ menzhen/
 │   │   ├── record.go                # List/Create/Detail/Update/Delete
 │   │   ├── upload.go                # Upload/GetFile（MinIO）
 │   │   ├── herb.go                  # List/Detail/Delete/Categories/Update/AIRefresh
-│   │   ├── formula.go               # List/Detail/Delete/UpdateComposition
+│   │   ├── formula.go               # List/Detail/Delete/UpdateComposition/UpdateName/UpdateNotes
 │   │   ├── prescription.go          # Create/Detail/Update/Delete/ListByRecord
 │   │   ├── ai_analysis.go           # Analyze（AI 辩证论治，含缓存）+ SaveCached + GetCached
 │   │   ├── oplog.go                 # ListOpLogs/DeleteOpLog/BatchDeleteOpLogs
@@ -82,7 +82,7 @@ menzhen/
 │       │   ├── patient.ts           # 患者 CRUD
 │       │   ├── record.ts            # 诊疗记录 CRUD + AI分析调用/缓存获取/缓存保存
 │       │   ├── herb.ts              # 中药搜索/详情/删除/分类列表/更新
-│       │   ├── formula.ts           # 方剂搜索/详情/删除/更新组成
+│       │   ├── formula.ts           # 方剂搜索/详情/删除/更新组成/更新备注
 │       │   ├── prescription.ts      # 处方 CRUD + 按记录查询
 │       │   ├── upload.ts            # 文件上传
 │       │   ├── oplog.ts             # 操作日志查询/删除
@@ -188,6 +188,7 @@ menzhen/
 | `effects` | `text` | 功效 |
 | `indications` | `text` | 主治 |
 | `composition` | `json` | 组成，`[{herb_name, default_dosage}]` |
+| `notes` | `text` | 备注 |
 | `source` | `varchar(20)` | 数据来源，`manual` 或 `deepseek` |
 | `created_at` | `time.Time` | 创建时间 |
 | `updated_at` | `time.Time` | 更新时间 |
@@ -407,6 +408,8 @@ menzhen/
 | GET | `/api/v1/formulas` | - | 搜索方剂（DB + AI 回退），参数：`name`, `page`, `size` |
 | GET | `/api/v1/formulas/:id` | - | 方剂详情 |
 | PUT | `/api/v1/formulas/:id/composition` | `role:manage` | 更新方剂药物组成 |
+| PUT | `/api/v1/formulas/:id/name` | `role:manage` | 更新方剂名称 |
+| PUT | `/api/v1/formulas/:id/notes` | `role:manage` | 更新方剂备注 |
 | DELETE | `/api/v1/formulas/:id` | `role:manage` | 删除方剂 |
 
 #### 处方管理（租户隔离）

@@ -17,6 +17,7 @@ export interface FormulaItem {
   effects: string;
   indications: string;
   composition: FormulaCompositionItem[];
+  notes: string;
   source: string;
   created_at: string;
 }
@@ -39,4 +40,8 @@ export function updateFormulaComposition(id: number, composition: FormulaComposi
 
 export function updateFormulaName(id: number, name: string) {
   return request.put(`/formulas/${id}/name`, { name });
+}
+
+export function updateFormulaNotes(id: number, notes: string) {
+  return request.put(`/formulas/${id}/notes`, { notes });
 }

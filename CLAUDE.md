@@ -126,6 +126,7 @@ menzhen/
 | GET | `/api/v1/formulas` | - | 搜索方剂（DB+AI回退） |
 | GET | `/api/v1/formulas/:id` | - | 方剂详情 |
 | PUT | `/api/v1/formulas/:id/name` | role:manage | 更新方剂名称 |
+| PUT | `/api/v1/formulas/:id/notes` | role:manage | 更新方剂备注 |
 | PUT | `/api/v1/formulas/:id/composition` | role:manage | 更新方剂组成 |
 | POST | `/api/v1/prescriptions` | prescription:create | 创建处方 |
 | GET | `/api/v1/prescriptions/:id` | prescription:read | 处方详情 |

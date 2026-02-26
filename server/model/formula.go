@@ -53,6 +53,7 @@ type Formula struct {
 	Effects     string             `gorm:"column:effects;type:text" json:"effects"`
 	Indications string             `gorm:"column:indications;type:text" json:"indications"`
 	Composition FormulaComposition `gorm:"column:composition;type:json" json:"composition"`
+	Notes       string             `gorm:"column:notes;type:text" json:"notes"`
 	Source      string             `gorm:"column:source;type:varchar(20);default:manual" json:"source"`
 	CreatedAt   time.Time          `json:"created_at"`
 	UpdatedAt   time.Time          `json:"updated_at"`

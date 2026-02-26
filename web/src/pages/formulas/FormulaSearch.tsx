@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Input, Table, Tag, message, Button, Popconfirm, Space } from 'antd';
 import { SearchOutlined, RobotOutlined, DeleteOutlined, EditOutlined, PlusOutlined, MinusCircleOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { listFormulas, deleteFormula, updateFormulaComposition, updateFormulaName } from '../../api/formula';
+import { listFormulas, deleteFormula, updateFormulaComposition, updateFormulaName, updateFormulaNotes } from '../../api/formula';
 import type { FormulaItem, FormulaCompositionItem } from '../../api/formula';
 import { useAuth } from '../../store/auth';
 import HerbDetailModal from '../../components/HerbDetailModal';
@@ -28,6 +28,10 @@ export default function FormulaSearch() {
   const [inlineEditId, setInlineEditId] = useState<number | null>(null);
   const [inlineComposition, setInlineComposition] = useState<FormulaCompositionItem[]>([]);
   const [inlineSaving, setInlineSaving] = useState(false);
+
+  // Inline notes edit state
+  const [editingNotesId, setEditingNotesId] = useState<number | null>(null);
+  const [editingNotesValue, setEditingNotesValue] = useState('');
 
   // Load all formulas on mount
   useEffect(() => {
@@ -136,6 +140,18 @@ export default function FormulaSearch() {
     if (!herbName.trim()) return;
     setHerbDetailName(herbName.trim());
     setHerbDetailOpen(true);
+  };
+
+  const handleSaveNotes = async (id: number) => {
+    try {
+      await updateFormulaNotes(id, editingNotesValue);
+      message.success('备注更新成功');
+      fetchFormulas(searchName, page, size);
+    } catch {
+      // Error handled by interceptor
+    } finally {
+      setEditingNotesId(null);
+    }
   };
 
   const columns: ColumnsType<FormulaItem> = [
@@ -256,11 +272,42 @@ export default function FormulaSearch() {
           expandedRowRender: (record) => {
             const isEditing = hasPermission('role:manage') && inlineEditId === record.id;
             const comp = isEditing ? inlineComposition : (record.composition || []);
+            const isEditingNotes = hasPermission('role:manage') && editingNotesId === record.id;
 
             return (
               <div style={{ padding: '8px 0' }}>
                 <p><strong>功效：</strong>{record.effects || '无'}</p>
                 <p><strong>主治：</strong>{record.indications || '无'}</p>
+                <p>
+                  <strong>备注：</strong>
+                  {isEditingNotes ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                      <Input.TextArea
+                        size="small"
+                        value={editingNotesValue}
+                        onChange={(e) => setEditingNotesValue(e.target.value)}
+                        autoSize={{ minRows: 1, maxRows: 4 }}
+                        style={{ width: 400 }}
+                        autoFocus
+                      />
+                      <Button type="primary" size="small" onClick={() => handleSaveNotes(record.id)}>保存</Button>
+                      <Button size="small" onClick={() => setEditingNotesId(null)}>取消</Button>
+                    </span>
+                  ) : (
+                    <span>
+                      {record.notes || '无'}
+                      {hasPermission('role:manage') && (
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={<EditOutlined />}
+                          onClick={() => { setEditingNotesId(record.id); setEditingNotesValue(record.notes || ''); }}
+                          style={{ marginLeft: 8 }}
+                        />
+                      )}
+                    </span>
+                  )}
+                </p>
                 <p><strong>组成：</strong></p>
                 {comp.length > 0 || isEditing ? (
                   <Table
@@ -299,7 +346,7 @@ export default function FormulaSearch() {
                         title: '用量',
                         dataIndex: 'default_dosage',
                         key: 'default_dosage',
-                        width: 150,
+                        width: 120,
                         render: isEditing
                           ? (_: unknown, _rec: FormulaCompositionItem & { key: number }, index: number) => (
                               <Input
@@ -333,6 +380,7 @@ export default function FormulaSearch() {
                     pagination={false}
                     size="small"
                     bordered
+                    style={{ maxWidth: 500 }}
                   />
                 ) : (
                   <span>无组成信息</span>
