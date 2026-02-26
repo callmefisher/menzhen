@@ -103,6 +103,13 @@ export default function PrescriptionModal({
 
     form.setFieldValue('formula_name', formula.name);
 
+    // 如果方剂有备注，追加到医嘱末尾
+    if (formula.notes && formula.notes.trim()) {
+      const currentNotes: string = form.getFieldValue('notes') || '';
+      const separator = currentNotes.trim() ? '\n6. ' : '';
+      form.setFieldValue('notes', currentNotes.trimEnd() + separator + formula.notes.trim());
+    }
+
     const newRows: HerbRow[] = (formula.composition || []).map(
       (c: FormulaCompositionItem, idx: number) => ({
         key: idx,
