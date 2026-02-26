@@ -11,6 +11,7 @@ type Herb struct {
 	Properties  string    `gorm:"column:properties;type:varchar(200)" json:"properties"`
 	Effects     string    `gorm:"column:effects;type:text" json:"effects"`
 	Indications string    `gorm:"column:indications;type:text" json:"indications"`
+	Origin      string    `gorm:"column:origin;type:varchar(200)" json:"origin"`
 	Source      string    `gorm:"column:source;type:varchar(20);default:manual" json:"source"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`

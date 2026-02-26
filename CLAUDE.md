@@ -97,12 +97,12 @@ menzhen/
 ### 核心表
 - `tenants` — 租户
 - `users`, `roles`, `permissions` — 用户权限
-- `patients` — 患者（租户隔离）
+- `patients` — 患者（租户隔离，含生日自动算年龄）
 - `medical_records` — 诊疗记录（租户隔离）
 - `record_attachments` — 附件
 
 ### 中医药表
-- `herbs` — 中药（全局，无租户隔离）
+- `herbs` — 中药（全局，无租户隔离，含道地产区，管理员可编辑）
 - `formulas` — 方剂（全局，含 JSON 组成）
 - `prescriptions` — 处方（租户隔离，关联诊疗记录）
 - `prescription_items` — 处方药物明细
@@ -121,6 +121,7 @@ menzhen/
 | GET | `/api/v1/herbs` | - | 搜索中药（DB+AI回退） |
 | GET | `/api/v1/herbs/categories` | - | 中药分类列表 |
 | GET | `/api/v1/herbs/:id` | - | 中药详情 |
+| PUT | `/api/v1/herbs/:id` | role:manage | 更新中药（药名/别名/分类/性味/功效/主治/道地产区） |
 | GET | `/api/v1/formulas` | - | 搜索方剂（DB+AI回退） |
 | GET | `/api/v1/formulas/:id` | - | 方剂详情 |
 | PUT | `/api/v1/formulas/:id/name` | role:manage | 更新方剂名称 |

@@ -17,6 +17,7 @@ import {
   EyeOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
+import dayjs from 'dayjs';
 import { listPatients, deletePatient } from '../../api/patient';
 import { PatientFormModal } from './PatientForm';
 
@@ -25,6 +26,7 @@ interface PatientItem {
   name: string;
   gender: number;
   age: number;
+  birthday: string;
   weight: number;
   phone: string;
   id_card: string;
@@ -133,6 +135,13 @@ export default function PatientList() {
       dataIndex: 'age',
       key: 'age',
       width: 80,
+    },
+    {
+      title: '出生日期',
+      dataIndex: 'birthday',
+      key: 'birthday',
+      width: 120,
+      render: (val: string) => val ? dayjs(val).format('YYYY-MM-DD') : '-',
     },
     {
       title: '体重(kg)',
@@ -276,6 +285,7 @@ export default function PatientList() {
                 name: editingPatient.name,
                 gender: editingPatient.gender,
                 age: editingPatient.age,
+                birthday: editingPatient.birthday,
                 weight: editingPatient.weight,
                 phone: editingPatient.phone,
                 id_card: editingPatient.id_card,

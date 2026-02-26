@@ -75,6 +75,7 @@ type HerbAIResult struct {
 	Properties  string `json:"properties"`
 	Effects     string `json:"effects"`
 	Indications string `json:"indications"`
+	Origin      string `json:"origin"`
 }
 
 // FormulaCompositionAI represents a single herb in a formula composition from AI.
@@ -106,7 +107,8 @@ JSON格式如下:
   "category": "归类，如理气、活血、补气等",
   "properties": "性味归经",
   "effects": "功效",
-  "indications": "主治"
+  "indications": "主治",
+  "origin": "道地产区"
 }
 如果你不确定该药物信息，请返回你最了解的内容，不要编造。`
 

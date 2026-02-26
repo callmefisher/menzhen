@@ -55,6 +55,7 @@ export default function HerbDetailModal({ open, herbName, onClose }: HerbDetailM
           <Descriptions.Item label="性味归经">{herb.properties || '无'}</Descriptions.Item>
           <Descriptions.Item label="功效">{herb.effects || '无'}</Descriptions.Item>
           <Descriptions.Item label="主治">{herb.indications || '无'}</Descriptions.Item>
+          <Descriptions.Item label="道地产区">{herb.origin || '无'}</Descriptions.Item>
           <Descriptions.Item label="来源">
             {herb.source === 'deepseek' ? (
               <Tag icon={<RobotOutlined />} color="blue">

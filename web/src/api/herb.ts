@@ -15,6 +15,7 @@ export interface HerbItem {
   properties: string;
   effects: string;
   indications: string;
+  origin: string;
   source: string;
   created_at: string;
 }
@@ -33,4 +34,8 @@ export function deleteHerb(id: number) {
 
 export function listHerbCategories() {
   return request.get('/herbs/categories');
+}
+
+export function updateHerb(id: number, data: Partial<Omit<HerbItem, 'id' | 'source' | 'created_at'>>) {
+  return request.put(`/herbs/${id}`, data);
 }

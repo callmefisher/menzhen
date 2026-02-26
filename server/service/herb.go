@@ -101,6 +101,21 @@ func (s *HerbService) DeleteByID(id uint64) error {
 	return nil
 }
 
+// Update updates allowed fields of a herb by ID.
+func (s *HerbService) Update(id uint64, updates map[string]interface{}) error {
+	var herb model.Herb
+	if err := s.DB.First(&herb, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrHerbNotFound
+		}
+		return err
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+	return s.DB.Model(&herb).Updates(updates).Error
+}
+
 // queryAndSaveFromAI queries DeepSeek for herb info. Only saves valid results to DB.
 func (s *HerbService) queryAndSaveFromAI(name string) (*model.Herb, error) {
 	result, err := s.DeepSeek.QueryHerb(name)
@@ -115,6 +130,7 @@ func (s *HerbService) queryAndSaveFromAI(name string) (*model.Herb, error) {
 		Properties:  result.Properties,
 		Effects:     result.Effects,
 		Indications: result.Indications,
+		Origin:      result.Origin,
 		Source:      "deepseek",
 	}
 

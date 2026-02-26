@@ -2,6 +2,8 @@ package service
 
 import (
 	"errors"
+	"fmt"
+	"time"
 
 	"github.com/callmefisher/menzhen/server/model"
 	"gorm.io/gorm"
@@ -15,7 +17,8 @@ var (
 type CreatePatientRequest struct {
 	Name        string  `json:"name" binding:"required"`
 	Gender      int8    `json:"gender" binding:"required,oneof=1 2"`
-	Age         int     `json:"age" binding:"required,min=0"`
+	Age         int     `json:"age"`
+	Birthday    *string `json:"birthday"`
 	Weight      float64 `json:"weight"`
 	Phone       string  `json:"phone"`
 	IDCard      string  `json:"id_card"`
@@ -30,6 +33,7 @@ type UpdatePatientRequest struct {
 	Name        *string  `json:"name"`
 	Gender      *int8    `json:"gender"`
 	Age         *int     `json:"age"`
+	Birthday    *string  `json:"birthday"`
 	Weight      *float64 `json:"weight"`
 	Phone       *string  `json:"phone"`
 	IDCard      *string  `json:"id_card"`
@@ -48,6 +52,25 @@ func NewPatientService(db *gorm.DB) *PatientService {
 	return &PatientService{DB: db}
 }
 
+// calculateAge returns age in years from a birthday to today.
+func calculateAge(birthday time.Time) int {
+	now := time.Now()
+	age := now.Year() - birthday.Year()
+	if now.YearDay() < birthday.YearDay() {
+		age--
+	}
+	return age
+}
+
+// parseBirthday parses a date string (YYYY-MM-DD) and returns the time and calculated age.
+func parseBirthday(s string) (*time.Time, int, error) {
+	t, err := time.Parse("2006-01-02", s)
+	if err != nil {
+		return nil, 0, err
+	}
+	return &t, calculateAge(t), nil
+}
+
 // CreatePatient creates a new patient record.
 func (s *PatientService) CreatePatient(tenantID, createdBy uint64, req *CreatePatientRequest) (*model.Patient, error) {
 	patient := model.Patient{
@@ -62,6 +85,15 @@ func (s *PatientService) CreatePatient(tenantID, createdBy uint64, req *CreatePa
 		NativePlace: req.NativePlace,
 		Notes:       req.Notes,
 		CreatedBy:   createdBy,
+	}
+
+	if req.Birthday != nil && *req.Birthday != "" {
+		bday, age, err := parseBirthday(*req.Birthday)
+		if err != nil {
+			return nil, fmt.Errorf("invalid birthday format: %w", err)
+		}
+		patient.Birthday = bday
+		patient.Age = age
 	}
 
 	if err := s.DB.Create(&patient).Error; err != nil {
@@ -164,6 +196,17 @@ func (s *PatientService) UpdatePatient(tenantID uint64, id uint64, req *UpdatePa
 	}
 	if req.Notes != nil {
 		updates["notes"] = *req.Notes
+	}
+	if req.Birthday != nil {
+		if *req.Birthday != "" {
+			bday, age, err := parseBirthday(*req.Birthday)
+			if err == nil {
+				updates["birthday"] = bday
+				updates["age"] = age
+			}
+		} else {
+			updates["birthday"] = nil
+		}
 	}
 
 	if len(updates) > 0 {
