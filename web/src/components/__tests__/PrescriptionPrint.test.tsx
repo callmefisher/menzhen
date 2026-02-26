@@ -43,7 +43,6 @@ describe('PrescriptionPrint', () => {
         prescription={mockPrescription}
         patientName="测试患者"
         patientAge={30}
-        visitDate="2024-01-01"
       />
     );
 
@@ -57,7 +56,6 @@ describe('PrescriptionPrint', () => {
         prescription={mockPrescription}
         patientName="测试患者"
         patientAge={30}
-        visitDate="2024-01-01"
       />
     );
 
@@ -75,10 +73,11 @@ describe('PrescriptionPrint', () => {
     expect(hiddenDiv?.textContent).toContain('张医生');
   });
 
-  it('handles window.open for print', () => {
+  it('handles window.open for print and sets Beijing time', () => {
+    const mockWrite = vi.fn();
     const mockOpen = vi.fn().mockReturnValue({
       document: {
-        write: vi.fn(),
+        write: mockWrite,
         close: vi.fn(),
       },
       print: vi.fn(),
@@ -91,7 +90,6 @@ describe('PrescriptionPrint', () => {
         prescription={mockPrescription}
         patientName="测试患者"
         patientAge={30}
-        visitDate="2024-01-01"
       />
     );
 
@@ -99,6 +97,10 @@ describe('PrescriptionPrint', () => {
     button.click();
 
     expect(mockOpen).toHaveBeenCalledWith('', '_blank');
+    // Verify the printed content contains a date string (Beijing time format)
+    const printedHtml = mockWrite.mock.calls[0][0];
+    expect(printedHtml).toContain('日期');
+    expect(printedHtml).toContain('年');
 
     vi.unstubAllGlobals();
   });

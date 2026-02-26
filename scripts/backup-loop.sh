@@ -1,21 +1,37 @@
 #!/bin/bash
 
-BACKUP_HOUR="${BACKUP_HOUR:-2}"
+# Backup daemon: runs backup every hour
+# On startup: checks if last backup is older than 1 hour, triggers immediately if so
 
-echo "[$(date)] Backup daemon started. Backup hour: ${BACKUP_HOUR}:00"
+BACKUP_DIR="${BACKUP_DIR:-/backups}"
+INTERVAL=3600  # 1 hour in seconds
 
-while true; do
-    CURRENT_HOUR=$(date +%H | sed 's/^0//')
-    TODAY_MARKER="/tmp/backup-done-$(date +%Y%m%d)"
+echo "[$(date)] Backup daemon started. Interval: every ${INTERVAL}s (1 hour)"
 
-    if [ "${CURRENT_HOUR}" -eq "${BACKUP_HOUR}" ] && [ ! -f "${TODAY_MARKER}" ]; then
-        echo "[$(date)] Triggering daily backup..."
-        /scripts/backup.sh
-        touch "${TODAY_MARKER}"
-        # Clean old marker files
-        find /tmp -name "backup-done-*" -mtime +1 -delete 2>/dev/null || true
-        echo "[$(date)] Daily backup completed."
+# --- Startup check: if last backup > 1 hour ago, backup immediately ---
+need_immediate_backup=true
+latest=$(find "${BACKUP_DIR}" -name "*.sql" -type f -exec stat -c '%Y' {} \; 2>/dev/null | sort -rn | head -1)
+if [ -n "${latest}" ]; then
+    now=$(date +%s)
+    latest_int=${latest%.*}
+    age=$((now - latest_int))
+    echo "[$(date)] Last backup age: ${age}s"
+    if [ "${age}" -lt "${INTERVAL}" ]; then
+        need_immediate_backup=false
+        echo "[$(date)] Last backup is recent (< 1 hour). Skipping immediate backup."
     fi
+fi
 
-    sleep 3600
+if [ "${need_immediate_backup}" = true ]; then
+    echo "[$(date)] No recent backup found. Triggering immediate backup..."
+    /scripts/backup.sh
+    echo "[$(date)] Immediate backup completed."
+fi
+
+# --- Main loop: backup every hour ---
+while true; do
+    sleep ${INTERVAL}
+    echo "[$(date)] Triggering hourly backup..."
+    /scripts/backup.sh
+    echo "[$(date)] Hourly backup completed."
 done

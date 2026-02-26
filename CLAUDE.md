@@ -87,7 +87,7 @@ menzhen/
 │       ├── test/    # 测试配置
 │       └── utils/   # 工具函数
 ├── nginx/           # Nginx配置
-├── scripts/         # 备份恢复脚本
+├── scripts/         # 备份恢复脚本 + 七牛云上传
 ├── docker-compose.yml
 └── deploy.sh        # 一键部署
 ```
@@ -159,6 +159,19 @@ DeepSeek AI 相关（可选）：
 - `DEEPSEEK_API_KEY` — API密钥
 - `DEEPSEEK_BASE_URL` — API地址（默认 `https://api.qnaigc.com/v1/messages`）
 - `DEEPSEEK_MODEL` — 模型名（默认 `deepseek/deepseek-v3.2-251201`）
+
+七牛云备份上传（可选）：
+- `QINIU_ACCESS_KEY` — 七牛 Access Key
+- `QINIU_SECRET_KEY` — 七牛 Secret Key
+- `QINIU_BUCKET` — 七牛存储空间名
+- `QINIU_KEY_PREFIX` — 上传路径前缀（默认 `menzhen-backup/`）
+
+### 备份策略
+- 每 1 小时自动备份一次 MySQL 数据库
+- 备份文件命名：`YYYYMMDD_HHMMSS.sql`，统一存放于 `backups/` 目录
+- 自动清理超过 3 天的旧备份
+- 启动时检测：若最近备份超过 1 小时则立即触发
+- 备份完成后自动上传至七牛云对象存储（需配置 AK/SK）
 
 ## 详细文档
 

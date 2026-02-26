@@ -23,6 +23,7 @@ services:
 
   mysql:
     image: mysql:8.0
+    command: --default-authentication-plugin=mysql_native_password
     env_file: .env
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
@@ -52,7 +53,7 @@ services:
       dockerfile: Dockerfile.backup
     env_file: .env
     environment:
-      BACKUP_HOUR: ${BACKUP_HOUR:-2}
+      TZ: Asia/Shanghai
     volumes:
       - ./backups:/backups
     depends_on:

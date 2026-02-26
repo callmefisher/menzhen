@@ -14,13 +14,12 @@ import {
   InputNumber,
   Radio,
   Divider,
-  List,
   Tag,
-  Popconfirm,
   Drawer,
   Tooltip,
+  Dropdown,
 } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, RobotOutlined, ReloadOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, RobotOutlined, ReloadOutlined, MoreOutlined, MedicineBoxOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import Markdown from 'react-markdown';
@@ -90,7 +89,6 @@ export default function RecordForm() {
 
   // Record data for prescription print
   const [recordPatient, setRecordPatient] = useState<PatientOption | null>(null);
-  const [recordVisitDate, setRecordVisitDate] = useState<string>('');
 
   // Debounce timer ref for patient search
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -203,7 +201,6 @@ export default function RecordForm() {
             return prev;
           });
         }
-        setRecordVisitDate(record.visit_date);
 
         form.setFieldsValue({
           patient_id: record.patient_id,
@@ -579,72 +576,86 @@ export default function RecordForm() {
             </div>
 
             {prescriptions.length > 0 ? (
-              <List
-                dataSource={prescriptions}
-                renderItem={(item) => (
-                  <List.Item
-                    actions={[
-                      <PrescriptionPrint
-                        key="print"
-                        prescription={item}
-                        patientName={recordPatient?.name}
-                        patientAge={recordPatient?.age}
-                        visitDate={recordVisitDate}
-                      />,
-                      ...(hasPermission('prescription:create')
-                        ? [
-                            <Button
-                              key="edit"
-                              type="text"
-                              size="small"
-                              icon={<EditOutlined />}
-                              onClick={() => handleOpenPrescriptionModal(item)}
-                            >
-                              编辑
-                            </Button>,
-                            <Popconfirm
-                              key="delete"
-                              title="确定删除此处方？"
-                              onConfirm={() => handleDeletePrescription(item.id)}
-                              okText="删除"
-                              cancelText="取消"
-                            >
-                              <Button type="text" size="small" danger icon={<DeleteOutlined />}>
-                                删除
-                              </Button>
-                            </Popconfirm>,
-                          ]
-                        : []),
-                    ]}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {prescriptions.map((item) => (
+                  <Card
+                    key={item.id}
+                    size="small"
+                    style={{ borderRadius: 8 }}
+                    title={
+                      <Space size={8}>
+                        <MedicineBoxOutlined style={{ color: '#1677ff' }} />
+                        <span style={{ fontWeight: 500 }}>{item.formula_name || '自定义处方'}</span>
+                        <Tag color="blue" style={{ marginLeft: 4 }}>{item.total_doses} 付</Tag>
+                      </Space>
+                    }
+                    extra={
+                      <Space size={4}>
+                        <PrescriptionPrint
+                          key="print"
+                          prescription={item}
+                          patientName={recordPatient?.name}
+                          patientAge={recordPatient?.age}
+                        />
+                        {hasPermission('prescription:create') && (
+                          <Dropdown
+                            menu={{
+                              items: [
+                                {
+                                  key: 'edit',
+                                  icon: <EditOutlined />,
+                                  label: '编辑',
+                                  onClick: () => handleOpenPrescriptionModal(item),
+                                },
+                                { type: 'divider' },
+                                {
+                                  key: 'delete',
+                                  icon: <DeleteOutlined />,
+                                  label: '删除',
+                                  danger: true,
+                                  onClick: () => {
+                                    Modal.confirm({
+                                      title: '确定删除此处方？',
+                                      content: '删除后不可恢复',
+                                      okText: '删除',
+                                      okButtonProps: { danger: true },
+                                      cancelText: '取消',
+                                      onOk: () => handleDeletePrescription(item.id),
+                                    });
+                                  },
+                                },
+                              ],
+                            }}
+                            trigger={['click']}
+                          >
+                            <Button type="text" size="small" icon={<MoreOutlined />} />
+                          </Dropdown>
+                        )}
+                      </Space>
+                    }
                   >
-                    <List.Item.Meta
-                      title={
-                        <Space>
-                          <span>{item.formula_name || '自定义处方'}</span>
-                          <Tag color="blue">{item.total_doses} 付</Tag>
-                          {item.creator?.real_name && (
-                            <Tag>{item.creator.real_name}</Tag>
-                          )}
-                        </Space>
-                      }
-                      description={
-                        <div>
-                          <div>
-                            {(item.items || [])
-                              .map((herb) => `${herb.herb_name} ${herb.dosage}克${herb.notes ? '(' + herb.notes + ')' : ''}`)
-                              .join('、')}
-                          </div>
-                          {item.notes && (
-                            <div style={{ marginTop: 4, color: '#666' }}>
-                              医嘱：{item.notes}
-                            </div>
-                          )}
-                        </div>
-                      }
-                    />
-                  </List.Item>
-                )}
-              />
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px', lineHeight: '26px' }}>
+                      {(item.items || []).map((herb) => (
+                        <span key={herb.id} style={{ whiteSpace: 'nowrap' }}>
+                          <span>{herb.herb_name}</span>
+                          <span style={{ color: '#1677ff', marginLeft: 4 }}>{herb.dosage}g</span>
+                          {herb.notes && <span style={{ color: '#999', marginLeft: 2 }}>({herb.notes})</span>}
+                        </span>
+                      ))}
+                    </div>
+                    {item.notes && (
+                      <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed #f0f0f0', color: '#666', fontSize: 13 }}>
+                        医嘱：{item.notes}
+                      </div>
+                    )}
+                    {item.creator?.real_name && (
+                      <div style={{ marginTop: 6, fontSize: 12, color: '#999', textAlign: 'right' }}>
+                        开方医师：{item.creator.real_name}
+                      </div>
+                    )}
+                  </Card>
+                ))}
+              </div>
             ) : (
               <div style={{ color: '#999', textAlign: 'center', padding: 24 }}>
                 暂无处方
