@@ -142,6 +142,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			herbs.GET("/categories", herbHandler.Categories)
 			herbs.GET("/:id", herbHandler.Detail)
 			herbs.DELETE("/:id", middleware.RequirePermission(db, "role:manage"), herbHandler.Delete)
+			herbs.PUT("/:id", middleware.RequirePermission(db, "role:manage"), herbHandler.Update)
 		}
 
 		// Formula routes (global data, authenticated, no permission required for read).

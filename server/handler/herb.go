@@ -108,3 +108,62 @@ func (h *HerbHandler) Delete(c *gin.Context) {
 
 	Success(c, nil)
 }
+
+// Update handles PUT /api/v1/herbs/:id
+func (h *HerbHandler) Update(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		Error(c, http.StatusBadRequest, "invalid herb id")
+		return
+	}
+
+	var req struct {
+		Name        *string `json:"name"`
+		Alias       *string `json:"alias"`
+		Category    *string `json:"category"`
+		Properties  *string `json:"properties"`
+		Effects     *string `json:"effects"`
+		Indications *string `json:"indications"`
+		Origin      *string `json:"origin"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	// Build updates map from non-nil fields (whitelist)
+	updates := make(map[string]interface{})
+	if req.Name != nil {
+		updates["name"] = *req.Name
+	}
+	if req.Alias != nil {
+		updates["alias"] = *req.Alias
+	}
+	if req.Category != nil {
+		updates["category"] = *req.Category
+	}
+	if req.Properties != nil {
+		updates["properties"] = *req.Properties
+	}
+	if req.Effects != nil {
+		updates["effects"] = *req.Effects
+	}
+	if req.Indications != nil {
+		updates["indications"] = *req.Indications
+	}
+	if req.Origin != nil {
+		updates["origin"] = *req.Origin
+	}
+
+	svc := service.NewHerbService(h.db, h.deepSeek)
+	if err := svc.Update(id, updates); err != nil {
+		if errors.Is(err, service.ErrHerbNotFound) {
+			Error(c, http.StatusNotFound, "herb not found")
+			return
+		}
+		Error(c, http.StatusInternalServerError, "failed to update herb")
+		return
+	}
+
+	Success(c, nil)
+}
