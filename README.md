@@ -4,14 +4,15 @@
 
 ## 功能特性
 
-- **患者管理** — 患者档案建档、查询、编辑
-- **诊疗记录** — 就诊记录管理，支持附件上传
-- **AI 辅助分析** — 基于 DeepSeek AI，从中医学、西医学、现代医学等多维度进行辩证论治
-- **中医药查询** — 中药/方剂搜索，数据库 + AI 智能回退
-- **电子处方** — 开方、编辑、打印处方
+- **患者管理** — 患者档案建档、查询、编辑，支持生日录入自动计算年龄
+- **诊疗记录** — 就诊记录管理，支持附件上传（图片/音频/视频）
+- **AI 辅助分析** — 基于 DeepSeek AI，从中医学、现代医学等多维度辩证论治，分析结果自动缓存、支持 Markdown 表格渲染
+- **中医药查询** — 中药/方剂搜索（数据库 + AI 智能回退自动入库），管理员可编辑中药信息（含道地产区）
+- **电子处方** — 基于方剂一键开方、编辑、打印（多列排版）
 - **多租户** — 多诊所数据隔离，支持云端共享部署
 - **权限管理** — JWT 认证 + RBAC，细粒度权限控制
 - **操作日志** — 关键操作全程留痕
+- **自动备份** — 每小时自动备份数据库，支持七牛云远程存储
 
 ## 技术栈
 
@@ -23,6 +24,7 @@
 | 文件存储 | MinIO |
 | 认证 | JWT + RBAC |
 | AI | DeepSeek API |
+| 测试 | Go test (后端) + Vitest + Testing Library (前端) |
 | 部署 | Docker Compose + Nginx |
 
 ## 快速开始
@@ -70,6 +72,9 @@ npm run build    # 构建生产包
 | `DEEPSEEK_API_KEY` | DeepSeek AI API 密钥 | — |
 | `DEEPSEEK_BASE_URL` | API 地址 | `https://api.qnaigc.com/v1/messages` |
 | `DEEPSEEK_MODEL` | 模型名称 | `deepseek/deepseek-v3.2-251201` |
+| `QINIU_ACCESS_KEY` | 七牛云 Access Key（备份上传用） | — |
+| `QINIU_SECRET_KEY` | 七牛云 Secret Key | — |
+| `QINIU_BUCKET` | 七牛云存储空间名 | — |
 
 ## 项目结构
 
@@ -100,7 +105,9 @@ menzhen/
 ## 运维
 
 - 备份恢复：`./deploy.sh --restore /path/to/backup`
+- 自动备份：每小时备份 MySQL，自动清理 3 天前备份，支持七牛云远程存储
 - 详细运维文档见 [docs/operations-guide.md](docs/operations-guide.md)
+- 全局代码上下文见 [docs/codebase.md](docs/codebase.md)
 
 ## 许可证
 

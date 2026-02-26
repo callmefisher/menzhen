@@ -23,6 +23,7 @@ import { PlusOutlined, EditOutlined, DeleteOutlined, RobotOutlined, ReloadOutlin
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { getRecord, createRecord, updateRecord, aiAnalyzeDiagnosis, getCachedAiAnalysis } from '../../api/record';
 import { listPatients, createPatient, getPatient } from '../../api/patient';
 import {
@@ -335,7 +336,8 @@ export default function RecordForm() {
       const res = await aiAnalyzeDiagnosis(diagnosis.trim(), recordId, force);
       const body = res as unknown as { data: { analysis: string; cached: boolean } };
       setAiResult(body.data.analysis || '未获取到分析结果');
-      setAiCached(body.data.cached || false);
+      // When recordId exists, backend has already persisted the result, so mark as cached
+      setAiCached(body.data.cached || !!recordId);
     } catch {
       setAiResult('AI 分析请求失败，请稍后重试');
     } finally {
@@ -841,6 +843,7 @@ export default function RecordForm() {
               }}
             >
               <Markdown
+                remarkPlugins={[remarkGfm]}
                 components={{
                   h1: ({ children }) => (
                     <h2 style={{
@@ -906,6 +909,46 @@ export default function RecordForm() {
                       borderTop: '1px solid #f0f0f0',
                       margin: '20px 0',
                     }} />
+                  ),
+                  table: ({ children }) => (
+                    <div style={{ overflowX: 'auto', margin: '16px 0' }}>
+                      <table style={{
+                        width: '100%',
+                        borderCollapse: 'collapse',
+                        fontSize: 14,
+                        lineHeight: 1.6,
+                      }}>{children}</table>
+                    </div>
+                  ),
+                  thead: ({ children }) => (
+                    <thead style={{
+                      background: '#fafafa',
+                    }}>{children}</thead>
+                  ),
+                  tbody: ({ children }) => (
+                    <tbody>{children}</tbody>
+                  ),
+                  tr: ({ children }) => (
+                    <tr style={{
+                      borderBottom: '1px solid #f0f0f0',
+                    }}>{children}</tr>
+                  ),
+                  th: ({ children }) => (
+                    <th style={{
+                      padding: '10px 12px',
+                      textAlign: 'left',
+                      fontWeight: 600,
+                      color: '#262626',
+                      borderBottom: '2px solid #e8e8e8',
+                      whiteSpace: 'nowrap',
+                    }}>{children}</th>
+                  ),
+                  td: ({ children }) => (
+                    <td style={{
+                      padding: '10px 12px',
+                      color: '#434343',
+                      borderBottom: '1px solid #f5f5f5',
+                    }}>{children}</td>
                   ),
                 }}
               >
