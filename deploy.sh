@@ -91,7 +91,14 @@ if [ -n "$RESTORE_DIR" ]; then
     fi
 fi
 
-# 7. Print access info
+# 7. Clean up old Docker images and build cache
+echo ">> 清理旧镜像和构建缓存..."
+docker image prune -f
+docker builder prune -f --filter "until=24h"
+FREED=$(docker system df --format '{{.Reclaimable}}' 2>/dev/null | head -1)
+echo "清理完成${FREED:+，可回收空间: $FREED}"
+
+# 8. Print access info
 echo ""
 echo "=== 部署完成 ==="
 echo "访问地址: http://localhost"
