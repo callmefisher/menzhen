@@ -105,6 +105,18 @@ func (s *FormulaService) UpdateName(id uint64, name string) error {
 	return s.DB.Model(&formula).Update("name", name).Error
 }
 
+// UpdateNotes updates the notes of a formula by ID.
+func (s *FormulaService) UpdateNotes(id uint64, notes string) error {
+	var formula model.Formula
+	if err := s.DB.First(&formula, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrFormulaNotFound
+		}
+		return err
+	}
+	return s.DB.Model(&formula).Update("notes", notes).Error
+}
+
 // isValidFormulaResult checks whether the AI result contains a valid formula.
 // A valid formula must have at least one composition item (herb).
 func isValidFormulaResult(result *FormulaAIResult) bool {

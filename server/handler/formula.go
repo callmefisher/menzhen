@@ -154,3 +154,32 @@ func (h *FormulaHandler) UpdateName(c *gin.Context) {
 
 	Success(c, nil)
 }
+
+// UpdateNotes handles PUT /api/v1/formulas/:id/notes
+func (h *FormulaHandler) UpdateNotes(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		Error(c, http.StatusBadRequest, "invalid formula id")
+		return
+	}
+
+	var req struct {
+		Notes string `json:"notes"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	svc := service.NewFormulaService(h.db, h.deepSeek)
+	if err := svc.UpdateNotes(id, req.Notes); err != nil {
+		if errors.Is(err, service.ErrFormulaNotFound) {
+			Error(c, http.StatusNotFound, "formula not found")
+			return
+		}
+		Error(c, http.StatusInternalServerError, "failed to update formula notes")
+		return
+	}
+
+	Success(c, nil)
+}
