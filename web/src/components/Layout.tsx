@@ -53,14 +53,6 @@ export default function AppLayout() {
       label: '病历列表',
     });
 
-    if (hasPermission('oplog:read')) {
-      items.push({
-        key: '/oplogs',
-        icon: <FileSearchOutlined />,
-        label: '操作日志',
-      });
-    }
-
     // TCM menu group - accessible to all authenticated users
     const tcmChildren: MenuItem[] = [
       {
@@ -113,6 +105,14 @@ export default function AppLayout() {
         icon: <SettingOutlined />,
         label: '系统设置',
         children: settingsChildren,
+      });
+    }
+
+    if (hasPermission('oplog:read')) {
+      items.push({
+        key: '/oplogs',
+        icon: <FileSearchOutlined />,
+        label: '操作日志',
       });
     }
 

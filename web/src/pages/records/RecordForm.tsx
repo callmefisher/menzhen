@@ -652,7 +652,10 @@ export default function RecordForm() {
                     </div>
                     {item.notes && (
                       <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed #f0f0f0', color: '#666', fontSize: 13 }}>
-                        医嘱：{item.notes}
+                        <div style={{ marginBottom: 2 }}>医嘱：</div>
+                        {item.notes.split('\n').map((line, idx) => (
+                          <div key={idx}>{line}</div>
+                        ))}
                       </div>
                     )}
                     {item.creator?.real_name && (
