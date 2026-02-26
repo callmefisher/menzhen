@@ -461,8 +461,8 @@ export default function RecordForm() {
                 >
                   AI辅助分析
                 </Button>
-                {aiCached && aiResult && !aiDrawerOpen && (
-                  <Tooltip title="已有缓存的分析结果，点击查看">
+                {aiResult && !aiDrawerOpen && (
+                  <Tooltip title="已有分析结果，点击查看">
                     <Tag
                       color="green"
                       style={{ cursor: 'pointer' }}
@@ -789,7 +789,7 @@ export default function RecordForm() {
           body: { padding: 0 },
         }}
         extra={
-          aiCached && !aiAnalyzing ? (
+          aiResult && !aiAnalyzing ? (
             <Tooltip title="忽略缓存，重新调用 AI 分析">
               <Button
                 size="small"
