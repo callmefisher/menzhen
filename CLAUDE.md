@@ -122,6 +122,7 @@ menzhen/
 | GET | `/api/v1/herbs/categories` | - | 中药分类列表 |
 | GET | `/api/v1/herbs/:id` | - | 中药详情 |
 | PUT | `/api/v1/herbs/:id` | role:manage | 更新中药（药名/别名/分类/性味/功效/主治/道地产区） |
+| POST | `/api/v1/herbs/:id/ai-refresh` | role:manage | AI重新查询中药信息并更新 |
 | GET | `/api/v1/formulas` | - | 搜索方剂（DB+AI回退） |
 | GET | `/api/v1/formulas/:id` | - | 方剂详情 |
 | PUT | `/api/v1/formulas/:id/name` | role:manage | 更新方剂名称 |

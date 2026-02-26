@@ -336,8 +336,7 @@ export default function RecordForm() {
       const res = await aiAnalyzeDiagnosis(diagnosis.trim(), recordId, force);
       const body = res as unknown as { data: { analysis: string; cached: boolean } };
       setAiResult(body.data.analysis || '未获取到分析结果');
-      // When recordId exists, backend has already persisted the result, so mark as cached
-      setAiCached(body.data.cached || !!recordId);
+      setAiCached(body.data.cached);
     } catch {
       setAiResult('AI 分析请求失败，请稍后重试');
     } finally {

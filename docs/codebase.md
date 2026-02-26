@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-02-26（AI分析Markdown表格渲染优化 + AI分析即时缓存修复）
+> 最后更新：2026-02-26（5项优化：AI缓存修复、中药方剂默认加载、AI重查询、名称搜索、菜单展开）
 
 ---
 
@@ -39,7 +39,7 @@ menzhen/
 │   │   ├── patient.go               # List/Create/Detail/Update/Delete
 │   │   ├── record.go                # List/Create/Detail/Update/Delete
 │   │   ├── upload.go                # Upload/GetFile（MinIO）
-│   │   ├── herb.go                  # List/Detail/Delete/Categories/Update
+│   │   ├── herb.go                  # List/Detail/Delete/Categories/Update/AIRefresh
 │   │   ├── formula.go               # List/Detail/Delete/UpdateComposition
 │   │   ├── prescription.go          # Create/Detail/Update/Delete/ListByRecord
 │   │   ├── ai_analysis.go           # Analyze（AI 辩证论治，含缓存）+ GetCached
@@ -396,6 +396,7 @@ menzhen/
 | GET | `/api/v1/herbs/categories` | - | 获取中药分类列表（从已有数据中聚合） |
 | GET | `/api/v1/herbs/:id` | - | 中药详情 |
 | PUT | `/api/v1/herbs/:id` | `role:manage` | 更新中药（药名/别名/分类/性味/功效/主治/道地产区） |
+| POST | `/api/v1/herbs/:id/ai-refresh` | `role:manage` | AI重新查询中药信息并更新 |
 | DELETE | `/api/v1/herbs/:id` | `role:manage` | 删除中药 |
 
 #### 方剂查询（全局数据）

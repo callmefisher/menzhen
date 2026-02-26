@@ -30,7 +30,7 @@ func (s *HerbService) Search(name, category string, page, size int) ([]model.Her
 	query := s.DB.Model(&model.Herb{})
 
 	if name != "" {
-		query = query.Where("name LIKE ? OR alias LIKE ?", "%"+name+"%", "%"+name+"%")
+		query = query.Where("name LIKE ?", "%"+name+"%")
 	}
 	if category != "" {
 		query = query.Where("category = ?", category)
@@ -114,6 +114,62 @@ func (s *HerbService) Update(id uint64, updates map[string]interface{}) error {
 		return nil
 	}
 	return s.DB.Model(&herb).Updates(updates).Error
+}
+
+// AIRefresh queries DeepSeek for the latest herb info and updates the existing herb record.
+// Returns the updated herb with AI data merged in.
+func (s *HerbService) AIRefresh(id uint64) (*model.Herb, error) {
+	var herb model.Herb
+	if err := s.DB.First(&herb, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrHerbNotFound
+		}
+		return nil, err
+	}
+
+	if s.DeepSeek == nil || !s.DeepSeek.IsEnabled() {
+		return nil, errors.New("AI service not configured")
+	}
+
+	result, err := s.DeepSeek.QueryHerb(herb.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	if !isValidHerbResult(result) {
+		return nil, errors.New("AI returned invalid herb data")
+	}
+
+	// Build updates map — only update non-empty fields from AI
+	updates := make(map[string]interface{})
+	if result.Alias != "" {
+		updates["alias"] = result.Alias
+	}
+	if result.Category != "" {
+		updates["category"] = result.Category
+	}
+	if result.Properties != "" {
+		updates["properties"] = result.Properties
+	}
+	if result.Effects != "" {
+		updates["effects"] = result.Effects
+	}
+	if result.Indications != "" {
+		updates["indications"] = result.Indications
+	}
+	if result.Origin != "" {
+		updates["origin"] = result.Origin
+	}
+
+	if len(updates) > 0 {
+		if err := s.DB.Model(&herb).Updates(updates).Error; err != nil {
+			return nil, err
+		}
+		// Reload to get updated fields
+		s.DB.First(&herb, id)
+	}
+
+	return &herb, nil
 }
 
 // queryAndSaveFromAI queries DeepSeek for herb info. Only saves valid results to DB.

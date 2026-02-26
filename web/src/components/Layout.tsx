@@ -137,7 +137,7 @@ export default function AppLayout() {
     const path = location.pathname;
     if (path.startsWith('/settings')) return ['/settings'];
     if (path.startsWith('/herbs') || path.startsWith('/formulas')) return ['/tcm'];
-    return [];
+    return ['/tcm', '/settings'];
   }, [location.pathname]);
 
   const handleMenuClick = (info: { key: string }) => {

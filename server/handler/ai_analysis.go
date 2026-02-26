@@ -64,6 +64,7 @@ func (h *AIAnalysisHandler) Analyze(c *gin.Context) {
 	}
 
 	// Persist result if record_id is provided
+	cached := false
 	if req.RecordID > 0 {
 		analysis := model.AIAnalysis{
 			RecordID:  req.RecordID,
@@ -74,16 +75,20 @@ func (h *AIAnalysisHandler) Analyze(c *gin.Context) {
 		// Upsert: update if exists, create if not
 		var existing model.AIAnalysis
 		if err := h.db.Where("record_id = ? AND tenant_id = ?", req.RecordID, tenantID).First(&existing).Error; err == nil {
-			h.db.Model(&existing).Updates(map[string]interface{}{
+			if err := h.db.Model(&existing).Updates(map[string]interface{}{
 				"diagnosis": req.Diagnosis,
 				"analysis":  result,
-			})
+			}).Error; err == nil {
+				cached = true
+			}
 		} else {
-			h.db.Create(&analysis)
+			if err := h.db.Create(&analysis).Error; err == nil {
+				cached = true
+			}
 		}
 	}
 
-	Success(c, gin.H{"analysis": result, "cached": false})
+	Success(c, gin.H{"analysis": result, "cached": cached})
 }
 
 // GetCached handles GET /api/v1/records/:id/ai-analysis
