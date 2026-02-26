@@ -115,6 +115,7 @@ func (s *HerbService) queryAndSaveFromAI(name string) (*model.Herb, error) {
 		Properties:  result.Properties,
 		Effects:     result.Effects,
 		Indications: result.Indications,
+		Origin:      result.Origin,
 		Source:      "deepseek",
 	}
 
