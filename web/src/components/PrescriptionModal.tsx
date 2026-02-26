@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   Modal,
   Tabs,
@@ -72,7 +72,27 @@ export default function PrescriptionModal({
   // Formula search state
   const [formulaOptions, setFormulaOptions] = useState<FormulaItem[]>([]);
   const [formulaLoading, setFormulaLoading] = useState(false);
+  const [selectedFormula, setSelectedFormula] = useState<FormulaItem | null>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 编辑模式：根据方剂名加载方剂详情（功效/主治/备注）
+  useEffect(() => {
+    if (open && editData?.formula_name && !selectedFormula) {
+      (async () => {
+        try {
+          const res = await listFormulas({ name: editData.formula_name, page: 1, size: 10 });
+          const body = res as unknown as { data: { list: FormulaItem[]; total: number } };
+          const list = body.data.list || [];
+          const match = list.find((f) => f.name === editData.formula_name);
+          if (match) {
+            setSelectedFormula(match);
+          }
+        } catch {
+          // ignore
+        }
+      })();
+    }
+  }, [open, editData?.formula_name]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const searchFormulas = useCallback(async (name: string) => {
     if (!name) return;
@@ -101,6 +121,7 @@ export default function PrescriptionModal({
     const formula = formulaOptions.find((f) => f.id === formulaId);
     if (!formula) return;
 
+    setSelectedFormula(formula);
     form.setFieldValue('formula_name', formula.name);
 
     // 如果方剂有备注，追加到医嘱末尾
@@ -289,14 +310,52 @@ export default function PrescriptionModal({
                     loading={formulaLoading}
                     style={{ width: '100%' }}
                     onSelect={handleFormulaSelect}
+                    optionLabelProp="label"
                     options={formulaOptions.map((f) => ({
                       value: f.id,
-                      label: `${f.name}${f.effects ? ' — ' + f.effects.substring(0, 30) : ''}`,
+                      label: f.name,
+                      desc: [f.effects, f.indications].filter(Boolean).join(' | '),
                     }))}
+                    optionRender={(option) => (
+                      <div>
+                        <div style={{ fontWeight: 500 }}>{option.label}</div>
+                        {option.data.desc && (
+                          <div style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {option.data.desc}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     notFoundContent={formulaLoading ? '搜索中...' : '输入方剂名搜索'}
                     suffixIcon={<SearchOutlined />}
                   />
                 </Space.Compact>
+                {selectedFormula && (selectedFormula.effects || selectedFormula.indications || selectedFormula.notes) && (
+                  <div
+                    style={{
+                      marginTop: 12,
+                      padding: '8px 12px',
+                      background: '#fafbfc',
+                      borderRadius: 8,
+                      border: '1px solid #e8e8e8',
+                      display: 'flex',
+                      gap: 24,
+                      flexWrap: 'wrap',
+                      fontSize: 13,
+                      lineHeight: '20px',
+                    }}
+                  >
+                    {selectedFormula.effects && (
+                      <span><span style={{ fontWeight: 500, color: '#555' }}>功效：</span><span style={{ color: '#333' }}>{selectedFormula.effects}</span></span>
+                    )}
+                    {selectedFormula.indications && (
+                      <span><span style={{ fontWeight: 500, color: '#555' }}>主治：</span><span style={{ color: '#333' }}>{selectedFormula.indications}</span></span>
+                    )}
+                    {selectedFormula.notes && (
+                      <span><span style={{ fontWeight: 500, color: '#555' }}>备注：</span><span style={{ color: '#333' }}>{selectedFormula.notes}</span></span>
+                    )}
+                  </div>
+                )}
                 <p style={{ color: '#888', fontSize: 12, marginTop: 4 }}>
                   选择方剂后将自动填充药物列表，您可以调整剂量
                 </p>
