@@ -11,7 +11,8 @@ import {
   Select,
   message,
 } from 'antd';
-import { PlusOutlined, DeleteOutlined, SearchOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, SearchOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import HerbDetailModal from './HerbDetailModal';
 import { listFormulas } from '../api/formula';
 import type { FormulaItem, FormulaCompositionItem } from '../api/formula';
 import {
@@ -60,6 +61,8 @@ export default function PrescriptionModal({
   const [nextKey, setNextKey] = useState(
     editData?.items ? editData.items.length : 1
   );
+  const [herbDetailOpen, setHerbDetailOpen] = useState(false);
+  const [herbDetailName, setHerbDetailName] = useState('');
 
   // Formula search state
   const [formulaOptions, setFormulaOptions] = useState<FormulaItem[]>([]);
@@ -177,11 +180,25 @@ export default function PrescriptionModal({
       dataIndex: 'herb_name',
       key: 'herb_name',
       render: (_: string, record: HerbRow) => (
-        <Input
-          value={record.herb_name}
-          onChange={(e) => updateHerbRow(record.key, 'herb_name', e.target.value)}
-          placeholder="药名"
-        />
+        <Space>
+          <Input
+            value={record.herb_name}
+            onChange={(e) => updateHerbRow(record.key, 'herb_name', e.target.value)}
+            placeholder="药名"
+          />
+          <Button
+            type="text"
+            size="small"
+            icon={<InfoCircleOutlined />}
+            onClick={() => {
+              if (record.herb_name.trim()) {
+                setHerbDetailName(record.herb_name.trim());
+                setHerbDetailOpen(true);
+              }
+            }}
+            disabled={!record.herb_name.trim()}
+          />
+        </Space>
       ),
     },
     {
@@ -324,6 +341,11 @@ export default function PrescriptionModal({
           <Input.TextArea rows={2} placeholder="如：饭后服用、忌辛辣等" />
         </Form.Item>
       </Form>
+      <HerbDetailModal
+        open={herbDetailOpen}
+        herbName={herbDetailName}
+        onClose={() => setHerbDetailOpen(false)}
+      />
     </Modal>
   );
 }

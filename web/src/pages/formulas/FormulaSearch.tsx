@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Input, Table, Tag, message, Button, Popconfirm, Modal, Space } from 'antd';
-import { SearchOutlined, RobotOutlined, DeleteOutlined, EditOutlined, PlusOutlined, MinusCircleOutlined } from '@ant-design/icons';
+import { Input, Table, Tag, message, Button, Popconfirm, Space } from 'antd';
+import { SearchOutlined, RobotOutlined, DeleteOutlined, EditOutlined, PlusOutlined, MinusCircleOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { listFormulas, deleteFormula, updateFormulaComposition } from '../../api/formula';
+import { listFormulas, deleteFormula, updateFormulaComposition, updateFormulaName } from '../../api/formula';
 import type { FormulaItem, FormulaCompositionItem } from '../../api/formula';
 import { useAuth } from '../../store/auth';
+import HerbDetailModal from '../../components/HerbDetailModal';
 
 export default function FormulaSearch() {
   const [formulas, setFormulas] = useState<FormulaItem[]>([]);
@@ -15,12 +16,18 @@ export default function FormulaSearch() {
   const [searchName, setSearchName] = useState('');
   const { hasPermission } = useAuth();
 
-  // Composition edit modal state
-  const [editModalOpen, setEditModalOpen] = useState(false);
-  const [editFormulaId, setEditFormulaId] = useState<number | null>(null);
-  const [editFormulaName, setEditFormulaName] = useState('');
-  const [editComposition, setEditComposition] = useState<FormulaCompositionItem[]>([]);
-  const [saving, setSaving] = useState(false);
+  // Editable formula name state
+  const [editingNameId, setEditingNameId] = useState<number | null>(null);
+  const [editingNameValue, setEditingNameValue] = useState('');
+
+  // Herb detail modal state
+  const [herbDetailOpen, setHerbDetailOpen] = useState(false);
+  const [herbDetailName, setHerbDetailName] = useState('');
+
+  // Inline composition edit state
+  const [inlineEditId, setInlineEditId] = useState<number | null>(null);
+  const [inlineComposition, setInlineComposition] = useState<FormulaCompositionItem[]>([]);
+  const [inlineSaving, setInlineSaving] = useState(false);
 
   const fetchFormulas = async (name: string, p: number, s: number) => {
     setLoading(true);
@@ -62,51 +69,68 @@ export default function FormulaSearch() {
     }
   };
 
-  const openEditModal = (record: FormulaItem) => {
-    setEditFormulaId(record.id);
-    setEditFormulaName(record.name);
-    setEditComposition(
-      (record.composition || []).map((c) => ({ ...c }))
-    );
-    setEditModalOpen(true);
-  };
-
-  const addRow = () => {
-    setEditComposition([...editComposition, { herb_name: '', default_dosage: '' }]);
-  };
-
-  const removeRow = (index: number) => {
-    setEditComposition(editComposition.filter((_, i) => i !== index));
-  };
-
-  const updateRow = (index: number, field: keyof FormulaCompositionItem, value: string) => {
-    const updated = editComposition.map((item, i) =>
-      i === index ? { ...item, [field]: value } : item
-    );
-    setEditComposition(updated);
-  };
-
-  const handleSaveComposition = async () => {
-    if (editFormulaId === null) return;
-
-    // Validate: filter out empty rows, require at least herb_name
-    const valid = editComposition.filter((c) => c.herb_name.trim() !== '');
-    if (valid.length === 0) {
-      message.warning('请至少添加一味药物');
+  // --- Formula name editing ---
+  const handleSaveName = async (id: number) => {
+    const trimmed = editingNameValue.trim();
+    if (!trimmed) {
+      message.warning('方剂名不能为空');
       return;
     }
-
-    setSaving(true);
     try {
-      await updateFormulaComposition(editFormulaId, valid);
-      message.success('组成更新成功');
-      setEditModalOpen(false);
+      await updateFormulaName(id, trimmed);
+      message.success('方剂名更新成功');
       fetchFormulas(searchName, page, size);
     } catch {
       // Error handled by interceptor
     } finally {
-      setSaving(false);
+      setEditingNameId(null);
     }
+  };
+
+  // --- Inline composition editing ---
+  const startInlineEdit = (record: FormulaItem) => {
+    setInlineEditId(record.id);
+    setInlineComposition((record.composition || []).map((c) => ({ ...c })));
+  };
+
+  const updateInlineRow = (index: number, field: keyof FormulaCompositionItem, value: string) => {
+    setInlineComposition(
+      inlineComposition.map((item, i) => (i === index ? { ...item, [field]: value } : item))
+    );
+  };
+
+  const addInlineRow = () => {
+    setInlineComposition([...inlineComposition, { herb_name: '', default_dosage: '' }]);
+  };
+
+  const removeInlineRow = (index: number) => {
+    setInlineComposition(inlineComposition.filter((_, i) => i !== index));
+  };
+
+  const handleSaveInline = async () => {
+    if (inlineEditId === null) return;
+    const valid = inlineComposition.filter((c) => c.herb_name.trim() !== '');
+    if (valid.length === 0) {
+      message.warning('请至少添加一味药物');
+      return;
+    }
+    setInlineSaving(true);
+    try {
+      await updateFormulaComposition(inlineEditId, valid);
+      message.success('组成更新成功');
+      setInlineEditId(null);
+      fetchFormulas(searchName, page, size);
+    } catch {
+      // Error handled by interceptor
+    } finally {
+      setInlineSaving(false);
+    }
+  };
+
+  const openHerbDetail = (herbName: string) => {
+    if (!herbName.trim()) return;
+    setHerbDetailName(herbName.trim());
+    setHerbDetailOpen(true);
   };
 
   const columns: ColumnsType<FormulaItem> = [
@@ -115,6 +139,27 @@ export default function FormulaSearch() {
       dataIndex: 'name',
       key: 'name',
       width: 150,
+      render: (name: string, record: FormulaItem) => {
+        if (hasPermission('role:manage') && editingNameId === record.id) {
+          return (
+            <Input
+              size="small"
+              value={editingNameValue}
+              onChange={(e) => setEditingNameValue(e.target.value)}
+              onBlur={() => handleSaveName(record.id)}
+              onPressEnter={() => handleSaveName(record.id)}
+              autoFocus
+            />
+          );
+        }
+        return hasPermission('role:manage') ? (
+          <a onClick={() => { setEditingNameId(record.id); setEditingNameValue(name); }}>
+            {name}
+          </a>
+        ) : (
+          name
+        );
+      },
     },
     {
       title: '功效',
@@ -176,47 +221,6 @@ export default function FormulaSearch() {
       : []),
   ];
 
-  const editColumns: ColumnsType<FormulaCompositionItem & { key: number }> = [
-    {
-      title: '药物',
-      dataIndex: 'herb_name',
-      key: 'herb_name',
-      render: (_: unknown, _record: FormulaCompositionItem & { key: number }, index: number) => (
-        <Input
-          value={editComposition[index]?.herb_name}
-          onChange={(e) => updateRow(index, 'herb_name', e.target.value)}
-          placeholder="药名"
-        />
-      ),
-    },
-    {
-      title: '用量',
-      dataIndex: 'default_dosage',
-      key: 'default_dosage',
-      width: 150,
-      render: (_: unknown, _record: FormulaCompositionItem & { key: number }, index: number) => (
-        <Input
-          value={editComposition[index]?.default_dosage}
-          onChange={(e) => updateRow(index, 'default_dosage', e.target.value)}
-          placeholder="如 10g"
-        />
-      ),
-    },
-    {
-      title: '操作',
-      key: 'action',
-      width: 60,
-      render: (_: unknown, _record: FormulaCompositionItem & { key: number }, index: number) => (
-        <Button
-          type="text"
-          danger
-          icon={<MinusCircleOutlined />}
-          onClick={() => removeRow(index)}
-        />
-      ),
-    },
-  ];
-
   return (
     <div>
       <div style={{ marginBottom: 16 }}>
@@ -245,18 +249,81 @@ export default function FormulaSearch() {
         onChange={handleTableChange}
         expandable={{
           expandedRowRender: (record) => {
-            const comp = record.composition || [];
+            const isEditing = hasPermission('role:manage') && inlineEditId === record.id;
+            const comp = isEditing ? inlineComposition : (record.composition || []);
+
             return (
               <div style={{ padding: '8px 0' }}>
                 <p><strong>功效：</strong>{record.effects || '无'}</p>
                 <p><strong>主治：</strong>{record.indications || '无'}</p>
                 <p><strong>组成：</strong></p>
-                {comp.length > 0 ? (
+                {comp.length > 0 || isEditing ? (
                   <Table
                     dataSource={comp.map((c: FormulaCompositionItem, idx: number) => ({ ...c, key: idx }))}
                     columns={[
-                      { title: '药物', dataIndex: 'herb_name', key: 'herb_name' },
-                      { title: '用量', dataIndex: 'default_dosage', key: 'default_dosage' },
+                      {
+                        title: '药物',
+                        dataIndex: 'herb_name',
+                        key: 'herb_name',
+                        render: (_: unknown, _rec: FormulaCompositionItem & { key: number }, index: number) => (
+                          <Space>
+                            {isEditing ? (
+                              <Input
+                                size="small"
+                                value={inlineComposition[index]?.herb_name}
+                                onChange={(e) => updateInlineRow(index, 'herb_name', e.target.value)}
+                                placeholder="药名"
+                              />
+                            ) : (
+                              <span>{(record.composition || [])[index]?.herb_name}</span>
+                            )}
+                            <Button
+                              type="text"
+                              size="small"
+                              icon={<InfoCircleOutlined />}
+                              onClick={() => openHerbDetail(
+                                isEditing
+                                  ? (inlineComposition[index]?.herb_name || '')
+                                  : ((record.composition || [])[index]?.herb_name || '')
+                              )}
+                            />
+                          </Space>
+                        ),
+                      },
+                      {
+                        title: '用量',
+                        dataIndex: 'default_dosage',
+                        key: 'default_dosage',
+                        width: 150,
+                        render: isEditing
+                          ? (_: unknown, _rec: FormulaCompositionItem & { key: number }, index: number) => (
+                              <Input
+                                size="small"
+                                value={inlineComposition[index]?.default_dosage}
+                                onChange={(e) => updateInlineRow(index, 'default_dosage', e.target.value)}
+                                placeholder="如 10g"
+                              />
+                            )
+                          : undefined,
+                      },
+                      ...(isEditing
+                        ? [
+                            {
+                              title: '操作',
+                              key: 'action',
+                              width: 60,
+                              render: (_: unknown, _rec: FormulaCompositionItem & { key: number }, index: number) => (
+                                <Button
+                                  type="text"
+                                  danger
+                                  icon={<MinusCircleOutlined />}
+                                  onClick={() => removeInlineRow(index)}
+                                  size="small"
+                                />
+                              ),
+                            },
+                          ]
+                        : []),
                     ]}
                     pagination={false}
                     size="small"
@@ -271,15 +338,28 @@ export default function FormulaSearch() {
                       数据来源：DeepSeek AI（仅供参考，请结合临床经验）
                     </Tag>
                   )}
-                  {hasPermission('role:manage') && (
+                  {hasPermission('role:manage') && !isEditing && (
                     <Button
                       type="primary"
                       size="small"
                       icon={<EditOutlined />}
-                      onClick={() => openEditModal(record)}
+                      onClick={() => startInlineEdit(record)}
                     >
                       编辑组成
                     </Button>
+                  )}
+                  {isEditing && (
+                    <>
+                      <Button type="dashed" size="small" icon={<PlusOutlined />} onClick={addInlineRow}>
+                        添加药物
+                      </Button>
+                      <Button type="primary" size="small" loading={inlineSaving} onClick={handleSaveInline}>
+                        保存
+                      </Button>
+                      <Button size="small" onClick={() => setInlineEditId(null)}>
+                        取消
+                      </Button>
+                    </>
                   )}
                 </Space>
               </div>
@@ -288,33 +368,11 @@ export default function FormulaSearch() {
         }}
       />
 
-      <Modal
-        title={`编辑组成 - ${editFormulaName}`}
-        open={editModalOpen}
-        onCancel={() => setEditModalOpen(false)}
-        onOk={handleSaveComposition}
-        confirmLoading={saving}
-        okText="保存"
-        cancelText="取消"
-        width={600}
-        destroyOnClose
-      >
-        <Table
-          dataSource={editComposition.map((c, idx) => ({ ...c, key: idx }))}
-          columns={editColumns}
-          pagination={false}
-          size="small"
-          bordered
-        />
-        <Button
-          type="dashed"
-          onClick={addRow}
-          icon={<PlusOutlined />}
-          style={{ width: '100%', marginTop: 8 }}
-        >
-          添加药物
-        </Button>
-      </Modal>
+      <HerbDetailModal
+        open={herbDetailOpen}
+        herbName={herbDetailName}
+        onClose={() => setHerbDetailOpen(false)}
+      />
     </div>
   );
 }

@@ -5,6 +5,15 @@ import HerbSearch from '../HerbSearch';
 // Mock the API module
 vi.mock('../../../api/herb', () => ({
   listHerbs: vi.fn(),
+  listHerbCategories: vi.fn().mockResolvedValue({ data: [] }),
+  deleteHerb: vi.fn(),
+}));
+
+// Mock useAuth
+vi.mock('../../../store/auth', () => ({
+  useAuth: () => ({
+    hasPermission: () => false,
+  }),
 }));
 
 // Mock antd message
