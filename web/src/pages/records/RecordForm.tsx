@@ -24,7 +24,7 @@ import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { getRecord, createRecord, updateRecord, aiAnalyzeDiagnosis, getCachedAiAnalysis } from '../../api/record';
+import { getRecord, createRecord, updateRecord, aiAnalyzeDiagnosis, getCachedAiAnalysis, saveAiAnalysis } from '../../api/record';
 import { listPatients, createPatient, getPatient } from '../../api/patient';
 import {
   listPrescriptionsByRecord,
@@ -297,6 +297,14 @@ export default function RecordForm() {
         const res = await createRecord(payload);
         const body = res as unknown as { data: { id: number } };
         message.success('诊疗记录创建成功');
+        // If AI analysis was done before save, persist it to the new record
+        if (body.data?.id && aiResult) {
+          try {
+            await saveAiAnalysis(body.data.id, payload.diagnosis, aiResult);
+          } catch {
+            // Non-critical, ignore
+          }
+        }
         // Redirect to edit page so user can immediately add prescriptions
         if (body.data?.id) {
           navigate(`/records/${body.data.id}`);
@@ -461,8 +469,8 @@ export default function RecordForm() {
                 >
                   AI辅助分析
                 </Button>
-                {aiCached && aiResult && !aiDrawerOpen && (
-                  <Tooltip title="已有缓存的分析结果，点击查看">
+                {aiResult && !aiDrawerOpen && (
+                  <Tooltip title="已有分析结果，点击查看">
                     <Tag
                       color="green"
                       style={{ cursor: 'pointer' }}
@@ -531,6 +539,13 @@ export default function RecordForm() {
                       const res = await createRecord(payload);
                       const body = res as unknown as { data: { id: number } };
                       message.success('诊疗记录已保存');
+                      if (body.data?.id && aiResult) {
+                        try {
+                          await saveAiAnalysis(body.data.id, payload.diagnosis, aiResult);
+                        } catch {
+                          // Non-critical
+                        }
+                      }
                       if (body.data?.id) {
                         navigate(`/records/${body.data.id}`);
                       }
@@ -789,7 +804,7 @@ export default function RecordForm() {
           body: { padding: 0 },
         }}
         extra={
-          aiCached && !aiAnalyzing ? (
+          aiResult && !aiAnalyzing ? (
             <Tooltip title="忽略缓存，重新调用 AI 分析">
               <Button
                 size="small"

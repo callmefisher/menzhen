@@ -91,6 +91,45 @@ func (h *AIAnalysisHandler) Analyze(c *gin.Context) {
 	Success(c, gin.H{"analysis": result, "cached": cached})
 }
 
+// SaveCached handles POST /api/v1/records/:id/ai-analysis
+// Directly saves an AI analysis result for a record (used when analysis was done before record was saved).
+func (h *AIAnalysisHandler) SaveCached(c *gin.Context) {
+	recordID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		Error(c, http.StatusBadRequest, "无效的记录 ID")
+		return
+	}
+
+	var req struct {
+		Diagnosis string `json:"diagnosis" binding:"required"`
+		Analysis  string `json:"analysis" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		Error(c, http.StatusBadRequest, "请提供诊断内容和分析结果")
+		return
+	}
+
+	tenantID := middleware.GetTenantID(c)
+
+	// Upsert: update if exists, create if not
+	var existing model.AIAnalysis
+	if err := h.db.Where("record_id = ? AND tenant_id = ?", recordID, tenantID).First(&existing).Error; err == nil {
+		h.db.Model(&existing).Updates(map[string]interface{}{
+			"diagnosis": req.Diagnosis,
+			"analysis":  req.Analysis,
+		})
+	} else {
+		h.db.Create(&model.AIAnalysis{
+			RecordID:  recordID,
+			TenantID:  tenantID,
+			Diagnosis: req.Diagnosis,
+			Analysis:  req.Analysis,
+		})
+	}
+
+	Success(c, nil)
+}
+
 // GetCached handles GET /api/v1/records/:id/ai-analysis
 // Returns the cached AI analysis for a record, if any.
 func (h *AIAnalysisHandler) GetCached(c *gin.Context) {

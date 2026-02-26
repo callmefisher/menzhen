@@ -170,6 +170,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 
 		// Cached AI analysis for a record (nested under records).
 		records.GET("/:id/ai-analysis", middleware.RequirePermission(db, "record:read"), aiAnalysisHandler.GetCached)
+		records.POST("/:id/ai-analysis", middleware.RequirePermission(db, "record:read"), aiAnalysisHandler.SaveCached)
 	}
 
 	return r
