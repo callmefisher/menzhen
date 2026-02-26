@@ -24,7 +24,7 @@ export default function Login() {
     try {
       await login(values.username, values.password, values.remember);
       message.success('登录成功');
-      navigate('/records', { replace: true });
+      navigate('/patients', { replace: true });
     } catch {
       // Error is already handled by the request interceptor (message.error)
     } finally {

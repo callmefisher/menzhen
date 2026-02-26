@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-02-26（优化备份脚本：每小时备份 + 七牛云上传）
+> 最后更新：2026-02-26（前端视觉优化 + 处方打印分列 + 导航调整）
 
 ---
 
@@ -75,7 +75,7 @@ menzhen/
 ├── web/                             # React 前端
 │   └── src/
 │       ├── main.tsx                 # React 入口
-│       ├── App.tsx                  # 路由配置 + Layout
+│       ├── App.tsx                  # 路由配置 + Layout（默认跳转 /patients）
 │       ├── index.css                # 全局样式
 │       ├── api/                     # API 调用封装
 │       │   ├── auth.ts              # 登录/注册/登出/获取当前用户/修改密码
@@ -90,14 +90,14 @@ menzhen/
 │       │   ├── role.ts              # 角色管理
 │       │   └── tenant.ts            # 租户管理
 │       ├── components/
-│       │   ├── Layout.tsx           # 侧边栏 + 顶部导航布局
+│       │   ├── Layout.tsx           # 侧边栏 + 顶部导航布局（菜单顺序：患者→病历→中医药→系统设置→操作日志）
 │       │   ├── FileUpload.tsx       # 文件上传组件
-│       │   ├── PrescriptionModal.tsx  # 处方弹窗（开方/编辑，含药物详情查看）
+│       │   ├── PrescriptionModal.tsx  # 处方弹窗（开方/编辑，含药物详情查看，医嘱预填分行）
 │       │   ├── HerbDetailModal.tsx   # 通用中药详情弹窗（方剂/处方复用）
-│       │   ├── PrescriptionPrint.tsx  # 处方打印
+│       │   ├── PrescriptionPrint.tsx  # 处方打印（药物每10味一列多列并排，医嘱分行）
 │       │   └── __tests__/           # 组件测试
 │       ├── pages/
-│       │   ├── Login.tsx            # 登录页
+│       │   ├── Login.tsx            # 登录页（登录后跳转患者管理）
 │       │   ├── Register.tsx         # 注册页
 │       │   ├── OpLogList.tsx        # 操作日志列表
 │       │   ├── patients/            # 患者管理
@@ -106,7 +106,7 @@ menzhen/
 │       │   │   └── PatientForm.tsx
 │       │   ├── records/             # 诊疗记录
 │       │   │   ├── RecordList.tsx
-│       │   │   └── RecordForm.tsx   # 含 AI 辩证论治 Drawer（缓存加载、重新分析）
+│       │   │   └── RecordForm.tsx   # 含 AI 辩证论治 Drawer + 处方区域全宽浅灰底色 + 医嘱分行展示
 │       │   ├── herbs/               # 中药查询
 │       │   │   ├── HerbSearch.tsx   # 含分类筛选下拉框
 │       │   │   └── __tests__/

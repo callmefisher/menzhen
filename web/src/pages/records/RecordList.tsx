@@ -98,7 +98,7 @@ export default function RecordList() {
       title: '患者姓名',
       dataIndex: 'patient_name',
       key: 'patient_name',
-      width: 120,
+      width: 160,
     },
     {
       title: '年龄',

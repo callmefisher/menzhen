@@ -55,7 +55,7 @@ function AppRoutes() {
           </PrivateRoute>
         }
       >
-        <Route index element={<Navigate to="/records" replace />} />
+        <Route index element={<Navigate to="/patients" replace />} />
         <Route path="records" element={<RecordList />} />
         <Route path="records/new" element={<RecordForm />} />
         <Route path="records/:id" element={<RecordForm />} />
@@ -69,7 +69,7 @@ function AppRoutes() {
         <Route path="settings/roles" element={<RoleList />} />
         <Route path="settings/tenants" element={<TenantList />} />
       </Route>
-      <Route path="*" element={<Navigate to="/records" replace />} />
+      <Route path="*" element={<Navigate to="/patients" replace />} />
     </Routes>
   );
 }
