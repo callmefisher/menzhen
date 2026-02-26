@@ -125,3 +125,32 @@ func (h *FormulaHandler) UpdateComposition(c *gin.Context) {
 
 	Success(c, nil)
 }
+
+// UpdateName handles PUT /api/v1/formulas/:id/name
+func (h *FormulaHandler) UpdateName(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		Error(c, http.StatusBadRequest, "invalid formula id")
+		return
+	}
+
+	var req struct {
+		Name string `json:"name" binding:"required,max=100"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		Error(c, http.StatusBadRequest, "invalid request body: name is required and max 100 chars")
+		return
+	}
+
+	svc := service.NewFormulaService(h.db, h.deepSeek)
+	if err := svc.UpdateName(id, req.Name); err != nil {
+		if errors.Is(err, service.ErrFormulaNotFound) {
+			Error(c, http.StatusNotFound, "formula not found")
+			return
+		}
+		Error(c, http.StatusInternalServerError, "failed to update formula name")
+		return
+	}
+
+	Success(c, nil)
+}
