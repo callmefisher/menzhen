@@ -39,7 +39,12 @@ interface HerbRow {
   notes: string;
 }
 
-const DEFAULT_PRESCRIPTION_NOTES = '注意事项1.每副药用【不锈钢】的汤锅，放9碗水，共约1800毫升水,中大火煮50分钟左右，一次性煮成两份药，两份药共约400毫升，每份200毫升。2.每天早晚饭前30分钟，分别温服一份，3.要用明火，不能用电煮药,4 如果不小心熬干了,中间加开水，后续适当调节加水量 5.服药期间，忌酒，烟，饮食上减少过于油腻食物';
+const DEFAULT_PRESCRIPTION_NOTES = `注意事项：
+1. 每副药用【不锈钢】的汤锅，放9碗水，共约1800毫升水，中大火煮50分钟左右，一次性煮成两份药，两份药共约400毫升，每份200毫升。
+2. 每天早晚饭前30分钟，分别温服一份。
+3. 要用明火，不能用电煮药。
+4. 如果不小心熬干了，中间加开水，后续适当调节加水量。
+5. 服药期间，忌酒、烟，饮食上减少过于油腻食物。`;
 
 export default function PrescriptionModal({
   open,
@@ -338,7 +343,7 @@ export default function PrescriptionModal({
         </Form.Item>
 
         <Form.Item label="注意事项/医嘱" name="notes">
-          <Input.TextArea rows={2} placeholder="如：饭后服用、忌辛辣等" />
+          <Input.TextArea rows={6} placeholder="如：饭后服用、忌辛辣等" />
         </Form.Item>
       </Form>
       <HerbDetailModal

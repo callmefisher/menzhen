@@ -19,7 +19,7 @@ import {
   Tooltip,
   Dropdown,
 } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, RobotOutlined, ReloadOutlined, MoreOutlined, MedicineBoxOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, RobotOutlined, ReloadOutlined, MoreOutlined, MedicineBoxOutlined, InboxOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import Markdown from 'react-markdown';
@@ -484,12 +484,14 @@ export default function RecordForm() {
           </Form.Item>
         </div>
 
-        <div style={{ display: 'flex', gap: 16, alignItems: 'stretch' }}>
+        <Divider style={{ margin: '8px 0 16px' }} />
+
+        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
           <Form.Item label="备注" name="notes" style={{ flex: 1, marginBottom: 0 }}>
             <Input.TextArea
               rows={6}
               placeholder="请输入备注"
-              style={{ resize: 'none', height: '100%', minHeight: 160 }}
+              style={{ resize: 'none', minHeight: 160 }}
             />
           </Form.Item>
 
@@ -498,7 +500,7 @@ export default function RecordForm() {
           </Form.Item>
         </div>
 
-        <div style={{ height: 16 }} />
+        <div style={{ height: 24 }} />
 
         {/* 按钮 */}
         <Form.Item>
@@ -554,7 +556,12 @@ export default function RecordForm() {
       {isEdit && hasPermission('prescription:read') && (
         <>
           <Divider />
-          <div style={{ maxWidth: 720 }}>
+          <div style={{
+            background: '#fafafa',
+            borderRadius: 8,
+            padding: '20px 24px',
+            border: '1px solid #f0f0f0',
+          }}>
             <div
               style={{
                 display: 'flex',
@@ -657,8 +664,16 @@ export default function RecordForm() {
                 ))}
               </div>
             ) : (
-              <div style={{ color: '#999', textAlign: 'center', padding: 24 }}>
-                暂无处方
+              <div style={{
+                color: '#999',
+                textAlign: 'center',
+                padding: '32px 24px',
+                border: '1px dashed #d9d9d9',
+                borderRadius: 8,
+                background: '#fff',
+              }}>
+                <InboxOutlined style={{ fontSize: 32, color: '#bfbfbf', display: 'block', marginBottom: 8 }} />
+                暂无处方，点击上方「开方」添加
               </div>
             )}
           </div>
