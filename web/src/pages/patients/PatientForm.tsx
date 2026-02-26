@@ -9,14 +9,18 @@ import {
   Card,
   Space,
   Modal,
+  DatePicker,
   message,
 } from 'antd';
+import dayjs from 'dayjs';
+import type { Dayjs } from 'dayjs';
 import { createPatient, updatePatient } from '../../api/patient';
 
 interface PatientFormValues {
   name: string;
   gender: number;
   age: number;
+  birthday?: Dayjs | null;
   weight?: number;
   phone?: string;
   id_card?: string;
@@ -29,7 +33,7 @@ interface PatientFormModalProps {
   visible: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  initialData?: PatientFormValues & { id: number };
+  initialData?: Omit<PatientFormValues, 'birthday'> & { id: number; birthday?: string };
 }
 
 /**
@@ -66,6 +70,19 @@ function PatientFormFields({ form }: { form: ReturnType<typeof Form.useForm<Pati
           <Radio value={1}>男</Radio>
           <Radio value={2}>女</Radio>
         </Radio.Group>
+      </Form.Item>
+
+      <Form.Item label="出生日期" name="birthday">
+        <DatePicker
+          style={{ width: '100%' }}
+          placeholder="选择出生日期（可选）"
+          onChange={(date: Dayjs | null) => {
+            if (date) {
+              const age = dayjs().diff(date, 'year');
+              form.setFieldsValue({ age });
+            }
+          }}
+        />
       </Form.Item>
 
       <Form.Item
@@ -128,6 +145,7 @@ export function PatientFormModal({
         name: initialData.name,
         gender: initialData.gender,
         age: initialData.age,
+        birthday: initialData.birthday ? dayjs(initialData.birthday) : null,
         weight: initialData.weight,
         phone: initialData.phone,
         id_card: initialData.id_card,
@@ -145,11 +163,16 @@ export function PatientFormModal({
       const values = await form.validateFields();
       setSubmitting(true);
 
+      const submitData = {
+        ...values,
+        birthday: values.birthday ? dayjs(values.birthday).format('YYYY-MM-DD') : undefined,
+      };
+
       if (isEdit && initialData) {
-        await updatePatient(initialData.id, values);
+        await updatePatient(initialData.id, submitData);
         message.success('患者信息更新成功');
       } else {
-        await createPatient(values);
+        await createPatient(submitData);
         message.success('患者创建成功');
       }
 
@@ -189,7 +212,12 @@ export default function PatientForm() {
       const values = await form.validateFields();
       setSubmitting(true);
 
-      await createPatient(values);
+      const submitData = {
+        ...values,
+        birthday: values.birthday ? dayjs(values.birthday).format('YYYY-MM-DD') : undefined,
+      };
+
+      await createPatient(submitData);
       message.success('患者创建成功');
       navigate('/patients');
     } catch {

@@ -25,6 +25,7 @@ import { getPatient } from '../../api/patient';
 import { deleteRecord } from '../../api/record';
 import type { PrescriptionData } from '../../api/prescription';
 import { getFileUrl } from '../../api/upload';
+import dayjs from 'dayjs';
 import { PatientFormModal } from './PatientForm';
 
 const { Text, Paragraph } = Typography;
@@ -52,6 +53,7 @@ interface PatientData {
   name: string;
   gender: number;
   age: number;
+  birthday: string;
   weight: number;
   phone: string;
   id_card: string;
@@ -167,6 +169,9 @@ export default function PatientDetail() {
           </Descriptions.Item>
           <Descriptions.Item label="年龄">
             {patient.age !== undefined ? `${patient.age}岁` : '-'}
+          </Descriptions.Item>
+          <Descriptions.Item label="出生日期">
+            {patient.birthday ? dayjs(patient.birthday).format('YYYY-MM-DD') : '-'}
           </Descriptions.Item>
           <Descriptions.Item label="体重(kg)">
             {patient.weight ? `${patient.weight}` : '-'}
@@ -476,6 +481,7 @@ export default function PatientDetail() {
                 name: patient.name,
                 gender: patient.gender,
                 age: patient.age,
+                birthday: patient.birthday,
                 weight: patient.weight,
                 phone: patient.phone,
                 id_card: patient.id_card,
