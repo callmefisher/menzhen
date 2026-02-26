@@ -1,8 +1,10 @@
 FROM alpine:3.19
-RUN apk add --no-cache mysql-client bash curl findutils
+RUN apk add --no-cache mysql-client bash curl findutils python3 py3-pip tzdata
 # Install MinIO Client (mc)
 RUN curl -fsSL https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/bin/mc && \
     chmod +x /usr/local/bin/mc
-COPY backup-loop.sh backup.sh restore.sh /scripts/
-RUN chmod +x /scripts/*.sh
+# Install Qiniu Python SDK
+RUN pip3 install --break-system-packages qiniu
+COPY backup-loop.sh backup.sh restore.sh upload_to_qiniu.py /scripts/
+RUN chmod +x /scripts/*.sh /scripts/*.py
 CMD ["/scripts/backup-loop.sh"]

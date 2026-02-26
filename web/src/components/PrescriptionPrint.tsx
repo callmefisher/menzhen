@@ -10,16 +10,37 @@ interface PrescriptionPrintProps {
   visitDate?: string;
 }
 
+function getCurrentBeijingTime(): string {
+  const now = new Date();
+  // Format in Asia/Shanghai timezone
+  const formatter = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(now);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value || '';
+  return `${get('year')}年${get('month')}月${get('day')}日 ${get('hour')}:${get('minute')}`;
+}
+
 export default function PrescriptionPrint({
   prescription,
   patientName,
   patientAge,
-  visitDate,
 }: PrescriptionPrintProps) {
   const printRef = useRef<HTMLDivElement>(null);
 
   const handlePrint = () => {
     if (!printRef.current) return;
+    // Set current Beijing time right before printing
+    const timeEl = printRef.current.querySelector('.print-time');
+    if (timeEl) {
+      timeEl.textContent = getCurrentBeijingTime();
+    }
     const printContent = printRef.current.innerHTML;
     const win = window.open('', '_blank');
     if (!win) return;
@@ -71,7 +92,7 @@ export default function PrescriptionPrint({
             <div className="info-row">
               <span>姓名：{patientName || '—'}</span>
               <span>年龄：{patientAge ? `${patientAge}岁` : '—'}</span>
-              <span>日期：{visitDate || '—'}</span>
+              <span>日期：<span className="print-time"></span></span>
             </div>
 
             <div className="divider" />

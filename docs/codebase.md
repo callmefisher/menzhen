@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-02-25（新增方剂组成编辑功能）
+> 最后更新：2026-02-26（优化备份脚本：每小时备份 + 七牛云上传）
 
 ---
 
@@ -126,11 +126,12 @@ menzhen/
 ├── nginx/
 │   └── nginx.conf                   # Nginx 反向代理配置
 ├── scripts/
-│   ├── backup.sh                    # 备份脚本（MySQL dump + MinIO sync + 清理旧 oplog）
-│   ├── backup-loop.sh               # 定时备份守护进程（默认凌晨 2 点）
+│   ├── backup.sh                    # 备份脚本（MySQL dump + 清理 3 天前备份 + 上传七牛云）
+│   ├── backup-loop.sh               # 定时备份守护进程（每小时备份，启动时检查）
 │   ├── restore.sh                   # 恢复脚本（MySQL + MinIO + 数据验证）
+│   ├── upload_to_qiniu.py           # 七牛云上传脚本（AK/SK 从环境变量读取）
 │   ├── seed-herbs-formulas.sh       # 中药/方剂数据播种（通过 API 触发 DeepSeek 回退自动入库）
-│   └── Dockerfile.backup            # 备份容器镜像（alpine + mysql-client + mc）
+│   └── Dockerfile.backup            # 备份容器镜像（alpine + mysql-client + mc + python3 + qiniu SDK）
 ├── docker-compose.yml               # 6 个服务：nginx、web、api、mysql、minio、backup
 ├── deploy.sh                        # 一键部署脚本（生成 .env + build + 启动 + 可选恢复）
 └── CLAUDE.md                        # Claude Code 指导文件
@@ -527,7 +528,10 @@ menzhen/
 | `DEEPSEEK_API_KEY` | （内置） | DeepSeek API 密钥 |
 | `DEEPSEEK_BASE_URL` | `https://api.qnaigc.com/v1/messages` | DeepSeek API 地址 |
 | `DEEPSEEK_MODEL` | `deepseek/deepseek-v3.2-251201` | AI 模型名称 |
-| `BACKUP_HOUR` | `2` | 自动备份触发时间（24h 制） |
+| `QINIU_ACCESS_KEY` | （无默认） | 七牛云 Access Key |
+| `QINIU_SECRET_KEY` | （无默认） | 七牛云 Secret Key |
+| `QINIU_BUCKET` | （无默认） | 七牛云存储空间名 |
+| `QINIU_KEY_PREFIX` | `menzhen-backup/` | 七牛云上传路径前缀 |
 
 ---
 
@@ -548,11 +552,12 @@ menzhen/
 
 | 脚本 | 用途 |
 |------|------|
-| `scripts/backup.sh` | 全量备份：MySQL dump + MinIO 文件同步 + 清理 3 月前 oplog + 生成 metadata.json |
-| `scripts/backup-loop.sh` | 定时备份守护：每小时检测，在 `BACKUP_HOUR` 时触发每日备份 |
+| `scripts/backup.sh` | 全量备份：MySQL dump + 清理 3 月前 oplog + 清理 3 天前备份 + 上传七牛云 |
+| `scripts/backup-loop.sh` | 定时备份守护：每小时触发备份，启动时检测最近备份是否超过 1 小时 |
 | `scripts/restore.sh` | 恢复：导入 MySQL dump + 同步 MinIO 文件 + 验证数据完整性 |
+| `scripts/upload_to_qiniu.py` | 七牛云上传：备份完成后自动上传 SQL 文件，AK/SK 从环境变量读取 |
 | `scripts/seed-herbs-formulas.sh` | 中药/方剂数据播种：通过 API 逐条搜索触发 DeepSeek 回退自动入库，支持进度恢复、dry-run |
-| `scripts/Dockerfile.backup` | 备份容器镜像：alpine + mysql-client + MinIO Client (mc) |
+| `scripts/Dockerfile.backup` | 备份容器镜像：alpine + mysql-client + MinIO Client (mc) + python3 + qiniu SDK |
 
 ### Docker Compose 服务
 
