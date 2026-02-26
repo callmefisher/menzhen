@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-02-26（中药编辑+道地产区 + 患者生日自动算年龄）
+> 最后更新：2026-02-26（AI分析Markdown表格渲染优化 + AI分析即时缓存修复）
 
 ---
 
@@ -106,7 +106,7 @@ menzhen/
 │       │   │   └── PatientForm.tsx
 │       │   ├── records/             # 诊疗记录
 │       │   │   ├── RecordList.tsx
-│       │   │   └── RecordForm.tsx   # 含 AI 辩证论治 Drawer + 处方区域全宽浅灰底色 + 医嘱分行展示
+│       │   │   └── RecordForm.tsx   # 含 AI 辩证论治 Drawer（remark-gfm 表格渲染）+ 处方区域全宽浅灰底色 + 医嘱分行展示
 │       │   ├── herbs/               # 中药查询
 │       │   │   ├── HerbSearch.tsx   # 含分类筛选下拉框 + 管理员行内编辑
 │       │   │   └── __tests__/
@@ -487,10 +487,15 @@ menzhen/
      -> upsert 到 ai_analyses 表
      -> 返回分析结果（cached: false）
 
+前端收到分析结果后：
+  -> 若 recordId 存在（编辑模式），立即标记 aiCached=true（后端已持久化）
+  -> 无需手动点击保存按钮即可缓存
+
 前端编辑记录时自动加载缓存 (GET /api/v1/records/:id/ai-analysis)
   -> 若有缓存 -> 在诊断旁显示「已有分析」标签
   -> 点击标签可直接查看缓存结果
   -> Drawer 中提供「重新分析」按钮强制刷新
+  -> Markdown 渲染使用 remark-gfm 插件，支持 GFM 表格/删除线等扩展语法
 ```
 
 ### 租户隔离
