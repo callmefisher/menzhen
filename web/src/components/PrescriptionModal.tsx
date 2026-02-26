@@ -9,6 +9,7 @@ import {
   Table,
   Space,
   Select,
+  Descriptions,
   message,
 } from 'antd';
 import { PlusOutlined, DeleteOutlined, SearchOutlined, InfoCircleOutlined } from '@ant-design/icons';
@@ -72,6 +73,7 @@ export default function PrescriptionModal({
   // Formula search state
   const [formulaOptions, setFormulaOptions] = useState<FormulaItem[]>([]);
   const [formulaLoading, setFormulaLoading] = useState(false);
+  const [selectedFormula, setSelectedFormula] = useState<FormulaItem | null>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const searchFormulas = useCallback(async (name: string) => {
@@ -101,6 +103,7 @@ export default function PrescriptionModal({
     const formula = formulaOptions.find((f) => f.id === formulaId);
     if (!formula) return;
 
+    setSelectedFormula(formula);
     form.setFieldValue('formula_name', formula.name);
 
     // 如果方剂有备注，追加到医嘱末尾
@@ -289,14 +292,50 @@ export default function PrescriptionModal({
                     loading={formulaLoading}
                     style={{ width: '100%' }}
                     onSelect={handleFormulaSelect}
+                    optionLabelProp="label"
                     options={formulaOptions.map((f) => ({
                       value: f.id,
-                      label: `${f.name}${f.effects ? ' — ' + f.effects.substring(0, 30) : ''}`,
+                      label: f.name,
+                      desc: [f.effects, f.indications].filter(Boolean).join(' | '),
                     }))}
+                    optionRender={(option) => (
+                      <div>
+                        <div style={{ fontWeight: 500 }}>{option.label}</div>
+                        {option.data.desc && (
+                          <div style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {option.data.desc}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     notFoundContent={formulaLoading ? '搜索中...' : '输入方剂名搜索'}
                     suffixIcon={<SearchOutlined />}
                   />
                 </Space.Compact>
+                {selectedFormula && (selectedFormula.effects || selectedFormula.indications || selectedFormula.notes) && (
+                  <Descriptions
+                    bordered
+                    size="small"
+                    column={1}
+                    style={{
+                      marginTop: 12,
+                      background: '#fafbfc',
+                      borderRadius: 8,
+                    }}
+                    labelStyle={{ width: 60, fontWeight: 500, color: '#555', background: '#f0f5ff' }}
+                    contentStyle={{ color: '#333' }}
+                  >
+                    {selectedFormula.effects && (
+                      <Descriptions.Item label="功效">{selectedFormula.effects}</Descriptions.Item>
+                    )}
+                    {selectedFormula.indications && (
+                      <Descriptions.Item label="主治">{selectedFormula.indications}</Descriptions.Item>
+                    )}
+                    {selectedFormula.notes && (
+                      <Descriptions.Item label="备注">{selectedFormula.notes}</Descriptions.Item>
+                    )}
+                  </Descriptions>
+                )}
                 <p style={{ color: '#888', fontSize: 12, marginTop: 4 }}>
                   选择方剂后将自动填充药物列表，您可以调整剂量
                 </p>
