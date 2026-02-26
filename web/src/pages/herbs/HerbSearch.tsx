@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Input, Table, Tag, message, Button, Popconfirm, Select } from 'antd';
-import { SearchOutlined, RobotOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Input, Table, Tag, message, Button, Popconfirm, Select, Space } from 'antd';
+import { SearchOutlined, RobotOutlined, DeleteOutlined, EditOutlined, SaveOutlined, CloseOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { listHerbs, deleteHerb, listHerbCategories } from '../../api/herb';
+import { listHerbs, deleteHerb, listHerbCategories, updateHerb } from '../../api/herb';
 import type { HerbItem } from '../../api/herb';
 import { useAuth } from '../../store/auth';
 
@@ -15,6 +15,9 @@ export default function HerbSearch() {
   const [searchName, setSearchName] = useState('');
   const [categories, setCategories] = useState<string[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | undefined>(undefined);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingData, setEditingData] = useState<Partial<HerbItem>>({});
+  const [expandedRowKeys, setExpandedRowKeys] = useState<number[]>([]);
   const { hasPermission } = useAuth();
 
   useEffect(() => {
@@ -74,6 +77,34 @@ export default function HerbSearch() {
     }
   };
 
+  const startEdit = (record: HerbItem) => {
+    setEditingId(record.id);
+    setEditingData({
+      name: record.name,
+      alias: record.alias,
+      category: record.category,
+      properties: record.properties,
+      effects: record.effects,
+      indications: record.indications,
+      origin: record.origin,
+    });
+    setExpandedRowKeys((keys) =>
+      keys.includes(record.id) ? keys : [...keys, record.id]
+    );
+  };
+
+  const handleSave = async () => {
+    if (!editingId) return;
+    try {
+      await updateHerb(editingId, editingData);
+      message.success('更新成功');
+      setEditingId(null);
+      fetchHerbs(searchName, selectedCategory, page, size);
+    } catch {
+      // Error handled by interceptor
+    }
+  };
+
   const columns: ColumnsType<HerbItem> = [
     {
       title: '药名',
@@ -114,6 +145,13 @@ export default function HerbSearch() {
       ellipsis: true,
     },
     {
+      title: '道地产区',
+      dataIndex: 'origin',
+      key: 'origin',
+      width: 120,
+      ellipsis: true,
+    },
+    {
       title: '来源',
       dataIndex: 'source',
       key: 'source',
@@ -132,18 +170,28 @@ export default function HerbSearch() {
           {
             title: '操作',
             key: 'action',
-            width: 80,
+            width: 140,
             render: (_: unknown, record: HerbItem) => (
-              <Popconfirm
-                title="确定删除此中药？"
-                onConfirm={() => handleDelete(record.id)}
-                okText="删除"
-                cancelText="取消"
-              >
-                <Button type="text" danger size="small" icon={<DeleteOutlined />}>
-                  删除
+              <Space size="small">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<EditOutlined />}
+                  onClick={() => startEdit(record)}
+                >
+                  编辑
                 </Button>
-              </Popconfirm>
+                <Popconfirm
+                  title="确定删除此中药？"
+                  onConfirm={() => handleDelete(record.id)}
+                  okText="删除"
+                  cancelText="取消"
+                >
+                  <Button type="text" danger size="small" icon={<DeleteOutlined />}>
+                    删除
+                  </Button>
+                </Popconfirm>
+              </Space>
             ),
           },
         ]
@@ -186,16 +234,58 @@ export default function HerbSearch() {
         }}
         onChange={handleTableChange}
         expandable={{
+          expandedRowKeys,
+          onExpandedRowsChange: (keys) => setExpandedRowKeys(keys as number[]),
           expandedRowRender: (record) => (
             <div style={{ padding: '8px 0' }}>
-              <p><strong>别名：</strong>{record.alias || '无'}</p>
-              <p><strong>性味归经：</strong>{record.properties || '无'}</p>
-              <p><strong>功效：</strong>{record.effects || '无'}</p>
-              <p><strong>主治：</strong>{record.indications || '无'}</p>
-              {record.source === 'deepseek' && (
-                <Tag icon={<RobotOutlined />} color="blue">
-                  数据来源：DeepSeek AI（仅供参考，请结合临床经验）
-                </Tag>
+              {editingId === record.id ? (
+                <>
+                  <div style={{ marginBottom: 8 }}>
+                    <strong>药名：</strong>
+                    <Input size="small" value={editingData.name} onChange={(e) => setEditingData((d) => ({ ...d, name: e.target.value }))} style={{ width: 200 }} />
+                  </div>
+                  <div style={{ marginBottom: 8 }}>
+                    <strong>别名：</strong>
+                    <Input size="small" value={editingData.alias} onChange={(e) => setEditingData((d) => ({ ...d, alias: e.target.value }))} />
+                  </div>
+                  <div style={{ marginBottom: 8 }}>
+                    <strong>分类：</strong>
+                    <Input size="small" value={editingData.category} onChange={(e) => setEditingData((d) => ({ ...d, category: e.target.value }))} style={{ width: 200 }} />
+                  </div>
+                  <div style={{ marginBottom: 8 }}>
+                    <strong>性味归经：</strong>
+                    <Input size="small" value={editingData.properties} onChange={(e) => setEditingData((d) => ({ ...d, properties: e.target.value }))} />
+                  </div>
+                  <div style={{ marginBottom: 8 }}>
+                    <strong>功效：</strong>
+                    <Input.TextArea rows={2} value={editingData.effects} onChange={(e) => setEditingData((d) => ({ ...d, effects: e.target.value }))} />
+                  </div>
+                  <div style={{ marginBottom: 8 }}>
+                    <strong>主治：</strong>
+                    <Input.TextArea rows={2} value={editingData.indications} onChange={(e) => setEditingData((d) => ({ ...d, indications: e.target.value }))} />
+                  </div>
+                  <div style={{ marginBottom: 8 }}>
+                    <strong>道地产区：</strong>
+                    <Input size="small" value={editingData.origin} onChange={(e) => setEditingData((d) => ({ ...d, origin: e.target.value }))} />
+                  </div>
+                  <Space>
+                    <Button type="primary" size="small" icon={<SaveOutlined />} onClick={handleSave}>保存</Button>
+                    <Button size="small" icon={<CloseOutlined />} onClick={() => setEditingId(null)}>取消</Button>
+                  </Space>
+                </>
+              ) : (
+                <>
+                  <p><strong>别名：</strong>{record.alias || '无'}</p>
+                  <p><strong>性味归经：</strong>{record.properties || '无'}</p>
+                  <p><strong>功效：</strong>{record.effects || '无'}</p>
+                  <p><strong>主治：</strong>{record.indications || '无'}</p>
+                  <p><strong>道地产区：</strong>{record.origin || '无'}</p>
+                  {record.source === 'deepseek' && (
+                    <Tag icon={<RobotOutlined />} color="blue">
+                      数据来源：DeepSeek AI（仅供参考，请结合临床经验）
+                    </Tag>
+                  )}
+                </>
               )}
             </div>
           ),
