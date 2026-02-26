@@ -138,6 +138,7 @@ menzhen/
 |------|------|------|------|
 | POST | `/api/v1/ai/analyze-diagnosis` | record:read | AI 辅助辩证论治分析（支持缓存） |
 | GET | `/api/v1/records/:id/ai-analysis` | record:read | 获取已缓存的 AI 分析结果 |
+| POST | `/api/v1/records/:id/ai-analysis` | record:read | 直接保存 AI 分析结果（新建记录回写） |
 
 ## 开发环境
 

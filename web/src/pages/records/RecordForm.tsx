@@ -24,7 +24,7 @@ import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { getRecord, createRecord, updateRecord, aiAnalyzeDiagnosis, getCachedAiAnalysis } from '../../api/record';
+import { getRecord, createRecord, updateRecord, aiAnalyzeDiagnosis, getCachedAiAnalysis, saveAiAnalysis } from '../../api/record';
 import { listPatients, createPatient, getPatient } from '../../api/patient';
 import {
   listPrescriptionsByRecord,
@@ -297,6 +297,14 @@ export default function RecordForm() {
         const res = await createRecord(payload);
         const body = res as unknown as { data: { id: number } };
         message.success('诊疗记录创建成功');
+        // If AI analysis was done before save, persist it to the new record
+        if (body.data?.id && aiResult) {
+          try {
+            await saveAiAnalysis(body.data.id, payload.diagnosis, aiResult);
+          } catch {
+            // Non-critical, ignore
+          }
+        }
         // Redirect to edit page so user can immediately add prescriptions
         if (body.data?.id) {
           navigate(`/records/${body.data.id}`);
@@ -531,6 +539,13 @@ export default function RecordForm() {
                       const res = await createRecord(payload);
                       const body = res as unknown as { data: { id: number } };
                       message.success('诊疗记录已保存');
+                      if (body.data?.id && aiResult) {
+                        try {
+                          await saveAiAnalysis(body.data.id, payload.diagnosis, aiResult);
+                        } catch {
+                          // Non-critical
+                        }
+                      }
                       if (body.data?.id) {
                         navigate(`/records/${body.data.id}`);
                       }

@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-02-26（5项优化：AI缓存修复、中药方剂默认加载、AI重查询、名称搜索、菜单展开）
+> 最后更新：2026-02-26（AI分析缓存完整修复 + 中药方剂默认加载 + AI重查询 + 名称搜索 + 菜单展开）
 
 ---
 
@@ -42,7 +42,7 @@ menzhen/
 │   │   ├── herb.go                  # List/Detail/Delete/Categories/Update/AIRefresh
 │   │   ├── formula.go               # List/Detail/Delete/UpdateComposition
 │   │   ├── prescription.go          # Create/Detail/Update/Delete/ListByRecord
-│   │   ├── ai_analysis.go           # Analyze（AI 辩证论治，含缓存）+ GetCached
+│   │   ├── ai_analysis.go           # Analyze（AI 辩证论治，含缓存）+ SaveCached + GetCached
 │   │   ├── oplog.go                 # ListOpLogs/DeleteOpLog/BatchDeleteOpLogs
 │   │   ├── user.go                  # List/Update/Delete/AssignRoles
 │   │   ├── role.go                  # List/Create/Update/ListPermissions
@@ -80,7 +80,7 @@ menzhen/
 │       ├── api/                     # API 调用封装
 │       │   ├── auth.ts              # 登录/注册/登出/获取当前用户/修改密码
 │       │   ├── patient.ts           # 患者 CRUD
-│       │   ├── record.ts            # 诊疗记录 CRUD + AI分析调用/缓存获取
+│       │   ├── record.ts            # 诊疗记录 CRUD + AI分析调用/缓存获取/缓存保存
 │       │   ├── herb.ts              # 中药搜索/详情/删除/分类列表/更新
 │       │   ├── formula.ts           # 方剂搜索/详情/删除/更新组成
 │       │   ├── prescription.ts      # 处方 CRUD + 按记录查询
@@ -106,9 +106,9 @@ menzhen/
 │       │   │   └── PatientForm.tsx
 │       │   ├── records/             # 诊疗记录
 │       │   │   ├── RecordList.tsx
-│       │   │   └── RecordForm.tsx   # 含 AI 辩证论治 Drawer（remark-gfm 表格渲染）+ 处方区域全宽浅灰底色 + 医嘱分行展示
+│       │   │   └── RecordForm.tsx   # 含 AI 辩证论治 Drawer（remark-gfm 表格渲染）+ 新建记录保存时自动持久化AI结果 + 处方区域全宽浅灰底色 + 医嘱分行展示
 │       │   ├── herbs/               # 中药查询
-│       │   │   ├── HerbSearch.tsx   # 含分类筛选下拉框 + 管理员行内编辑
+│       │   │   ├── HerbSearch.tsx   # 含分类筛选下拉框 + 管理员行内编辑 + AI重查询按钮 + 默认加载全部数据
 │       │   │   └── __tests__/
 │       │   ├── formulas/            # 方剂查询
 │       │   │   ├── FormulaSearch.tsx
@@ -387,6 +387,7 @@ menzhen/
 |------|------|------|------|
 | POST | `/api/v1/ai/analyze-diagnosis` | `record:read` | AI 辅助辩证论治分析（支持缓存，超时 120s） |
 | GET | `/api/v1/records/:id/ai-analysis` | `record:read` | 获取已缓存的 AI 分析结果 |
+| POST | `/api/v1/records/:id/ai-analysis` | `record:read` | 直接保存 AI 分析结果（用于新建记录保存后回写） |
 
 #### 中药查询（全局数据）
 
@@ -461,7 +462,7 @@ menzhen/
 
 ```
 用户搜索 name
-  -> DB: herbs 表 WHERE name LIKE %name% OR alias LIKE %name%
+  -> DB: herbs 表 WHERE name LIKE %name%（仅名称模糊匹配，不查别名）
   -> 有结果 -> 返回分页数据
   -> 无结果 且 DeepSeek 已启用
      -> 调用 DeepSeek AI QueryHerb(name)
@@ -485,12 +486,20 @@ menzhen/
      -> 有缓存且 diagnosis 内容一致 -> 返回缓存结果（cached: true）
   -> 缓存未命中或 force=true
      -> 调用 AnalyzeDiagnosis（120s 超时，max_tokens=4096）
-     -> upsert 到 ai_analyses 表
-     -> 返回分析结果（cached: false）
+     -> 若 record_id > 0，upsert 到 ai_analyses 表，成功则 cached=true
+     -> 返回分析结果
 
 前端收到分析结果后：
-  -> 若 recordId 存在（编辑模式），立即标记 aiCached=true（后端已持久化）
-  -> 无需手动点击保存按钮即可缓存
+  -> 只要 aiResult 非空，即显示「已有分析」标签（不依赖 cached 字段）
+  -> 抽屉内「缓存」标签仅在 DB 实际持久化成功时显示
+  -> 「重新分析」按钮在有结果时即可使用
+
+新建记录（无 record_id）时的缓存流程：
+  -> 用户在 /records/new 触发 AI 分析 -> 无 record_id，后端不缓存
+  -> AI 结果保存在前端 aiResult 状态中
+  -> 用户保存记录 -> createRecord 返回新 id
+  -> 前端自动调用 POST /records/:id/ai-analysis 将 aiResult 写入 DB
+  -> 页面跳转到 /records/:id -> loadCachedAnalysis 加载已持久化的结果
 
 前端编辑记录时自动加载缓存 (GET /api/v1/records/:id/ai-analysis)
   -> 若有缓存 -> 在诊断旁显示「已有分析」标签

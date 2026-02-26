@@ -44,3 +44,7 @@ export function aiAnalyzeDiagnosis(diagnosis: string, recordId?: number, force?:
 export function getCachedAiAnalysis(recordId: number) {
   return request.get(`/records/${recordId}/ai-analysis`);
 }
+
+export function saveAiAnalysis(recordId: number, diagnosis: string, analysis: string) {
+  return request.post(`/records/${recordId}/ai-analysis`, { diagnosis, analysis });
+}
