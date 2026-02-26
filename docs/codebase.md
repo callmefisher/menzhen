@@ -92,7 +92,8 @@ menzhen/
 │       ├── components/
 │       │   ├── Layout.tsx           # 侧边栏 + 顶部导航布局
 │       │   ├── FileUpload.tsx       # 文件上传组件
-│       │   ├── PrescriptionModal.tsx  # 处方弹窗（开方/编辑）
+│       │   ├── PrescriptionModal.tsx  # 处方弹窗（开方/编辑，含药物详情查看）
+│       │   ├── HerbDetailModal.tsx   # 通用中药详情弹窗（方剂/处方复用）
 │       │   ├── PrescriptionPrint.tsx  # 处方打印
 │       │   └── __tests__/           # 组件测试
 │       ├── pages/
