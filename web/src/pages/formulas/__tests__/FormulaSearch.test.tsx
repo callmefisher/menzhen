@@ -5,6 +5,16 @@ import FormulaSearch from '../FormulaSearch';
 // Mock the API module
 vi.mock('../../../api/formula', () => ({
   listFormulas: vi.fn(),
+  updateFormulaComposition: vi.fn(),
+  updateFormulaName: vi.fn(),
+  deleteFormula: vi.fn(),
+}));
+
+// Mock useAuth
+vi.mock('../../../store/auth', () => ({
+  useAuth: () => ({
+    hasPermission: () => false,
+  }),
 }));
 
 vi.mock('antd', async () => {

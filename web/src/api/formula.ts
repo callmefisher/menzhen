@@ -36,3 +36,7 @@ export function deleteFormula(id: number) {
 export function updateFormulaComposition(id: number, composition: FormulaCompositionItem[]) {
   return request.put(`/formulas/${id}/composition`, { composition });
 }
+
+export function updateFormulaName(id: number, name: string) {
+  return request.put(`/formulas/${id}/name`, { name });
+}
