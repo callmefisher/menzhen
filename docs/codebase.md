@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-02-26（前端视觉优化 + 处方打印分列 + 导航调整）
+> 最后更新：2026-02-26（中药编辑+道地产区 + 患者生日自动算年龄）
 
 ---
 
@@ -39,7 +39,7 @@ menzhen/
 │   │   ├── patient.go               # List/Create/Detail/Update/Delete
 │   │   ├── record.go                # List/Create/Detail/Update/Delete
 │   │   ├── upload.go                # Upload/GetFile（MinIO）
-│   │   ├── herb.go                  # List/Detail/Delete/Categories
+│   │   ├── herb.go                  # List/Detail/Delete/Categories/Update
 │   │   ├── formula.go               # List/Detail/Delete/UpdateComposition
 │   │   ├── prescription.go          # Create/Detail/Update/Delete/ListByRecord
 │   │   ├── ai_analysis.go           # Analyze（AI 辩证论治，含缓存）+ GetCached
@@ -81,7 +81,7 @@ menzhen/
 │       │   ├── auth.ts              # 登录/注册/登出/获取当前用户/修改密码
 │       │   ├── patient.ts           # 患者 CRUD
 │       │   ├── record.ts            # 诊疗记录 CRUD + AI分析调用/缓存获取
-│       │   ├── herb.ts              # 中药搜索/详情/删除/分类列表
+│       │   ├── herb.ts              # 中药搜索/详情/删除/分类列表/更新
 │       │   ├── formula.ts           # 方剂搜索/详情/删除/更新组成
 │       │   ├── prescription.ts      # 处方 CRUD + 按记录查询
 │       │   ├── upload.ts            # 文件上传
@@ -108,7 +108,7 @@ menzhen/
 │       │   │   ├── RecordList.tsx
 │       │   │   └── RecordForm.tsx   # 含 AI 辩证论治 Drawer + 处方区域全宽浅灰底色 + 医嘱分行展示
 │       │   ├── herbs/               # 中药查询
-│       │   │   ├── HerbSearch.tsx   # 含分类筛选下拉框
+│       │   │   ├── HerbSearch.tsx   # 含分类筛选下拉框 + 管理员行内编辑
 │       │   │   └── __tests__/
 │       │   ├── formulas/            # 方剂查询
 │       │   │   ├── FormulaSearch.tsx
@@ -174,6 +174,7 @@ menzhen/
 | `properties` | `varchar(200)` | 性味归经 |
 | `effects` | `text` | 功效 |
 | `indications` | `text` | 主治 |
+| `origin` | `varchar(200)` | 道地产区 |
 | `source` | `varchar(20)` | 数据来源，`manual`（默认）或 `deepseek` |
 | `created_at` | `time.Time` | 创建时间 |
 | `updated_at` | `time.Time` | 更新时间 |
@@ -248,7 +249,8 @@ menzhen/
 | `tenant_id` | `uint64` | 租户 ID（索引） |
 | `name` | `varchar(50)` | 姓名 |
 | `gender` | `tinyint` | 性别：1=男, 2=女 |
-| `age` | `int` | 年龄 |
+| `age` | `int` | 年龄（可由生日自动计算） |
+| `birthday` | `date` | 出生日期（nullable，填写后自动计算年龄） |
 | `weight` | `decimal(5,1)` | 体重(kg) |
 | `phone` | `varchar(20)` | 手机号 |
 | `id_card` | `varchar(20)` | 身份证号 |
@@ -393,6 +395,7 @@ menzhen/
 | GET | `/api/v1/herbs` | - | 搜索中药（DB + AI 回退），参数：`name`, `category`, `page`, `size` |
 | GET | `/api/v1/herbs/categories` | - | 获取中药分类列表（从已有数据中聚合） |
 | GET | `/api/v1/herbs/:id` | - | 中药详情 |
+| PUT | `/api/v1/herbs/:id` | `role:manage` | 更新中药（药名/别名/分类/性味/功效/主治/道地产区） |
 | DELETE | `/api/v1/herbs/:id` | `role:manage` | 删除中药 |
 
 #### 方剂查询（全局数据）
@@ -461,7 +464,7 @@ menzhen/
   -> 有结果 -> 返回分页数据
   -> 无结果 且 DeepSeek 已启用
      -> 调用 DeepSeek AI QueryHerb(name)
-     -> AI 返回 JSON（name/alias/category/properties/effects/indications）
+     -> AI 返回 JSON（name/alias/category/properties/effects/indications/origin）
      -> 验证结果有效性（effects 或 indications 非空）
      -> 有效则写入 herbs 表（source=deepseek），处理唯一键冲突
      -> 返回结果给前端
