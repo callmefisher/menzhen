@@ -106,7 +106,7 @@ export default function PrescriptionModal({
     // 如果方剂有备注，追加到医嘱末尾
     if (formula.notes && formula.notes.trim()) {
       const currentNotes: string = form.getFieldValue('notes') || '';
-      const separator = currentNotes.trim() ? '\n' : '';
+      const separator = currentNotes.trim() ? '\n6. ' : '';
       form.setFieldValue('notes', currentNotes.trimEnd() + separator + formula.notes.trim());
     }
 
