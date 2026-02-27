@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-02-26（按方开药功效/主治/备注横排展示 + 编辑处方时自动加载方剂详情）
+> 最后更新：2026-02-27（新增经络穴位3D可视化模块）
 
 ---
 
@@ -113,6 +113,18 @@ menzhen/
 │       │   ├── formulas/            # 方剂查询
 │       │   │   ├── FormulaSearch.tsx
 │       │   │   └── __tests__/
+│       │   ├── meridians/           # 经络穴位3D可视化（Three.js + R3F）
+│       │   │   ├── MeridianView.tsx     # 页面入口（左右布局）
+│       │   │   ├── MeridianPanel.tsx    # 左侧控制面板（搜索/透明度/经络列表）
+│       │   │   ├── MeridianScene.tsx    # 3D场景容器（Canvas + 灯光 + OrbitControls）
+│       │   │   ├── HumanBodyModel.tsx   # 程序化人体模型（骨骼/半透明/不透明）
+│       │   │   ├── MeridianPath.tsx     # 经络路径渲染（TubeGeometry + 水流ShaderMaterial）
+│       │   │   ├── AcupointMarker.tsx   # 穴位标记（球体 + 悬浮/聚焦动画）
+│       │   │   ├── AcupointInfoCard.tsx # 穴位信息卡片（Html overlay）
+│       │   │   └── data/
+│       │   │       ├── types.ts         # MeridianData/AcupointData 类型
+│       │   │       ├── meridians.ts     # 20条经络静态数据（路径坐标）
+│       │   │       └── acupoints.ts     # 穴位静态数据（~150+穴位）
 │       │   └── settings/            # 系统设置
 │       │       ├── UserList.tsx
 │       │       ├── RoleList.tsx

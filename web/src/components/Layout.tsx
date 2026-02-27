@@ -15,6 +15,7 @@ import {
   ExperimentOutlined,
   ReadOutlined,
   BankOutlined,
+  ApartmentOutlined,
 } from '@ant-design/icons';
 import type { MenuProps as AntMenuProps } from 'antd';
 import { useAuth } from '../store/auth';
@@ -64,6 +65,11 @@ export default function AppLayout() {
         key: '/formulas',
         icon: <ReadOutlined />,
         label: '方剂查询',
+      },
+      {
+        key: '/meridians',
+        icon: <ApartmentOutlined />,
+        label: '经络穴位',
       },
     ];
     items.push({
@@ -129,6 +135,7 @@ export default function AppLayout() {
     if (path.startsWith('/oplogs')) return ['/oplogs'];
     if (path.startsWith('/herbs')) return ['/herbs'];
     if (path.startsWith('/formulas')) return ['/formulas'];
+    if (path.startsWith('/meridians')) return ['/meridians'];
     if (path.startsWith('/records')) return ['/records'];
     return ['/records'];
   }, [location.pathname]);
@@ -136,7 +143,7 @@ export default function AppLayout() {
   const openKeys = useMemo(() => {
     const path = location.pathname;
     if (path.startsWith('/settings')) return ['/settings'];
-    if (path.startsWith('/herbs') || path.startsWith('/formulas')) return ['/tcm'];
+    if (path.startsWith('/herbs') || path.startsWith('/formulas') || path.startsWith('/meridians')) return ['/tcm'];
     return ['/tcm', '/settings'];
   }, [location.pathname]);
 
