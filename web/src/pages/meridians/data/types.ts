@@ -17,5 +17,7 @@ export interface AcupointData {
   position: Vec3;
   effects: string;
   indications: string;
+  contraindications?: string;
   method: string;
+  location?: string;
 }

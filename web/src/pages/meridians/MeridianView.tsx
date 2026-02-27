@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import MeridianPanel from './MeridianPanel';
 import MeridianScene from './MeridianScene';
+import AcupointDetailPanel from './AcupointDetailPanel';
 import type { AcupointData } from './data/types';
 
 export default function MeridianView() {
@@ -20,6 +21,10 @@ export default function MeridianView() {
       setSelectedMeridians(prev => [...prev, acupoint.meridianId]);
     }
   }, [selectedMeridians]);
+
+  const handleCloseDetail = useCallback(() => {
+    setFocusedAcupoint(null);
+  }, []);
 
   return (
     <div style={{ display: 'flex', height: 'calc(100vh - 112px)', margin: '-24px', overflow: 'hidden' }}>
@@ -48,6 +53,7 @@ export default function MeridianView() {
           focusedAcupoint={focusedAcupoint}
           onAcupointClick={setFocusedAcupoint}
         />
+        <AcupointDetailPanel acupoint={focusedAcupoint} onClose={handleCloseDetail} />
       </div>
     </div>
   );

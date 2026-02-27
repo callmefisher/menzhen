@@ -1,5 +1,5 @@
-import { useState, useMemo, useCallback } from 'react';
-import { Input, Radio, Checkbox, Divider, AutoComplete, Tag } from 'antd';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { Input, Radio, Checkbox, Divider, Tag } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import { regularMeridians, extraordinaryMeridians } from './data/meridians';
 import { acupoints } from './data/acupoints';
@@ -21,9 +21,21 @@ export default function MeridianPanel({
   onAcupointSearch,
 }: MeridianPanelProps) {
   const [searchValue, setSearchValue] = useState('');
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
 
-  // Fuzzy search acupoints
-  const searchOptions = useMemo(() => {
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const searchResults = useMemo(() => {
     if (!searchValue.trim()) return [];
     const keyword = searchValue.trim().toLowerCase();
     return acupoints
@@ -32,30 +44,19 @@ export default function MeridianPanel({
           a.name.toLowerCase().includes(keyword) ||
           a.code.toLowerCase().includes(keyword),
       )
-      .slice(0, 20)
-      .map(a => ({
-        value: a.code,
-        label: (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>
-              <strong>{a.name}</strong>{' '}
-              <span style={{ color: '#999', fontSize: 12 }}>{a.code}</span>
-            </span>
-            <Tag color="blue" style={{ fontSize: 11 }}>
-              {regularMeridians.find(m => m.id === a.meridianId)?.name ||
-                extraordinaryMeridians.find(m => m.id === a.meridianId)?.name ||
-                a.meridianId}
-            </Tag>
-          </div>
-        ),
-        acupoint: a,
-      }));
+      .slice(0, 20);
   }, [searchValue]);
 
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchValue(e.target.value);
+    setDropdownOpen(true);
+  }, []);
+
   const handleSelect = useCallback(
-    (_: string, option: { acupoint: AcupointData }) => {
-      onAcupointSearch(option.acupoint);
-      setSearchValue(option.acupoint.name);
+    (acupoint: AcupointData) => {
+      onAcupointSearch(acupoint);
+      setSearchValue(acupoint.name);
+      setDropdownOpen(false);
     },
     [onAcupointSearch],
   );
@@ -63,30 +64,71 @@ export default function MeridianPanel({
   const handleClear = useCallback(() => {
     setSearchValue('');
     onAcupointSearch(null);
+    setDropdownOpen(false);
   }, [onAcupointSearch]);
 
   return (
     <div>
       {/* Acupoint search */}
-      <div style={{ marginBottom: 16 }}>
+      <div style={{ marginBottom: 16 }} ref={wrapperRef}>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#333' }}>
           穴位搜索
         </div>
-        <AutoComplete
-          style={{ width: '100%' }}
-          options={searchOptions}
-          onSelect={handleSelect}
-          onSearch={setSearchValue}
-          value={searchValue}
-          allowClear
-          onClear={handleClear}
-        >
+        <div style={{ position: 'relative' }}>
           <Input
             prefix={<SearchOutlined style={{ color: '#bbb' }} />}
             placeholder="输入穴位名或编码"
             size="small"
+            value={searchValue}
+            onChange={handleInputChange}
+            onFocus={() => searchResults.length > 0 && setDropdownOpen(true)}
+            allowClear
+            onClear={handleClear}
           />
-        </AutoComplete>
+          {dropdownOpen && searchResults.length > 0 && (
+            <div
+              style={{
+                position: 'absolute',
+                top: '100%',
+                left: 0,
+                right: 0,
+                marginTop: 4,
+                background: '#fff',
+                borderRadius: 6,
+                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                maxHeight: 280,
+                overflowY: 'auto',
+                zIndex: 50,
+              }}
+            >
+              {searchResults.map(a => (
+                <div
+                  key={a.code}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '6px 10px',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    fontSize: 13,
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#f5f5f5')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => handleSelect(a)}
+                >
+                  <Tag color="blue" style={{ fontSize: 10, lineHeight: '18px', margin: 0, flexShrink: 0 }}>
+                    {a.code}
+                  </Tag>
+                  <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {a.name}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       <Divider style={{ margin: '12px 0' }} />

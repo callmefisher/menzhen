@@ -1,154 +1,211 @@
-import { useRef, useMemo } from 'react';
+import { useMemo } from 'react';
 import * as THREE from 'three';
 
 interface HumanBodyModelProps {
   transparency: 'full' | 'semi' | 'opaque';
 }
 
-// Programmatic human body model using basic geometries
-// Can be replaced with a glTF model later
+// Create a lathe geometry body part from a profile curve
+function createLatheBody(profile: [number, number][], segments = 24): THREE.LatheGeometry {
+  const points = profile.map(([r, y]) => new THREE.Vector2(r, y));
+  return new THREE.LatheGeometry(points, segments);
+}
+
 export default function HumanBodyModel({ transparency }: HumanBodyModelProps) {
-  const groupRef = useRef<THREE.Group>(null);
-
-  const materialProps = useMemo(() => {
-    switch (transparency) {
-      case 'full':
-        return { opacity: 0, transparent: true, wireframe: true, visible: false };
-      case 'semi':
-        return { opacity: 0.3, transparent: true, wireframe: false, visible: true };
-      case 'opaque':
-        return { opacity: 1.0, transparent: false, wireframe: false, visible: true };
-    }
-  }, [transparency]);
-
+  const visible = transparency !== 'full';
   const wireframeVisible = transparency === 'full';
 
-  // Body part definitions with position, scale, geometry type
-  const bodyParts = useMemo(() => [
-    // Head
-    { name: 'head', pos: [0, 1.55, 0] as const, args: [0.09, 16, 16] as const, type: 'sphere' as const },
-    // Neck
-    { name: 'neck', pos: [0, 1.42, 0] as const, args: [0.04, 0.04, 0.08, 8] as const, type: 'cylinder' as const },
-    // Torso upper
-    { name: 'torso_upper', pos: [0, 1.25, 0] as const, args: [0.18, 0.15, 0.12, 0.25] as const, type: 'box' as const },
-    // Torso lower
-    { name: 'torso_lower', pos: [0, 1.0, 0] as const, args: [0.15, 0.12, 0.10, 0.25] as const, type: 'box' as const },
-    // Pelvis
-    { name: 'pelvis', pos: [0, 0.82, 0] as const, args: [0.15, 0.12, 0.10, 0.10] as const, type: 'box' as const },
+  const opacity = transparency === 'semi' ? 0.3 : 1.0;
+  const isTransparent = transparency === 'semi';
 
-    // Left upper arm
-    { name: 'l_upper_arm', pos: [-0.28, 1.25, 0] as const, args: [0.035, 0.035, 0.25, 8] as const, type: 'cylinder' as const, rot: [0, 0, 0.15] as const },
-    // Left forearm
-    { name: 'l_forearm', pos: [-0.38, 1.0, 0] as const, args: [0.03, 0.025, 0.25, 8] as const, type: 'cylinder' as const, rot: [0, 0, 0.1] as const },
-    // Left hand
-    { name: 'l_hand', pos: [-0.44, 0.78, 0] as const, args: [0.035, 0.02, 0.07] as const, type: 'box' as const },
-
-    // Right upper arm
-    { name: 'r_upper_arm', pos: [0.28, 1.25, 0] as const, args: [0.035, 0.035, 0.25, 8] as const, type: 'cylinder' as const, rot: [0, 0, -0.15] as const },
-    // Right forearm
-    { name: 'r_forearm', pos: [0.38, 1.0, 0] as const, args: [0.03, 0.025, 0.25, 8] as const, type: 'cylinder' as const, rot: [0, 0, -0.1] as const },
-    // Right hand
-    { name: 'r_hand', pos: [0.44, 0.78, 0] as const, args: [0.035, 0.02, 0.07] as const, type: 'box' as const },
-
-    // Left upper leg
-    { name: 'l_upper_leg', pos: [-0.08, 0.6, 0] as const, args: [0.05, 0.045, 0.35, 8] as const, type: 'cylinder' as const },
-    // Left lower leg
-    { name: 'l_lower_leg', pos: [-0.08, 0.25, 0] as const, args: [0.04, 0.035, 0.35, 8] as const, type: 'cylinder' as const },
-    // Left foot
-    { name: 'l_foot', pos: [-0.08, 0.03, 0.03] as const, args: [0.04, 0.03, 0.10] as const, type: 'box' as const },
-
-    // Right upper leg
-    { name: 'r_upper_leg', pos: [0.08, 0.6, 0] as const, args: [0.05, 0.045, 0.35, 8] as const, type: 'cylinder' as const },
-    // Right lower leg
-    { name: 'r_lower_leg', pos: [0.08, 0.25, 0] as const, args: [0.04, 0.035, 0.35, 8] as const, type: 'cylinder' as const },
-    // Right foot
-    { name: 'r_foot', pos: [0.08, 0.03, 0.03] as const, args: [0.04, 0.03, 0.10] as const, type: 'box' as const },
-  ], []);
-
-  // Skeleton wireframe (always visible in 'full' mode)
-  const skeletonLines = useMemo(() => {
-    const points: [number, number, number][][] = [
-      // Spine
-      [[0, 0.82, 0], [0, 1.0, 0], [0, 1.25, 0], [0, 1.42, 0], [0, 1.55, 0]],
-      // Left arm
-      [[0, 1.35, 0], [-0.20, 1.35, 0], [-0.28, 1.25, 0], [-0.38, 1.0, 0], [-0.44, 0.78, 0]],
-      // Right arm
-      [[0, 1.35, 0], [0.20, 1.35, 0], [0.28, 1.25, 0], [0.38, 1.0, 0], [0.44, 0.78, 0]],
-      // Left leg
-      [[-0.08, 0.82, 0], [-0.08, 0.6, 0], [-0.08, 0.25, 0], [-0.08, 0.03, 0.03]],
-      // Right leg
-      [[0.08, 0.82, 0], [0.08, 0.6, 0], [0.08, 0.25, 0], [0.08, 0.03, 0.03]],
-      // Shoulders
-      [[-0.20, 1.35, 0], [0.20, 1.35, 0]],
-      // Hips
-      [[-0.08, 0.82, 0], [0.08, 0.82, 0]],
-      // Ribcage hints
-      [[-0.15, 1.15, 0.08], [0, 1.20, 0.10], [0.15, 1.15, 0.08]],
-      [[-0.14, 1.05, 0.08], [0, 1.10, 0.10], [0.14, 1.05, 0.08]],
-    ];
-    return points;
+  // Torso profile (lathe around Y axis): [radius, y]
+  const torsoGeometry = useMemo(() => {
+    return createLatheBody([
+      [0.0, 0.78],   // pelvis bottom center
+      [0.12, 0.78],  // pelvis bottom
+      [0.14, 0.82],  // hips
+      [0.13, 0.88],  // waist
+      [0.12, 0.94],  // abdomen
+      [0.13, 1.00],  // lower ribs
+      [0.15, 1.06],  // ribs
+      [0.17, 1.12],  // chest
+      [0.18, 1.20],  // upper chest
+      [0.17, 1.26],  // shoulders start
+      [0.14, 1.32],  // neck base
+      [0.04, 1.38],  // neck
+      [0.04, 1.42],  // neck top
+      [0.0, 1.42],   // neck center
+    ], 32);
   }, []);
 
-  return (
-    <group ref={groupRef}>
-      {/* Skin/body mesh */}
-      {bodyParts.map((part) => {
-        const position = new THREE.Vector3(...part.pos);
-        const rotation = part.rot
-          ? new THREE.Euler(...(part.rot as [number, number, number]))
-          : undefined;
+  // Head as ellipsoid
+  const headGeometry = useMemo(() => {
+    const geo = new THREE.SphereGeometry(0.09, 24, 20);
+    // Slightly elongate vertically
+    const posAttr = geo.getAttribute('position');
+    for (let i = 0; i < posAttr.count; i++) {
+      const y = posAttr.getY(i);
+      posAttr.setY(i, y * 1.15); // taller head
+      // Slightly flatten front-back
+      const z = posAttr.getZ(i);
+      posAttr.setZ(i, z * 0.9);
+    }
+    posAttr.needsUpdate = true;
+    geo.computeVertexNormals();
+    return geo;
+  }, []);
 
-        return (
-          <mesh
-            key={part.name}
-            position={position}
-            rotation={rotation}
-            visible={materialProps.visible}
-          >
-            {part.type === 'sphere' && (
-              <sphereGeometry args={part.args as [number, number, number]} />
-            )}
-            {part.type === 'cylinder' && (
-              <cylinderGeometry args={part.args as [number, number, number, number]} />
-            )}
-            {part.type === 'box' && (
-              <boxGeometry args={part.args as [number, number, number]} />
-            )}
+  // Skeleton lines
+  const skeletonLines = useMemo(() => {
+    const lines: [number, number, number][][] = [
+      // Spine
+      [[0, 0.78, 0], [0, 0.82, 0], [0, 0.90, 0], [0, 1.00, 0], [0, 1.10, 0], [0, 1.20, 0], [0, 1.30, 0], [0, 1.38, 0], [0, 1.42, 0], [0, 1.55, 0]],
+      // Clavicles
+      [[-0.20, 1.34, 0], [0, 1.34, 0], [0.20, 1.34, 0]],
+      // Left arm
+      [[-0.20, 1.34, 0], [-0.26, 1.28, 0], [-0.32, 1.14, 0], [-0.38, 1.00, 0], [-0.40, 0.86, 0], [-0.42, 0.78, 0], [-0.44, 0.70, 0]],
+      // Right arm
+      [[0.20, 1.34, 0], [0.26, 1.28, 0], [0.32, 1.14, 0], [0.38, 1.00, 0], [0.40, 0.86, 0], [0.42, 0.78, 0], [0.44, 0.70, 0]],
+      // Pelvis
+      [[-0.08, 0.82, 0], [0, 0.78, 0], [0.08, 0.82, 0]],
+      // Left leg
+      [[-0.08, 0.82, 0], [-0.08, 0.68, 0], [-0.08, 0.46, 0], [-0.08, 0.30, 0], [-0.08, 0.12, 0], [-0.08, 0.03, 0.03]],
+      // Right leg
+      [[0.08, 0.82, 0], [0.08, 0.68, 0], [0.08, 0.46, 0], [0.08, 0.30, 0], [0.08, 0.12, 0], [0.08, 0.03, 0.03]],
+      // Ribcage (front)
+      [[-0.16, 1.20, 0.08], [-0.10, 1.22, 0.10], [0, 1.24, 0.11], [0.10, 1.22, 0.10], [0.16, 1.20, 0.08]],
+      [[-0.15, 1.14, 0.08], [-0.08, 1.16, 0.10], [0, 1.17, 0.10], [0.08, 1.16, 0.10], [0.15, 1.14, 0.08]],
+      [[-0.14, 1.08, 0.08], [-0.07, 1.10, 0.09], [0, 1.10, 0.09], [0.07, 1.10, 0.09], [0.14, 1.08, 0.08]],
+      [[-0.12, 1.02, 0.06], [0, 1.04, 0.08], [0.12, 1.02, 0.06]],
+      // Ribcage (back)
+      [[-0.15, 1.20, -0.06], [0, 1.20, -0.08], [0.15, 1.20, -0.06]],
+      [[-0.14, 1.12, -0.06], [0, 1.12, -0.08], [0.14, 1.12, -0.06]],
+      // Scapulae hints
+      [[-0.16, 1.26, -0.04], [-0.12, 1.20, -0.06], [-0.16, 1.14, -0.04]],
+      [[0.16, 1.26, -0.04], [0.12, 1.20, -0.06], [0.16, 1.14, -0.04]],
+    ];
+    return lines;
+  }, []);
+
+  // Joint positions
+  const joints: [number, number, number][] = useMemo(() => [
+    // Spine
+    [0, 0.78, 0], [0, 0.82, 0], [0, 1.00, 0], [0, 1.20, 0], [0, 1.34, 0], [0, 1.42, 0], [0, 1.55, 0],
+    // Left arm
+    [-0.20, 1.34, 0], [-0.32, 1.14, 0], [-0.40, 0.86, 0], [-0.44, 0.70, 0],
+    // Right arm
+    [0.20, 1.34, 0], [0.32, 1.14, 0], [0.40, 0.86, 0], [0.44, 0.70, 0],
+    // Left leg
+    [-0.08, 0.82, 0], [-0.08, 0.46, 0], [-0.08, 0.12, 0], [-0.08, 0.03, 0.03],
+    // Right leg
+    [0.08, 0.82, 0], [0.08, 0.46, 0], [0.08, 0.12, 0], [0.08, 0.03, 0.03],
+  ], []);
+
+  // Limb paths for smooth capsule-like limbs
+  const limbGeometries = useMemo(() => {
+    const limbs: { path: [number, number, number][]; rStart: number; rEnd: number }[] = [
+      // Left upper arm
+      { path: [[-0.20, 1.34, 0], [-0.24, 1.28, 0], [-0.28, 1.20, 0], [-0.32, 1.14, 0]], rStart: 0.04, rEnd: 0.035 },
+      // Left forearm
+      { path: [[-0.32, 1.14, 0], [-0.36, 1.04, 0], [-0.38, 0.94, 0], [-0.40, 0.86, 0]], rStart: 0.035, rEnd: 0.028 },
+      // Left hand
+      { path: [[-0.40, 0.86, 0], [-0.42, 0.78, 0], [-0.44, 0.70, 0]], rStart: 0.025, rEnd: 0.015 },
+      // Right upper arm
+      { path: [[0.20, 1.34, 0], [0.24, 1.28, 0], [0.28, 1.20, 0], [0.32, 1.14, 0]], rStart: 0.04, rEnd: 0.035 },
+      // Right forearm
+      { path: [[0.32, 1.14, 0], [0.36, 1.04, 0], [0.38, 0.94, 0], [0.40, 0.86, 0]], rStart: 0.035, rEnd: 0.028 },
+      // Right hand
+      { path: [[0.40, 0.86, 0], [0.42, 0.78, 0], [0.44, 0.70, 0]], rStart: 0.025, rEnd: 0.015 },
+      // Left upper leg
+      { path: [[-0.08, 0.82, 0], [-0.08, 0.72, 0], [-0.08, 0.58, 0], [-0.08, 0.46, 0]], rStart: 0.06, rEnd: 0.05 },
+      // Left lower leg
+      { path: [[-0.08, 0.46, 0], [-0.08, 0.36, 0], [-0.08, 0.22, 0], [-0.08, 0.12, 0]], rStart: 0.045, rEnd: 0.035 },
+      // Left foot
+      { path: [[-0.08, 0.12, 0], [-0.08, 0.06, 0.01], [-0.08, 0.03, 0.04], [-0.08, 0.02, 0.08]], rStart: 0.035, rEnd: 0.025 },
+      // Right upper leg
+      { path: [[0.08, 0.82, 0], [0.08, 0.72, 0], [0.08, 0.58, 0], [0.08, 0.46, 0]], rStart: 0.06, rEnd: 0.05 },
+      // Right lower leg
+      { path: [[0.08, 0.46, 0], [0.08, 0.36, 0], [0.08, 0.22, 0], [0.08, 0.12, 0]], rStart: 0.045, rEnd: 0.035 },
+      // Right foot
+      { path: [[0.08, 0.12, 0], [0.08, 0.06, 0.01], [0.08, 0.03, 0.04], [0.08, 0.02, 0.08]], rStart: 0.035, rEnd: 0.025 },
+    ];
+    return limbs.map(({ path, rStart, rEnd }) => {
+      const pts = path.map(p => new THREE.Vector3(p[0], p[1], p[2]));
+      const curve = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.5);
+      return new THREE.TubeGeometry(curve, 12, (rStart + rEnd) / 2, 8, false);
+    });
+  }, []);
+
+  const skinColor = '#f5d6c3';
+  const boneColor = '#88ccff';
+
+  return (
+    <group>
+      {/* === SKIN MESHES === */}
+      {visible && (
+        <>
+          {/* Torso */}
+          <mesh geometry={torsoGeometry}>
             <meshStandardMaterial
-              color="#f5d6c3"
-              opacity={materialProps.opacity}
-              transparent={materialProps.transparent}
+              color={skinColor}
+              opacity={opacity}
+              transparent={isTransparent}
               side={THREE.DoubleSide}
-              depthWrite={!materialProps.transparent}
+              depthWrite={!isTransparent}
             />
           </mesh>
-        );
-      })}
 
-      {/* Skeleton wireframe */}
-      {wireframeVisible && skeletonLines.map((linePoints, idx) => {
-        const points = linePoints.map(p => new THREE.Vector3(...p));
-        const geometry = new THREE.BufferGeometry().setFromPoints(points);
-        return (
-          <lineSegments key={`skel-${idx}`} geometry={geometry}>
-            <lineBasicMaterial color="#88ccff" linewidth={2} opacity={0.8} transparent />
-          </lineSegments>
-        );
-      })}
+          {/* Head */}
+          <mesh geometry={headGeometry} position={[0, 1.55, 0]}>
+            <meshStandardMaterial
+              color={skinColor}
+              opacity={opacity}
+              transparent={isTransparent}
+              side={THREE.DoubleSide}
+              depthWrite={!isTransparent}
+            />
+          </mesh>
 
-      {/* Joint markers for skeleton mode */}
-      {wireframeVisible && [
-        [0, 1.55, 0], [0, 1.42, 0], [0, 1.35, 0], [0, 1.25, 0], [0, 1.0, 0], [0, 0.82, 0],
-        [-0.20, 1.35, 0], [-0.28, 1.25, 0], [-0.38, 1.0, 0], [-0.44, 0.78, 0],
-        [0.20, 1.35, 0], [0.28, 1.25, 0], [0.38, 1.0, 0], [0.44, 0.78, 0],
-        [-0.08, 0.82, 0], [-0.08, 0.6, 0], [-0.08, 0.25, 0], [-0.08, 0.03, 0.03],
-        [0.08, 0.82, 0], [0.08, 0.6, 0], [0.08, 0.25, 0], [0.08, 0.03, 0.03],
-      ].map((pos, i) => (
-        <mesh key={`joint-${i}`} position={new THREE.Vector3(...(pos as [number, number, number]))}>
-          <sphereGeometry args={[0.012, 8, 8]} />
-          <meshBasicMaterial color="#88ccff" />
-        </mesh>
-      ))}
+          {/* Limbs */}
+          {limbGeometries.map((geo, i) => (
+            <mesh key={`limb-${i}`} geometry={geo}>
+              <meshStandardMaterial
+                color={skinColor}
+                opacity={opacity}
+                transparent={isTransparent}
+                side={THREE.DoubleSide}
+                depthWrite={!isTransparent}
+              />
+            </mesh>
+          ))}
+        </>
+      )}
+
+      {/* === SKELETON === */}
+      {wireframeVisible && (
+        <>
+          {/* Bone lines */}
+          {skeletonLines.map((linePoints, idx) => (
+            <line key={`bone-${idx}`}>
+              <bufferGeometry>
+                <bufferAttribute
+                  attach="attributes-position"
+                  args={[new Float32Array(linePoints.flat()), 3]}
+                />
+              </bufferGeometry>
+              <lineBasicMaterial color={boneColor} opacity={0.8} transparent />
+            </line>
+          ))}
+
+          {/* Joint spheres */}
+          {joints.map((pos, i) => (
+            <mesh key={`joint-${i}`} position={pos}>
+              <sphereGeometry args={[0.012, 8, 8]} />
+              <meshBasicMaterial color={boneColor} />
+            </mesh>
+          ))}
+        </>
+      )}
     </group>
   );
 }
