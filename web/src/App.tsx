@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Spin } from 'antd';
 import { AuthProvider, useAuth } from './store/auth';
@@ -16,6 +17,8 @@ import TenantList from './pages/settings/TenantList';
 import HerbSearch from './pages/herbs/HerbSearch';
 import FormulaSearch from './pages/formulas/FormulaSearch';
 import type { ReactNode } from 'react';
+
+const MeridianView = lazy(() => import('./pages/meridians/MeridianView'));
 
 function PrivateRoute({ children }: { children: ReactNode }) {
   const { token, loading } = useAuth();
@@ -64,6 +67,7 @@ function AppRoutes() {
         <Route path="patients/:id" element={<PatientDetail />} />
         <Route path="herbs" element={<HerbSearch />} />
         <Route path="formulas" element={<FormulaSearch />} />
+        <Route path="meridians" element={<Suspense fallback={<Spin />}><MeridianView /></Suspense>} />
         <Route path="oplogs" element={<OpLogList />} />
         <Route path="settings/users" element={<UserList />} />
         <Route path="settings/roles" element={<RoleList />} />

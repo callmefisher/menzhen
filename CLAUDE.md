@@ -57,6 +57,7 @@
 | 层 | 技术 |
 |---|------|
 | 前端 | React 19 + TypeScript + Ant Design 6 + React Router 7 |
+| 3D可视化 | Three.js + @react-three/fiber + @react-three/drei |
 | 后端 | Go + Gin + GORM |
 | 数据库 | MySQL 8.0 |
 | 文件存储 | MinIO |
@@ -82,7 +83,7 @@ menzhen/
 │   └── src/
 │       ├── api/     # API调用封装
 │       ├── components/ # 通用组件（含处方弹窗、打印）
-│       ├── pages/   # 页面组件（含中药/方剂查询）
+│       ├── pages/   # 页面组件（含中药/方剂查询、经络穴位3D）
 │       ├── store/   # 状态管理
 │       ├── test/    # 测试配置
 │       └── utils/   # 工具函数
@@ -182,4 +183,5 @@ DeepSeek AI 相关（可选）：
 - [运维操作手册](docs/operations-guide.md)
 - [设计方案](docs/plans/2026-02-24-medical-record-system-design.md)
 - [实施计划](docs/plans/2026-02-24-medical-record-system-plan.md)
+- [经络3D可视化设计](docs/plans/2026-02-27-meridian-3d-design.md)
 - [Codebase 全局上下文](docs/codebase.md)
