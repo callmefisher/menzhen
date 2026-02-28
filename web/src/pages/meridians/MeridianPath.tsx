@@ -2,11 +2,12 @@ import { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { MeridianData, Vec3 } from './data/types';
+import type { MergedBVH } from './utils/surfaceProjection';
 import { projectPathToSurface } from './utils/surfaceProjection';
 
 interface MeridianPathProps {
   data: MeridianData;
-  skinMesh?: THREE.Mesh | null;
+  mergedBVH?: MergedBVH | null;
 }
 
 // Custom shader for flow animation
@@ -27,13 +28,9 @@ const flowFragmentShader = `
   varying vec2 vUv;
 
   void main() {
-    // Create flowing light band effect
     float flow = fract(vUv.x * 3.0 - time * 0.5);
     float intensity = smoothstep(0.0, 0.3, flow) * smoothstep(1.0, 0.7, flow);
-
-    // Add a subtle glow pulse
     float pulse = 0.8 + 0.2 * sin(time * 2.0);
-
     float alpha = (0.3 + intensity * 0.7) * opacity * pulse;
     gl_FragColor = vec4(color, alpha);
   }
@@ -47,13 +44,9 @@ const internalFragmentShader = `
   varying vec2 vUv;
 
   void main() {
-    // Dashed effect for internal path
     float dash = step(0.5, fract(vUv.x * 10.0));
-
-    // Flow animation (dimmer than external)
     float flow = fract(vUv.x * 3.0 - time * 0.5);
     float intensity = smoothstep(0.0, 0.3, flow) * smoothstep(1.0, 0.7, flow);
-
     float alpha = (0.15 + intensity * 0.35) * opacity * dash;
     gl_FragColor = vec4(color, alpha);
   }
@@ -64,9 +57,6 @@ function createTubePath(points: Vec3[]): THREE.CatmullRomCurve3 {
   return new THREE.CatmullRomCurve3(vectors, false, 'catmullrom', 0.5);
 }
 
-/**
- * Compute adaptive tubularSegments based on total path length and point spacing.
- */
 function computeTubularSegments(points: Vec3[]): number {
   let totalLen = 0;
   for (let i = 1; i < points.length; i++) {
@@ -82,30 +72,28 @@ function FlowTube({
   points,
   color,
   isInternal = false,
-  skinMesh,
+  mergedBVH,
 }: {
   points: Vec3[];
   color: string;
   isInternal?: boolean;
-  skinMesh?: THREE.Mesh | null;
+  mergedBVH?: MergedBVH | null;
 }) {
   const materialRef = useRef<THREE.ShaderMaterial>(null);
-
   const colorVec = useMemo(() => new THREE.Color(color), [color]);
 
-  // Project external paths onto model surface via BVH; skip internal paths
+  // Project external paths onto model surface; skip internal paths
   const projectedPoints = useMemo(() => {
-    if (!skinMesh || isInternal || points.length < 2) return points;
-    return projectPathToSurface(points, skinMesh, 0.006);
-  }, [points, skinMesh, isInternal]);
+    if (!mergedBVH || isInternal || points.length < 2) return points;
+    return projectPathToSurface(points, mergedBVH, 0.006);
+  }, [points, mergedBVH, isInternal]);
 
   const geometry = useMemo(() => {
     if (projectedPoints.length < 2) return null;
     const curve = createTubePath(projectedPoints);
     const tubularSegments = computeTubularSegments(projectedPoints);
     const radius = isInternal ? 0.004 : 0.005;
-    const radialSegments = 12;
-    return new THREE.TubeGeometry(curve, tubularSegments, radius, radialSegments, false);
+    return new THREE.TubeGeometry(curve, tubularSegments, radius, 12, false);
   }, [projectedPoints, isInternal]);
 
   const uniforms = useMemo(
@@ -141,17 +129,14 @@ function FlowTube({
   );
 }
 
-export default function MeridianPath({ data, skinMesh }: MeridianPathProps) {
+export default function MeridianPath({ data, mergedBVH }: MeridianPathProps) {
   return (
     <group>
-      {/* External (surface) path — projected onto model surface */}
       {data.path.length >= 2 && (
-        <FlowTube points={data.path} color={data.color} skinMesh={skinMesh} />
+        <FlowTube points={data.path} color={data.color} mergedBVH={mergedBVH} />
       )}
-
-      {/* Internal path — NOT projected (runs inside body) */}
       {data.internalPath && data.internalPath.length >= 2 && (
-        <FlowTube points={data.internalPath} color={data.color} isInternal skinMesh={skinMesh} />
+        <FlowTube points={data.internalPath} color={data.color} isInternal mergedBVH={mergedBVH} />
       )}
     </group>
   );

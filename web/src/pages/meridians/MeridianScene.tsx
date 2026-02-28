@@ -8,26 +8,26 @@ import AcupointMarker from './AcupointMarker';
 import { meridianMap } from './data/meridians';
 import { acupointsByMeridian } from './data/acupoints';
 import { buildBVHForModel, disposeBVH } from './utils/surfaceProjection';
+import type { MergedBVH } from './utils/surfaceProjection';
 import type { AcupointData } from './data/types';
 
 interface MeridianSceneProps {
-  transparency: 'full' | 'semi' | 'opaque';
   selectedMeridians: string[];
   focusedAcupoint: AcupointData | null;
   onAcupointClick: (acupoint: AcupointData | null) => void;
 }
 
-// Model Y-offset: shift downward so full body is visible when zoomed
-const MODEL_Y_OFFSET = -0.75;
+// Model center Y ≈ 0.82 (feet=0, head=1.64)
+const MODEL_CENTER_Y = 0.82;
 
 function CameraController({ focusedAcupoint }: { focusedAcupoint: AcupointData | null }) {
   const { camera } = useThree();
-  const targetRef = useRef(new THREE.Vector3(0, 0.07, 0));
+  const targetRef = useRef(new THREE.Vector3(0, MODEL_CENTER_Y, 0));
 
   useEffect(() => {
     if (focusedAcupoint) {
       const [x, y, z] = focusedAcupoint.position;
-      const target = new THREE.Vector3(x, y + MODEL_Y_OFFSET, z);
+      const target = new THREE.Vector3(x, y, z);
       targetRef.current.copy(target);
 
       const dir = new THREE.Vector3().subVectors(camera.position, target).normalize();
@@ -40,23 +40,21 @@ function CameraController({ focusedAcupoint }: { focusedAcupoint: AcupointData |
   return null;
 }
 
-function SceneContent({ transparency, selectedMeridians, focusedAcupoint, onAcupointClick }: MeridianSceneProps) {
-  const [skinMesh, setSkinMesh] = useState<THREE.Mesh | null>(null);
+function SceneContent({ selectedMeridians, focusedAcupoint, onAcupointClick }: MeridianSceneProps) {
+  const [mergedBVH, setMergedBVH] = useState<MergedBVH | null>(null);
 
-  // Build BVH when model loads
+  // Build merged BVH when model loads
   const handleModelLoaded = useCallback((group: THREE.Group) => {
-    const mesh = buildBVHForModel(group);
-    if (mesh) {
-      setSkinMesh(mesh);
+    const result = buildBVHForModel(group);
+    if (result) {
+      setMergedBVH(result);
     }
   }, []);
 
   // Cleanup BVH on unmount
   useEffect(() => {
-    return () => {
-      if (skinMesh) disposeBVH(skinMesh);
-    };
-  }, [skinMesh]);
+    return () => { disposeBVH(); };
+  }, []);
 
   // Collect all visible acupoints from selected meridians
   const visibleAcupoints: AcupointData[] = [];
@@ -76,7 +74,7 @@ function SceneContent({ transparency, selectedMeridians, focusedAcupoint, onAcup
 
       {/* Camera controls — centered on model torso, good rotation range */}
       <OrbitControls
-        target={[0, 0.07, 0]}
+        target={[0, MODEL_CENTER_Y, 0]}
         minDistance={0.3}
         maxDistance={5}
         enablePan
@@ -90,29 +88,26 @@ function SceneContent({ transparency, selectedMeridians, focusedAcupoint, onAcup
       {/* Camera focus controller */}
       <CameraController focusedAcupoint={focusedAcupoint} />
 
-      {/* Offset group: shift model down so it's centered in view */}
-      <group position={[0, MODEL_Y_OFFSET, 0]}>
-        {/* Human body model */}
-        <HumanBodyModel transparency={transparency} onModelLoaded={handleModelLoaded} />
+      {/* Human body model (opaque only) */}
+      <HumanBodyModel onModelLoaded={handleModelLoaded} />
 
-        {/* Meridian paths — with BVH surface projection */}
-        {selectedMeridians.map(id => {
-          const data = meridianMap[id];
-          if (!data) return null;
-          return <MeridianPath key={id} data={data} skinMesh={skinMesh} />;
-        })}
+      {/* Meridian paths — BVH projects guide points onto model surface */}
+      {selectedMeridians.map(id => {
+        const data = meridianMap[id];
+        if (!data) return null;
+        return <MeridianPath key={id} data={data} mergedBVH={mergedBVH} />;
+      })}
 
-        {/* Acupoint markers */}
-        {visibleAcupoints.map(a => (
-          <AcupointMarker
-            key={a.code}
-            data={a}
-            color={meridianMap[a.meridianId]?.color ?? '#ffffff'}
-            isFocused={focusedAcupoint?.code === a.code}
-            onClick={onAcupointClick}
-          />
-        ))}
-      </group>
+      {/* Acupoint markers */}
+      {visibleAcupoints.map(a => (
+        <AcupointMarker
+          key={a.code}
+          data={a}
+          color={meridianMap[a.meridianId]?.color ?? '#ffffff'}
+          isFocused={focusedAcupoint?.code === a.code}
+          onClick={onAcupointClick}
+        />
+      ))}
     </>
   );
 }
@@ -121,7 +116,7 @@ export default function MeridianScene(props: MeridianSceneProps) {
   return (
     <Canvas
       camera={{
-        position: [0, 0.2, 2.5],
+        position: [0, MODEL_CENTER_Y, 2.8],
         fov: 45,
         near: 0.01,
         far: 100,

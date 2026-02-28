@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-02-28（经络3D优化：BVH表面投影集成到渲染管线、模型居中+相机旋转优化）
+> 最后更新：2026-02-28（经络3D：去掉多余Rx(-90°)旋转、合并全mesh建BVH、投影贴合、UI简化为仅不透明）
 
 ---
 
@@ -116,9 +116,9 @@ menzhen/
 │       │   ├── meridians/           # 经络穴位3D可视化（Three.js + R3F）
 │       │   │   ├── MeridianView.tsx     # 页面入口（左右布局）
 │       │   │   ├── MeridianPanel.tsx    # 左侧控制面板（搜索/透明度/经络列表）
-│       │   │   ├── MeridianScene.tsx    # 3D场景容器（Canvas + BVH集成 + 模型居中偏移 + 灯光 + OrbitControls旋转优化）
-│       │   │   ├── HumanBodyModel.tsx   # 人体模型（GLB加载，保留原始贴图，三种透明度模式，onModelLoaded回调）
-│       │   │   ├── MeridianPath.tsx     # 经络路径渲染（TubeGeometry + BVH表面投影 + 水流ShaderMaterial + 自适应细分）
+│       │   │   ├── MeridianScene.tsx    # 3D场景容器（Canvas + 合并BVH投影 + 相机旋转优化）
+│       │   │   ├── HumanBodyModel.tsx   # 人体模型（GLB加载，scale only无旋转，onModelLoaded回调）
+│       │   │   ├── MeridianPath.tsx     # 经络路径渲染（TubeGeometry + 合并BVH表面投影 + 水流ShaderMaterial）
 │       │   │   ├── AcupointMarker.tsx   # 穴位标记（球体 + 悬浮/聚焦动画）
 │       │   │   ├── AcupointInfoCard.tsx # 穴位3D标签（精简name+code tag）
 │       │   │   ├── AcupointDetailPanel.tsx # 穴位详情浮层（Canvas外，含完整信息）

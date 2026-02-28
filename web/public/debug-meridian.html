@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Meridian BVH Debug — Final</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #1a1a2e; font-family: monospace; }
+  #info {
+    position: absolute; top: 10px; left: 10px; color: #0f0; font-size: 12px;
+    background: rgba(0,0,0,0.8); padding: 10px; border-radius: 4px; max-width: 600px;
+    max-height: 50vh; overflow-y: auto; z-index: 10; white-space: pre-wrap;
+  }
+  #controls { position: absolute; bottom: 10px; left: 10px; z-index: 10; }
+  button { margin: 4px; padding: 6px 12px; cursor: pointer; }
+</style>
+</head>
+<body>
+<div id="info">Loading model...</div>
+<div id="controls">
+  <button onclick="toggleWireframe()">Wireframe</button>
+  <button onclick="toggleGuide()">Guide (red)</button>
+  <button onclick="toggleProjected()">Projected (green)</button>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.171.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.171.0/examples/jsm/",
+    "three-mesh-bvh": "https://unpkg.com/three-mesh-bvh@0.9.8/src/index.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { MeshBVH } from 'three-mesh-bvh';
+
+const info = document.getElementById('info');
+function log(msg) { info.textContent += '\n' + msg; }
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.01, 100);
+camera.position.set(0, 0.82, 2.8);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setClearColor(0x1a1a2e);
+document.body.appendChild(renderer.domElement);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.82, 0);
+controls.enableDamping = true;
+scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+const dl1 = new THREE.DirectionalLight(0xffffff, 0.8); dl1.position.set(5,5,5); scene.add(dl1);
+const dl2 = new THREE.DirectionalLight(0xffffff, 0.3); dl2.position.set(-5,3,-5); scene.add(dl2);
+scene.add(new THREE.AxesHelper(0.3));
+
+const LU_GUIDE = [
+  [-0.11, 1.19, 0.11], [-0.14, 1.18, 0.10], [-0.16, 1.17, 0.08],
+  [-0.18, 1.16, 0.06], [-0.20, 1.15, 0.03], [-0.22, 1.14, 0.02],
+  [-0.25, 1.13, 0.00], [-0.28, 1.12, 0.00], [-0.32, 1.11, 0.00],
+  [-0.35, 1.10, 0.00], [-0.38, 1.09, 0.00], [-0.41, 1.08, 0.00],
+  [-0.44, 1.07, 0.00], [-0.47, 1.06, 0.00], [-0.51, 1.04, 0.00],
+  [-0.54, 1.03, 0.00], [-0.57, 1.01, 0.00], [-0.60, 1.00, 0.01],
+  [-0.63, 0.99, 0.01], [-0.66, 0.98, 0.01], [-0.70, 0.97, 0.01],
+];
+
+const guideGroup = new THREE.Group();
+const projGroup = new THREE.Group();
+scene.add(guideGroup, projGroup);
+
+const gMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+LU_GUIDE.forEach(p => {
+  const s = new THREE.Mesh(new THREE.SphereGeometry(0.008, 8, 8), gMat);
+  s.position.set(...p); guideGroup.add(s);
+});
+{
+  const vecs = LU_GUIDE.map(p => new THREE.Vector3(...p));
+  guideGroup.add(new THREE.Mesh(
+    new THREE.TubeGeometry(new THREE.CatmullRomCurve3(vecs, false, 'catmullrom', 0.5), 100, 0.003, 8, false),
+    new THREE.MeshBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0.5 })
+  ));
+}
+
+const MODEL_SCALE = 1.64 / 176.5;
+new GLTFLoader().load('/models/sport-girl.glb', (gltf) => {
+  info.textContent = 'Model loaded.';
+
+  // ── Scale ONLY — GLB already has internal Rx(-90°) for Y-up ──
+  const modelGroup = new THREE.Group();
+  modelGroup.scale.set(MODEL_SCALE, MODEL_SCALE, MODEL_SCALE);
+  modelGroup.add(gltf.scene);
+  scene.add(modelGroup);
+
+  gltf.scene.traverse(c => {
+    if (c.isMesh) {
+      c.material = c.material.clone();
+      c.material.transparent = true;
+      c.material.opacity = 0.35;
+      c.material.side = THREE.DoubleSide;
+      c.material.depthWrite = false;
+    }
+  });
+
+  modelGroup.updateMatrixWorld(true);
+
+  // ── Build merged world-space BVH ──
+  const allPos = [], allIdx = [];
+  let vOff = 0;
+  modelGroup.traverse(c => {
+    if (!c.isMesh || !c.geometry) return;
+    const pos = c.geometry.getAttribute('position');
+    if (!pos) return;
+    const wm = c.matrixWorld;
+    const v = new THREE.Vector3();
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i); v.applyMatrix4(wm);
+      allPos.push(v.x, v.y, v.z);
+    }
+    const idx = c.geometry.index;
+    if (idx) { for (let i = 0; i < idx.count; i++) allIdx.push(idx.getX(i) + vOff); }
+    else { for (let i = 0; i < pos.count; i++) allIdx.push(i + vOff); }
+    vOff += pos.count;
+  });
+
+  const mergedGeo = new THREE.BufferGeometry();
+  mergedGeo.setAttribute('position', new THREE.Float32BufferAttribute(allPos, 3));
+  mergedGeo.setIndex(allIdx);
+  const bbox = new THREE.Box3().setFromBufferAttribute(mergedGeo.getAttribute('position'));
+  log(`Merged BVH: ${vOff} verts`);
+  log(`bbox X(${bbox.min.x.toFixed(3)},${bbox.max.x.toFixed(3)}) Y(${bbox.min.y.toFixed(3)},${bbox.max.y.toFixed(3)}) Z(${bbox.min.z.toFixed(3)},${bbox.max.z.toFixed(3)})`);
+
+  const bvh = new MeshBVH(mergedGeo);
+
+  // ── Project (direct, no axis swap needed) ──
+  log('\n--- Projection ---');
+  const projected = [];
+  const tmp = { point: new THREE.Vector3(), distance: 0, faceIndex: 0 };
+
+  LU_GUIDE.forEach((gp, i) => {
+    const pt = new THREE.Vector3(...gp);
+    const hit = bvh.closestPointToPoint(pt, tmp);
+    if (!hit) { projected.push(gp); return; }
+    const sp = hit.point.clone();
+    const dist = pt.distanceTo(sp);
+
+    const normal = new THREE.Vector3();
+    const posAttr = mergedGeo.getAttribute('position');
+    const idxAttr = mergedGeo.index;
+    if (hit.faceIndex >= 0 && idxAttr && posAttr) {
+      const i0 = idxAttr.getX(hit.faceIndex*3), i1 = idxAttr.getX(hit.faceIndex*3+1), i2 = idxAttr.getX(hit.faceIndex*3+2);
+      const a = new THREE.Vector3().fromBufferAttribute(posAttr, i0);
+      const b = new THREE.Vector3().fromBufferAttribute(posAttr, i1);
+      const c = new THREE.Vector3().fromBufferAttribute(posAttr, i2);
+      normal.crossVectors(new THREE.Vector3().subVectors(b,a), new THREE.Vector3().subVectors(c,a)).normalize();
+    }
+    if (normal.lengthSq() < 0.01) normal.subVectors(pt, sp).normalize();
+    const offset = sp.add(normal.multiplyScalar(0.006));
+    projected.push([offset.x, offset.y, offset.z]);
+
+    if (i < 5 || i >= LU_GUIDE.length - 2)
+      log(`[${i}] (${gp[0].toFixed(3)},${gp[1].toFixed(3)},${gp[2].toFixed(3)}) → (${offset.x.toFixed(3)},${offset.y.toFixed(3)},${offset.z.toFixed(3)}) d=${dist.toFixed(4)}`);
+  });
+
+  const pMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+  projected.forEach(p => {
+    const s = new THREE.Mesh(new THREE.SphereGeometry(0.008, 8, 8), pMat);
+    s.position.set(...p); projGroup.add(s);
+  });
+  {
+    const vecs = projected.map(p => new THREE.Vector3(...p));
+    projGroup.add(new THREE.Mesh(
+      new THREE.TubeGeometry(new THREE.CatmullRomCurve3(vecs, false, 'catmullrom', 0.5), 100, 0.005, 12, false),
+      new THREE.MeshBasicMaterial({ color: 0x00ff88, transparent: true, opacity: 0.8 })
+    ));
+  }
+  window._data = { modelGroup };
+}, p => { info.textContent = `Loading... ${p.total ? (p.loaded/p.total*100).toFixed(0) : '?'}%`; });
+
+window.toggleWireframe = () => { window._data?.modelGroup.traverse(c => { if (c.isMesh) c.material.wireframe = !c.material.wireframe; }); };
+window.toggleGuide = () => { guideGroup.visible = !guideGroup.visible; };
+window.toggleProjected = () => { projGroup.visible = !projGroup.visible; };
+
+(function animate() { requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); })();
+window.addEventListener('resize', () => { camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+</script>
+</body>
+</html>
