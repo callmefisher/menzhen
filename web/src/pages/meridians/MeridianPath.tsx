@@ -92,8 +92,8 @@ function FlowTube({
     if (projectedPoints.length < 2) return null;
     const curve = createTubePath(projectedPoints);
     const tubularSegments = computeTubularSegments(projectedPoints);
-    const radius = isInternal ? 0.004 : 0.005;
-    return new THREE.TubeGeometry(curve, tubularSegments, radius, 12, false);
+    const radius = isInternal ? 0.002 : 0.0025;
+    return new THREE.TubeGeometry(curve, tubularSegments, radius, 8, false);
   }, [projectedPoints, isInternal]);
 
   const uniforms = useMemo(

@@ -1,5 +1,5 @@
-import { useRef, useEffect, useState, useCallback } from 'react';
-import { Canvas, useThree } from '@react-three/fiber';
+import { useState, useCallback, useEffect } from 'react';
+import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import HumanBodyModel from './HumanBodyModel';
@@ -20,23 +20,8 @@ interface MeridianSceneProps {
 // Model center Y ≈ 0.82 (feet=0, head=1.64)
 const MODEL_CENTER_Y = 0.82;
 
-function CameraController({ focusedAcupoint }: { focusedAcupoint: AcupointData | null }) {
-  const { camera } = useThree();
-  const targetRef = useRef(new THREE.Vector3(0, MODEL_CENTER_Y, 0));
-
-  useEffect(() => {
-    if (focusedAcupoint) {
-      const [x, y, z] = focusedAcupoint.position;
-      const target = new THREE.Vector3(x, y, z);
-      targetRef.current.copy(target);
-
-      const dir = new THREE.Vector3().subVectors(camera.position, target).normalize();
-      const newPos = target.clone().add(dir.multiplyScalar(0.8));
-      camera.position.lerp(newPos, 0.5);
-      camera.lookAt(target);
-    }
-  }, [focusedAcupoint, camera]);
-
+// No-op: clicking an acupoint no longer moves the camera/model
+function CameraController(_props: { focusedAcupoint: AcupointData | null }) {
   return null;
 }
 

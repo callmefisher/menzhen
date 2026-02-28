@@ -2,8 +2,76 @@ import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { Input, Checkbox, Divider, Tag } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import { regularMeridians, extraordinaryMeridians } from './data/meridians';
-import { acupoints } from './data/acupoints';
-import type { AcupointData } from './data/types';
+import { acupoints, acupointsByMeridian } from './data/acupoints';
+import type { AcupointData, MeridianData } from './data/types';
+
+function MeridianItem({
+  meridian,
+  checked,
+  onToggle,
+  onAcupointClick,
+}: {
+  meridian: MeridianData;
+  checked: boolean;
+  onToggle: (id: string) => void;
+  onAcupointClick: (acupoint: AcupointData) => void;
+}) {
+  const points = acupointsByMeridian[meridian.id] || [];
+
+  return (
+    <div>
+      <Checkbox
+        checked={checked}
+        onChange={() => onToggle(meridian.id)}
+        style={{ marginInlineStart: 0 }}
+      >
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <span
+            style={{
+              display: 'inline-block',
+              width: 10,
+              height: 10,
+              borderRadius: '50%',
+              background: meridian.color,
+              flexShrink: 0,
+            }}
+          />
+          <span style={{ fontSize: 13 }}>{meridian.name}</span>
+          <span style={{ fontSize: 11, color: '#999' }}>({points.length})</span>
+        </span>
+      </Checkbox>
+      {checked && points.length > 0 && (
+        <div
+          style={{
+            marginLeft: 28,
+            marginTop: 2,
+            marginBottom: 4,
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 4,
+          }}
+        >
+          {points.map(a => (
+            <Tag
+              key={a.code}
+              color={meridian.color}
+              style={{
+                cursor: 'pointer',
+                fontSize: 11,
+                lineHeight: '20px',
+                margin: 0,
+                borderRadius: 4,
+              }}
+              onClick={() => onAcupointClick(a)}
+            >
+              {a.name}
+            </Tag>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface MeridianPanelProps {
   selectedMeridians: string[];
@@ -136,26 +204,13 @@ export default function MeridianPanel({
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {regularMeridians.map(m => (
-            <Checkbox
+            <MeridianItem
               key={m.id}
+              meridian={m}
               checked={selectedMeridians.includes(m.id)}
-              onChange={() => onMeridianToggle(m.id)}
-              style={{ marginInlineStart: 0 }}
-            >
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <span
-                  style={{
-                    display: 'inline-block',
-                    width: 10,
-                    height: 10,
-                    borderRadius: '50%',
-                    background: m.color,
-                    flexShrink: 0,
-                  }}
-                />
-                <span style={{ fontSize: 13 }}>{m.name}</span>
-              </span>
-            </Checkbox>
+              onToggle={onMeridianToggle}
+              onAcupointClick={handleSelect}
+            />
           ))}
         </div>
       </div>
@@ -169,26 +224,13 @@ export default function MeridianPanel({
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {extraordinaryMeridians.map(m => (
-            <Checkbox
+            <MeridianItem
               key={m.id}
+              meridian={m}
               checked={selectedMeridians.includes(m.id)}
-              onChange={() => onMeridianToggle(m.id)}
-              style={{ marginInlineStart: 0 }}
-            >
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <span
-                  style={{
-                    display: 'inline-block',
-                    width: 10,
-                    height: 10,
-                    borderRadius: '50%',
-                    background: m.color,
-                    flexShrink: 0,
-                  }}
-                />
-                <span style={{ fontSize: 13 }}>{m.name}</span>
-              </span>
-            </Checkbox>
+              onToggle={onMeridianToggle}
+              onAcupointClick={handleSelect}
+            />
           ))}
         </div>
       </div>

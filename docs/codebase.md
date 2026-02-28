@@ -117,7 +117,7 @@ menzhen/
 │       │   │   └── __tests__/
 │       │   ├── meridians/           # 经络穴位3D可视化（Three.js + R3F）
 │       │   │   ├── MeridianView.tsx     # 页面入口（桌面端左右布局，移动端左面板→Drawer + 浮动按钮）
-│       │   │   ├── MeridianPanel.tsx    # 左侧控制面板（搜索/透明度/经络列表）
+│       │   │   ├── MeridianPanel.tsx    # 左侧控制面板（搜索/经络列表+穴位展开列表，点击穴位定位）
 │       │   │   ├── MeridianScene.tsx    # 3D场景容器（Canvas + 合并BVH投影 + 相机旋转优化）
 │       │   │   ├── HumanBodyModel.tsx   # 人体模型（GLB加载，scale only无旋转，onModelLoaded回调）
 │       │   │   ├── MeridianPath.tsx     # 经络路径渲染（TubeGeometry + 合并BVH表面投影 + 水流ShaderMaterial）
@@ -128,7 +128,7 @@ menzhen/
 │       │   │   │   └── surfaceProjection.ts # BVH加速表面投影（three-mesh-bvh）
 │       │   │   └── data/
 │       │   │       ├── types.ts         # MeridianData/AcupointData 类型
-│       │   │       ├── meridians.ts     # 20条经络静态数据（路径坐标，LU已精修对齐穴位）
+│       │   │       ├── meridians.ts     # 20条经络静态数据（路径坐标，全部14条正经+RN/DU路径已精修对齐穴位）
 │       │   │       └── acupoints.ts     # 穴位静态数据（367穴全部补全，14条正经+6条奇经）
 │       │   └── settings/            # 系统设置
 │       │       ├── UserList.tsx
