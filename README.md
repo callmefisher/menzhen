@@ -12,6 +12,7 @@
 - **多租户** — 多诊所数据隔离，支持云端共享部署
 - **权限管理** — JWT 认证 + RBAC，细粒度权限控制
 - **操作日志** — 关键操作全程留痕
+- **经络穴位 3D 可视化** — Three.js 人体模型，20 条经络路径 + 367 穴位标记，BVH 表面投影，点击穴位查看详情
 - **自动备份** — 每小时自动备份数据库，支持七牛云远程存储
 
 ## 技术栈
@@ -19,6 +20,7 @@
 | 层 | 技术 |
 |---|------|
 | 前端 | React 19 + TypeScript + Ant Design 6 + React Router 7 |
+| 3D 可视化 | Three.js + @react-three/fiber + @react-three/drei + three-mesh-bvh |
 | 后端 | Go + Gin + GORM |
 | 数据库 | MySQL 8.0 |
 | 文件存储 | MinIO |
