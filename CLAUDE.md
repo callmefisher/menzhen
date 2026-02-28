@@ -178,6 +178,49 @@ DeepSeek AI 相关（可选）：
 - 启动时检测：若最近备份超过 1 小时则立即触发
 - 备份完成后自动上传至七牛云对象存储（需配置 AK/SK）
 
+## Claude Code 工具链
+
+基于 [everything-claude-code](https://github.com/affaan-m/everything-claude-code) 适配。
+
+### 斜杠命令
+
+| 命令 | 用途 |
+|------|------|
+| `/plan` | 创建实施计划（编码前必须确认） |
+| `/tdd` | TDD 工作流（RED→GREEN→REFACTOR） |
+| `/code-review` | 代码审查（安全/质量/模式） |
+| `/build-fix` | 最小改动修复构建错误 |
+| `/verify` | 全面验证（构建+测试+安全） |
+| `/security-review` | 安全扫描（OWASP Top 10） |
+
+### Agents
+
+| Agent | 用途 | 模型 |
+|-------|------|------|
+| `planner` | 实施规划 | opus |
+| `code-reviewer` | 全栈代码审查 | sonnet |
+| `go-reviewer` | Go/Gin/GORM 专项审查 | sonnet |
+| `security-reviewer` | 安全漏洞检测 | sonnet |
+| `tdd-guide` | TDD 开发指导 | sonnet |
+| `build-resolver` | 构建错误修复 | sonnet |
+
+### Rules（自动加载）
+
+| 规则文件 | 触发路径 |
+|----------|----------|
+| `golang.md` | `server/**/*.go` |
+| `typescript.md` | `web/src/**/*.ts(x)` |
+| `security.md` | 全局 |
+| `testing.md` | 全局 |
+| `git-workflow.md` | 全局 |
+
+### Hooks
+
+- **git push 前** — 提醒运行 `/verify`
+- **编辑 JS/TS 后** — 检测 console.log
+- **PR 创建后** — 输出 PR 链接
+- **响应结束时** — 扫描变更文件中的 console.log
+
 ## 详细文档
 
 - [运维操作手册](docs/operations-guide.md)
