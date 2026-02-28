@@ -57,7 +57,7 @@
 | 层 | 技术 |
 |---|------|
 | 前端 | React 19 + TypeScript + Ant Design 6 + React Router 7 |
-| 3D可视化 | Three.js + @react-three/fiber + @react-three/drei |
+| 3D可视化 | Three.js + @react-three/fiber + @react-three/drei + three-mesh-bvh |
 | 后端 | Go + Gin + GORM |
 | 数据库 | MySQL 8.0 |
 | 文件存储 | MinIO |
@@ -184,4 +184,5 @@ DeepSeek AI 相关（可选）：
 - [设计方案](docs/plans/2026-02-24-medical-record-system-design.md)
 - [实施计划](docs/plans/2026-02-24-medical-record-system-plan.md)
 - [经络3D可视化设计](docs/plans/2026-02-27-meridian-3d-design.md)
+- [经络3D优化记录](docs/plans/2026-02-28-meridian-optimization.md)
 - [Codebase 全局上下文](docs/codebase.md)

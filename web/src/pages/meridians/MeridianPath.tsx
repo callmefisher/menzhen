@@ -9,6 +9,7 @@ interface MeridianPathProps {
 
 // Custom shader for flow animation
 const flowVertexShader = `
+  precision mediump float;
   varying vec2 vUv;
   void main() {
     vUv = uv;
@@ -17,6 +18,7 @@ const flowVertexShader = `
 `;
 
 const flowFragmentShader = `
+  precision mediump float;
   uniform float time;
   uniform vec3 color;
   uniform float opacity;
@@ -36,6 +38,7 @@ const flowFragmentShader = `
 `;
 
 const internalFragmentShader = `
+  precision mediump float;
   uniform float time;
   uniform vec3 color;
   uniform float opacity;
@@ -59,6 +62,22 @@ function createTubePath(points: [number, number, number][]): THREE.CatmullRomCur
   return new THREE.CatmullRomCurve3(vectors, false, 'catmullrom', 0.5);
 }
 
+/**
+ * Compute adaptive tubularSegments based on total path length and point spacing.
+ * More segments for longer paths / tighter bends → smoother tubes.
+ */
+function computeTubularSegments(points: [number, number, number][]): number {
+  let totalLen = 0;
+  for (let i = 1; i < points.length; i++) {
+    const dx = points[i][0] - points[i - 1][0];
+    const dy = points[i][1] - points[i - 1][1];
+    const dz = points[i][2] - points[i - 1][2];
+    totalLen += Math.sqrt(dx * dx + dy * dy + dz * dz);
+  }
+  // ~40 segments per unit length, minimum 20, max 200
+  return Math.min(200, Math.max(20, Math.round(totalLen * 40)));
+}
+
 function FlowTube({
   points,
   color,
@@ -75,7 +94,10 @@ function FlowTube({
   const geometry = useMemo(() => {
     if (points.length < 2) return null;
     const curve = createTubePath(points);
-    return new THREE.TubeGeometry(curve, points.length * 4, isInternal ? 0.004 : 0.005, 8, false);
+    const tubularSegments = computeTubularSegments(points);
+    const radius = isInternal ? 0.004 : 0.005;
+    const radialSegments = 12; // smoother cross-section (was 8)
+    return new THREE.TubeGeometry(curve, tubularSegments, radius, radialSegments, false);
   }, [points, isInternal]);
 
   const uniforms = useMemo(
@@ -96,7 +118,7 @@ function FlowTube({
   if (!geometry) return null;
 
   return (
-    <mesh geometry={geometry}>
+    <mesh geometry={geometry} renderOrder={isInternal ? 1 : 2}>
       <shaderMaterial
         ref={materialRef}
         vertexShader={flowVertexShader}
@@ -105,6 +127,7 @@ function FlowTube({
         transparent
         side={THREE.DoubleSide}
         depthWrite={false}
+        depthTest
       />
     </mesh>
   );

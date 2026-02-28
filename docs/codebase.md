@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-02-27（穴位数据已全部补全 367/367，14条正经+6条奇经，含功效/主治/禁忌/针法/定位）
+> 最后更新：2026-02-28（经络3D优化：保留原始贴图材质、BVH表面投影引擎、LU路径穴位对齐、渲染优化）
 
 ---
 
@@ -117,14 +117,16 @@ menzhen/
 │       │   │   ├── MeridianView.tsx     # 页面入口（左右布局）
 │       │   │   ├── MeridianPanel.tsx    # 左侧控制面板（搜索/透明度/经络列表）
 │       │   │   ├── MeridianScene.tsx    # 3D场景容器（Canvas + 灯光 + OrbitControls）
-│       │   │   ├── HumanBodyModel.tsx   # 程序化人体模型（骨骼/半透明/不透明）
-│       │   │   ├── MeridianPath.tsx     # 经络路径渲染（TubeGeometry + 水流ShaderMaterial）
+│       │   │   ├── HumanBodyModel.tsx   # 人体模型（GLB加载，保留原始贴图，三种透明度模式）
+│       │   │   ├── MeridianPath.tsx     # 经络路径渲染（TubeGeometry + 水流ShaderMaterial + 自适应细分）
 │       │   │   ├── AcupointMarker.tsx   # 穴位标记（球体 + 悬浮/聚焦动画）
 │       │   │   ├── AcupointInfoCard.tsx # 穴位3D标签（精简name+code tag）
 │       │   │   ├── AcupointDetailPanel.tsx # 穴位详情浮层（Canvas外，含完整信息）
+│       │   │   ├── utils/
+│       │   │   │   └── surfaceProjection.ts # BVH加速表面投影（three-mesh-bvh）
 │       │   │   └── data/
 │       │   │       ├── types.ts         # MeridianData/AcupointData 类型
-│       │   │       ├── meridians.ts     # 20条经络静态数据（路径坐标）
+│       │   │       ├── meridians.ts     # 20条经络静态数据（路径坐标，LU已精修对齐穴位）
 │       │   │       └── acupoints.ts     # 穴位静态数据（367穴全部补全，14条正经+6条奇经）
 │       │   └── settings/            # 系统设置
 │       │       ├── UserList.tsx
