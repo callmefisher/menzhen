@@ -9,3 +9,38 @@ body {
 #root {
   min-height: 100vh;
 }
+
+/* Mobile responsive overrides */
+@media (max-width: 767px) {
+  /* Tighter layout spacing */
+  .ant-layout-content {
+    margin: 8px !important;
+    padding: 12px !important;
+  }
+  .ant-layout-header {
+    padding: 0 8px !important;
+  }
+  /* Card body padding */
+  .ant-card-body {
+    padding: 12px !important;
+  }
+  /* Table horizontal scroll */
+  .ant-table-wrapper {
+    overflow-x: auto;
+  }
+  /* Modal max width */
+  .ant-modal {
+    max-width: calc(100vw - 16px) !important;
+  }
+  .ant-modal .ant-modal-content {
+    padding: 16px !important;
+  }
+  /* Hide pagination total text */
+  .ant-pagination-total-text {
+    display: none !important;
+  }
+  /* Drawer body padding */
+  .ant-drawer-body {
+    padding: 12px !important;
+  }
+}

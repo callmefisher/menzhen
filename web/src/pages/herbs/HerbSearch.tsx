@@ -5,6 +5,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { listHerbs, deleteHerb, listHerbCategories, updateHerb, aiRefreshHerb } from '../../api/herb';
 import type { HerbItem } from '../../api/herb';
 import { useAuth } from '../../store/auth';
+import useIsMobile from '../../hooks/useIsMobile';
 
 export default function HerbSearch() {
   const [herbs, setHerbs] = useState<HerbItem[]>([]);
@@ -20,6 +21,7 @@ export default function HerbSearch() {
   const [expandedRowKeys, setExpandedRowKeys] = useState<number[]>([]);
   const [aiRefreshing, setAiRefreshing] = useState(false);
   const { hasPermission } = useAuth();
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     listHerbCategories()
@@ -145,12 +147,14 @@ export default function HerbSearch() {
       key: 'alias',
       width: 200,
       ellipsis: true,
+      responsive: ['md'] as any,
     },
     {
       title: '分类',
       dataIndex: 'category',
       key: 'category',
       width: 100,
+      responsive: ['md'] as any,
     },
     {
       title: '性味归经',
@@ -158,6 +162,7 @@ export default function HerbSearch() {
       key: 'properties',
       width: 200,
       ellipsis: true,
+      responsive: ['md'] as any,
     },
     {
       title: '功效',
@@ -170,6 +175,7 @@ export default function HerbSearch() {
       dataIndex: 'indications',
       key: 'indications',
       ellipsis: true,
+      responsive: ['md'] as any,
     },
     {
       title: '道地产区',
@@ -177,12 +183,14 @@ export default function HerbSearch() {
       key: 'origin',
       width: 120,
       ellipsis: true,
+      responsive: ['md'] as any,
     },
     {
       title: '来源',
       dataIndex: 'source',
       key: 'source',
       width: 100,
+      responsive: ['md'] as any,
       render: (source: string) =>
         source === 'deepseek' ? (
           <Tag icon={<RobotOutlined />} color="blue">
@@ -227,14 +235,14 @@ export default function HerbSearch() {
 
   return (
     <div>
-      <div style={{ marginBottom: 16, display: 'flex', gap: 12 }}>
+      <div style={{ marginBottom: 16, display: 'flex', gap: 12, flexDirection: isMobile ? 'column' : 'row' }}>
         <Input.Search
           placeholder="输入中药名称搜索（支持AI查询）"
           allowClear
           enterButton={<><SearchOutlined /> 搜索</>}
           size="large"
           onSearch={handleSearch}
-          style={{ maxWidth: 500 }}
+          style={{ maxWidth: isMobile ? '100%' : 500 }}
         />
         <Select
           placeholder="按分类筛选"

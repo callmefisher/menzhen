@@ -6,6 +6,7 @@ import { listFormulas, deleteFormula, updateFormulaComposition, updateFormulaNam
 import type { FormulaItem, FormulaCompositionItem } from '../../api/formula';
 import { useAuth } from '../../store/auth';
 import HerbDetailModal from '../../components/HerbDetailModal';
+import useIsMobile from '../../hooks/useIsMobile';
 
 export default function FormulaSearch() {
   const [formulas, setFormulas] = useState<FormulaItem[]>([]);
@@ -15,6 +16,7 @@ export default function FormulaSearch() {
   const [size, setSize] = useState(20);
   const [searchName, setSearchName] = useState('');
   const { hasPermission } = useAuth();
+  const isMobile = useIsMobile();
 
   // Editable formula name state
   const [editingNameId, setEditingNameId] = useState<number | null>(null);
@@ -187,17 +189,20 @@ export default function FormulaSearch() {
       dataIndex: 'effects',
       key: 'effects',
       ellipsis: true,
+      responsive: ['md'] as any,
     },
     {
       title: '主治',
       dataIndex: 'indications',
       key: 'indications',
       ellipsis: true,
+      responsive: ['md'] as any,
     },
     {
       title: '组成',
       key: 'composition',
       width: 300,
+      responsive: ['md'] as any,
       render: (_: unknown, record: FormulaItem) => {
         const comp = record.composition || [];
         if (comp.length === 0) return '无';
@@ -210,6 +215,7 @@ export default function FormulaSearch() {
       dataIndex: 'source',
       key: 'source',
       width: 100,
+      responsive: ['md'] as any,
       render: (source: string) =>
         source === 'deepseek' ? (
           <Tag icon={<RobotOutlined />} color="blue">
@@ -251,7 +257,7 @@ export default function FormulaSearch() {
           enterButton={<><SearchOutlined /> 搜索</>}
           size="large"
           onSearch={handleSearch}
-          style={{ maxWidth: 500 }}
+          style={{ maxWidth: isMobile ? '100%' : 500 }}
         />
       </div>
 

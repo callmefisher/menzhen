@@ -16,6 +16,7 @@ import type { Dayjs } from 'dayjs';
 import { listOpLogs, deleteOpLog, batchDeleteOpLogs } from '../api/oplog';
 import type { OpLogItem, OpLogListParams } from '../api/oplog';
 import { useAuth } from '../store/auth';
+import useIsMobile from '../hooks/useIsMobile';
 
 const { RangePicker } = DatePicker;
 
@@ -45,6 +46,7 @@ export default function OpLogList() {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const { hasPermission } = useAuth();
   const canDelete = hasPermission('role:manage');
+  const isMobile = useIsMobile();
 
   // Search form local state
   const [searchName, setSearchName] = useState('');
@@ -155,6 +157,7 @@ export default function OpLogList() {
       dataIndex: 'resource_id',
       key: 'resource_id',
       width: 100,
+      responsive: ['md'] as any,
     },
     ...(canDelete
       ? [
@@ -180,8 +183,8 @@ export default function OpLogList() {
   ];
 
   const renderDiff = (record: OpLogItem) => (
-    <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-      <div style={{ flex: 1, minWidth: 300 }}>
+    <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', flexDirection: isMobile ? 'column' : 'row' }}>
+      <div style={{ flex: 1, minWidth: isMobile ? undefined : 300 }}>
         <div style={{ fontWeight: 'bold', marginBottom: 8 }}>变更前</div>
         <pre
           style={{
@@ -202,7 +205,7 @@ export default function OpLogList() {
             : '(无)'}
         </pre>
       </div>
-      <div style={{ flex: 1, minWidth: 300 }}>
+      <div style={{ flex: 1, minWidth: isMobile ? undefined : 300 }}>
         <div style={{ fontWeight: 'bold', marginBottom: 8 }}>变更后</div>
         <pre
           style={{

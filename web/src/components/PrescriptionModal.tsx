@@ -23,6 +23,7 @@ import type {
   PrescriptionItemReq,
   PrescriptionData,
 } from '../api/prescription';
+import useIsMobile from '../hooks/useIsMobile';
 
 interface PrescriptionModalProps {
   open: boolean;
@@ -55,6 +56,7 @@ export default function PrescriptionModal({
 }: PrescriptionModalProps) {
   const [form] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
+  const isMobile = useIsMobile();
   const [herbRows, setHerbRows] = useState<HerbRow[]>(
     editData?.items?.map((item, idx) => ({
       key: idx,
@@ -290,7 +292,7 @@ export default function PrescriptionModal({
       confirmLoading={submitting}
       okText="保存"
       cancelText="取消"
-      width={700}
+      width={isMobile ? '100%' : 700}
       destroyOnClose
     >
       <Tabs

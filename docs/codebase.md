@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-02-28（经络3D：去掉多余Rx(-90°)旋转、合并全mesh建BVH、投影贴合、UI简化为仅不透明）
+> 最后更新：2026-02-28（移动端适配：useIsMobile hook + 全局CSS media query + Layout Drawer + 各页面响应式）
 
 ---
 
@@ -76,7 +76,9 @@ menzhen/
 │   └── src/
 │       ├── main.tsx                 # React 入口
 │       ├── App.tsx                  # 路由配置 + Layout（默认跳转 /patients）
-│       ├── index.css                # 全局样式
+│       ├── index.css                # 全局样式 + 移动端 media query（< 768px）
+│       ├── hooks/
+│       │   └── useIsMobile.ts       # 基于 Grid.useBreakpoint()，< 768px 返回 true
 │       ├── api/                     # API 调用封装
 │       │   ├── auth.ts              # 登录/注册/登出/获取当前用户/修改密码
 │       │   ├── patient.ts           # 患者 CRUD
@@ -90,7 +92,7 @@ menzhen/
 │       │   ├── role.ts              # 角色管理
 │       │   └── tenant.ts            # 租户管理
 │       ├── components/
-│       │   ├── Layout.tsx           # 侧边栏 + 顶部导航布局（菜单顺序：患者→病历→中医药→系统设置→操作日志）
+│       │   ├── Layout.tsx           # 侧边栏 + 顶部导航布局（移动端 Sider→Drawer + 汉堡按钮）
 │       │   ├── FileUpload.tsx       # 文件上传组件
 │       │   ├── PrescriptionModal.tsx  # 处方弹窗（开方/编辑，含药物详情查看，医嘱预填分行，按方开药自动追加方剂备注，选方后横排展示功效/主治/备注，编辑模式自动根据方剂名加载详情）
 │       │   ├── HerbDetailModal.tsx   # 通用中药详情弹窗（方剂/处方复用）
@@ -114,14 +116,14 @@ menzhen/
 │       │   │   ├── FormulaSearch.tsx
 │       │   │   └── __tests__/
 │       │   ├── meridians/           # 经络穴位3D可视化（Three.js + R3F）
-│       │   │   ├── MeridianView.tsx     # 页面入口（左右布局）
+│       │   │   ├── MeridianView.tsx     # 页面入口（桌面端左右布局，移动端左面板→Drawer + 浮动按钮）
 │       │   │   ├── MeridianPanel.tsx    # 左侧控制面板（搜索/透明度/经络列表）
 │       │   │   ├── MeridianScene.tsx    # 3D场景容器（Canvas + 合并BVH投影 + 相机旋转优化）
 │       │   │   ├── HumanBodyModel.tsx   # 人体模型（GLB加载，scale only无旋转，onModelLoaded回调）
 │       │   │   ├── MeridianPath.tsx     # 经络路径渲染（TubeGeometry + 合并BVH表面投影 + 水流ShaderMaterial）
 │       │   │   ├── AcupointMarker.tsx   # 穴位标记（球体 + 悬浮/聚焦动画）
 │       │   │   ├── AcupointInfoCard.tsx # 穴位3D标签（精简name+code tag）
-│       │   │   ├── AcupointDetailPanel.tsx # 穴位详情浮层（Canvas外，含完整信息）
+│       │   │   ├── AcupointDetailPanel.tsx # 穴位详情浮层（桌面端浮层，移动端底部Drawer）
 │       │   │   ├── utils/
 │       │   │   │   └── surfaceProjection.ts # BVH加速表面投影（three-mesh-bvh）
 │       │   │   └── data/

@@ -1,3 +1,4 @@
+import { Drawer } from 'antd';
 import { CloseOutlined } from '@ant-design/icons';
 import { meridianMap } from './data/meridians';
 import type { AcupointData } from './data/types';
@@ -5,29 +6,17 @@ import type { AcupointData } from './data/types';
 interface AcupointDetailPanelProps {
   acupoint: AcupointData | null;
   onClose: () => void;
+  isMobile?: boolean;
 }
 
-export default function AcupointDetailPanel({ acupoint, onClose }: AcupointDetailPanelProps) {
-  if (!acupoint) return null;
+export default function AcupointDetailPanel({ acupoint, onClose, isMobile }: AcupointDetailPanelProps) {
+  if (!acupoint && !isMobile) return null;
 
-  const meridian = meridianMap[acupoint.meridianId];
+  const meridian = acupoint ? meridianMap[acupoint.meridianId] : undefined;
   const color = meridian?.color ?? '#666';
 
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        top: 16,
-        right: 16,
-        width: 280,
-        background: 'rgba(255, 255, 255, 0.96)',
-        borderRadius: 10,
-        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.25)',
-        overflow: 'hidden',
-        zIndex: 10,
-        backdropFilter: 'blur(8px)',
-      }}
-    >
+  const content = acupoint ? (
+    <>
       {/* Header */}
       <div
         style={{
@@ -55,10 +44,12 @@ export default function AcupointDetailPanel({ acupoint, onClose }: AcupointDetai
             {acupoint.name}
           </span>
         </div>
-        <CloseOutlined
-          style={{ color: 'rgba(255,255,255,0.8)', fontSize: 14, cursor: 'pointer' }}
-          onClick={onClose}
-        />
+        {!isMobile && (
+          <CloseOutlined
+            style={{ color: 'rgba(255,255,255,0.8)', fontSize: 14, cursor: 'pointer' }}
+            onClick={onClose}
+          />
+        )}
       </div>
 
       {/* Meridian tag */}
@@ -79,6 +70,42 @@ export default function AcupointDetailPanel({ acupoint, onClose }: AcupointDetai
           <DetailRow label="禁忌" value={acupoint.contraindications} warn />
         )}
       </div>
+    </>
+  ) : null;
+
+  if (isMobile) {
+    return (
+      <Drawer
+        placement="bottom"
+        open={!!acupoint}
+        onClose={onClose}
+        height="auto"
+        styles={{
+          body: { padding: 0 },
+          header: { display: 'none' },
+        }}
+      >
+        {content}
+      </Drawer>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        top: 16,
+        right: 16,
+        width: 280,
+        background: 'rgba(255, 255, 255, 0.96)',
+        borderRadius: 10,
+        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.25)',
+        overflow: 'hidden',
+        zIndex: 10,
+        backdropFilter: 'blur(8px)',
+      }}
+    >
+      {content}
     </div>
   );
 }

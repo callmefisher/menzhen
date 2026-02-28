@@ -36,6 +36,7 @@ import type { AttachmentInfo } from '../../components/FileUpload';
 import PrescriptionModal from '../../components/PrescriptionModal';
 import PrescriptionPrint from '../../components/PrescriptionPrint';
 import { useAuth } from '../../store/auth';
+import useIsMobile from '../../hooks/useIsMobile';
 
 interface PatientOption {
   id: number;
@@ -72,6 +73,7 @@ export default function RecordForm() {
   const [searchParams] = useSearchParams();
   const isEdit = Boolean(id);
   const { hasPermission } = useAuth();
+  const isMobile = useIsMobile();
 
   const [form] = Form.useForm<RecordFormValues>();
   const [patientForm] = Form.useForm<NewPatientFormValues>();
@@ -403,7 +405,7 @@ export default function RecordForm() {
 20. 舌苔，舌体情况：`,
         }}
       >
-        <div style={{ display: 'flex', gap: 16 }}>
+        <div style={{ display: 'flex', gap: 16, flexDirection: isMobile ? 'column' : 'row' }}>
           <Form.Item
             label="患者"
             name="patient_id"
@@ -448,13 +450,13 @@ export default function RecordForm() {
             label="就诊日期"
             name="visit_date"
             rules={[{ required: true, message: '请选择就诊日期' }]}
-            style={{ width: 200 }}
+            style={{ width: isMobile ? '100%' : 200 }}
           >
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
         </div>
 
-        <div style={{ display: 'flex', gap: 16 }}>
+        <div style={{ display: 'flex', gap: 16, flexDirection: isMobile ? 'column' : 'row' }}>
           <Form.Item
             label={
               <Space>
@@ -485,17 +487,17 @@ export default function RecordForm() {
             name="diagnosis"
             style={{ flex: 1 }}
           >
-            <Input.TextArea rows={22} placeholder="请输入诊断内容" />
+            <Input.TextArea rows={isMobile ? 10 : 22} placeholder="请输入诊断内容" />
           </Form.Item>
 
           <Form.Item label="治疗方案" name="treatment" style={{ flex: 1 }}>
-            <Input.TextArea rows={22} placeholder="请输入治疗方案" />
+            <Input.TextArea rows={isMobile ? 10 : 22} placeholder="请输入治疗方案" />
           </Form.Item>
         </div>
 
         <Divider style={{ margin: '8px 0 16px' }} />
 
-        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexDirection: isMobile ? 'column' : 'row' }}>
           <Form.Item label="备注" name="notes" style={{ flex: 1, marginBottom: 0 }}>
             <Input.TextArea
               rows={6}
@@ -797,7 +799,7 @@ export default function RecordForm() {
           </Space>
         }
         placement="right"
-        width={720}
+        width={isMobile ? '100%' : 720}
         open={aiDrawerOpen}
         onClose={() => setAiDrawerOpen(false)}
         styles={{
