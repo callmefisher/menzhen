@@ -65,9 +65,6 @@ export function buildBVHForModel(group: THREE.Group): MergedBVH | null {
   const zRange = Math.abs(bbox.max.z - bbox.min.z);
   const needSwapYZ = zRange > 1.0 && yRange < 0.5;
 
-  console.log(`[BVH] ${vertexOffset} verts, ${(allIndices.length / 3) | 0} tris`);
-  console.log(`[BVH] bbox Y(${bbox.min.y.toFixed(3)},${bbox.max.y.toFixed(3)}) Z(${bbox.min.z.toFixed(3)},${bbox.max.z.toFixed(3)}) swapYZ=${needSwapYZ}`);
-
   cachedMergedBVH = { geometry: mergedGeo, bvh, needSwapYZ };
   return cachedMergedBVH;
 }
