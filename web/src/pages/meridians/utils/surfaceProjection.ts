@@ -1,97 +1,114 @@
 /**
- * Surface projection utilities using three-mesh-bvh for raycasting acceleration.
+ * Surface projection: merge ALL meshes into world-space geometry,
+ * build BVH, and auto-detect coordinate axis mapping.
  *
- * Provides functions to:
- * 1. Build a BVH for a skinned mesh (one-time cost at model load)
- * 2. Project 3D guide-points onto the nearest model surface
- * 3. Offset projected points along surface normal (so paths sit *on* the skin)
+ * Handles the common case where GLB internal rotation causes
+ * the model's height to end up in -Z instead of +Y.
  */
 import * as THREE from 'three';
 import { MeshBVH } from 'three-mesh-bvh';
 import type { Vec3 } from '../data/types';
 
-// ── Types ──────────────────────────────────────────────────────────
-
-export interface ProjectionResult {
-  /** Surface point (world-space) */
-  point: THREE.Vector3;
-  /** Surface normal at that point (world-space) */
-  normal: THREE.Vector3;
-  /** Distance from the original guide point to the surface */
-  distance: number;
+export interface MergedBVH {
+  geometry: THREE.BufferGeometry;
+  bvh: MeshBVH;
+  /** True when BVH height is in Z axis (need Y↔Z swap for projection) */
+  needSwapYZ: boolean;
 }
 
-// ── BVH cache ──────────────────────────────────────────────────────
-
-// Store BVH separately to avoid type conflicts with drei's boundsTree
-const bvhCache = new WeakMap<THREE.BufferGeometry, MeshBVH>();
-
-// ── BVH builder ────────────────────────────────────────────────────
+let cachedMergedBVH: MergedBVH | null = null;
 
 /**
- * Find the largest mesh inside a model group and build BVH for it.
- * Returns the mesh (with BVH cached) or null if no mesh found.
+ * Build merged world-space BVH from all meshes in the model group.
  */
-export function buildBVHForModel(group: THREE.Group): THREE.Mesh | null {
-  let bestMesh: THREE.Mesh | null = null;
-  let bestVertexCount = 0;
+export function buildBVHForModel(group: THREE.Group): MergedBVH | null {
+  group.updateMatrixWorld(true);
+
+  const allPositions: number[] = [];
+  const allIndices: number[] = [];
+  let vertexOffset = 0;
 
   group.traverse((child) => {
-    if (child instanceof THREE.Mesh && child.geometry) {
-      const posAttr = child.geometry.getAttribute('position');
-      if (posAttr && posAttr.count > bestVertexCount) {
-        bestVertexCount = posAttr.count;
-        bestMesh = child;
-      }
+    if (!(child instanceof THREE.Mesh) || !child.geometry) return;
+    const posAttr = child.geometry.getAttribute('position');
+    if (!posAttr) return;
+
+    const wm = child.matrixWorld;
+    const v = new THREE.Vector3();
+    for (let i = 0; i < posAttr.count; i++) {
+      v.fromBufferAttribute(posAttr, i);
+      v.applyMatrix4(wm);
+      allPositions.push(v.x, v.y, v.z);
     }
+
+    const idx = child.geometry.index;
+    if (idx) {
+      for (let i = 0; i < idx.count; i++) allIndices.push(idx.getX(i) + vertexOffset);
+    } else {
+      for (let i = 0; i < posAttr.count; i++) allIndices.push(i + vertexOffset);
+    }
+    vertexOffset += posAttr.count;
   });
 
-  if (!bestMesh) return null;
+  if (allPositions.length === 0) return null;
 
-  const mesh = bestMesh as THREE.Mesh;
-  mesh.updateWorldMatrix(true, false);
+  const mergedGeo = new THREE.BufferGeometry();
+  mergedGeo.setAttribute('position', new THREE.Float32BufferAttribute(allPositions, 3));
+  mergedGeo.setIndex(allIndices);
 
-  // Build BVH acceleration structure and cache it
-  const bvh = new MeshBVH(mesh.geometry);
-  bvhCache.set(mesh.geometry, bvh);
+  const bvh = new MeshBVH(mergedGeo);
 
-  return mesh;
+  // Auto-detect: is height in Y or Z?
+  const bbox = new THREE.Box3();
+  bbox.setFromBufferAttribute(mergedGeo.getAttribute('position') as THREE.BufferAttribute);
+  const yRange = bbox.max.y - bbox.min.y;
+  const zRange = Math.abs(bbox.max.z - bbox.min.z);
+  const needSwapYZ = zRange > 1.0 && yRange < 0.5;
+
+  console.log(`[BVH] ${vertexOffset} verts, ${(allIndices.length / 3) | 0} tris`);
+  console.log(`[BVH] bbox Y(${bbox.min.y.toFixed(3)},${bbox.max.y.toFixed(3)}) Z(${bbox.min.z.toFixed(3)},${bbox.max.z.toFixed(3)}) swapYZ=${needSwapYZ}`);
+
+  cachedMergedBVH = { geometry: mergedGeo, bvh, needSwapYZ };
+  return cachedMergedBVH;
 }
 
-// ── Projection ─────────────────────────────────────────────────────
-
-const _inverseMatrix = new THREE.Matrix4();
+// Reusable temp objects
+const _tempTarget = { point: new THREE.Vector3(), distance: 0, faceIndex: 0 };
 
 /**
- * Project a single world-space point onto the nearest surface of the BVH mesh.
+ * Project guide points onto the merged BVH surface with normal offset.
+ * Auto-handles Y↔Z axis swap when the model's height is in -Z.
  */
-export function projectPointToSurface(
-  point: THREE.Vector3,
-  mesh: THREE.Mesh,
-): ProjectionResult | null {
-  const bvh = bvhCache.get(mesh.geometry);
-  if (!bvh) return null;
+export function projectPathToSurface(
+  guidePoints: Vec3[],
+  merged: MergedBVH,
+  normalOffset = 0.006,
+): Vec3[] {
+  const { bvh, geometry, needSwapYZ } = merged;
+  const posAttr = geometry.getAttribute('position');
+  const idxAttr = geometry.index;
 
-  // Transform point into mesh local space
-  _inverseMatrix.copy(mesh.matrixWorld).invert();
-  const localPoint = point.clone().applyMatrix4(_inverseMatrix);
+  return guidePoints.map((gp) => {
+    // Transform guide point to BVH space
+    let queryPt: THREE.Vector3;
+    if (needSwapYZ) {
+      // Guide: Y=height, Z=depth → BVH: Z=-height, Y=depth
+      queryPt = new THREE.Vector3(gp[0], gp[2], -gp[1]);
+    } else {
+      queryPt = new THREE.Vector3(gp[0], gp[1], gp[2]);
+    }
 
-  // Find closest point on surface
-  const hit = bvh.closestPointToPoint(localPoint);
-  if (!hit) return null;
+    const hit = bvh.closestPointToPoint(queryPt, _tempTarget);
+    if (!hit) return gp;
 
-  // Transform hit point back to world space
-  const worldPoint = hit.point.clone().applyMatrix4(mesh.matrixWorld);
+    const surfacePoint = hit.point.clone();
 
-  // Compute surface normal from face
-  const normal = new THREE.Vector3();
-  if (hit.faceIndex !== undefined && hit.faceIndex >= 0) {
-    const indexAttr = mesh.geometry.index;
-    const posAttr = mesh.geometry.getAttribute('position');
-    if (indexAttr && posAttr) {
-      const i0 = indexAttr.getX(hit.faceIndex * 3);
-      const i1 = indexAttr.getX(hit.faceIndex * 3 + 1);
-      const i2 = indexAttr.getX(hit.faceIndex * 3 + 2);
+    // Compute face normal
+    const normal = new THREE.Vector3();
+    if (hit.faceIndex !== undefined && hit.faceIndex >= 0 && idxAttr && posAttr) {
+      const i0 = idxAttr.getX(hit.faceIndex * 3);
+      const i1 = idxAttr.getX(hit.faceIndex * 3 + 1);
+      const i2 = idxAttr.getX(hit.faceIndex * 3 + 2);
       const a = new THREE.Vector3().fromBufferAttribute(posAttr, i0);
       const b = new THREE.Vector3().fromBufferAttribute(posAttr, i1);
       const c = new THREE.Vector3().fromBufferAttribute(posAttr, i2);
@@ -99,51 +116,26 @@ export function projectPointToSurface(
         new THREE.Vector3().subVectors(b, a),
         new THREE.Vector3().subVectors(c, a),
       ).normalize();
-      // Transform normal to world space (rotation only)
-      const normalMatrix = new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld);
-      normal.applyMatrix3(normalMatrix).normalize();
     }
-  }
+    if (normal.lengthSq() < 0.01) {
+      normal.subVectors(queryPt, surfacePoint).normalize();
+    }
 
-  // Fallback: direction from surface toward the guide point
-  if (normal.lengthSq() < 0.01) {
-    normal.subVectors(point, worldPoint).normalize();
-  }
+    // Offset along normal
+    const projected = surfacePoint.add(normal.multiplyScalar(normalOffset));
 
-  return {
-    point: worldPoint,
-    normal,
-    distance: point.distanceTo(worldPoint),
-  };
-}
-
-/**
- * Project an array of guide points onto the model surface, then offset by
- * a given amount along the surface normal.
- *
- * @param guidePoints  Coarse guide coordinates (world-space Y-up)
- * @param mesh         The BVH-enabled skin mesh
- * @param normalOffset How far to push points outward from the surface (meters)
- * @returns            Projected + offset points as Vec3[]
- */
-export function projectPathToSurface(
-  guidePoints: Vec3[],
-  mesh: THREE.Mesh,
-  normalOffset = 0.004,
-): Vec3[] {
-  return guidePoints.map((gp) => {
-    const worldPt = new THREE.Vector3(gp[0], gp[1], gp[2]);
-    const result = projectPointToSurface(worldPt, mesh);
-    if (!result) return gp; // fallback to original
-
-    const projected = result.point.add(result.normal.multiplyScalar(normalOffset));
+    // Transform back to guide/render space
+    if (needSwapYZ) {
+      // BVH: (x, y, z) → Guide: (x, -z, y)
+      return [projected.x, -projected.z, projected.y] as Vec3;
+    }
     return [projected.x, projected.y, projected.z] as Vec3;
   });
 }
 
-/**
- * Dispose of the cached BVH for a mesh.
- */
-export function disposeBVH(mesh: THREE.Mesh): void {
-  bvhCache.delete(mesh.geometry);
+export function disposeBVH(): void {
+  if (cachedMergedBVH) {
+    cachedMergedBVH.geometry.dispose();
+    cachedMergedBVH = null;
+  }
 }

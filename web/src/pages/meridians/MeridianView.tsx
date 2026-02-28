@@ -5,7 +5,6 @@ import AcupointDetailPanel from './AcupointDetailPanel';
 import type { AcupointData } from './data/types';
 
 export default function MeridianView() {
-  const [transparency, setTransparency] = useState<'full' | 'semi' | 'opaque'>('full');
   const [selectedMeridians, setSelectedMeridians] = useState<string[]>([]);
   const [focusedAcupoint, setFocusedAcupoint] = useState<AcupointData | null>(null);
 
@@ -39,8 +38,6 @@ export default function MeridianView() {
         }}
       >
         <MeridianPanel
-          transparency={transparency}
-          onTransparencyChange={setTransparency}
           selectedMeridians={selectedMeridians}
           onMeridianToggle={handleMeridianToggle}
           onAcupointSearch={handleAcupointSearch}
@@ -48,7 +45,6 @@ export default function MeridianView() {
       </div>
       <div style={{ flex: 1, position: 'relative' }}>
         <MeridianScene
-          transparency={transparency}
           selectedMeridians={selectedMeridians}
           focusedAcupoint={focusedAcupoint}
           onAcupointClick={setFocusedAcupoint}

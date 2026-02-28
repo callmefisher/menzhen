@@ -1,21 +1,17 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { Input, Radio, Checkbox, Divider, Tag } from 'antd';
+import { Input, Checkbox, Divider, Tag } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import { regularMeridians, extraordinaryMeridians } from './data/meridians';
 import { acupoints } from './data/acupoints';
 import type { AcupointData } from './data/types';
 
 interface MeridianPanelProps {
-  transparency: 'full' | 'semi' | 'opaque';
-  onTransparencyChange: (v: 'full' | 'semi' | 'opaque') => void;
   selectedMeridians: string[];
   onMeridianToggle: (id: string) => void;
   onAcupointSearch: (acupoint: AcupointData | null) => void;
 }
 
 export default function MeridianPanel({
-  transparency,
-  onTransparencyChange,
   selectedMeridians,
   onMeridianToggle,
   onAcupointSearch,
@@ -129,25 +125,6 @@ export default function MeridianPanel({
             </div>
           )}
         </div>
-      </div>
-
-      <Divider style={{ margin: '12px 0' }} />
-
-      {/* Transparency control */}
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#333' }}>
-          透明度
-        </div>
-        <Radio.Group
-          value={transparency}
-          onChange={e => onTransparencyChange(e.target.value)}
-          size="small"
-          style={{ display: 'flex', flexDirection: 'column', gap: 4 }}
-        >
-          <Radio value="full">全透明（骨骼）</Radio>
-          <Radio value="semi">半透明</Radio>
-          <Radio value="opaque">不透明</Radio>
-        </Radio.Group>
       </div>
 
       <Divider style={{ margin: '12px 0' }} />
