@@ -1,10 +1,12 @@
 import { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import type { MeridianData } from './data/types';
+import type { MeridianData, Vec3 } from './data/types';
+import { projectPathToSurface } from './utils/surfaceProjection';
 
 interface MeridianPathProps {
   data: MeridianData;
+  skinMesh?: THREE.Mesh | null;
 }
 
 // Custom shader for flow animation
@@ -57,16 +59,15 @@ const internalFragmentShader = `
   }
 `;
 
-function createTubePath(points: [number, number, number][]): THREE.CatmullRomCurve3 {
+function createTubePath(points: Vec3[]): THREE.CatmullRomCurve3 {
   const vectors = points.map(p => new THREE.Vector3(p[0], p[1], p[2]));
   return new THREE.CatmullRomCurve3(vectors, false, 'catmullrom', 0.5);
 }
 
 /**
  * Compute adaptive tubularSegments based on total path length and point spacing.
- * More segments for longer paths / tighter bends → smoother tubes.
  */
-function computeTubularSegments(points: [number, number, number][]): number {
+function computeTubularSegments(points: Vec3[]): number {
   let totalLen = 0;
   for (let i = 1; i < points.length; i++) {
     const dx = points[i][0] - points[i - 1][0];
@@ -74,7 +75,6 @@ function computeTubularSegments(points: [number, number, number][]): number {
     const dz = points[i][2] - points[i - 1][2];
     totalLen += Math.sqrt(dx * dx + dy * dy + dz * dz);
   }
-  // ~40 segments per unit length, minimum 20, max 200
   return Math.min(200, Math.max(20, Math.round(totalLen * 40)));
 }
 
@@ -82,23 +82,31 @@ function FlowTube({
   points,
   color,
   isInternal = false,
+  skinMesh,
 }: {
-  points: [number, number, number][];
+  points: Vec3[];
   color: string;
   isInternal?: boolean;
+  skinMesh?: THREE.Mesh | null;
 }) {
   const materialRef = useRef<THREE.ShaderMaterial>(null);
 
   const colorVec = useMemo(() => new THREE.Color(color), [color]);
 
+  // Project external paths onto model surface via BVH; skip internal paths
+  const projectedPoints = useMemo(() => {
+    if (!skinMesh || isInternal || points.length < 2) return points;
+    return projectPathToSurface(points, skinMesh, 0.006);
+  }, [points, skinMesh, isInternal]);
+
   const geometry = useMemo(() => {
-    if (points.length < 2) return null;
-    const curve = createTubePath(points);
-    const tubularSegments = computeTubularSegments(points);
+    if (projectedPoints.length < 2) return null;
+    const curve = createTubePath(projectedPoints);
+    const tubularSegments = computeTubularSegments(projectedPoints);
     const radius = isInternal ? 0.004 : 0.005;
-    const radialSegments = 12; // smoother cross-section (was 8)
+    const radialSegments = 12;
     return new THREE.TubeGeometry(curve, tubularSegments, radius, radialSegments, false);
-  }, [points, isInternal]);
+  }, [projectedPoints, isInternal]);
 
   const uniforms = useMemo(
     () => ({
@@ -133,17 +141,17 @@ function FlowTube({
   );
 }
 
-export default function MeridianPath({ data }: MeridianPathProps) {
+export default function MeridianPath({ data, skinMesh }: MeridianPathProps) {
   return (
     <group>
-      {/* External (surface) path */}
+      {/* External (surface) path — projected onto model surface */}
       {data.path.length >= 2 && (
-        <FlowTube points={data.path} color={data.color} />
+        <FlowTube points={data.path} color={data.color} skinMesh={skinMesh} />
       )}
 
-      {/* Internal path */}
+      {/* Internal path — NOT projected (runs inside body) */}
       {data.internalPath && data.internalPath.length >= 2 && (
-        <FlowTube points={data.internalPath} color={data.color} isInternal />
+        <FlowTube points={data.internalPath} color={data.color} isInternal skinMesh={skinMesh} />
       )}
     </group>
   );

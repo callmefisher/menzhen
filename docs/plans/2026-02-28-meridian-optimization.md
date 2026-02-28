@@ -1,7 +1,7 @@
 # 经络3D可视化优化 — 实施记录
 
 **日期**: 2026-02-28
-**状态**: Phase 1-4 完成
+**状态**: Phase 1-6 完成
 
 ## 完成的改动
 
@@ -45,6 +45,28 @@
 - Shader 添加 `precision mediump float`（降低移动端 GPU 负载）
 - 使用 `renderOrder` 区分内外路径深度排序
 
+### Phase 5: BVH 表面投影集成（经络贴合模型）
+
+**文件**: `web/src/pages/meridians/MeridianScene.tsx`, `MeridianPath.tsx`
+
+- MeridianScene: 模型加载后通过 `onModelLoaded` 回调调用 `buildBVHForModel()` 构建 BVH
+- 将 `skinMesh` 状态传递给每个 MeridianPath 组件
+- MeridianPath: 接收 `skinMesh` prop，使用 `projectPathToSurface()` 实时投影外部路径到模型表面
+- 投影法线偏移量 0.006（略高于表面，管道可见不穿模）
+- 内部路径（internalPath）不做投影，保持在体内
+- 组件卸载时自动 `disposeBVH()` 清理
+
+### Phase 6: 模型居中 + 相机/旋转优化
+
+**文件**: `web/src/pages/meridians/MeridianScene.tsx`
+
+- 模型整体 Y 偏移 -0.75，使全身在视口中居中可见
+- 相机初始位置调整为 `[0, 0.2, 2.5]`（更远、更居中）
+- OrbitControls target 调整为 `[0, 0.07, 0]`（模型腰部中心）
+- 新增 `rotateSpeed: 0.8` 使旋转更顺滑
+- 新增极角限制 `minPolarAngle: 0.1, maxPolarAngle: π-0.1`（防止翻转死角）
+- CameraController 聚焦穴位时加上 Y 偏移补偿
+
 ## 新增依赖
 
 - `three-mesh-bvh` ^0.9.8
@@ -52,5 +74,3 @@
 ## 待后续优化
 
 - 其余19条经络路径精修（参照 LU 的穴位锚点对齐方式）
-- BVH 投影集成到 MeridianScene（通过 onModelLoaded 回调触发）
-- 运行时表面投影（替代静态硬编码坐标）
