@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Layout as AntLayout, Menu, Button, theme, Dropdown, Modal, Form, Input, message } from 'antd';
+import { Layout as AntLayout, Menu, Button, theme, Dropdown, Modal, Form, Input, message, Drawer } from 'antd';
 import {
   MedicineBoxOutlined,
   UserOutlined,
@@ -10,6 +10,7 @@ import {
   SafetyOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  MenuOutlined,
   LogoutOutlined,
   KeyOutlined,
   ExperimentOutlined,
@@ -20,6 +21,7 @@ import {
 import type { MenuProps as AntMenuProps } from 'antd';
 import { useAuth } from '../store/auth';
 import { changePassword } from '../api/auth';
+import useIsMobile from '../hooks/useIsMobile';
 
 const { Header, Sider, Content } = AntLayout;
 
@@ -27,12 +29,14 @@ type MenuItem = Required<AntMenuProps>['items'][number];
 
 export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [passwordForm] = Form.useForm();
   const { user, logout, hasPermission } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const isMobile = useIsMobile();
   const {
     token: { colorBgContainer, borderRadiusLG },
   } = theme.useToken();
@@ -149,6 +153,7 @@ export default function AppLayout() {
 
   const handleMenuClick = (info: { key: string }) => {
     navigate(info.key);
+    if (isMobile) setDrawerOpen(false);
   };
 
   const handleLogout = async () => {
@@ -189,41 +194,59 @@ export default function AppLayout() {
     },
   ];
 
-  return (
-    <AntLayout style={{ minHeight: '100vh' }}>
-      <Sider
-        trigger={null}
-        collapsible
-        collapsed={collapsed}
-        breakpoint="lg"
-        onBreakpoint={(broken) => {
-          if (broken) setCollapsed(true);
+  const siderContent = (
+    <>
+      <div
+        style={{
+          height: 32,
+          margin: 16,
+          color: '#fff',
+          fontSize: isMobile ? 18 : collapsed ? 14 : 18,
+          fontWeight: 'bold',
+          textAlign: 'center',
+          lineHeight: '32px',
+          overflow: 'hidden',
+          whiteSpace: 'nowrap',
         }}
       >
-        <div
-          style={{
-            height: 32,
-            margin: 16,
-            color: '#fff',
-            fontSize: collapsed ? 14 : 18,
-            fontWeight: 'bold',
-            textAlign: 'center',
-            lineHeight: '32px',
-            overflow: 'hidden',
-            whiteSpace: 'nowrap',
+        {!isMobile && collapsed ? '门诊' : '门诊管理系统'}
+      </div>
+      <Menu
+        theme="dark"
+        mode="inline"
+        selectedKeys={selectedKeys}
+        defaultOpenKeys={openKeys}
+        items={menuItems}
+        onClick={handleMenuClick}
+      />
+    </>
+  );
+
+  return (
+    <AntLayout style={{ minHeight: '100vh' }}>
+      {isMobile ? (
+        <Drawer
+          placement="left"
+          open={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          width={220}
+          styles={{ body: { padding: 0, background: '#001529' }, header: { display: 'none' } }}
+        >
+          {siderContent}
+        </Drawer>
+      ) : (
+        <Sider
+          trigger={null}
+          collapsible
+          collapsed={collapsed}
+          breakpoint="lg"
+          onBreakpoint={(broken) => {
+            if (broken) setCollapsed(true);
           }}
         >
-          {collapsed ? '门诊' : '门诊管理系统'}
-        </div>
-        <Menu
-          theme="dark"
-          mode="inline"
-          selectedKeys={selectedKeys}
-          defaultOpenKeys={openKeys}
-          items={menuItems}
-          onClick={handleMenuClick}
-        />
-      </Sider>
+          {siderContent}
+        </Sider>
+      )}
       <AntLayout>
         <Header
           style={{
@@ -236,8 +259,8 @@ export default function AppLayout() {
         >
           <Button
             type="text"
-            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-            onClick={() => setCollapsed(!collapsed)}
+            icon={isMobile ? <MenuOutlined /> : collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            onClick={() => isMobile ? setDrawerOpen(true) : setCollapsed(!collapsed)}
             style={{ fontSize: 16, width: 48, height: 48 }}
           />
           <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">

@@ -10,17 +10,17 @@ import type { AcupointData } from './types';
  */
 export const acupoints: AcupointData[] = [
   // ========== 手太阴肺经 (LU) ==========
-  { code: 'LU1', name: '中府', meridianId: 'LU', position: [-0.11, 1.19, 0.11], effects: '宣肺止咳、清泻肺热', indications: '咳嗽、气喘、胸痛、肩背痛', contraindications: '肺热证慎用、孕妇慎刺', method: '向外斜刺0.5-0.8寸', location: '在胸前壁外上方、前正中线旁开6寸、平第1肋间隙处' },
-  { code: 'LU2', name: '云门', meridianId: 'LU', position: [-0.16, 1.17, 0.08], effects: '宣肺理气、清热除烦', indications: '咳嗽、气喘、胸痛', contraindications: '肺虚寒证慎用、不宜深刺', method: '向外斜刺0.5-0.8寸', location: '在胸前壁外上方、锁骨下窝凹陷中、前正中线旁开6寸' },
-  { code: 'LU3', name: '天府', meridianId: 'LU', position: [-0.20, 1.15, 0.03], effects: '宣肺止血、清热安神', indications: '气喘、鼻衄、上臂痛', contraindications: '一般无特殊禁忌', method: '直刺0.5-1寸', location: '在臂内侧面、肱二头肌桡侧缘、腋前纹头下3寸处' },
-  { code: 'LU4', name: '侠白', meridianId: 'LU', position: [-0.25, 1.13, 0.00], effects: '宣肺理气、宽胸和中', indications: '咳嗽、气短、上臂内侧痛', contraindications: '一般无特殊禁忌', method: '直刺0.5-1寸', location: '在臂内侧面、肱二头肌桡侧缘、腋前纹头下4寸、或肘横纹上5寸处' },
-  { code: 'LU5', name: '尺泽', meridianId: 'LU', position: [-0.32, 1.11, 0.00], effects: '清肺泻火、和胃降逆', indications: '咳嗽、咯血、肘臂痛', contraindications: '虚寒证慎用', method: '直刺0.8-1.2寸', location: '在肘横纹中、肱二头肌腱桡侧凹陷处' },
-  { code: 'LU6', name: '孔最', meridianId: 'LU', position: [-0.38, 1.09, 0.00], effects: '清热止血、润肺理气', indications: '咳血、咽喉肿痛、肘臂痛', contraindications: '一般无特殊禁忌', method: '直刺0.5-1寸', location: '在前臂掌面桡侧、当尺泽与太渊连线上、腕横纹上7寸' },
-  { code: 'LU7', name: '列缺', meridianId: 'LU', position: [-0.44, 1.07, 0.00], effects: '宣肺解表、通经活络', indications: '头痛、咳嗽、手腕痛', contraindications: '孕妇慎刺', method: '向肘方向斜刺0.3-0.5寸', location: '在前臂桡侧缘、桡骨茎突上方、腕横纹上1.5寸、当肱桡肌与拇长展肌腱之间' },
-  { code: 'LU8', name: '经渠', meridianId: 'LU', position: [-0.51, 1.04, 0.00], effects: '宣肺利咽、降逆平喘', indications: '咳嗽、气喘、胸痛、咽喉肿痛', contraindications: '一般无特殊禁忌', method: '避开桡动脉，直刺0.3-0.5寸', location: '在前臂掌面桡侧、桡骨茎突与桡动脉之间凹陷处、腕横纹上1寸' },
-  { code: 'LU9', name: '太渊', meridianId: 'LU', position: [-0.57, 1.01, 0.00], effects: '补肺益气、止咳化痰', indications: '咳嗽、气喘、腕痛、无脉症', contraindications: '不宜直接灸', method: '避开桡动脉，直刺0.3-0.5寸', location: '在腕掌侧横纹桡侧、桡动脉搏动处' },
-  { code: 'LU10', name: '鱼际', meridianId: 'LU', position: [-0.63, 0.99, 0.01], effects: '清肺热、利咽喉', indications: '咳嗽、咯血、咽喉肿痛', contraindications: '一般无特殊禁忌', method: '直刺0.5-0.8寸', location: '在手拇指本节（第1掌指关节）后凹陷处、约当第1掌骨中点桡侧、赤白肉际处' },
-  { code: 'LU11', name: '少商', meridianId: 'LU', position: [-0.70, 0.97, 0.01], effects: '清热利咽、开窍醒神', indications: '咽喉肿痛、中风昏迷、发热', contraindications: '孕妇慎刺、不宜灸', method: '浅刺0.1寸或三棱针点刺放血', location: '在手拇指末节桡侧、距指甲角0.1寸（指寸）' },
+  { code: 'LU1', name: '中府', meridianId: 'LU', position: [-0.098, 1.323, 0.047], effects: '宣肺止咳、清泻肺热', indications: '咳嗽、气喘、胸痛、肩背痛', contraindications: '肺热证慎用、孕妇慎刺', method: '向外斜刺0.5-0.8寸', location: '在胸前壁外上方、前正中线旁开6寸、平第1肋间隙处' },
+  { code: 'LU2', name: '云门', meridianId: 'LU', position: [-0.103, 1.345, 0.025], effects: '宣肺理气、清热除烦', indications: '咳嗽、气喘、胸痛', contraindications: '肺虚寒证慎用、不宜深刺', method: '向外斜刺0.5-0.8寸', location: '在胸前壁外上方、锁骨下窝凹陷中、前正中线旁开6寸' },
+  { code: 'LU3', name: '天府', meridianId: 'LU', position: [-0.231, 1.261, 0.024], effects: '宣肺止血、清热安神', indications: '气喘、鼻衄、上臂痛', contraindications: '一般无特殊禁忌', method: '直刺0.5-1寸', location: '在臂内侧面、肱二头肌桡侧缘、腋前纹头下3寸处' },
+  { code: 'LU4', name: '侠白', meridianId: 'LU', position: [-0.256, 1.245, 0.017], effects: '宣肺理气、宽胸和中', indications: '咳嗽、气短、上臂内侧痛', contraindications: '一般无特殊禁忌', method: '直刺0.5-1寸', location: '在臂内侧面、肱二头肌桡侧缘、腋前纹头下4寸、或肘横纹上5寸处' },
+  { code: 'LU5', name: '尺泽', meridianId: 'LU', position: [-0.360, 1.158, 0.012], effects: '清肺泻火、和胃降逆', indications: '咳嗽、咯血、肘臂痛', contraindications: '虚寒证慎用', method: '直刺0.8-1.2寸', location: '在肘横纹中、肱二头肌腱桡侧凹陷处' },
+  { code: 'LU6', name: '孔最', meridianId: 'LU', position: [-0.437, 1.119, 0.005], effects: '清热止血、润肺理气', indications: '咳血、咽喉肿痛、肘臂痛', contraindications: '一般无特殊禁忌', method: '直刺0.5-1寸', location: '在前臂掌面桡侧、当尺泽与太渊连线上、腕横纹上7寸' },
+  { code: 'LU7', name: '列缺', meridianId: 'LU', position: [-0.513, 1.050, 0.001], effects: '宣肺解表、通经活络', indications: '头痛、咳嗽、手腕痛', contraindications: '孕妇慎刺', method: '向肘方向斜刺0.3-0.5寸', location: '在前臂桡侧缘、桡骨茎突上方、腕横纹上1.5寸、当肱桡肌与拇长展肌腱之间' },
+  { code: 'LU8', name: '经渠', meridianId: 'LU', position: [-0.526, 1.039, -0.003], effects: '宣肺利咽、降逆平喘', indications: '咳嗽、气喘、胸痛、咽喉肿痛', contraindications: '一般无特殊禁忌', method: '避开桡动脉，直刺0.3-0.5寸', location: '在前臂掌面桡侧、桡骨茎突与桡动脉之间凹陷处、腕横纹上1寸' },
+  { code: 'LU9', name: '太渊', meridianId: 'LU', position: [-0.541, 1.028, -0.006], effects: '补肺益气、止咳化痰', indications: '咳嗽、气喘、腕痛、无脉症', contraindications: '不宜直接灸', method: '避开桡动脉，直刺0.3-0.5寸', location: '在腕掌侧横纹桡侧、桡动脉搏动处' },
+  { code: 'LU10', name: '鱼际', meridianId: 'LU', position: [-0.567, 1.016, 0.015], effects: '清肺热、利咽喉', indications: '咳嗽、咯血、咽喉肿痛', contraindications: '一般无特殊禁忌', method: '直刺0.5-0.8寸', location: '在手拇指本节（第1掌指关节）后凹陷处、约当第1掌骨中点桡侧、赤白肉际处' },
+  { code: 'LU11', name: '少商', meridianId: 'LU', position: [-0.608, 0.998, 0.053], effects: '清热利咽、开窍醒神', indications: '咽喉肿痛、中风昏迷、发热', contraindications: '孕妇慎刺、不宜灸', method: '浅刺0.1寸或三棱针点刺放血', location: '在手拇指末节桡侧、距指甲角0.1寸（指寸）' },
 
   // ========== 手阳明大肠经 (LI) ==========
   { code: 'LI1', name: '商阳', meridianId: 'LI', position: [-0.69, 0.98, 0.00], effects: '清热解表、开窍醒神', indications: '咽喉肿痛、牙痛、手指麻木', contraindications: '孕妇慎刺', method: '浅刺0.1寸或点刺放血', location: '在手食指末节桡侧、距指甲角0.1寸（指寸）' },

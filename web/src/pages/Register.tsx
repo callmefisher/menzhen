@@ -54,7 +54,9 @@ export default function Register() {
     >
       <Card
         style={{
-          width: 400,
+          width: '100%',
+          maxWidth: 400,
+          margin: '0 16px',
           boxShadow: '0 4px 24px rgba(0, 0, 0, 0.08)',
           borderRadius: 8,
         }}

@@ -2,25 +2,83 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Meridian BVH Debug — Final</title>
+<title>Meridian Debug — Acupoint Picker v2</title>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <style>
   body { margin: 0; overflow: hidden; background: #1a1a2e; font-family: monospace; }
   #info {
-    position: absolute; top: 10px; left: 10px; color: #0f0; font-size: 12px;
-    background: rgba(0,0,0,0.8); padding: 10px; border-radius: 4px; max-width: 600px;
-    max-height: 50vh; overflow-y: auto; z-index: 10; white-space: pre-wrap;
+    position: absolute; top: 10px; left: 10px; color: #0f0; font-size: 11px;
+    background: rgba(0,0,0,0.85); padding: 10px; border-radius: 4px; max-width: 520px;
+    max-height: 35vh; overflow-y: auto; z-index: 10; white-space: pre-wrap;
   }
-  #controls { position: absolute; bottom: 10px; left: 10px; z-index: 10; }
-  button { margin: 4px; padding: 6px 12px; cursor: pointer; }
+  #controls { position: absolute; bottom: 10px; left: 10px; z-index: 10; display: flex; flex-wrap: wrap; gap: 4px; }
+  button { padding: 5px 10px; cursor: pointer; font-size: 11px; border: 1px solid #555; background: #333; color: #fff; border-radius: 3px; }
+  button:hover { background: #555; }
+  button.active { background: #e67e22; color: #000; }
+
+  /* Right panel: picked points list — hidden by default, shown in pick mode */
+  #picker-panel {
+    position: absolute; top: 10px; right: 10px; color: #ff0; font-size: 11px;
+    background: rgba(0,0,0,0.85); padding: 10px; border-radius: 4px; width: 380px;
+    max-height: 85vh; overflow-y: auto; z-index: 10; display: none;
+  }
+  #picker-panel.visible { display: block; }
+  #picker-panel h3 { margin: 0 0 6px; font-size: 13px; color: #ff0; }
+  #picker-panel .pick-item {
+    display: flex; align-items: center; gap: 6px; padding: 3px 0;
+    border-bottom: 1px solid #333; font-size: 11px;
+  }
+  #picker-panel .pick-item .idx { color: #f90; min-width: 28px; }
+  #picker-panel .pick-item .coord { color: #0ff; flex: 1; cursor: pointer; }
+  #picker-panel .pick-item .coord:hover { text-decoration: underline; }
+  #picker-panel .pick-item .label-input { width: 60px; background: #222; color: #fff; border: 1px solid #555; padding: 2px 4px; font-size: 10px; }
+  #picker-panel .pick-item .del-btn { color: #f44; cursor: pointer; font-size: 14px; }
+  .mode-badge {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    color: #ff0; font-size: 24px; font-weight: bold; pointer-events: none;
+    text-shadow: 0 0 10px #000; z-index: 20; opacity: 0; transition: opacity 0.3s;
+  }
+  .mode-badge.show { opacity: 1; }
+
+  /* Acupoint labels */
+  .acupoint-label {
+    position: absolute; color: #ff6b6b; font-size: 10px; pointer-events: none;
+    text-shadow: 0 0 3px #000, 0 0 6px #000; z-index: 5; white-space: nowrap;
+    transform: translate(-50%, -100%);
+  }
+
+  /* Crosshair cursor in pick mode */
+  canvas.pick-mode { cursor: crosshair; }
 </style>
 </head>
 <body>
 <div id="info">Loading model...</div>
 <div id="controls">
   <button onclick="toggleWireframe()">Wireframe</button>
+  <button onclick="toggleTransparency()">Transparent</button>
   <button onclick="toggleGuide()">Guide (red)</button>
   <button onclick="toggleProjected()">Projected (green)</button>
+  <button onclick="toggleLabels()">Labels</button>
+  <span style="color:#666;line-height:30px;margin:0 8px;">|</span>
+  <button id="pickBtn" onclick="togglePickMode()" style="background:#e67e22;color:#000;font-weight:bold;padding:6px 14px;">Pick Mode (P)</button>
+  <button onclick="clearPicks()">Clear Picks</button>
+  <button onclick="copyPicks()">Copy Coords</button>
+  <button onclick="exportCorrections()">Export JSON</button>
+  <button onclick="undoPick()">Undo Pick</button>
 </div>
+<div id="picker-panel">
+  <h3>Picked Points (click model in Pick Mode)</h3>
+  <div>Assign to acupoint:
+    <select id="assignTarget" style="background:#222;color:#fff;border:1px solid #555;font-size:11px;">
+      <option value="">-- free pick --</option>
+    </select>
+  </div>
+  <div id="pick-list" style="margin-top:6px;"></div>
+  <div id="pick-summary" style="margin-top:8px;color:#888;font-size:10px;"></div>
+</div>
+<div class="mode-badge" id="modeBadge">PICK MODE</div>
 
 <script type="importmap">
 {
@@ -41,6 +99,56 @@ import { MeshBVH } from 'three-mesh-bvh';
 const info = document.getElementById('info');
 function log(msg) { info.textContent += '\n' + msg; }
 
+// ── LU acupoint definitions ──
+const LU_ACUPOINTS = [
+  { code: 'LU1',  name: '中府', pathIdx: 0 },
+  { code: 'LU2',  name: '云门', pathIdx: 2 },
+  { code: 'LU3',  name: '天府', pathIdx: 4 },
+  { code: 'LU4',  name: '侠白', pathIdx: 6 },
+  { code: 'LU5',  name: '尺泽', pathIdx: 8 },
+  { code: 'LU6',  name: '孔最', pathIdx: 10 },
+  { code: 'LU7',  name: '列缺', pathIdx: 12 },
+  { code: 'LU8',  name: '经渠', pathIdx: 14 },
+  { code: 'LU9',  name: '太渊', pathIdx: 16 },
+  { code: 'LU10', name: '鱼际', pathIdx: 18 },
+  { code: 'LU11', name: '少商', pathIdx: 20 },
+];
+
+// ── Current LU guide path (23 points: 11 acupoints + 12 transitions) ──
+const LU_GUIDE = [
+  [-0.098, 1.323, 0.047],   // [0]  LU1 中府
+  [-0.100, 1.334, 0.036],   // [1]  transition
+  [-0.103, 1.345, 0.025],   // [2]  LU2 云门
+  [-0.167, 1.303, 0.024],   // [3]  transition
+  [-0.231, 1.261, 0.024],   // [4]  LU3 天府
+  [-0.243, 1.253, 0.021],   // [5]  transition
+  [-0.256, 1.245, 0.017],   // [6]  LU4 侠白
+  [-0.308, 1.201, 0.014],   // [7]  transition
+  [-0.360, 1.158, 0.012],   // [8]  LU5 尺泽
+  [-0.398, 1.138, 0.009],   // [9]  transition
+  [-0.437, 1.119, 0.005],   // [10] LU6 孔最
+  [-0.475, 1.084, 0.003],   // [11] transition
+  [-0.513, 1.050, 0.001],   // [12] LU7 列缺
+  [-0.519, 1.044, -0.001],  // [13] transition
+  [-0.526, 1.039, -0.003],  // [14] LU8 经渠
+  [-0.533, 1.033, -0.004],  // [15] transition
+  [-0.541, 1.028, -0.006],  // [16] LU9 太渊
+  [-0.554, 1.022, 0.005],   // [17] transition
+  [-0.567, 1.016, 0.015],   // [18] LU10 鱼际
+  [-0.587, 1.007, 0.034],   // [19] transition
+  [-0.608, 0.998, 0.053],   // [20] LU11 少商
+];
+
+// Populate assign dropdown
+const assignSelect = document.getElementById('assignTarget');
+LU_ACUPOINTS.forEach(ap => {
+  const opt = document.createElement('option');
+  opt.value = ap.code;
+  opt.textContent = `${ap.code} ${ap.name} [${ap.pathIdx}]`;
+  assignSelect.appendChild(opt);
+});
+
+// ── Scene setup ──
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.01, 100);
 camera.position.set(0, 0.82, 2.8);
@@ -48,32 +156,29 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(innerWidth, innerHeight);
 renderer.setClearColor(0x1a1a2e);
 document.body.appendChild(renderer.domElement);
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(0, 0.82, 0);
-controls.enableDamping = true;
+const orbitControls = new OrbitControls(camera, renderer.domElement);
+orbitControls.target.set(0, 0.82, 0);
+orbitControls.enableDamping = true;
 scene.add(new THREE.AmbientLight(0xffffff, 0.6));
 const dl1 = new THREE.DirectionalLight(0xffffff, 0.8); dl1.position.set(5,5,5); scene.add(dl1);
 const dl2 = new THREE.DirectionalLight(0xffffff, 0.3); dl2.position.set(-5,3,-5); scene.add(dl2);
 scene.add(new THREE.AxesHelper(0.3));
 
-const LU_GUIDE = [
-  [-0.11, 1.19, 0.11], [-0.14, 1.18, 0.10], [-0.16, 1.17, 0.08],
-  [-0.18, 1.16, 0.06], [-0.20, 1.15, 0.03], [-0.22, 1.14, 0.02],
-  [-0.25, 1.13, 0.00], [-0.28, 1.12, 0.00], [-0.32, 1.11, 0.00],
-  [-0.35, 1.10, 0.00], [-0.38, 1.09, 0.00], [-0.41, 1.08, 0.00],
-  [-0.44, 1.07, 0.00], [-0.47, 1.06, 0.00], [-0.51, 1.04, 0.00],
-  [-0.54, 1.03, 0.00], [-0.57, 1.01, 0.00], [-0.60, 1.00, 0.01],
-  [-0.63, 0.99, 0.01], [-0.66, 0.98, 0.01], [-0.70, 0.97, 0.01],
-];
-
+// ── Groups ──
 const guideGroup = new THREE.Group();
 const projGroup = new THREE.Group();
-scene.add(guideGroup, projGroup);
+const pickGroup = new THREE.Group();
+const labelGroup = []; // HTML label elements
+scene.add(guideGroup, projGroup, pickGroup);
 
+// ── Draw guide path (red) ──
 const gMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-LU_GUIDE.forEach(p => {
-  const s = new THREE.Mesh(new THREE.SphereGeometry(0.008, 8, 8), gMat);
-  s.position.set(...p); guideGroup.add(s);
+LU_GUIDE.forEach((p, i) => {
+  const isAcupoint = LU_ACUPOINTS.some(ap => ap.pathIdx === i);
+  const radius = isAcupoint ? 0.01 : 0.006;
+  const s = new THREE.Mesh(new THREE.SphereGeometry(radius, 8, 8), isAcupoint ? new THREE.MeshBasicMaterial({ color: 0xff3333 }) : gMat);
+  s.position.set(...p);
+  guideGroup.add(s);
 });
 {
   const vecs = LU_GUIDE.map(p => new THREE.Vector3(...p));
@@ -83,23 +188,236 @@ LU_GUIDE.forEach(p => {
   ));
 }
 
+// ── Create HTML labels for acupoints ──
+function createLabels() {
+  // Remove old labels
+  labelGroup.forEach(el => el.remove());
+  labelGroup.length = 0;
+
+  LU_ACUPOINTS.forEach(ap => {
+    const el = document.createElement('div');
+    el.className = 'acupoint-label';
+    el.textContent = `${ap.code} ${ap.name}`;
+    el.dataset.code = ap.code;
+    document.body.appendChild(el);
+    labelGroup.push(el);
+  });
+}
+createLabels();
+
+function updateLabels() {
+  LU_ACUPOINTS.forEach((ap, i) => {
+    const el = labelGroup[i];
+    if (!el || !labelsVisible) { if (el) el.style.display = 'none'; return; }
+    const pos = new THREE.Vector3(...LU_GUIDE[ap.pathIdx]);
+    pos.project(camera);
+    if (pos.z > 1) { el.style.display = 'none'; return; }
+    el.style.display = '';
+    el.style.left = ((pos.x + 1) / 2 * innerWidth) + 'px';
+    el.style.top = ((-pos.y + 1) / 2 * innerHeight - 14) + 'px';
+  });
+}
+
+// ── Pick mode state ──
+let pickMode = false;
+let pickedPoints = []; // { pos: [x,y,z], label: string, marker: THREE.Mesh }
+const pickMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+let labelsVisible = true;
+
+// BVH reference (set after model load)
+let mergedBVH = null;
+let mergedGeo = null;
+
+// ── Raycaster for picking ──
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+function onCanvasClick(e) {
+  if (!pickMode || !mergedBVH) return;
+
+  // Ignore if clicking on UI
+  if (e.target !== renderer.domElement) return;
+
+  mouse.x = (e.clientX / innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+
+  raycaster.setFromCamera(mouse, camera);
+
+  // Use BVH raycast for precision
+  const origin = raycaster.ray.origin.clone();
+  const dir = raycaster.ray.direction.clone();
+
+  // BVH closestPointToPoint from a ray: cast a ray and find closest intersection
+  // Use raycaster on the merged geometry mesh
+  const tmpMesh = new THREE.Mesh(mergedGeo);
+  tmpMesh.geometry.boundsTree = mergedBVH;
+  const hits = raycaster.intersectObject(tmpMesh);
+
+  if (hits.length === 0) {
+    log('Pick: no intersection');
+    return;
+  }
+
+  const hit = hits[0];
+  const p = hit.point;
+
+  // Get face normal for offset
+  const normal = hit.face ? hit.face.normal.clone().normalize() : new THREE.Vector3(0, 0, 1);
+  const surfacePoint = p.clone().add(normal.multiplyScalar(0.006));
+
+  const coord = [
+    parseFloat(surfacePoint.x.toFixed(4)),
+    parseFloat(surfacePoint.y.toFixed(4)),
+    parseFloat(surfacePoint.z.toFixed(4))
+  ];
+
+  // Determine label
+  const target = assignSelect.value;
+  const label = target || `P${pickedPoints.length}`;
+
+  // Create marker
+  const marker = new THREE.Mesh(new THREE.SphereGeometry(0.012, 12, 12), pickMat.clone());
+  marker.position.set(...coord);
+  pickGroup.add(marker);
+
+  pickedPoints.push({ pos: coord, label, marker });
+
+  log(`Pick [${label}]: (${coord[0]}, ${coord[1]}, ${coord[2]})`);
+  updatePickList();
+
+  // Auto-advance assign dropdown to next acupoint
+  if (target) {
+    const idx = LU_ACUPOINTS.findIndex(ap => ap.code === target);
+    if (idx >= 0 && idx < LU_ACUPOINTS.length - 1) {
+      assignSelect.value = LU_ACUPOINTS[idx + 1].code;
+    } else {
+      assignSelect.value = '';
+    }
+  }
+}
+
+renderer.domElement.addEventListener('click', onCanvasClick);
+
+function updatePickList() {
+  const list = document.getElementById('pick-list');
+  list.innerHTML = '';
+  pickedPoints.forEach((pk, i) => {
+    const div = document.createElement('div');
+    div.className = 'pick-item';
+    div.innerHTML = `
+      <span class="idx">#${i}</span>
+      <span class="coord" title="Click to copy" onclick="copySingle(${i})">[${pk.pos[0].toFixed(4)}, ${pk.pos[1].toFixed(4)}, ${pk.pos[2].toFixed(4)}]</span>
+      <input class="label-input" value="${pk.label}" onchange="updateLabel(${i}, this.value)" />
+      <span class="del-btn" onclick="deletePick(${i})">x</span>
+    `;
+    list.appendChild(div);
+  });
+  document.getElementById('pick-summary').textContent = `Total: ${pickedPoints.length} points`;
+}
+
+// ── Expose functions to window ──
+window.togglePickMode = () => {
+  pickMode = !pickMode;
+  const btn = document.getElementById('pickBtn');
+  btn.classList.toggle('active', pickMode);
+  renderer.domElement.classList.toggle('pick-mode', pickMode);
+  orbitControls.enabled = !pickMode;
+  document.getElementById('picker-panel').classList.toggle('visible', pickMode);
+  const badge = document.getElementById('modeBadge');
+  badge.classList.toggle('show', pickMode);
+  if (pickMode) setTimeout(() => badge.classList.remove('show'), 1500);
+};
+
+window.clearPicks = () => {
+  pickedPoints.forEach(pk => pickGroup.remove(pk.marker));
+  pickedPoints = [];
+  updatePickList();
+};
+
+window.undoPick = () => {
+  if (pickedPoints.length === 0) return;
+  const last = pickedPoints.pop();
+  pickGroup.remove(last.marker);
+  updatePickList();
+};
+
+window.copySingle = (idx) => {
+  const pk = pickedPoints[idx];
+  const text = `[${pk.pos[0].toFixed(4)}, ${pk.pos[1].toFixed(4)}, ${pk.pos[2].toFixed(4)}]`;
+  navigator.clipboard.writeText(text);
+  log(`Copied: ${pk.label} ${text}`);
+};
+
+window.updateLabel = (idx, val) => {
+  pickedPoints[idx].label = val;
+};
+
+window.deletePick = (idx) => {
+  const pk = pickedPoints[idx];
+  pickGroup.remove(pk.marker);
+  pickedPoints.splice(idx, 1);
+  updatePickList();
+};
+
+window.copyPicks = () => {
+  if (pickedPoints.length === 0) { log('No picked points to copy'); return; }
+  const lines = pickedPoints.map(pk =>
+    `[${pk.pos[0].toFixed(4)}, ${pk.pos[1].toFixed(4)}, ${pk.pos[2].toFixed(4)}],  // ${pk.label}`
+  );
+  navigator.clipboard.writeText(lines.join('\n'));
+  log('Copied all picked coords to clipboard');
+};
+
+window.exportCorrections = () => {
+  if (pickedPoints.length === 0) { log('No picks to export'); return; }
+  const corrections = {};
+  pickedPoints.forEach(pk => {
+    if (pk.label.startsWith('LU')) {
+      corrections[pk.label] = pk.pos;
+    }
+  });
+  const json = JSON.stringify(corrections, null, 2);
+  navigator.clipboard.writeText(json);
+  log('Exported corrections JSON to clipboard:\n' + json);
+};
+
+window.toggleWireframe = () => {
+  window._data?.modelGroup.traverse(c => { if (c.isMesh) c.material.wireframe = !c.material.wireframe; });
+};
+let isTransparent = false;
+window.toggleTransparency = () => {
+  isTransparent = !isTransparent;
+  window._data?.modelGroup.traverse(c => {
+    if (c.isMesh) {
+      c.material.transparent = isTransparent;
+      c.material.opacity = isTransparent ? 0.35 : 1.0;
+      c.material.depthWrite = !isTransparent;
+      c.material.needsUpdate = true;
+    }
+  });
+};
+window.toggleGuide = () => { guideGroup.visible = !guideGroup.visible; };
+window.toggleProjected = () => { projGroup.visible = !projGroup.visible; };
+window.toggleLabels = () => {
+  labelsVisible = !labelsVisible;
+  updateLabels();
+};
+
+// ── Load model ──
 const MODEL_SCALE = 1.64 / 176.5;
 new GLTFLoader().load('/models/sport-girl.glb', (gltf) => {
   info.textContent = 'Model loaded.';
 
-  // ── Scale ONLY — GLB already has internal Rx(-90°) for Y-up ──
   const modelGroup = new THREE.Group();
   modelGroup.scale.set(MODEL_SCALE, MODEL_SCALE, MODEL_SCALE);
   modelGroup.add(gltf.scene);
   scene.add(modelGroup);
 
+  // Keep original textures, opaque mode
   gltf.scene.traverse(c => {
     if (c.isMesh) {
       c.material = c.material.clone();
-      c.material.transparent = true;
-      c.material.opacity = 0.35;
       c.material.side = THREE.DoubleSide;
-      c.material.depthWrite = false;
     }
   });
 
@@ -124,23 +442,25 @@ new GLTFLoader().load('/models/sport-girl.glb', (gltf) => {
     vOff += pos.count;
   });
 
-  const mergedGeo = new THREE.BufferGeometry();
+  mergedGeo = new THREE.BufferGeometry();
   mergedGeo.setAttribute('position', new THREE.Float32BufferAttribute(allPos, 3));
   mergedGeo.setIndex(allIdx);
+  mergedGeo.computeVertexNormals();
   const bbox = new THREE.Box3().setFromBufferAttribute(mergedGeo.getAttribute('position'));
   log(`Merged BVH: ${vOff} verts`);
   log(`bbox X(${bbox.min.x.toFixed(3)},${bbox.max.x.toFixed(3)}) Y(${bbox.min.y.toFixed(3)},${bbox.max.y.toFixed(3)}) Z(${bbox.min.z.toFixed(3)},${bbox.max.z.toFixed(3)})`);
 
-  const bvh = new MeshBVH(mergedGeo);
+  mergedBVH = new MeshBVH(mergedGeo);
+  mergedGeo.boundsTree = mergedBVH;
 
-  // ── Project (direct, no axis swap needed) ──
+  // ── Project guide path ──
   log('\n--- Projection ---');
   const projected = [];
   const tmp = { point: new THREE.Vector3(), distance: 0, faceIndex: 0 };
 
   LU_GUIDE.forEach((gp, i) => {
     const pt = new THREE.Vector3(...gp);
-    const hit = bvh.closestPointToPoint(pt, tmp);
+    const hit = mergedBVH.closestPointToPoint(pt, tmp);
     if (!hit) { projected.push(gp); return; }
     const sp = hit.point.clone();
     const dist = pt.distanceTo(sp);
@@ -159,14 +479,18 @@ new GLTFLoader().load('/models/sport-girl.glb', (gltf) => {
     const offset = sp.add(normal.multiplyScalar(0.006));
     projected.push([offset.x, offset.y, offset.z]);
 
-    if (i < 5 || i >= LU_GUIDE.length - 2)
-      log(`[${i}] (${gp[0].toFixed(3)},${gp[1].toFixed(3)},${gp[2].toFixed(3)}) → (${offset.x.toFixed(3)},${offset.y.toFixed(3)},${offset.z.toFixed(3)}) d=${dist.toFixed(4)}`);
+    const ap = LU_ACUPOINTS.find(a => a.pathIdx === i);
+    const label = ap ? `${ap.code} ${ap.name}` : `[${i}]`;
+    log(`${label}: (${gp[0].toFixed(3)},${gp[1].toFixed(3)},${gp[2].toFixed(3)}) → (${offset.x.toFixed(3)},${offset.y.toFixed(3)},${offset.z.toFixed(3)}) d=${dist.toFixed(4)}`);
   });
 
   const pMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-  projected.forEach(p => {
-    const s = new THREE.Mesh(new THREE.SphereGeometry(0.008, 8, 8), pMat);
-    s.position.set(...p); projGroup.add(s);
+  projected.forEach((p, i) => {
+    const isAcupoint = LU_ACUPOINTS.some(ap => ap.pathIdx === i);
+    const radius = isAcupoint ? 0.01 : 0.006;
+    const s = new THREE.Mesh(new THREE.SphereGeometry(radius, 8, 8), isAcupoint ? new THREE.MeshBasicMaterial({ color: 0x00ff88 }) : pMat);
+    s.position.set(...p);
+    projGroup.add(s);
   });
   {
     const vecs = projected.map(p => new THREE.Vector3(...p));
@@ -175,15 +499,37 @@ new GLTFLoader().load('/models/sport-girl.glb', (gltf) => {
       new THREE.MeshBasicMaterial({ color: 0x00ff88, transparent: true, opacity: 0.8 })
     ));
   }
-  window._data = { modelGroup };
+
+  window._data = { modelGroup, mergedBVH, mergedGeo, projected };
+  log('\nReady! Enable "Pick Mode" to click on model and mark acupoint positions.');
+
 }, p => { info.textContent = `Loading... ${p.total ? (p.loaded/p.total*100).toFixed(0) : '?'}%`; });
 
-window.toggleWireframe = () => { window._data?.modelGroup.traverse(c => { if (c.isMesh) c.material.wireframe = !c.material.wireframe; }); };
-window.toggleGuide = () => { guideGroup.visible = !guideGroup.visible; };
-window.toggleProjected = () => { projGroup.visible = !projGroup.visible; };
+// ── Animation loop ──
+(function animate() {
+  requestAnimationFrame(animate);
+  orbitControls.update();
+  updateLabels();
+  renderer.render(scene, camera);
+})();
 
-(function animate() { requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); })();
-window.addEventListener('resize', () => { camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+</script>
+
+<!-- Keyboard shortcuts as regular script (not module) to ensure immediate binding -->
+<script>
+document.addEventListener('keydown', function(e) {
+  // Ignore if typing in an input
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (e.key === 'p' || e.key === 'P') { e.preventDefault(); window.togglePickMode && window.togglePickMode(); }
+  if (e.key === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); window.undoPick && window.undoPick(); }
+  if (e.key === 'Escape') { window.togglePickMode && window.togglePickMode(); }
+});
 </script>
 </body>
 </html>

@@ -21,11 +21,13 @@ import type { ColumnsType } from 'antd/es/table';
 import type { Dayjs } from 'dayjs';
 import { listRecords, deleteRecord } from '../../api/record';
 import type { RecordListItem, RecordListParams } from '../../api/record';
+import useIsMobile from '../../hooks/useIsMobile';
 
 const { RangePicker } = DatePicker;
 
 export default function RecordList() {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
 
   const [data, setData] = useState<RecordListItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -105,6 +107,7 @@ export default function RecordList() {
       dataIndex: 'patient_age',
       key: 'patient_age',
       width: 80,
+      responsive: ['md'],
     },
     {
       title: '就诊日期',
@@ -120,6 +123,7 @@ export default function RecordList() {
       dataIndex: 'diagnosis',
       key: 'diagnosis',
       ellipsis: true,
+      responsive: ['md'],
       render: (text: string) => {
         if (!text) return '-';
         return text.length > 50 ? `${text.slice(0, 50)}...` : text;
@@ -128,7 +132,7 @@ export default function RecordList() {
     {
       title: '操作',
       key: 'action',
-      width: 200,
+      width: isMobile ? 100 : 200,
       render: (_, record) => (
         <Space size="small">
           <Button
@@ -137,7 +141,7 @@ export default function RecordList() {
             icon={<EyeOutlined />}
             onClick={() => navigate(`/records/${record.id}`)}
           >
-            查看
+            {!isMobile && '查看'}
           </Button>
           <Button
             type="link"
@@ -145,7 +149,7 @@ export default function RecordList() {
             icon={<EditOutlined />}
             onClick={() => navigate(`/records/${record.id}`)}
           >
-            编辑
+            {!isMobile && '编辑'}
           </Button>
           <Popconfirm
             title="确定删除此诊疗记录？"
@@ -154,7 +158,7 @@ export default function RecordList() {
             cancelText="取消"
           >
             <Button type="link" size="small" danger icon={<DeleteOutlined />}>
-              删除
+              {!isMobile && '删除'}
             </Button>
           </Popconfirm>
         </Space>

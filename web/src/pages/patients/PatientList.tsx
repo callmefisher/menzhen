@@ -20,6 +20,7 @@ import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 import { listPatients, deletePatient } from '../../api/patient';
 import { PatientFormModal } from './PatientForm';
+import useIsMobile from '../../hooks/useIsMobile';
 
 interface PatientItem {
   id: number;
@@ -44,6 +45,7 @@ interface ListParams {
 
 export default function PatientList() {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
 
   const [data, setData] = useState<PatientItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -141,6 +143,7 @@ export default function PatientList() {
       dataIndex: 'birthday',
       key: 'birthday',
       width: 120,
+      responsive: ['md'],
       render: (val: string) => val ? dayjs(val).format('YYYY-MM-DD') : '-',
     },
     {
@@ -148,6 +151,7 @@ export default function PatientList() {
       dataIndex: 'weight',
       key: 'weight',
       width: 100,
+      responsive: ['md'],
       render: (val: number) => (val ? `${val}` : '-'),
     },
     {
@@ -155,6 +159,7 @@ export default function PatientList() {
       dataIndex: 'phone',
       key: 'phone',
       width: 140,
+      responsive: ['md'],
       render: (val: string) => val || '-',
     },
     {
@@ -163,6 +168,7 @@ export default function PatientList() {
       key: 'address',
       width: 150,
       ellipsis: true,
+      responsive: ['md'],
       render: (val: string) => val || '-',
     },
     {
@@ -170,6 +176,7 @@ export default function PatientList() {
       dataIndex: 'native_place',
       key: 'native_place',
       width: 120,
+      responsive: ['md'],
       render: (val: string) => val || '-',
     },
     {
@@ -178,12 +185,13 @@ export default function PatientList() {
       key: 'notes',
       width: 150,
       ellipsis: true,
+      responsive: ['md'],
       render: (val: string) => val || '-',
     },
     {
       title: '操作',
       key: 'action',
-      width: 200,
+      width: isMobile ? 120 : 200,
       render: (_, record) => (
         <Space size="small">
           <Button
@@ -192,7 +200,7 @@ export default function PatientList() {
             icon={<EyeOutlined />}
             onClick={() => navigate(`/patients/${record.id}`)}
           >
-            查看
+            {!isMobile && '查看'}
           </Button>
           <Button
             type="link"
@@ -200,7 +208,7 @@ export default function PatientList() {
             icon={<EditOutlined />}
             onClick={() => handleEdit(record)}
           >
-            编辑
+            {!isMobile && '编辑'}
           </Button>
           <Popconfirm
             title="确定删除此患者？"
@@ -209,7 +217,7 @@ export default function PatientList() {
             cancelText="取消"
           >
             <Button type="link" size="small" danger icon={<DeleteOutlined />}>
-              删除
+              {!isMobile && '删除'}
             </Button>
           </Popconfirm>
         </Space>

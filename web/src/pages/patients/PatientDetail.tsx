@@ -145,7 +145,7 @@ export default function PatientDetail() {
       <Card
         title="患者信息"
         extra={
-          <Space>
+          <Space wrap>
             <Button
               icon={<EditOutlined />}
               onClick={() => setEditModalVisible(true)}
