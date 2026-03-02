@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-02-28（移动端适配：useIsMobile hook + 全局CSS media query + Layout Drawer + 各页面响应式）
+> 最后更新：2026-03-02（新增脉象 CRUD 模块：PulseList 页面 + pulse API/handler/service）
 
 ---
 
@@ -31,7 +31,7 @@ menzhen/
 │   ├── config/
 │   │   └── config.go                # Config 结构体 + Load()，全部读取环境变量
 │   ├── database/
-│   │   ├── database.go              # InitDB：连接 MySQL + AutoMigrate 全部 15 个模型
+│   │   ├── database.go              # InitDB：连接 MySQL + AutoMigrate 全部 16 个模型
 │   │   └── seed.go                  # Seed：幂等写入 permissions/tenant/admin role/admin user
 │   ├── handler/
 │   │   ├── response.go              # 统一 Success/Error 响应
@@ -42,6 +42,7 @@ menzhen/
 │   │   ├── herb.go                  # List/Detail/Delete/Categories/Update/AIRefresh
 │   │   ├── formula.go               # List/Detail/Delete/UpdateComposition/UpdateName/UpdateNotes
 │   │   ├── prescription.go          # Create/Detail/Update/Delete/ListByRecord
+│   │   ├── pulse.go                 # List/Detail/Create/Update/Delete/Categories
 │   │   ├── ai_analysis.go           # Analyze（AI 辩证论治，含缓存）+ SaveCached + GetCached
 │   │   ├── oplog.go                 # ListOpLogs/DeleteOpLog/BatchDeleteOpLogs
 │   │   ├── user.go                  # List/Update/Delete/AssignRoles
@@ -63,6 +64,7 @@ menzhen/
 │   │   ├── herb.go                  # 中药查询（DB + AI 回退 + 自动入库 + 分类列表）
 │   │   ├── formula.go               # 方剂查询（DB + AI 回退 + 自动入库）
 │   │   ├── prescription.go          # 处方 CRUD
+│   │   ├── pulse.go                 # 脉象 CRUD + 分类列表
 │   │   ├── deepseek.go              # DeepSeek API 客户端（chat/chatLong/QueryHerb/QueryFormula/AnalyzeDiagnosis）
 │   │   ├── deepseek_test.go         # DeepSeek 测试
 │   │   ├── oplog.go                 # 操作日志 CRUD
@@ -86,6 +88,7 @@ menzhen/
 │       │   ├── herb.ts              # 中药搜索/详情/删除/分类列表/更新
 │       │   ├── formula.ts           # 方剂搜索/详情/删除/更新组成/更新备注
 │       │   ├── prescription.ts      # 处方 CRUD + 按记录查询
+│       │   ├── pulse.ts             # 脉象搜索/详情/分类/新增/更新/删除
 │       │   ├── upload.ts            # 文件上传
 │       │   ├── oplog.ts             # 操作日志查询/删除
 │       │   ├── user.ts              # 用户管理
@@ -130,6 +133,8 @@ menzhen/
 │       │   │       ├── types.ts         # MeridianData/AcupointData 类型
 │       │   │       ├── meridians.ts     # 20条经络静态数据（路径坐标，全部14条正经+RN/DU路径已精修对齐穴位）
 │       │   │       └── acupoints.ts     # 穴位静态数据（367穴全部补全，14条正经+6条奇经）
+│       │   ├── pulses/              # 脉象查询
+│       │   │   └── PulseList.tsx    # 脉象列表（分页+名称/分类搜索，管理员可行内编辑/新增/删除）
 │       │   └── settings/            # 系统设置
 │       │       ├── UserList.tsx
 │       │       ├── RoleList.tsx
@@ -178,7 +183,7 @@ menzhen/
 | `name` | `varchar(50)` | 权限名称 |
 | `description` | `varchar(200)` | 描述 |
 
-**全部权限码：** `patient:create`, `patient:read`, `patient:update`, `patient:delete`, `record:create`, `record:read`, `record:update`, `record:delete`, `oplog:read`, `user:manage`, `role:manage`, `herb:read`, `formula:read`, `prescription:create`, `prescription:read`, `tenant:manage`
+**全部权限码：** `patient:create`, `patient:read`, `patient:update`, `patient:delete`, `record:create`, `record:read`, `record:update`, `record:delete`, `oplog:read`, `user:manage`, `role:manage`, `herb:read`, `formula:read`, `pulse:read`, `prescription:create`, `prescription:read`, `tenant:manage`
 
 #### `herbs` — 中药
 
@@ -207,6 +212,19 @@ menzhen/
 | `composition` | `json` | 组成，`[{herb_name, default_dosage}]` |
 | `notes` | `text` | 备注 |
 | `source` | `varchar(20)` | 数据来源，`manual` 或 `deepseek` |
+| `created_at` | `time.Time` | 创建时间 |
+| `updated_at` | `time.Time` | 更新时间 |
+
+#### `pulses` — 脉象
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | `uint64` | 主键 |
+| `name` | `varchar(100)` | 脉象名称（唯一索引） |
+| `category` | `varchar(50)` | 分类（索引），如浮脉类、沉脉类 |
+| `features` | `text` | 脉象特征 |
+| `indications` | `text` | 主治/临床意义 |
+| `description` | `text` | 详细描述 |
 | `created_at` | `time.Time` | 创建时间 |
 | `updated_at` | `time.Time` | 更新时间 |
 
@@ -429,6 +447,17 @@ menzhen/
 | PUT | `/api/v1/formulas/:id/notes` | `role:manage` | 更新方剂备注 |
 | DELETE | `/api/v1/formulas/:id` | `role:manage` | 删除方剂 |
 
+#### 脉象查询（全局数据）
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| GET | `/api/v1/pulses` | - | 搜索脉象（分页+名称/分类筛选） |
+| GET | `/api/v1/pulses/categories` | - | 脉象分类列表 |
+| GET | `/api/v1/pulses/:id` | - | 脉象详情 |
+| POST | `/api/v1/pulses` | `role:manage` | 新增脉象 |
+| PUT | `/api/v1/pulses/:id` | `role:manage` | 更新脉象 |
+| DELETE | `/api/v1/pulses/:id` | `role:manage` | 删除脉象 |
+
 #### 处方管理（租户隔离）
 
 | 方法 | 路径 | 权限 | 说明 |
@@ -611,7 +640,7 @@ menzhen/
 ### 种子数据
 
 启动时 `Seed()` 幂等写入：
-1. **16 个权限** — upsert 模式（逐条检查 code，不存在则创建）
+1. **17 个权限** — upsert 模式（逐条检查 code，不存在则创建）
 2. **默认租户** — code=`default`, name=`默认诊所`
 3. **管理员角色** — 关联全部权限（已存在则同步权限集）
 4. **管理员用户** — username=`admin`, password=`admin123`
