@@ -9,10 +9,10 @@ import (
 )
 
 var (
-	ErrInvalidCredentials = errors.New("invalid username or password")
-	ErrUserDisabled       = errors.New("user account is disabled")
+	ErrInvalidCredentials = errors.New("用户名或密码错误")
+	ErrUserDisabled       = errors.New("该账号已被禁用")
 	ErrUsernameExists     = errors.New("该用户名已被注册")
-	ErrUserNotFound       = errors.New("user not found")
+	ErrUserNotFound       = errors.New("用户不存在")
 	ErrWrongOldPassword   = errors.New("旧密码错误")
 )
 

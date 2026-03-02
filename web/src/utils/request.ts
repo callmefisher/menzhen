@@ -41,7 +41,11 @@ request.interceptors.response.use(
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
       sessionStorage.removeItem('token');
-      window.location.href = '/login';
+      // 登录页的 401 只显示错误信息，不跳转
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+        return Promise.reject(error);
+      }
     }
 
     const data = error.response?.data;
