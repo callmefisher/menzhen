@@ -105,6 +105,7 @@ menzhen/
 ### 中医药表
 - `herbs` — 中药（全局，无租户隔离，含道地产区，管理员可编辑）
 - `formulas` — 方剂（全局，含 JSON 组成）
+- `pulses` — 脉象（全局，无租户隔离，纯手动维护）
 - `prescriptions` — 处方（租户隔离，关联诊疗记录）
 - `prescription_items` — 处方药物明细
 
@@ -112,7 +113,7 @@ menzhen/
 - `ai_analyses` — AI辩证论治分析缓存（租户隔离，record_id 唯一索引）
 
 ### 权限码
-`patient:create/read/update/delete`, `record:create/read/update/delete`, `oplog:read`, `user:manage`, `role:manage`, `herb:read`, `formula:read`, `prescription:create`, `prescription:read`, `tenant:manage`
+`patient:create/read/update/delete`, `record:create/read/update/delete`, `oplog:read`, `user:manage`, `role:manage`, `herb:read`, `formula:read`, `pulse:read`, `prescription:create`, `prescription:read`, `tenant:manage`
 
 ## API 路由
 
@@ -129,6 +130,12 @@ menzhen/
 | PUT | `/api/v1/formulas/:id/name` | role:manage | 更新方剂名称 |
 | PUT | `/api/v1/formulas/:id/notes` | role:manage | 更新方剂备注 |
 | PUT | `/api/v1/formulas/:id/composition` | role:manage | 更新方剂组成 |
+| GET | `/api/v1/pulses` | - | 搜索脉象（分页+名称/分类筛选） |
+| GET | `/api/v1/pulses/categories` | - | 脉象分类列表 |
+| GET | `/api/v1/pulses/:id` | - | 脉象详情 |
+| POST | `/api/v1/pulses` | role:manage | 新增脉象 |
+| PUT | `/api/v1/pulses/:id` | role:manage | 更新脉象 |
+| DELETE | `/api/v1/pulses/:id` | role:manage | 删除脉象 |
 | POST | `/api/v1/prescriptions` | prescription:create | 创建处方 |
 | GET | `/api/v1/prescriptions/:id` | prescription:read | 处方详情 |
 | PUT | `/api/v1/prescriptions/:id` | prescription:create | 更新处方 |
@@ -228,4 +235,5 @@ DeepSeek AI 相关（可选）：
 - [实施计划](docs/plans/2026-02-24-medical-record-system-plan.md)
 - [经络3D可视化设计](docs/plans/2026-02-27-meridian-3d-design.md)
 - [经络3D优化记录](docs/plans/2026-02-28-meridian-optimization.md)
+- [脉象功能设计](docs/plans/2026-03-02-pulse-types-design.md)
 - [Codebase 全局上下文](docs/codebase.md)

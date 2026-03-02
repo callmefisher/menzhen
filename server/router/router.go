@@ -42,6 +42,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	deepSeekService := service.NewDeepSeekService(cfg)
 	herbHandler := handler.NewHerbHandler(db, deepSeekService)
 	formulaHandler := handler.NewFormulaHandler(db, deepSeekService)
+	pulseHandler := handler.NewPulseHandler(db)
 	prescriptionHandler := handler.NewPrescriptionHandler(db)
 	tenantHandler := handler.NewTenantHandler(db)
 	aiAnalysisHandler := handler.NewAIAnalysisHandler(deepSeekService, db)
@@ -155,6 +156,17 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			formulas.PUT("/:id/composition", middleware.RequirePermission(db, "role:manage"), formulaHandler.UpdateComposition)
 			formulas.PUT("/:id/name", middleware.RequirePermission(db, "role:manage"), formulaHandler.UpdateName)
 			formulas.PUT("/:id/notes", middleware.RequirePermission(db, "role:manage"), formulaHandler.UpdateNotes)
+		}
+
+		// Pulse routes (global data, authenticated, no permission required for read).
+		pulses := authenticated.Group("/pulses")
+		{
+			pulses.GET("", pulseHandler.List)
+			pulses.GET("/categories", pulseHandler.Categories)
+			pulses.GET("/:id", pulseHandler.Detail)
+			pulses.POST("", middleware.RequirePermission(db, "role:manage"), pulseHandler.Create)
+			pulses.PUT("/:id", middleware.RequirePermission(db, "role:manage"), pulseHandler.Update)
+			pulses.DELETE("/:id", middleware.RequirePermission(db, "role:manage"), pulseHandler.Delete)
 		}
 
 		// Prescription routes (tenant-scoped).
