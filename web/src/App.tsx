@@ -16,6 +16,7 @@ import RoleList from './pages/settings/RoleList';
 import TenantList from './pages/settings/TenantList';
 import HerbSearch from './pages/herbs/HerbSearch';
 import FormulaSearch from './pages/formulas/FormulaSearch';
+import PulseList from './pages/pulses/PulseList';
 import type { ReactNode } from 'react';
 
 const MeridianView = lazy(() => import('./pages/meridians/MeridianView'));
@@ -67,6 +68,7 @@ function AppRoutes() {
         <Route path="patients/:id" element={<PatientDetail />} />
         <Route path="herbs" element={<HerbSearch />} />
         <Route path="formulas" element={<FormulaSearch />} />
+        <Route path="pulses" element={<PulseList />} />
         <Route path="meridians" element={<Suspense fallback={<Spin />}><MeridianView /></Suspense>} />
         <Route path="oplogs" element={<OpLogList />} />
         <Route path="settings/users" element={<UserList />} />
