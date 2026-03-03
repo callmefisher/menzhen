@@ -8,7 +8,12 @@ export interface MeridianData {
   description: string;
   path: Vec3[];
   internalPath?: Vec3[];
+  specialPoints?: Partial<Record<SpecialPointType, string>>;
 }
+
+export type SpecialPointType =
+  | '井穴' | '荥穴' | '输穴' | '经穴' | '合穴'
+  | '原穴' | '络穴' | '母穴' | '子穴';
 
 export interface AcupointData {
   code: string;

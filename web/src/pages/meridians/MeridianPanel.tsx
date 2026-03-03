@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { Input, Checkbox, Divider, Tag } from 'antd';
-import { SearchOutlined } from '@ant-design/icons';
+import { SearchOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { regularMeridians, extraordinaryMeridians } from './data/meridians';
 import { acupoints, acupointsByMeridian } from './data/acupoints';
 import type { AcupointData, MeridianData } from './data/types';
@@ -10,11 +10,13 @@ function MeridianItem({
   checked,
   onToggle,
   onAcupointClick,
+  onInfoClick,
 }: {
   meridian: MeridianData;
   checked: boolean;
   onToggle: (id: string) => void;
   onAcupointClick: (acupoint: AcupointData) => void;
+  onInfoClick: (meridian: MeridianData) => void;
 }) {
   const points = acupointsByMeridian[meridian.id] || [];
 
@@ -38,6 +40,13 @@ function MeridianItem({
           />
           <span style={{ fontSize: 13 }}>{meridian.name}</span>
           <span style={{ fontSize: 11, color: '#999' }}>({points.length})</span>
+          <span
+            style={{ cursor: 'pointer', color: '#999', fontSize: 12, marginLeft: 2 }}
+            onClick={(e) => { e.stopPropagation(); onInfoClick(meridian); }}
+            title="查看经络详情"
+          >
+            <InfoCircleOutlined />
+          </span>
         </span>
       </Checkbox>
       {checked && points.length > 0 && (
@@ -77,12 +86,14 @@ interface MeridianPanelProps {
   selectedMeridians: string[];
   onMeridianToggle: (id: string) => void;
   onAcupointSearch: (acupoint: AcupointData | null) => void;
+  onMeridianInfoClick: (meridian: MeridianData) => void;
 }
 
 export default function MeridianPanel({
   selectedMeridians,
   onMeridianToggle,
   onAcupointSearch,
+  onMeridianInfoClick,
 }: MeridianPanelProps) {
   const [searchValue, setSearchValue] = useState('');
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -210,6 +221,7 @@ export default function MeridianPanel({
               checked={selectedMeridians.includes(m.id)}
               onToggle={onMeridianToggle}
               onAcupointClick={handleSelect}
+              onInfoClick={onMeridianInfoClick}
             />
           ))}
         </div>
@@ -230,6 +242,7 @@ export default function MeridianPanel({
               checked={selectedMeridians.includes(m.id)}
               onToggle={onMeridianToggle}
               onAcupointClick={handleSelect}
+              onInfoClick={onMeridianInfoClick}
             />
           ))}
         </div>

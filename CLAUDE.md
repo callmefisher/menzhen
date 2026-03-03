@@ -107,6 +107,7 @@ menzhen/
 - `herbs` — 中药（全局，无租户隔离，含道地产区，管理员可编辑）
 - `formulas` — 方剂（全局，含 JSON 组成）
 - `pulses` — 脉象（全局，无租户隔离，纯手动维护）
+- `meridian_resources` — 经络资源（全局，视频链接+出处文字，管理员可编辑）
 - `prescriptions` — 处方（租户隔离，关联诊疗记录）
 - `prescription_items` — 处方药物明细
 
@@ -137,6 +138,8 @@ menzhen/
 | POST | `/api/v1/pulses` | role:manage | 新增脉象 |
 | PUT | `/api/v1/pulses/:id` | role:manage | 更新脉象 |
 | DELETE | `/api/v1/pulses/:id` | role:manage | 删除脉象 |
+| GET | `/api/v1/meridians/:id/resource` | - | 获取经络视频和出处 |
+| PUT | `/api/v1/meridians/:id/resource` | role:manage | 更新经络视频和出处（upsert） |
 | POST | `/api/v1/prescriptions` | prescription:create | 创建处方 |
 | GET | `/api/v1/prescriptions/:id` | prescription:read | 处方详情 |
 | PUT | `/api/v1/prescriptions/:id` | prescription:create | 更新处方 |
@@ -237,4 +240,5 @@ DeepSeek AI 相关（可选）：
 - [经络3D可视化设计](docs/plans/2026-02-27-meridian-3d-design.md)
 - [经络3D优化记录](docs/plans/2026-02-28-meridian-optimization.md)
 - [脉象功能设计](docs/plans/2026-03-02-pulse-types-design.md)
+- [经络详情增强设计](docs/plans/2026-03-03-meridian-detail-design.md)
 - [Codebase 全局上下文](docs/codebase.md)
