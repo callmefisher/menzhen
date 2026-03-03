@@ -20,6 +20,10 @@ export const meridians: MeridianData[] = [
     type: 'regular',
     color: '#FF6B6B',
     description: '起于中焦，下络大肠，还循胃口，上膈属肺，从肺系横出腋下，沿上肢内侧前缘下行至拇指端。',
+    specialPoints: {
+      '井穴': 'LU11', '荥穴': 'LU10', '输穴': 'LU9', '经穴': 'LU8', '合穴': 'LU5',
+      '原穴': 'LU9', '络穴': 'LU7', '母穴': 'LU9', '子穴': 'LU5',
+    },
     path: [
       // 路径锚点 = 穴位精确坐标 (同 acupoints.ts, 由模型表面 pick 校准)
       // 穴位间插入过渡点确保平滑贴合手臂桡侧(内前缘)
@@ -61,6 +65,10 @@ export const meridians: MeridianData[] = [
     type: 'regular',
     color: '#FF9F43',
     description: '起于食指末端，沿上肢外侧前缘上行，经肩、颈，至对侧鼻翼旁。',
+    specialPoints: {
+      '井穴': 'LI1', '荥穴': 'LI2', '输穴': 'LI3', '经穴': 'LI5', '合穴': 'LI11',
+      '原穴': 'LI4', '络穴': 'LI6', '母穴': 'LI11', '子穴': 'LI2',
+    },
     path: [
       // 食指 → 手背 → 前臂 → 肘 → 上臂 → 肩 → 颈 → 面部
       [-0.69, 0.98, 0.00],    // LI1 商阳
@@ -114,6 +122,10 @@ export const meridians: MeridianData[] = [
     type: 'regular',
     color: '#FECA57',
     description: '起于鼻翼旁，上行至鼻根，沿面部下行至下颌，经颈、胸、腹，沿下肢外侧前缘下行至第二趾端。',
+    specialPoints: {
+      '井穴': 'ST45', '荥穴': 'ST44', '输穴': 'ST43', '经穴': 'ST41', '合穴': 'ST36',
+      '原穴': 'ST42', '络穴': 'ST40', '母穴': 'ST41', '子穴': 'ST45',
+    },
     path: [
       // 面部: 承泣→四白→巨髎→地仓→大迎→颊车→下关→头维
       // 然后折返下行: 头维→下关→颊车→...→人迎→颈→胸→腹→腿→足
@@ -175,6 +187,10 @@ export const meridians: MeridianData[] = [
     type: 'regular',
     color: '#FFA502',
     description: '起于足大趾内侧端，沿下肢内侧中线上行，经腹部、胸部至腋下。',
+    specialPoints: {
+      '井穴': 'SP1', '荥穴': 'SP2', '输穴': 'SP3', '经穴': 'SP5', '合穴': 'SP9',
+      '原穴': 'SP3', '络穴': 'SP4', '母穴': 'SP2', '子穴': 'SP5',
+    },
     path: [
       // 足→腿内侧→腹→胸
       [-0.20, 0.04, 0.03],    // SP1 隐白
@@ -230,6 +246,10 @@ export const meridians: MeridianData[] = [
     type: 'regular',
     color: '#EE5A24',
     description: '起于心中，出属心系，下膈络小肠，从心系上挟咽，从心系横出至腋下，沿上肢内侧后缘至小指端。',
+    specialPoints: {
+      '井穴': 'HT9', '荥穴': 'HT8', '输穴': 'HT7', '经穴': 'HT4', '合穴': 'HT3',
+      '原穴': 'HT7', '络穴': 'HT5', '母穴': 'HT9', '子穴': 'HT7',
+    },
     path: [
       // 腋→上臂→前臂→手 (内侧后缘)
       [-0.17, 1.21, 0.01],    // HT1 极泉
@@ -261,6 +281,10 @@ export const meridians: MeridianData[] = [
     type: 'regular',
     color: '#F368E0',
     description: '起于小指尺侧端，沿上肢外侧后缘上行，经肩胛，绕行面颊至耳前。',
+    specialPoints: {
+      '井穴': 'SI1', '荥穴': 'SI2', '输穴': 'SI3', '经穴': 'SI5', '合穴': 'SI8',
+      '原穴': 'SI4', '络穴': 'SI7', '母穴': 'SI3', '子穴': 'SI8',
+    },
     path: [
       // 小指→手背→前臂→肘→上臂→肩胛→颈→面→耳
       [-0.69, 0.98, -0.06],   // SI1 少泽
@@ -312,6 +336,10 @@ export const meridians: MeridianData[] = [
     type: 'regular',
     color: '#0ABDE3',
     description: '起于目内眦，上额交巅，从巅入络脑，下项沿脊柱两侧下行至足小趾外侧端。经脉最长，穴位最多。',
+    specialPoints: {
+      '井穴': 'BL67', '荥穴': 'BL66', '输穴': 'BL65', '经穴': 'BL60', '合穴': 'BL40',
+      '原穴': 'BL64', '络穴': 'BL58', '母穴': 'BL67', '子穴': 'BL40',
+    },
     path: [
       // BL 有两条线: 内侧线(BL1-BL40, 脊柱旁1.5寸)和外侧线(BL41-BL67, 脊柱旁3寸)
       // 这里用主线: BL1→BL10 头面, BL11-BL35 背腰(内线), BL36-BL40 臀腿上部
@@ -398,6 +426,10 @@ export const meridians: MeridianData[] = [
     type: 'regular',
     color: '#5F27CD',
     description: '起于足小趾之下，斜走足心涌泉，沿下肢内侧后缘上行，经腹、胸至锁骨下。',
+    specialPoints: {
+      '井穴': 'KI1', '荥穴': 'KI2', '输穴': 'KI3', '经穴': 'KI7', '合穴': 'KI10',
+      '原穴': 'KI3', '络穴': 'KI4', '母穴': 'KI7', '子穴': 'KI1',
+    },
     path: [
       // 足心→内踝→腿内侧后缘→腹→胸
       [-0.19, 0.05, -0.01],   // KI1 涌泉
@@ -465,6 +497,10 @@ export const meridians: MeridianData[] = [
     type: 'regular',
     color: '#E74C3C',
     description: '起于胸中，出属心包络，下膈，从胸走腋，沿上肢内侧中线至中指端。',
+    specialPoints: {
+      '井穴': 'PC9', '荥穴': 'PC8', '输穴': 'PC7', '经穴': 'PC5', '合穴': 'PC3',
+      '原穴': 'PC7', '络穴': 'PC6', '母穴': 'PC9', '子穴': 'PC7',
+    },
     path: [
       // 胸→腋→上臂→前臂→手 (内侧中线)
       [-0.11, 1.22, 0.07],    // PC1 天池
@@ -496,6 +532,10 @@ export const meridians: MeridianData[] = [
     type: 'regular',
     color: '#10AC84',
     description: '起于无名指尺侧端，沿上肢外侧中线上行，经肩、颈至耳后、眉梢。',
+    specialPoints: {
+      '井穴': 'TE1', '荥穴': 'TE2', '输穴': 'TE3', '经穴': 'TE6', '合穴': 'TE10',
+      '原穴': 'TE4', '络穴': 'TE5', '母穴': 'TE3', '子穴': 'TE10',
+    },
     path: [
       // 无名指→手背→前臂→肘→上臂→肩颈→耳→眉梢
       [-0.69, 0.98, -0.03],   // TE1 关冲
@@ -555,6 +595,10 @@ export const meridians: MeridianData[] = [
     type: 'regular',
     color: '#2ED573',
     description: '起于目外眦，上至头角，下耳后，沿颈、肩至躯干侧面，经下肢外侧至第四趾端。',
+    specialPoints: {
+      '井穴': 'GB44', '荥穴': 'GB43', '输穴': 'GB41', '经穴': 'GB38', '合穴': 'GB34',
+      '原穴': 'GB40', '络穴': 'GB37', '母穴': 'GB43', '子穴': 'GB38',
+    },
     path: [
       // 头面部蜿蜒→颈→躯干侧面→腿外侧→足
       [-0.07, 1.58, 0.05],    // GB1 瞳子髎
@@ -656,6 +700,10 @@ export const meridians: MeridianData[] = [
     type: 'regular',
     color: '#1DD1A1',
     description: '起于足大趾背侧，沿下肢内侧上行，经阴部绕腹部至胁肋部。',
+    specialPoints: {
+      '井穴': 'LR1', '荥穴': 'LR2', '输穴': 'LR3', '经穴': 'LR4', '合穴': 'LR8',
+      '原穴': 'LR3', '络穴': 'LR5', '母穴': 'LR8', '子穴': 'LR2',
+    },
     path: [
       // 大趾→足背→腿内侧→腹→胁肋
       [-0.21, 0.04, 0.02],    // LR1 大敦
