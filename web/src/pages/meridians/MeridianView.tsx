@@ -4,13 +4,15 @@ import { MenuOutlined } from '@ant-design/icons';
 import MeridianPanel from './MeridianPanel';
 import MeridianScene from './MeridianScene';
 import AcupointDetailPanel from './AcupointDetailPanel';
-import type { AcupointData } from './data/types';
+import MeridianDetailDrawer from './MeridianDetailDrawer';
+import type { AcupointData, MeridianData } from './data/types';
 import useIsMobile from '../../hooks/useIsMobile';
 
 export default function MeridianView() {
   const [selectedMeridians, setSelectedMeridians] = useState<string[]>([]);
   const [focusedAcupoint, setFocusedAcupoint] = useState<AcupointData | null>(null);
   const [panelDrawerOpen, setPanelDrawerOpen] = useState(false);
+  const [detailMeridian, setDetailMeridian] = useState<MeridianData | null>(null);
   const isMobile = useIsMobile();
 
   const handleMeridianToggle = useCallback((id: string) => {
@@ -31,11 +33,24 @@ export default function MeridianView() {
     setFocusedAcupoint(null);
   }, []);
 
+  const handleMeridianInfoClick = useCallback((meridian: MeridianData) => {
+    setDetailMeridian(meridian);
+  }, []);
+
+  const handleDrawerAcupointNavigate = useCallback((acupoint: AcupointData) => {
+    setFocusedAcupoint(acupoint);
+    if (!selectedMeridians.includes(acupoint.meridianId)) {
+      setSelectedMeridians(prev => [...prev, acupoint.meridianId]);
+    }
+    setDetailMeridian(null);
+  }, [selectedMeridians]);
+
   const panelContent = (
     <MeridianPanel
       selectedMeridians={selectedMeridians}
       onMeridianToggle={handleMeridianToggle}
       onAcupointSearch={handleAcupointSearch}
+      onMeridianInfoClick={handleMeridianInfoClick}
     />
   );
 
@@ -90,6 +105,13 @@ export default function MeridianView() {
         />
         <AcupointDetailPanel acupoint={focusedAcupoint} onClose={handleCloseDetail} isMobile={isMobile} />
       </div>
+      <MeridianDetailDrawer
+        meridian={detailMeridian}
+        open={!!detailMeridian}
+        onClose={() => setDetailMeridian(null)}
+        onAcupointNavigate={handleDrawerAcupointNavigate}
+        isMobile={isMobile}
+      />
     </div>
   );
 }
