@@ -46,6 +46,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	prescriptionHandler := handler.NewPrescriptionHandler(db)
 	tenantHandler := handler.NewTenantHandler(db)
 	aiAnalysisHandler := handler.NewAIAnalysisHandler(deepSeekService, db)
+	meridianResourceHandler := handler.NewMeridianResourceHandler(db)
 
 	// ---------- Route groups ----------
 
@@ -167,6 +168,13 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			pulses.POST("", middleware.RequirePermission(db, "role:manage"), pulseHandler.Create)
 			pulses.PUT("/:id", middleware.RequirePermission(db, "role:manage"), pulseHandler.Update)
 			pulses.DELETE("/:id", middleware.RequirePermission(db, "role:manage"), pulseHandler.Delete)
+		}
+
+		// Meridian resource routes (global data, authenticated).
+		meridianRes := authenticated.Group("/meridians")
+		{
+			meridianRes.GET("/:id/resource", meridianResourceHandler.Get)
+			meridianRes.PUT("/:id/resource", middleware.RequirePermission(db, "role:manage"), meridianResourceHandler.Update)
 		}
 
 		// Prescription routes (tenant-scoped).
