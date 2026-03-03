@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-03-02（新增脉象 CRUD 模块：PulseList 页面 + pulse API/handler/service）
+> 最后更新：2026-03-03（新增经络详情：穴位特殊属性 + 视频/出处后端存储 + 详情抽屉 UI）
 
 ---
 
@@ -43,6 +43,7 @@ menzhen/
 │   │   ├── formula.go               # List/Detail/Delete/UpdateComposition/UpdateName/UpdateNotes
 │   │   ├── prescription.go          # Create/Detail/Update/Delete/ListByRecord
 │   │   ├── pulse.go                 # List/Detail/Create/Update/Delete/Categories
+│   │   ├── meridian_resource.go     # Get/Update（经络视频+出处，upsert模式）
 │   │   ├── ai_analysis.go           # Analyze（AI 辩证论治，含缓存）+ SaveCached + GetCached
 │   │   ├── oplog.go                 # ListOpLogs/DeleteOpLog/BatchDeleteOpLogs
 │   │   ├── user.go                  # List/Update/Delete/AssignRoles
@@ -65,6 +66,7 @@ menzhen/
 │   │   ├── formula.go               # 方剂查询（DB + AI 回退 + 自动入库）
 │   │   ├── prescription.go          # 处方 CRUD
 │   │   ├── pulse.go                 # 脉象 CRUD + 分类列表
+│   │   ├── meridian_resource.go     # 经络资源 GetByMeridianID/Upsert
 │   │   ├── deepseek.go              # DeepSeek API 客户端（chat/chatLong/QueryHerb/QueryFormula/AnalyzeDiagnosis）
 │   │   ├── deepseek_test.go         # DeepSeek 测试
 │   │   ├── oplog.go                 # 操作日志 CRUD
@@ -89,6 +91,7 @@ menzhen/
 │       │   ├── formula.ts           # 方剂搜索/详情/删除/更新组成/更新备注
 │       │   ├── prescription.ts      # 处方 CRUD + 按记录查询
 │       │   ├── pulse.ts             # 脉象搜索/详情/分类/新增/更新/删除
+│       │   ├── meridian.ts          # 经络资源获取/更新（视频+出处）
 │       │   ├── upload.ts            # 文件上传
 │       │   ├── oplog.ts             # 操作日志查询/删除
 │       │   ├── user.ts              # 用户管理
@@ -120,7 +123,8 @@ menzhen/
 │       │   │   └── __tests__/
 │       │   ├── meridians/           # 经络穴位3D可视化（Three.js + R3F）
 │       │   │   ├── MeridianView.tsx     # 页面入口（桌面端左右布局，移动端左面板→Drawer + 浮动按钮）
-│       │   │   ├── MeridianPanel.tsx    # 左侧控制面板（搜索/经络列表+穴位展开列表，点击穴位定位）
+│       │   │   ├── MeridianPanel.tsx    # 左侧控制面板（搜索/经络列表+穴位展开列表+info按钮打开详情抽屉）
+│       │   │   ├── MeridianDetailDrawer.tsx # 经络详情抽屉（特殊穴位属性+视频+出处，管理员可编辑）
 │       │   │   ├── MeridianScene.tsx    # 3D场景容器（Canvas + 合并BVH投影 + 相机旋转优化）
 │       │   │   ├── HumanBodyModel.tsx   # 人体模型（GLB加载，scale only无旋转，onModelLoaded回调）
 │       │   │   ├── MeridianPath.tsx     # 经络路径渲染（TubeGeometry + 合并BVH表面投影 + 水流ShaderMaterial）
@@ -130,8 +134,8 @@ menzhen/
 │       │   │   ├── utils/
 │       │   │   │   └── surfaceProjection.ts # BVH加速表面投影（three-mesh-bvh）
 │       │   │   └── data/
-│       │   │       ├── types.ts         # MeridianData/AcupointData 类型
-│       │   │       ├── meridians.ts     # 20条经络静态数据（路径坐标，全部14条正经+RN/DU路径已精修对齐穴位）
+│       │   │       ├── types.ts         # MeridianData/AcupointData/SpecialPointType 类型
+│       │   │       ├── meridians.ts     # 20条经络静态数据（路径坐标+12正经specialPoints特殊穴位）
 │       │   │       └── acupoints.ts     # 穴位静态数据（367穴全部补全，14条正经+6条奇经）
 │       │   ├── pulses/              # 脉象查询
 │       │   │   └── PulseList.tsx    # 脉象列表（分页+名称/分类搜索，管理员可行内编辑/新增/删除）
@@ -225,6 +229,18 @@ menzhen/
 | `features` | `text` | 脉象特征 |
 | `indications` | `text` | 主治/临床意义 |
 | `description` | `text` | 详细描述 |
+| `created_at` | `time.Time` | 创建时间 |
+| `updated_at` | `time.Time` | 更新时间 |
+
+#### `meridian_resources` — 经络资源（视频+出处）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | `uint64` | 主键 |
+| `meridian_id` | `varchar(10)` | 经络ID（唯一索引），如 LU, LI, ST |
+| `video_url` | `text` | 视频链接 |
+| `source_text` | `text` | 出处介绍文字 |
+| `updated_by` | `uint64` | 最后编辑者用户ID |
 | `created_at` | `time.Time` | 创建时间 |
 | `updated_at` | `time.Time` | 更新时间 |
 
@@ -457,6 +473,13 @@ menzhen/
 | POST | `/api/v1/pulses` | `role:manage` | 新增脉象 |
 | PUT | `/api/v1/pulses/:id` | `role:manage` | 更新脉象 |
 | DELETE | `/api/v1/pulses/:id` | `role:manage` | 删除脉象 |
+
+#### 经络资源（全局数据）
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| GET | `/api/v1/meridians/:id/resource` | - | 获取经络视频和出处 |
+| PUT | `/api/v1/meridians/:id/resource` | `role:manage` | 更新经络视频和出处（upsert） |
 
 #### 处方管理（租户隔离）
 
