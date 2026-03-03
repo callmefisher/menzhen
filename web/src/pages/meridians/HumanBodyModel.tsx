@@ -2,19 +2,23 @@ import { useRef, useMemo, useEffect } from 'react';
 import * as THREE from 'three';
 import { useGLTF } from '@react-three/drei';
 
+export type ModelType = 'female' | 'male';
+
+const MODEL_CONFIGS: Record<ModelType, { url: string; scale: number; offsetY: number }> = {
+  female: { url: '/models/sport-girl.glb', scale: 1.64 / 176.5, offsetY: 0 },
+  male:   { url: '/models/male.glb',       scale: 1.64 / 2.9342, offsetY: 1.4755 },
+  // male model: raw height ~2.93, feet at Y=-1.4755, shift up so feet at Y=0
+};
+
 interface HumanBodyModelProps {
+  modelType?: ModelType;
   onModelLoaded?: (group: THREE.Group) => void;
 }
 
-// Sport girl GLB: raw vertices are Z-up (0~176.5), but the GLB's internal
-// Sketchfab_model node already has Rx(-90°) converting to Y-up.
-// We only need uniform scale, NO extra rotation.
-const MODEL_URL = '/models/sport-girl.glb';
-const MODEL_SCALE = 1.64 / 176.5; // ~0.00929
-
-export default function HumanBodyModel({ onModelLoaded }: HumanBodyModelProps) {
+export default function HumanBodyModel({ modelType = 'female', onModelLoaded }: HumanBodyModelProps) {
   const groupRef = useRef<THREE.Group>(null);
-  const { scene } = useGLTF(MODEL_URL);
+  const config = MODEL_CONFIGS[modelType];
+  const { scene } = useGLTF(config.url);
 
   const clonedScene = useMemo(() => scene.clone(true), [scene]);
 
@@ -26,12 +30,14 @@ export default function HumanBodyModel({ onModelLoaded }: HumanBodyModelProps) {
 
   return (
     <group ref={groupRef}>
-      {/* Scale only — GLB already handles Z-up → Y-up via internal rotation */}
-      <group scale={[MODEL_SCALE, MODEL_SCALE, MODEL_SCALE]}>
+      {/* Scale + optional Y offset — GLB handles Z-up → Y-up via internal rotation */}
+      <group scale={[config.scale, config.scale, config.scale]} position={[0, config.offsetY * config.scale, 0]}>
         <primitive object={clonedScene} />
       </group>
     </group>
   );
 }
 
-useGLTF.preload(MODEL_URL);
+// Preload both models
+useGLTF.preload(MODEL_CONFIGS.female.url);
+useGLTF.preload(MODEL_CONFIGS.male.url);

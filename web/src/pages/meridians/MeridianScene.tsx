@@ -3,6 +3,7 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import HumanBodyModel from './HumanBodyModel';
+import type { ModelType } from './HumanBodyModel';
 import MeridianPath from './MeridianPath';
 import AcupointMarker from './AcupointMarker';
 import { meridianMap } from './data/meridians';
@@ -15,6 +16,7 @@ interface MeridianSceneProps {
   selectedMeridians: string[];
   focusedAcupoint: AcupointData | null;
   onAcupointClick: (acupoint: AcupointData | null) => void;
+  modelType?: ModelType;
 }
 
 // Model center Y ≈ 0.82 (feet=0, head=1.64)
@@ -25,7 +27,7 @@ function CameraController(_props: { focusedAcupoint: AcupointData | null }) {
   return null;
 }
 
-function SceneContent({ selectedMeridians, focusedAcupoint, onAcupointClick }: MeridianSceneProps) {
+function SceneContent({ selectedMeridians, focusedAcupoint, onAcupointClick, modelType = 'female' }: MeridianSceneProps) {
   const [mergedBVH, setMergedBVH] = useState<MergedBVH | null>(null);
 
   // Build merged BVH when model loads
@@ -74,7 +76,7 @@ function SceneContent({ selectedMeridians, focusedAcupoint, onAcupointClick }: M
       <CameraController focusedAcupoint={focusedAcupoint} />
 
       {/* Human body model (opaque only) */}
-      <HumanBodyModel onModelLoaded={handleModelLoaded} />
+      <HumanBodyModel modelType={modelType} onModelLoaded={handleModelLoaded} />
 
       {/* Meridian paths — BVH projects guide points onto model surface */}
       {selectedMeridians.map(id => {
@@ -98,6 +100,7 @@ function SceneContent({ selectedMeridians, focusedAcupoint, onAcupointClick }: M
 }
 
 export default function MeridianScene(props: MeridianSceneProps) {
+  const modelType = props.modelType ?? 'female';
   return (
     <Canvas
       camera={{
@@ -108,7 +111,7 @@ export default function MeridianScene(props: MeridianSceneProps) {
       }}
       style={{ background: '#1a1a2e' }}
     >
-      <SceneContent {...props} />
+      <SceneContent key={modelType} {...props} />
     </Canvas>
   );
 }
