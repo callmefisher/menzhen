@@ -1,11 +1,12 @@
 import { useState, useCallback } from 'react';
-import { Drawer, Button } from 'antd';
+import { Drawer, Button, Segmented } from 'antd';
 import { MenuOutlined } from '@ant-design/icons';
 import MeridianPanel from './MeridianPanel';
 import MeridianScene from './MeridianScene';
 import AcupointDetailPanel from './AcupointDetailPanel';
 import MeridianDetailDrawer from './MeridianDetailDrawer';
 import type { AcupointData, MeridianData } from './data/types';
+import type { ModelType } from './HumanBodyModel';
 import useIsMobile from '../../hooks/useIsMobile';
 
 export default function MeridianView() {
@@ -13,6 +14,7 @@ export default function MeridianView() {
   const [focusedAcupoint, setFocusedAcupoint] = useState<AcupointData | null>(null);
   const [panelDrawerOpen, setPanelDrawerOpen] = useState(false);
   const [detailMeridian, setDetailMeridian] = useState<MeridianData | null>(null);
+  const [modelType, setModelType] = useState<ModelType>('female');
   const isMobile = useIsMobile();
 
   const handleMeridianToggle = useCallback((id: string) => {
@@ -102,6 +104,22 @@ export default function MeridianView() {
           selectedMeridians={selectedMeridians}
           focusedAcupoint={focusedAcupoint}
           onAcupointClick={setFocusedAcupoint}
+          modelType={modelType}
+        />
+        <Segmented
+          options={[
+            { label: '女', value: 'female' },
+            { label: '男', value: 'male' },
+          ]}
+          value={modelType}
+          onChange={v => setModelType(v as ModelType)}
+          style={{
+            position: 'absolute',
+            top: 8,
+            right: 8,
+            zIndex: 10,
+          }}
+          size="small"
         />
         <AcupointDetailPanel acupoint={focusedAcupoint} onClose={handleCloseDetail} isMobile={isMobile} />
       </div>
