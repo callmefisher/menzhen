@@ -24,6 +24,28 @@ for (const a of acupoints) {
 const FIVE_SHU: SpecialPointType[] = ['井穴', '荥穴', '输穴', '经穴', '合穴'];
 const OTHER_SPECIAL: SpecialPointType[] = ['原穴', '络穴', '母穴', '子穴'];
 
+/**
+ * Convert video platform page URLs to embeddable URLs.
+ * Returns { type: 'iframe', src } for platform URLs,
+ *         { type: 'video', src } for direct file URLs.
+ */
+function parseVideoUrl(url: string): { type: 'iframe' | 'video'; src: string } {
+  // Bilibili: https://www.bilibili.com/video/BV19mtyzKEmP or /BV19mtyzKEmP?p=1
+  const biliMatch = url.match(/bilibili\.com\/video\/(BV[\w]+)/);
+  if (biliMatch) {
+    return { type: 'iframe', src: `https://player.bilibili.com/player.html?bvid=${biliMatch[1]}&page=1&high_quality=1&danmaku=0&autoplay=0` };
+  }
+
+  // YouTube: https://www.youtube.com/watch?v=xxx or https://youtu.be/xxx
+  const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/);
+  if (ytMatch) {
+    return { type: 'iframe', src: `https://www.youtube.com/embed/${ytMatch[1]}` };
+  }
+
+  // Default: treat as direct video file
+  return { type: 'video', src: url };
+}
+
 export default function MeridianDetailDrawer({
   meridian,
   open,
@@ -138,9 +160,12 @@ export default function MeridianDetailDrawer({
         placement="right"
         width={isMobile ? '100%' : 480}
         open={open}
-        onClose={onClose}
+        onClose={() => {
+          // Don't close drawer while editing modal is open
+          if (videoModalOpen || sourceModalOpen) return;
+          onClose();
+        }}
         title={drawerTitle}
-        destroyOnClose
       >
         {!meridian ? null : loading ? (
           <div style={{ textAlign: 'center', padding: 40 }}>
@@ -228,9 +253,20 @@ export default function MeridianDetailDrawer({
                   />
                 )}
               </div>
-              {resource?.video_url ? (
-                <video controls width="100%" src={resource.video_url} style={{ borderRadius: 8 }} />
-              ) : (
+              {resource?.video_url ? (() => {
+                const parsed = parseVideoUrl(resource.video_url);
+                return parsed.type === 'iframe' ? (
+                  <iframe
+                    src={parsed.src}
+                    width="100%"
+                    style={{ borderRadius: 8, aspectRatio: '4/3', border: 'none', minHeight: 320 }}
+                    allowFullScreen
+                    sandbox="allow-scripts allow-same-origin allow-popups"
+                  />
+                ) : (
+                  <video controls width="100%" src={parsed.src} style={{ borderRadius: 8 }} />
+                );
+              })() : (
                 <div style={{ color: '#999', fontSize: 13 }}>暂无视频介绍</div>
               )}
             </div>
