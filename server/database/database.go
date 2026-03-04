@@ -47,6 +47,7 @@ func InitDB(cfg *config.Config) *gorm.DB {
 		&model.AIAnalysis{},
 		&model.Pulse{},
 		&model.MeridianResource{},
+		&model.WuyunLiuqi{},
 	)
 	if err != nil {
 		log.Panicf("failed to auto-migrate database: %v", err)

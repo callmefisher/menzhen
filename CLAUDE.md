@@ -63,95 +63,18 @@
 | 数据库 | MySQL 8.0 |
 | 文件存储 | MinIO |
 | 认证 | JWT + RBAC |
-| AI | DeepSeek API（中药/方剂查询回退 + AI辅助辩证论治） |
+| AI | DeepSeek API（中药/方剂查询回退 + AI辅助辩证论治 + 五运六气流式分析） |
 | 测试 | Go test (后端) + Vitest + Testing Library (前端) |
 | 部署 | Docker Compose + Nginx |
 
-## 项目结构
+## 项目结构 · 数据模型 · API 路由
 
-```
-menzhen/
-├── server/          # Go 后端
-│   ├── config/      # 配置加载（含 DeepSeek 配置）
-│   ├── database/    # DB连接、迁移、种子数据
-│   ├── handler/     # HTTP处理器
-│   ├── middleware/   # JWT认证、RBAC、租户隔离、OpLog
-│   ├── model/       # GORM数据模型
-│   ├── router/      # 路由注册
-│   ├── service/     # 业务逻辑（含 DeepSeek 服务）
-│   └── storage/     # MinIO客户端
-├── web/             # React 前端
-│   └── src/
-│       ├── api/     # API调用封装
-│       ├── components/ # 通用组件（含处方弹窗、打印）
-│       ├── pages/   # 页面组件（含中药/方剂查询、经络穴位3D）
-│       ├── store/   # 状态管理
-│       ├── test/    # 测试配置
-│       └── utils/   # 工具函数
-├── nginx/           # Nginx配置
-├── scripts/         # 备份恢复脚本 + 七牛云上传
-├── docker-compose.yml
-└── deploy.sh        # 一键部署
-```
+> 详见 [Codebase 全局上下文](docs/codebase.md)，包含文件级结构、逐字段数据模型、完整 API 路由清单。
 
-## 数据模型
-
-### 核心表
-- `tenants` — 租户
-- `users`, `roles`, `permissions` — 用户权限
-- `patients` — 患者（租户隔离，含生日自动算年龄）
-- `medical_records` — 诊疗记录（租户隔离）
-- `record_attachments` — 附件
-
-### 中医药表
-- `herbs` — 中药（全局，无租户隔离，含道地产区，管理员可编辑）
-- `formulas` — 方剂（全局，含 JSON 组成）
-- `pulses` — 脉象（全局，无租户隔离，纯手动维护）
-- `meridian_resources` — 经络资源（全局，视频链接+出处文字，管理员可编辑）
-- `prescriptions` — 处方（租户隔离，关联诊疗记录）
-- `prescription_items` — 处方药物明细
-
-### AI 相关表
-- `ai_analyses` — AI辩证论治分析缓存（租户隔离，record_id 唯一索引）
-
-### 权限码
-`patient:create/read/update/delete`, `record:create/read/update/delete`, `oplog:read`, `user:manage`, `role:manage`, `herb:read`, `formula:read`, `pulse:read`, `prescription:create`, `prescription:read`, `tenant:manage`
-
-## API 路由
-
-### 中医药相关
-| 方法 | 路径 | 权限 | 说明 |
-|------|------|------|------|
-| GET | `/api/v1/herbs` | - | 搜索中药（DB+AI回退） |
-| GET | `/api/v1/herbs/categories` | - | 中药分类列表 |
-| GET | `/api/v1/herbs/:id` | - | 中药详情 |
-| PUT | `/api/v1/herbs/:id` | role:manage | 更新中药（药名/别名/分类/性味/功效/主治/道地产区） |
-| POST | `/api/v1/herbs/:id/ai-refresh` | role:manage | AI重新查询中药信息并更新 |
-| GET | `/api/v1/formulas` | - | 搜索方剂（DB+AI回退） |
-| GET | `/api/v1/formulas/:id` | - | 方剂详情 |
-| PUT | `/api/v1/formulas/:id/name` | role:manage | 更新方剂名称 |
-| PUT | `/api/v1/formulas/:id/notes` | role:manage | 更新方剂备注 |
-| PUT | `/api/v1/formulas/:id/composition` | role:manage | 更新方剂组成 |
-| GET | `/api/v1/pulses` | - | 搜索脉象（分页+名称/分类筛选） |
-| GET | `/api/v1/pulses/categories` | - | 脉象分类列表 |
-| GET | `/api/v1/pulses/:id` | - | 脉象详情 |
-| POST | `/api/v1/pulses` | role:manage | 新增脉象 |
-| PUT | `/api/v1/pulses/:id` | role:manage | 更新脉象 |
-| DELETE | `/api/v1/pulses/:id` | role:manage | 删除脉象 |
-| GET | `/api/v1/meridians/:id/resource` | - | 获取经络视频和出处 |
-| PUT | `/api/v1/meridians/:id/resource` | role:manage | 更新经络视频和出处（upsert） |
-| POST | `/api/v1/prescriptions` | prescription:create | 创建处方 |
-| GET | `/api/v1/prescriptions/:id` | prescription:read | 处方详情 |
-| PUT | `/api/v1/prescriptions/:id` | prescription:create | 更新处方 |
-| DELETE | `/api/v1/prescriptions/:id` | prescription:create | 删除处方 |
-| GET | `/api/v1/records/:id/prescriptions` | prescription:read | 某次就诊处方列表 |
-
-### AI 分析
-| 方法 | 路径 | 权限 | 说明 |
-|------|------|------|------|
-| POST | `/api/v1/ai/analyze-diagnosis` | record:read | AI 辅助辩证论治分析（支持缓存） |
-| GET | `/api/v1/records/:id/ai-analysis` | record:read | 获取已缓存的 AI 分析结果 |
-| POST | `/api/v1/records/:id/ai-analysis` | record:read | 直接保存 AI 分析结果（新建记录回写） |
+### 关键架构要点
+- **租户隔离**：patients/records/prescriptions/ai_analyses 表含 `tenant_id`
+- **全局数据**：herbs/formulas/pulses/meridian_resources/wuyun_liuqi 无租户隔离
+- **权限码**：`patient:create/read/update/delete`, `record:create/read/update/delete`, `oplog:read`, `user:manage`, `role:manage`, `herb:read`, `formula:read`, `pulse:read`, `prescription:create`, `prescription:read`, `tenant:manage`
 
 ## 开发环境
 

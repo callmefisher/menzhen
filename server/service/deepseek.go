@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -56,6 +57,7 @@ type aiRequest struct {
 	System    string      `json:"system,omitempty"`
 	Messages  []aiMessage `json:"messages"`
 	MaxTokens int         `json:"max_tokens"`
+	Stream    bool        `json:"stream,omitempty"`
 }
 
 type aiContentBlock struct {
@@ -244,13 +246,29 @@ func (s *DeepSeekService) AnalyzeDiagnosis(diagnosis string) (string, error) {
 		return "", ErrDeepSeekDisabled
 	}
 
-	systemPrompt := `你是一名执业临床5000年的中医药专家，也是一名现代医学专家，精通黄帝内经，伤寒论，金匮要略，温病条辨，神农本草经，诸病源候论，针灸甲乙经以及历代各个著名中医大家(例如古代张仲景，孙思邈，金元四大家，叶天士，王孟英，当代和近代其他医学大家)的著作和医案。也非常熟悉中国的传统哲学经典例如道德经，论语，诗经，易经，中庸等各个时期的经典著作，深刻了解中药的性味归经和针对生理的独有特性，也熟悉现代医学的解剖学，生理病理学等。
+	systemPrompt := `你是一名执业临床5000年的中医药专家，也是一名现代医学专家，精通黄帝内经，伤寒论，金匮要略，温病条辨，神农本草经，诸病源候论，针灸甲乙经,五运六气学说以及历代中医大家(例如张仲景，孙思邈，金元四大家,叶天士,王孟英,近现代的施今墨,赵绍琴,胡希恕,邓铁涛,李可,倪海厦,李阳波,针灸专家贺普仁,石学敏,吕景山,董氏奇穴董景昌的著作和医案。也非常熟悉中国的传统哲学经典例如道德经，论语，诗经，易经等各个时期的经典著作，深刻了解中药的性味归经和特性，也熟悉现代医学的解剖学，生理病理学等。
 
 请从哲学、中医学等各个角度，引用上述经典著作作为理论依据，进行深刻的辩证论治，提供临床和理法方药参考。请以 Markdown 格式输出分析结果，使用标题、列表、加粗等格式，确保层次分明、可读性强。`
 
 	userPrompt := fmt.Sprintf("请针对以下诊断信息进行全面的辩证论治分析：\n\n%s", diagnosis)
 
 	return s.chatLong(systemPrompt, userPrompt)
+}
+
+// AnalyzeDiagnosisStream calls DeepSeek to perform TCM+modern medicine analysis with streaming.
+// Returns the full concatenated text when done.
+func (s *DeepSeekService) AnalyzeDiagnosisStream(diagnosis string, onChunk func(string) error) (string, error) {
+	if !s.IsEnabled() {
+		return "", ErrDeepSeekDisabled
+	}
+
+	systemPrompt := `你是一名执业临床5000年的中医药专家，也是一名现代医学专家，精通黄帝内经，伤寒论，金匮要略，温病条辨，神农本草经，诸病源候论，针灸甲乙经,五运六气学说以及历代中医大家(例如张仲景，孙思邈，金元四大家,叶天士,王孟英,近现代的施今墨,赵绍琴,胡希恕,邓铁涛,李可,倪海厦,李阳波,针灸专家贺普仁,石学敏,吕景山,董氏奇穴董景昌的著作和医案。也非常熟悉中国的传统哲学经典例如道德经，论语，诗经，易经等各个时期的经典著作，深刻了解中药的性味归经和特性，也熟悉现代医学的解剖学，生理病理学等。
+
+请从哲学、中医学等各个角度，引用上述经典著作作为理论依据，进行深刻的辩证论治，提供临床和理法方药参考。请以 Markdown 格式输出分析结果，使用标题、列表、加粗等格式，确保层次分明、可读性强。`
+
+	userPrompt := fmt.Sprintf("请针对以下诊断信息进行全面的辩证论治分析：\n\n%s", diagnosis)
+
+	return s.chatStream(systemPrompt, userPrompt, onChunk)
 }
 
 // chatLong sends a request to the AI API with a longer timeout and higher token limit for analysis tasks.
@@ -316,6 +334,143 @@ func (s *DeepSeekService) chatLong(systemPrompt, userPrompt string) (string, err
 	}
 
 	return strings.Join(textParts, ""), nil
+}
+
+// streamEvent represents one SSE event from the Anthropic streaming API.
+type streamEvent struct {
+	Type  string `json:"type"`
+	Delta *struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	} `json:"delta,omitempty"`
+}
+
+// chatStream sends a streaming request to the AI API and calls onChunk for each text delta.
+// It returns the full concatenated text when done.
+func (s *DeepSeekService) chatStream(systemPrompt, userPrompt string, onChunk func(string) error) (string, error) {
+	reqBody := aiRequest{
+		Model:  s.Model,
+		System: systemPrompt,
+		Messages: []aiMessage{
+			{Role: "user", Content: userPrompt},
+		},
+		MaxTokens: 4096,
+		Stream:    true,
+	}
+
+	bodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", s.BaseURL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+s.APIKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	client := &http.Client{Timeout: 180 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrDeepSeekFailed, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		log.Printf("DeepSeek API error: status=%d body=%s", resp.StatusCode, string(respBody))
+		return "", fmt.Errorf("%w: status %d", ErrDeepSeekFailed, resp.StatusCode)
+	}
+
+	var fullText strings.Builder
+	scanner := bufio.NewScanner(resp.Body)
+	// Increase buffer size for potentially large SSE lines.
+	scanner.Buffer(make([]byte, 0, 64*1024), 256*1024)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		data := strings.TrimPrefix(line, "data: ")
+		if data == "[DONE]" {
+			break
+		}
+
+		var evt streamEvent
+		if err := json.Unmarshal([]byte(data), &evt); err != nil {
+			continue
+		}
+
+		if evt.Type == "content_block_delta" && evt.Delta != nil && evt.Delta.Type == "text_delta" {
+			fullText.WriteString(evt.Delta.Text)
+			if onChunk != nil {
+				if err := onChunk(evt.Delta.Text); err != nil {
+					return fullText.String(), err
+				}
+			}
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return fullText.String(), fmt.Errorf("stream read error: %w", err)
+	}
+
+	result := fullText.String()
+	if result == "" {
+		return "", fmt.Errorf("%w: no text content returned from stream", ErrDeepSeekFailed)
+	}
+
+	return result, nil
+}
+
+// QueryWuyunLiuqiStream queries DeepSeek for Five Phases and Six Qi analysis with streaming.
+func (s *DeepSeekService) QueryWuyunLiuqiStream(year int, onChunk func(string) error) (string, error) {
+	if !s.IsEnabled() {
+		return "", ErrDeepSeekDisabled
+	}
+
+	systemPrompt := `你是1个贯古通今的五运六气研究学者，精通黄帝内经、素问、运气七篇等经典著作。
+请根据用户提供的年份，以 Markdown 格式返回以下内容，确保层次分明、可读性强：
+
+1. **天干地支**：该年份的干支纪年
+2. **五运分析**：大运、主运、客运的详细分析
+3. **六气分析**：主气、客气的逐步推演，司天、在泉、各气的升降变化
+4. **气候与疾病预测**：基于运气推演，该年可能出现的气候特点和多发疾病
+5. **养生建议**：针对该年运气特点的饮食、起居、情志调养建议
+6. **重要补充知识**：你认为对了解该年五运六气很重要的其他知识
+
+请引用经典原文作为理论依据，使用标题、列表、加粗等 Markdown 格式。`
+
+	userPrompt := fmt.Sprintf("请分析 %d 年的五运六气。", year)
+
+	return s.chatStream(systemPrompt, userPrompt, onChunk)
+}
+
+// QueryWuyunLiuqi queries DeepSeek for Five Phases and Six Qi analysis (non-streaming).
+func (s *DeepSeekService) QueryWuyunLiuqi(year int) (string, error) {
+	if !s.IsEnabled() {
+		return "", ErrDeepSeekDisabled
+	}
+
+	systemPrompt := `你是1个贯古通今的五运六气研究学者，精通黄帝内经、素问、运气七篇等经典著作。
+请根据用户提供的年份，以 Markdown 格式返回以下内容，确保层次分明、可读性强：
+
+1. **天干地支**：该年份的干支纪年
+2. **五运分析**：大运、主运、客运的详细分析
+3. **六气分析**：主气、客气的逐步推演，司天、在泉、各气的升降变化
+4. **气候与疾病预测**：基于运气推演，该年可能出现的气候特点和多发疾病
+5. **养生建议**：针对该年运气特点的饮食、起居、情志调养建议
+6. **重要补充知识**：你认为对了解该年五运六气很重要的其他知识
+
+请引用经典原文作为理论依据，使用标题、列表、加粗等 Markdown 格式。`
+
+	userPrompt := fmt.Sprintf("请分析 %d 年的五运六气。", year)
+
+	return s.chatLong(systemPrompt, userPrompt)
 }
 
 // parseJSONFromContent extracts and parses JSON from AI response content.

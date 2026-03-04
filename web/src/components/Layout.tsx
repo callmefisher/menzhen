@@ -18,6 +18,7 @@ import {
   BankOutlined,
   ApartmentOutlined,
   HeartOutlined,
+  CloudOutlined,
 } from '@ant-design/icons';
 import type { MenuProps as AntMenuProps } from 'antd';
 import { useAuth } from '../store/auth';
@@ -80,6 +81,11 @@ export default function AppLayout() {
         key: '/pulses',
         icon: <HeartOutlined />,
         label: '脉象',
+      },
+      {
+        key: '/wuyun',
+        icon: <CloudOutlined />,
+        label: '五运六气',
       },
     ];
     items.push({
@@ -147,6 +153,7 @@ export default function AppLayout() {
     if (path.startsWith('/formulas')) return ['/formulas'];
     if (path.startsWith('/meridians')) return ['/meridians'];
     if (path.startsWith('/pulses')) return ['/pulses'];
+    if (path.startsWith('/wuyun')) return ['/wuyun'];
     if (path.startsWith('/records')) return ['/records'];
     return ['/records'];
   }, [location.pathname]);
@@ -154,7 +161,7 @@ export default function AppLayout() {
   const openKeys = useMemo(() => {
     const path = location.pathname;
     if (path.startsWith('/settings')) return ['/settings'];
-    if (path.startsWith('/herbs') || path.startsWith('/formulas') || path.startsWith('/meridians') || path.startsWith('/pulses')) return ['/tcm'];
+    if (path.startsWith('/herbs') || path.startsWith('/formulas') || path.startsWith('/meridians') || path.startsWith('/pulses') || path.startsWith('/wuyun')) return ['/tcm'];
     return ['/tcm', '/settings'];
   }, [location.pathname]);
 

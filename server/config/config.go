@@ -35,9 +35,9 @@ func Load() *Config {
 		MinIOBucket:    getEnv("MINIO_BUCKET", "menzhen"),
 		ServerPort:     getEnv("SERVER_PORT", "8080"),
 
-		DeepSeekAPIKey:  getEnv("DEEPSEEK_API_KEY", "sk-5a93518426b07bb07cab7abe9e07cf2329152261bad5f8924f18717c7cdc390d"),
-		DeepSeekBaseURL: getEnv("DEEPSEEK_BASE_URL", "https://api.qnaigc.com/v1/messages"),
-		DeepSeekModel:   getEnv("DEEPSEEK_MODEL", "deepseek/deepseek-v3.2-251201"),
+		DeepSeekAPIKey:  getEnv("DEEPSEEK_API_KEY", ""),
+		DeepSeekBaseURL: getEnv("DEEPSEEK_BASE_URL", ""),
+		DeepSeekModel:   getEnv("DEEPSEEK_MODEL", ""),
 	}
 }
 

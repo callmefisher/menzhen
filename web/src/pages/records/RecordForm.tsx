@@ -24,7 +24,10 @@ import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { getRecord, createRecord, updateRecord, aiAnalyzeDiagnosis, getCachedAiAnalysis, saveAiAnalysis } from '../../api/record';
+import { getRecord, createRecord, updateRecord, getCachedAiAnalysis, saveAiAnalysis } from '../../api/record';
+// Legacy non-streaming import kept for potential switch-back:
+// import { aiAnalyzeDiagnosis } from '../../api/record';
+import { streamAiAnalysis } from '../../utils/sse';
 import { listPatients, createPatient, getPatient } from '../../api/patient';
 import {
   listPrescriptionsByRecord,
@@ -101,6 +104,7 @@ export default function RecordForm() {
   const [aiResult, setAiResult] = useState<string>('');
   const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
   const [aiCached, setAiCached] = useState(false);
+  const aiAbortRef = useRef<AbortController | null>(null);
 
   // Search patients by name
   const searchPatients = useCallback(async (name?: string) => {
@@ -331,28 +335,70 @@ export default function RecordForm() {
     }
   };
 
-  const handleAiAnalysis = async (force = false) => {
+  // --- Streaming AI analysis (current implementation) ---
+  const handleAiAnalysis = (force = false) => {
     const diagnosis = form.getFieldValue('diagnosis');
     if (!diagnosis?.trim()) {
       message.warning('请先输入诊断内容');
       return;
     }
+    // Cancel any previous stream
+    aiAbortRef.current?.abort();
+
     setAiAnalyzing(true);
     setAiDrawerOpen(true);
     setAiResult('');
     setAiCached(false);
-    try {
-      const recordId = id ? Number(id) : undefined;
-      const res = await aiAnalyzeDiagnosis(diagnosis.trim(), recordId, force);
-      const body = res as unknown as { data: { analysis: string; cached: boolean } };
-      setAiResult(body.data.analysis || '未获取到分析结果');
-      setAiCached(body.data.cached);
-    } catch {
-      setAiResult('AI 分析请求失败，请稍后重试');
-    } finally {
-      setAiAnalyzing(false);
-    }
+
+    let accumulated = '';
+    const recordId = id ? Number(id) : undefined;
+
+    const controller = streamAiAnalysis(diagnosis.trim(), recordId, force, {
+      onChunk: (text) => {
+        accumulated += text;
+        setAiResult(accumulated);
+      },
+      onDone: () => {
+        setAiAnalyzing(false);
+      },
+      onCached: (evt) => {
+        const e = evt as Record<string, unknown>;
+        setAiResult((e.analysis as string) || '未获取到分析结果');
+        setAiCached(true);
+        setAiAnalyzing(false);
+      },
+      onError: (error) => {
+        setAiResult(error || 'AI 分析请求失败，请稍后重试');
+        setAiAnalyzing(false);
+      },
+    });
+
+    aiAbortRef.current = controller;
   };
+
+  // --- Non-streaming AI analysis (legacy, switch back if needed) ---
+  // const handleAiAnalysisLegacy = async (force = false) => {
+  //   const diagnosis = form.getFieldValue('diagnosis');
+  //   if (!diagnosis?.trim()) {
+  //     message.warning('请先输入诊断内容');
+  //     return;
+  //   }
+  //   setAiAnalyzing(true);
+  //   setAiDrawerOpen(true);
+  //   setAiResult('');
+  //   setAiCached(false);
+  //   try {
+  //     const recordId = id ? Number(id) : undefined;
+  //     const res = await aiAnalyzeDiagnosis(diagnosis.trim(), recordId, force);
+  //     const body = res as unknown as { data: { analysis: string; cached: boolean } };
+  //     setAiResult(body.data.analysis || '未获取到分析结果');
+  //     setAiCached(body.data.cached);
+  //   } catch {
+  //     setAiResult('AI 分析请求失败，请稍后重试');
+  //   } finally {
+  //     setAiAnalyzing(false);
+  //   }
+  // };
 
   const handleOpenPrescriptionModal = (prescription?: PrescriptionData) => {
     setEditingPrescription(prescription || null);
@@ -801,7 +847,11 @@ export default function RecordForm() {
         placement="right"
         width={isMobile ? '100%' : 720}
         open={aiDrawerOpen}
-        onClose={() => setAiDrawerOpen(false)}
+        onClose={() => {
+          aiAbortRef.current?.abort();
+          setAiAnalyzing(false);
+          setAiDrawerOpen(false);
+        }}
         styles={{
           body: { padding: 0 },
         }}
@@ -819,7 +869,8 @@ export default function RecordForm() {
           ) : undefined
         }
       >
-        {aiAnalyzing ? (
+        {/* Loading state: only show full spinner when no content yet */}
+        {aiAnalyzing && !aiResult && (
           <div style={{
             display: 'flex',
             flexDirection: 'column',
@@ -833,10 +884,13 @@ export default function RecordForm() {
               AI 正在从中医学、现代医学等多维度进行辩证论治分析...
             </div>
             <div style={{ color: '#999', fontSize: 13 }}>
-              分析较为详尽，请耐心等候（约 30-60 秒）
+              分析内容将实时显示
             </div>
           </div>
-        ) : (
+        )}
+
+        {/* Content area: shown when there's any result (streaming or complete) */}
+        {aiResult && (
           <div style={{ padding: '24px 32px' }}>
             <div style={{
               background: 'linear-gradient(135deg, #e8f4fd 0%, #f0e6ff 100%)',
@@ -970,16 +1024,21 @@ export default function RecordForm() {
               >
                 {aiResult}
               </Markdown>
+              {aiAnalyzing && <Spin size="small" style={{ marginLeft: 8, marginTop: 8 }} />}
             </div>
-            <Divider />
-            <div style={{
-              fontSize: 12,
-              color: '#999',
-              textAlign: 'center',
-              padding: '8px 0',
-            }}>
-              以上分析由 AI 生成，仅供参考，请结合临床经验综合判断
-            </div>
+            {!aiAnalyzing && (
+              <>
+                <Divider />
+                <div style={{
+                  fontSize: 12,
+                  color: '#999',
+                  textAlign: 'center',
+                  padding: '8px 0',
+                }}>
+                  以上分析由 AI 生成，仅供参考，请结合临床经验综合判断
+                </div>
+              </>
+            )}
           </div>
         )}
       </Drawer>
