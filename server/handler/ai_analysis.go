@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -153,4 +156,104 @@ func (h *AIAnalysisHandler) GetCached(c *gin.Context) {
 		"diagnosis": cached.Diagnosis,
 		"cached":    true,
 	})
+}
+
+// AnalyzeStream handles POST /api/v1/ai/analyze-diagnosis-stream (SSE streaming).
+// Same logic as Analyze but streams the response via SSE.
+func (h *AIAnalysisHandler) AnalyzeStream(c *gin.Context) {
+	var req aiAnalysisRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		Error(c, http.StatusBadRequest, "请输入诊断内容")
+		return
+	}
+
+	if !h.deepSeek.IsEnabled() {
+		Error(c, http.StatusServiceUnavailable, "AI 服务未配置")
+		return
+	}
+
+	tenantID := middleware.GetTenantID(c)
+	userID := middleware.GetUserID(c)
+
+	// If not forcing, try cache first
+	if req.RecordID > 0 && !req.Force {
+		var cached model.AIAnalysis
+		if err := h.db.Where("record_id = ? AND tenant_id = ?", req.RecordID, tenantID).First(&cached).Error; err == nil {
+			if cached.Diagnosis == req.Diagnosis {
+				// Return cached result as a single SSE "cached" event
+				c.Header("Content-Type", "text/event-stream")
+				c.Header("Cache-Control", "no-cache")
+				c.Header("Connection", "keep-alive")
+				w := c.Writer
+				data, _ := json.Marshal(map[string]interface{}{
+					"type":     "cached",
+					"analysis": cached.Analysis,
+				})
+				fmt.Fprintf(w, "data: %s\n\n", string(data))
+				w.(http.Flusher).Flush()
+				return
+			}
+		}
+	}
+
+	// Set SSE headers
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	w := c.Writer
+	flusher := w.(http.Flusher)
+
+	// Stream chunks to client
+	fullContent, err := h.deepSeek.AnalyzeDiagnosisStream(req.Diagnosis, func(chunk string) error {
+		data, _ := json.Marshal(map[string]interface{}{
+			"type":    "chunk",
+			"content": chunk,
+		})
+		_, writeErr := fmt.Fprintf(w, "data: %s\n\n", string(data))
+		if writeErr != nil {
+			return writeErr
+		}
+		flusher.Flush()
+		return nil
+	})
+
+	if err != nil {
+		log.Printf("AI analysis stream error: %v", err)
+		errData, _ := json.Marshal(map[string]interface{}{
+			"type":  "error",
+			"error": "AI 分析失败，请稍后重试",
+		})
+		fmt.Fprintf(w, "data: %s\n\n", string(errData))
+		flusher.Flush()
+		return
+	}
+
+	// Persist result if record_id is provided
+	if req.RecordID > 0 {
+		analysis := model.AIAnalysis{
+			RecordID:  req.RecordID,
+			TenantID:  tenantID,
+			Diagnosis: req.Diagnosis,
+			Analysis:  fullContent,
+		}
+		var existing model.AIAnalysis
+		if err := h.db.Where("record_id = ? AND tenant_id = ?", req.RecordID, tenantID).First(&existing).Error; err == nil {
+			h.db.Model(&existing).Updates(map[string]interface{}{
+				"diagnosis": req.Diagnosis,
+				"analysis":  fullContent,
+			})
+		} else {
+			h.db.Create(&analysis)
+		}
+	}
+
+	// Send done event
+	doneData, _ := json.Marshal(map[string]interface{}{
+		"type":      "done",
+		"analysis":  fullContent,
+		"record_id": req.RecordID,
+		"user_id":   userID,
+	})
+	fmt.Fprintf(w, "data: %s\n\n", string(doneData))
+	flusher.Flush()
 }

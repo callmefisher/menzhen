@@ -44,6 +44,7 @@ menzhen/
 │   │   ├── prescription.go          # Create/Detail/Update/Delete/ListByRecord
 │   │   ├── pulse.go                 # List/Detail/Create/Update/Delete/Categories
 │   │   ├── meridian_resource.go     # Get/Update（经络视频+出处，upsert模式）
+│   │   ├── wuyun_liuqi.go          # Get/QueryStream/Update/Delete（五运六气，SSE流式查询）
 │   │   ├── ai_analysis.go           # Analyze（AI 辩证论治，含缓存）+ SaveCached + GetCached
 │   │   ├── oplog.go                 # ListOpLogs/DeleteOpLog/BatchDeleteOpLogs
 │   │   ├── user.go                  # List/Update/Delete/AssignRoles
@@ -67,7 +68,8 @@ menzhen/
 │   │   ├── prescription.go          # 处方 CRUD
 │   │   ├── pulse.go                 # 脉象 CRUD + 分类列表
 │   │   ├── meridian_resource.go     # 经络资源 GetByMeridianID/Upsert
-│   │   ├── deepseek.go              # DeepSeek API 客户端（chat/chatLong/QueryHerb/QueryFormula/AnalyzeDiagnosis）
+│   │   ├── wuyun_liuqi.go          # 五运六气 GetByYear/SaveFromAI/Update/Delete
+│   │   ├── deepseek.go              # DeepSeek API 客户端（chat/chatLong/chatStream/QueryHerb/QueryFormula/AnalyzeDiagnosis/QueryWuyunLiuqiStream）
 │   │   ├── deepseek_test.go         # DeepSeek 测试
 │   │   ├── oplog.go                 # 操作日志 CRUD
 │   │   ├── permission.go            # HasPermission 检查
@@ -91,6 +93,7 @@ menzhen/
 │       │   ├── formula.ts           # 方剂搜索/详情/删除/更新组成/更新备注
 │       │   ├── prescription.ts      # 处方 CRUD + 按记录查询
 │       │   ├── pulse.ts             # 脉象搜索/详情/分类/新增/更新/删除
+│       │   ├── wuyunLiuqi.ts        # 五运六气缓存获取/更新/删除
 │       │   ├── meridian.ts          # 经络资源获取/更新（视频+出处）
 │       │   ├── upload.ts            # 文件上传
 │       │   ├── oplog.ts             # 操作日志查询/删除
@@ -139,6 +142,8 @@ menzhen/
 │       │   │       └── acupoints.ts     # 穴位静态数据（367穴全部补全，14条正经+6条奇经）
 │       │   ├── pulses/              # 脉象查询
 │       │   │   └── PulseList.tsx    # 脉象列表（分页+名称/分类搜索，管理员可行内编辑/新增/删除）
+│       │   ├── wuyun/               # 五运六气
+│       │   │   └── WuyunLiuqi.tsx   # 五运六气页面（年份选择+AI流式查询SSE+Markdown渲染+编辑/删除）
 │       │   └── settings/            # 系统设置
 │       │       ├── UserList.tsx
 │       │       ├── RoleList.tsx
@@ -148,7 +153,8 @@ menzhen/
 │       ├── test/
 │       │   └── setup.ts             # 测试配置（polyfill ResizeObserver、matchMedia）
 │       └── utils/
-│           └── request.ts           # axios 封装（自动附加 JWT、401 跳转登录）
+│           ├── request.ts           # axios 封装（自动附加 JWT、401 跳转登录）
+│           └── sse.ts               # SSE 流式请求工具（fetch + ReadableStream，支持 abort）
 ├── nginx/
 │   └── nginx.conf                   # Nginx 反向代理配置
 ├── scripts/
@@ -240,6 +246,18 @@ menzhen/
 | `meridian_id` | `varchar(10)` | 经络ID（唯一索引），如 LU, LI, ST |
 | `video_url` | `text` | 视频链接 |
 | `source_text` | `text` | 出处介绍文字 |
+| `updated_by` | `uint64` | 最后编辑者用户ID |
+| `created_at` | `time.Time` | 创建时间 |
+| `updated_at` | `time.Time` | 更新时间 |
+
+#### `wuyun_liuqi` — 五运六气分析缓存
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | `uint64` | 主键 |
+| `year` | `int` | 年份（唯一索引） |
+| `content` | `longtext` | AI分析内容（Markdown格式） |
+| `source` | `varchar(20)` | 数据来源：ai/manual |
 | `updated_by` | `uint64` | 最后编辑者用户ID |
 | `created_at` | `time.Time` | 创建时间 |
 | `updated_at` | `time.Time` | 更新时间 |

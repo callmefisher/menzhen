@@ -47,6 +47,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	tenantHandler := handler.NewTenantHandler(db)
 	aiAnalysisHandler := handler.NewAIAnalysisHandler(deepSeekService, db)
 	meridianResourceHandler := handler.NewMeridianResourceHandler(db)
+	wuyunLiuqiHandler := handler.NewWuyunLiuqiHandler(db, deepSeekService)
 
 	// ---------- Route groups ----------
 
@@ -97,8 +98,9 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		// File upload route (authenticated, no specific permission).
 		authenticated.POST("/upload", uploadHandler.Upload)
 
-		// AI analysis route (authenticated, requires record:read permission).
+		// AI analysis routes (authenticated, requires record:read permission).
 		authenticated.POST("/ai/analyze-diagnosis", middleware.RequirePermission(db, "record:read"), aiAnalysisHandler.Analyze)
+		authenticated.POST("/ai/analyze-diagnosis-stream", middleware.RequirePermission(db, "record:read"), aiAnalysisHandler.AnalyzeStream)
 
 		// Operation log routes.
 		oplogs := authenticated.Group("/oplogs")
@@ -175,6 +177,15 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		{
 			meridianRes.GET("/:id/resource", meridianResourceHandler.Get)
 			meridianRes.PUT("/:id/resource", middleware.RequirePermission(db, "role:manage"), meridianResourceHandler.Update)
+		}
+
+		// WuYun LiuQi routes (global data, authenticated).
+		wuyunLiuqi := authenticated.Group("/wuyun-liuqi")
+		{
+			wuyunLiuqi.GET("", wuyunLiuqiHandler.Get)
+			wuyunLiuqi.POST("/query-stream", wuyunLiuqiHandler.QueryStream)
+			wuyunLiuqi.PUT("/:id", middleware.RequirePermission(db, "role:manage"), wuyunLiuqiHandler.Update)
+			wuyunLiuqi.DELETE("/:id", middleware.RequirePermission(db, "role:manage"), wuyunLiuqiHandler.Delete)
 		}
 
 		// Prescription routes (tenant-scoped).
