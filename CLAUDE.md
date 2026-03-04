@@ -167,4 +167,5 @@ DeepSeek AI 相关（可选）：
 - [经络3D优化记录](docs/plans/2026-02-28-meridian-optimization.md)
 - [脉象功能设计](docs/plans/2026-03-02-pulse-types-design.md)
 - [经络详情增强设计](docs/plans/2026-03-03-meridian-detail-design.md)
+- [临床经验集设计](docs/plans/2026-03-04-clinical-experience-design.md)
 - [Codebase 全局上下文](docs/codebase.md)

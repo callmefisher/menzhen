@@ -18,6 +18,7 @@ import HerbSearch from './pages/herbs/HerbSearch';
 import FormulaSearch from './pages/formulas/FormulaSearch';
 import PulseList from './pages/pulses/PulseList';
 import WuyunLiuqi from './pages/wuyun/WuyunLiuqi';
+import ClinicalExperienceList from './pages/clinical-experience/ClinicalExperienceList';
 import type { ReactNode } from 'react';
 
 const MeridianView = lazy(() => import('./pages/meridians/MeridianView'));
@@ -72,6 +73,7 @@ function AppRoutes() {
         <Route path="pulses" element={<PulseList />} />
         <Route path="meridians" element={<Suspense fallback={<Spin />}><MeridianView /></Suspense>} />
         <Route path="wuyun" element={<WuyunLiuqi />} />
+        <Route path="clinical-experience" element={<ClinicalExperienceList />} />
         <Route path="oplogs" element={<OpLogList />} />
         <Route path="settings/users" element={<UserList />} />
         <Route path="settings/roles" element={<RoleList />} />
