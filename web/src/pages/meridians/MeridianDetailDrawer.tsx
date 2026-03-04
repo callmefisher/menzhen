@@ -33,7 +33,7 @@ function parseVideoUrl(url: string): { type: 'iframe' | 'video'; src: string } {
   // Bilibili: https://www.bilibili.com/video/BV19mtyzKEmP or /BV19mtyzKEmP?p=1
   const biliMatch = url.match(/bilibili\.com\/video\/(BV[\w]+)/);
   if (biliMatch) {
-    return { type: 'iframe', src: `https://player.bilibili.com/player.html?bvid=${biliMatch[1]}&page=1&high_quality=1&danmaku=0&autoplay=0` };
+    return { type: 'iframe', src: `https://player.bilibili.com/player.html?bvid=${biliMatch[1]}&page=1&high_quality=1&danmaku=0&dm=0&autoplay=0` };
   }
 
   // YouTube: https://www.youtube.com/watch?v=xxx or https://youtu.be/xxx

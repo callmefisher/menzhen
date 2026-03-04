@@ -77,7 +77,7 @@ export default function MeridianView() {
             style={{
               position: 'absolute',
               top: 8,
-              left: 8,
+              left: 56,
               zIndex: 10,
             }}
             size="small"

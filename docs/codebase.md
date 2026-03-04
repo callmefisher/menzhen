@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-03-03（新增经络详情：穴位特殊属性 + 视频/出处后端存储 + 详情抽屉 UI）
+> 最后更新：2026-03-04（前端 UI 修复：AI分析br标签渲染、中药药名列宽、移动端经络/五运六气/诊疗记录布局优化）
 
 ---
 
@@ -117,15 +117,15 @@ menzhen/
 │       │   │   └── PatientForm.tsx
 │       │   ├── records/             # 诊疗记录
 │       │   │   ├── RecordList.tsx
-│       │   │   └── RecordForm.tsx   # 含 AI 辩证论治 Drawer（remark-gfm 表格渲染）+ 新建记录保存时自动持久化AI结果 + 处方区域全宽浅灰底色 + 医嘱分行展示
+│       │   │   └── RecordForm.tsx   # 含 AI 辩证论治 Drawer（rehype-raw + remark-gfm 表格渲染，支持 HTML br 标签）+ 新建记录保存时自动持久化AI结果 + 处方区域全宽浅灰底色 + 医嘱分行展示 + 移动端诊断标签 Space wrap
 │       │   ├── herbs/               # 中药查询
-│       │   │   ├── HerbSearch.tsx   # 含分类筛选下拉框 + 管理员行内编辑 + AI重查询按钮 + 默认加载全部数据
+│       │   │   ├── HerbSearch.tsx   # 含分类筛选下拉框 + 管理员行内编辑 + AI重查询按钮 + 默认加载全部数据 + 药名列宽 160px
 │       │   │   └── __tests__/
 │       │   ├── formulas/            # 方剂查询
 │       │   │   ├── FormulaSearch.tsx
 │       │   │   └── __tests__/
 │       │   ├── meridians/           # 经络穴位3D可视化（Three.js + R3F）
-│       │   │   ├── MeridianView.tsx     # 页面入口（桌面端左右布局，移动端左面板→Drawer + 浮动按钮）
+│       │   │   ├── MeridianView.tsx     # 页面入口（桌面端左右布局，移动端左面板→Drawer + 浮动按钮 left:56 避免与系统菜单重叠）
 │       │   │   ├── MeridianPanel.tsx    # 左侧控制面板（搜索/经络列表+穴位展开列表+info按钮打开详情抽屉）
 │       │   │   ├── MeridianDetailDrawer.tsx # 经络详情抽屉（特殊穴位属性+视频+出处，管理员可编辑）
 │       │   │   ├── MeridianScene.tsx    # 3D场景容器（Canvas + 合并BVH投影 + 相机旋转优化）
@@ -143,7 +143,8 @@ menzhen/
 │       │   ├── pulses/              # 脉象查询
 │       │   │   └── PulseList.tsx    # 脉象列表（分页+名称/分类搜索，管理员可行内编辑/新增/删除）
 │       │   ├── wuyun/               # 五运六气
-│       │   │   └── WuyunLiuqi.tsx   # 五运六气页面（年份选择+AI流式查询SSE+Markdown渲染+编辑/删除）
+│       │   │   ├── WuyunLiuqi.tsx   # 五运六气页面（年份选择+AI流式查询SSE+Markdown渲染+编辑/删除）
+│       │   │   └── NotesPanel.tsx   # 笔记侧边栏（移动端全屏宽度自适应 + useIsMobile 响应式）
 │       │   └── settings/            # 系统设置
 │       │       ├── UserList.tsx
 │       │       ├── RoleList.tsx

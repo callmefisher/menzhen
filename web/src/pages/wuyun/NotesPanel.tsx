@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import { Typography } from 'antd';
 import { LeftOutlined, RightOutlined } from '@ant-design/icons';
+import useIsMobile from '../../hooks/useIsMobile';
 
 const { Title, Paragraph, Text } = Typography;
 
 export default function NotesPanel() {
   const [open, setOpen] = useState(false);
+  const isMobile = useIsMobile();
+  const panelWidth = isMobile ? '100vw' : '420px';
 
   return (
     <>
@@ -14,7 +17,7 @@ export default function NotesPanel() {
         onClick={() => setOpen(!open)}
         style={{
           position: 'fixed',
-          right: open ? 420 : 0,
+          right: open ? (isMobile ? 'calc(100vw - 28px)' : 420) : 0,
           top: '50%',
           transform: 'translateY(-50%)',
           zIndex: 1000,
@@ -47,9 +50,9 @@ export default function NotesPanel() {
       <div
         style={{
           position: 'fixed',
-          right: open ? 0 : -420,
+          right: open ? 0 : (isMobile ? '-100vw' : -420),
           top: 0,
-          width: 420,
+          width: panelWidth,
           height: '100vh',
           zIndex: 999,
           background: 'linear-gradient(135deg, #fdf8ef 0%, #f9f0e0 50%, #f5e8d0 100%)',
