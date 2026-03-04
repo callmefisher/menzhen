@@ -24,6 +24,7 @@ import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
 import { getRecord, createRecord, updateRecord, getCachedAiAnalysis, saveAiAnalysis } from '../../api/record';
 // Legacy non-streaming import kept for potential switch-back:
 // import { aiAnalyzeDiagnosis } from '../../api/record';
@@ -505,7 +506,7 @@ export default function RecordForm() {
         <div style={{ display: 'flex', gap: 16, flexDirection: isMobile ? 'column' : 'row' }}>
           <Form.Item
             label={
-              <Space>
+              <Space wrap>
                 <span>诊断</span>
                 <Button
                   type="primary"
@@ -914,6 +915,7 @@ export default function RecordForm() {
             >
               <Markdown
                 remarkPlugins={[remarkGfm]}
+                rehypePlugins={[rehypeRaw]}
                 components={{
                   h1: ({ children }) => (
                     <h2 style={{

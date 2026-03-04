@@ -139,7 +139,7 @@ export default function HerbSearch() {
       title: '药名',
       dataIndex: 'name',
       key: 'name',
-      width: 120,
+      width: 160,
     },
     {
       title: '别名',
