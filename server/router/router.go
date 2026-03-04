@@ -48,6 +48,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	aiAnalysisHandler := handler.NewAIAnalysisHandler(deepSeekService, db)
 	meridianResourceHandler := handler.NewMeridianResourceHandler(db)
 	wuyunLiuqiHandler := handler.NewWuyunLiuqiHandler(db, deepSeekService)
+	clinicalExpHandler := handler.NewClinicalExperienceHandler(db)
 
 	// ---------- Route groups ----------
 
@@ -186,6 +187,17 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			wuyunLiuqi.POST("/query-stream", wuyunLiuqiHandler.QueryStream)
 			wuyunLiuqi.PUT("/:id", middleware.RequirePermission(db, "role:manage"), wuyunLiuqiHandler.Update)
 			wuyunLiuqi.DELETE("/:id", middleware.RequirePermission(db, "role:manage"), wuyunLiuqiHandler.Delete)
+		}
+
+		// Clinical experience routes (global data, authenticated).
+		clinicalExp := authenticated.Group("/clinical-experiences")
+		{
+			clinicalExp.GET("", clinicalExpHandler.List)
+			clinicalExp.GET("/categories", clinicalExpHandler.Categories)
+			clinicalExp.GET("/:id", clinicalExpHandler.Detail)
+			clinicalExp.POST("", middleware.RequirePermission(db, "role:manage"), clinicalExpHandler.Create)
+			clinicalExp.PUT("/:id", middleware.RequirePermission(db, "role:manage"), clinicalExpHandler.Update)
+			clinicalExp.DELETE("/:id", middleware.RequirePermission(db, "role:manage"), clinicalExpHandler.Delete)
 		}
 
 		// Prescription routes (tenant-scoped).

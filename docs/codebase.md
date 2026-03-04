@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-03-04（前端 UI 修复：AI分析br标签渲染、中药药名列宽、移动端经络/五运六气/诊疗记录布局优化）
+> 最后更新：2026-03-04（新增临床经验集功能）
 
 ---
 
@@ -45,6 +45,7 @@ menzhen/
 │   │   ├── pulse.go                 # List/Detail/Create/Update/Delete/Categories
 │   │   ├── meridian_resource.go     # Get/Update（经络视频+出处，upsert模式）
 │   │   ├── wuyun_liuqi.go          # Get/QueryStream/Update/Delete（五运六气，SSE流式查询）
+│   │   ├── clinical_experience.go  # List/Detail/Create/Update/Delete/Categories（临床经验集）
 │   │   ├── ai_analysis.go           # Analyze（AI 辩证论治，含缓存）+ SaveCached + GetCached
 │   │   ├── oplog.go                 # ListOpLogs/DeleteOpLog/BatchDeleteOpLogs
 │   │   ├── user.go                  # List/Update/Delete/AssignRoles
@@ -69,6 +70,7 @@ menzhen/
 │   │   ├── pulse.go                 # 脉象 CRUD + 分类列表
 │   │   ├── meridian_resource.go     # 经络资源 GetByMeridianID/Upsert
 │   │   ├── wuyun_liuqi.go          # 五运六气 GetByYear/SaveFromAI/Update/Delete
+│   │   ├── clinical_experience.go  # 临床经验 Search/ListCategories/GetByID/Create/Update/DeleteByID
 │   │   ├── deepseek.go              # DeepSeek API 客户端（chat/chatLong/chatStream/QueryHerb/QueryFormula/AnalyzeDiagnosis/QueryWuyunLiuqiStream）
 │   │   ├── deepseek_test.go         # DeepSeek 测试
 │   │   ├── oplog.go                 # 操作日志 CRUD
@@ -94,6 +96,7 @@ menzhen/
 │       │   ├── prescription.ts      # 处方 CRUD + 按记录查询
 │       │   ├── pulse.ts             # 脉象搜索/详情/分类/新增/更新/删除
 │       │   ├── wuyunLiuqi.ts        # 五运六气缓存获取/更新/删除
+│       │   ├── clinicalExperience.ts # 临床经验集 CRUD + 分类列表
 │       │   ├── meridian.ts          # 经络资源获取/更新（视频+出处）
 │       │   ├── upload.ts            # 文件上传
 │       │   ├── oplog.ts             # 操作日志查询/删除
@@ -145,6 +148,8 @@ menzhen/
 │       │   ├── wuyun/               # 五运六气
 │       │   │   ├── WuyunLiuqi.tsx   # 五运六气页面（年份选择+AI流式查询SSE+Markdown渲染+编辑/删除）
 │       │   │   └── NotesPanel.tsx   # 笔记侧边栏（移动端全屏宽度自适应 + useIsMobile 响应式）
+│       │   ├── clinical-experience/ # 临床经验集
+│       │   │   └── ClinicalExperienceList.tsx # 临床经验列表（分页+搜索+分类筛选，管理员可新增/编辑/删除，AutoComplete分类选择）
 │       │   └── settings/            # 系统设置
 │       │       ├── UserList.tsx
 │       │       ├── RoleList.tsx
@@ -260,6 +265,19 @@ menzhen/
 | `content` | `longtext` | AI分析内容（Markdown格式） |
 | `source` | `varchar(20)` | 数据来源：ai/manual |
 | `updated_by` | `uint64` | 最后编辑者用户ID |
+| `created_at` | `time.Time` | 创建时间 |
+| `updated_at` | `time.Time` | 更新时间 |
+
+#### `clinical_experiences` — 临床经验集
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | `uint64` | 主键 |
+| `source` | `varchar(255)` | 出处 |
+| `category` | `varchar(100)` | 分类（索引），自由文本 |
+| `herbs` | `text` | 药物 |
+| `formula` | `text` | 方剂 |
+| `experience` | `text` | 使用经验 |
 | `created_at` | `time.Time` | 创建时间 |
 | `updated_at` | `time.Time` | 更新时间 |
 
@@ -499,6 +517,17 @@ menzhen/
 |------|------|------|------|
 | GET | `/api/v1/meridians/:id/resource` | - | 获取经络视频和出处 |
 | PUT | `/api/v1/meridians/:id/resource` | `role:manage` | 更新经络视频和出处（upsert） |
+
+#### 临床经验集（全局数据）
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| GET | `/api/v1/clinical-experiences` | - | 搜索临床经验（分页+关键词/分类筛选） |
+| GET | `/api/v1/clinical-experiences/categories` | - | 临床经验分类列表 |
+| GET | `/api/v1/clinical-experiences/:id` | - | 临床经验详情 |
+| POST | `/api/v1/clinical-experiences` | `role:manage` | 新增临床经验 |
+| PUT | `/api/v1/clinical-experiences/:id` | `role:manage` | 更新临床经验 |
+| DELETE | `/api/v1/clinical-experiences/:id` | `role:manage` | 删除临床经验 |
 
 #### 处方管理（租户隔离）
 

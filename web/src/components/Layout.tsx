@@ -19,6 +19,7 @@ import {
   ApartmentOutlined,
   HeartOutlined,
   CloudOutlined,
+  BookOutlined,
 } from '@ant-design/icons';
 import type { MenuProps as AntMenuProps } from 'antd';
 import { useAuth } from '../store/auth';
@@ -87,6 +88,11 @@ export default function AppLayout() {
         icon: <CloudOutlined />,
         label: '五运六气',
       },
+      {
+        key: '/clinical-experience',
+        icon: <BookOutlined />,
+        label: '临床经验集',
+      },
     ];
     items.push({
       key: '/tcm',
@@ -154,6 +160,7 @@ export default function AppLayout() {
     if (path.startsWith('/meridians')) return ['/meridians'];
     if (path.startsWith('/pulses')) return ['/pulses'];
     if (path.startsWith('/wuyun')) return ['/wuyun'];
+    if (path.startsWith('/clinical-experience')) return ['/clinical-experience'];
     if (path.startsWith('/records')) return ['/records'];
     return ['/records'];
   }, [location.pathname]);
@@ -161,7 +168,7 @@ export default function AppLayout() {
   const openKeys = useMemo(() => {
     const path = location.pathname;
     if (path.startsWith('/settings')) return ['/settings'];
-    if (path.startsWith('/herbs') || path.startsWith('/formulas') || path.startsWith('/meridians') || path.startsWith('/pulses') || path.startsWith('/wuyun')) return ['/tcm'];
+    if (path.startsWith('/herbs') || path.startsWith('/formulas') || path.startsWith('/meridians') || path.startsWith('/pulses') || path.startsWith('/wuyun') || path.startsWith('/clinical-experience')) return ['/tcm'];
     return ['/tcm', '/settings'];
   }, [location.pathname]);
 
