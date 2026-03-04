@@ -21,6 +21,7 @@
 ### 中医知识库
 
 - **脉象管理** — 分类浏览（浮脉类、沉脉类等）、搜索，管理员可新增/编辑/删除
+- **临床经验集** — 记录临床用药经验（出处、分类、药物、方剂、使用经验），全局共享，管理员可新增/编辑/删除，支持分类筛选和关键词搜索
 - **经络穴位 3D 可视化** — Three.js 人体模型，20 条经络路径 + 367 穴位标记，BVH 表面投影，点击穴位查看详情
 - **经络详情** — 特殊穴位属性（五输穴、原穴、络穴等）、教学视频、出处介绍，管理员可编辑
 
@@ -119,9 +120,9 @@ menzhen/
 │   ├── main.go          # 入口
 │   ├── config/          # 配置加载（环境变量）
 │   ├── database/        # DB 连接、迁移、种子数据
-│   ├── handler/         # HTTP 处理器（auth/patient/record/herb/formula/pulse/prescription/meridian/wuyun/ai/oplog/user/role/tenant）
+│   ├── handler/         # HTTP 处理器（auth/patient/record/herb/formula/pulse/prescription/meridian/wuyun/clinical-experience/ai/oplog/user/role/tenant）
 │   ├── middleware/       # JWT 认证、RBAC、租户隔离、操作审计
-│   ├── model/           # GORM 数据模型（16 个表）
+│   ├── model/           # GORM 数据模型（17 个表）
 │   ├── router/          # 路由注册
 │   ├── service/         # 业务逻辑 + DeepSeek AI 客户端
 │   └── storage/         # MinIO 客户端
@@ -138,6 +139,7 @@ menzhen/
 │       │   ├── meridians/   # 经络 3D 可视化（含穴位数据 367 个）
 │       │   ├── pulses/      # 脉象管理
 │       │   ├── wuyun/       # 五运六气（SSE 流式）
+│       │   ├── clinical-experience/ # 临床经验集
 │       │   └── settings/    # 用户/角色/租户管理
 │       ├── store/       # 认证状态管理
 │       ├── test/        # 测试配置（polyfill）
@@ -188,6 +190,7 @@ menzhen/
 | [经络 3D 优化记录](docs/plans/2026-02-28-meridian-optimization.md) | Phase 1-8 优化历程 |
 | [脉象功能设计](docs/plans/2026-03-02-pulse-types-design.md) | 脉象 CRUD + 分类 |
 | [经络详情增强设计](docs/plans/2026-03-03-meridian-detail-design.md) | 特殊穴位 + 视频/出处 |
+| [临床经验集设计](docs/plans/2026-03-04-clinical-experience-design.md) | 临床经验 CRUD + 分类筛选 |
 
 ## 许可证
 

@@ -45,7 +45,7 @@
 - 前端测试需要在 `src/test/setup.ts` 中 polyfill `ResizeObserver` 和 `window.matchMedia`（antd 组件依赖）
 - `tsconfig.app.json` 需要 exclude 测试目录，避免 `global` 等 Node 类型在 build 时报错
 - seed.go 中权限使用 upsert 模式（逐条检查），避免新增权限时因表非空而跳过
-- **每次功能开发完成后，必须在同一 session 内更新 `docs/codebase.md` 和 `README.md`**，不要等用户提醒
+- **每次功能开发完成后，必须在同一 session 内更新 `docs/codebase.md`、`README.md` 和 `CLAUDE.md` 三个文档**，缺一不可，不要等用户提醒
 - AI 分析 Markdown 渲染需要 `rehype-raw` 插件才能正确处理 `<br>` 等 HTML 标签
 - 移动端布局要注意 position:absolute 元素与系统 Header 菜单按钮的位置冲突
 - 移动端固定宽度面板（如 420px NotesPanel）必须用 `useIsMobile` 做响应式适配，否则会超出屏幕
