@@ -257,3 +257,53 @@ func (h *AIAnalysisHandler) AnalyzeStream(c *gin.Context) {
 	fmt.Fprintf(w, "data: %s\n\n", string(doneData))
 	flusher.Flush()
 }
+
+type tongueAnalysisRequest struct {
+	Description string `json:"description" binding:"required"`
+	RecordID    uint64 `json:"record_id"`
+	Force       bool   `json:"force"`
+}
+
+// AnalyzeTongue handles POST /api/v1/ai/analyze-tongue
+func (h *AIAnalysisHandler) AnalyzeTongue(c *gin.Context) {
+	var req tongueAnalysisRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		Error(c, http.StatusBadRequest, "请输入舌象描述")
+		return
+	}
+
+	if !h.deepSeek.IsEnabled() {
+		Error(c, http.StatusServiceUnavailable, "AI 服务未配置")
+		return
+	}
+
+	tenantID := middleware.GetTenantID(c)
+
+	// If record_id provided and not forcing, check cached tongue_analysis
+	if req.RecordID > 0 && !req.Force {
+		var record model.MedicalRecord
+		if err := h.db.Where("id = ? AND tenant_id = ?", req.RecordID, tenantID).
+			First(&record).Error; err == nil {
+			if record.TongueAnalysis != "" {
+				Success(c, gin.H{"analysis": record.TongueAnalysis, "cached": true})
+				return
+			}
+		}
+	}
+
+	// Call DeepSeek API
+	result, err := h.deepSeek.AnalyzeTongue(req.Description)
+	if err != nil {
+		Error(c, http.StatusInternalServerError, "舌象分析失败，请稍后重试")
+		return
+	}
+
+	// Cache result in medical_records.tongue_analysis if record_id provided
+	if req.RecordID > 0 {
+		h.db.Model(&model.MedicalRecord{}).
+			Where("id = ? AND tenant_id = ?", req.RecordID, tenantID).
+			Update("tongue_analysis", result)
+	}
+
+	Success(c, gin.H{"analysis": result, "cached": false})
+}
