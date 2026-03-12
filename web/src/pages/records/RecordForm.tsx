@@ -19,13 +19,13 @@ import {
   Tooltip,
   Dropdown,
 } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, RobotOutlined, ReloadOutlined, MoreOutlined, MedicineBoxOutlined, InboxOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, RobotOutlined, ReloadOutlined, MoreOutlined, MedicineBoxOutlined, InboxOutlined, SearchOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
-import { getRecord, createRecord, updateRecord, getCachedAiAnalysis, saveAiAnalysis } from '../../api/record';
+import { getRecord, createRecord, updateRecord, getCachedAiAnalysis, saveAiAnalysis, analyzeTongue } from '../../api/record';
 // Legacy non-streaming import kept for potential switch-back:
 // import { aiAnalyzeDiagnosis } from '../../api/record';
 import { streamAiAnalysis } from '../../utils/sse';
@@ -41,6 +41,9 @@ import PrescriptionModal from '../../components/PrescriptionModal';
 import PrescriptionPrint from '../../components/PrescriptionPrint';
 import { useAuth } from '../../store/auth';
 import useIsMobile from '../../hooks/useIsMobile';
+import { listPulses } from '../../api/pulse';
+import type { PulseItem } from '../../api/pulse';
+import { uploadFile, getFileUrl } from '../../api/upload';
 
 interface PatientOption {
   id: number;
@@ -48,11 +51,18 @@ interface PatientOption {
   gender: number;
   age: number;
   phone: string;
+  birthday?: string;
 }
 
 interface RecordFormValues {
   patient_id: number;
   visit_date: Dayjs;
+  chief_complaint: string;
+  pulse_id?: number;
+  pulse_name?: string;
+  tongue_image?: string;
+  tongue_description?: string;
+  tongue_analysis?: string;
   diagnosis: string;
   treatment: string;
   notes: string;
@@ -106,6 +116,20 @@ export default function RecordForm() {
   const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
   const [aiCached, setAiCached] = useState(false);
   const aiAbortRef = useRef<AbortController | null>(null);
+
+  // Pulse search state
+  const [pulseOptions, setPulseOptions] = useState<PulseItem[]>([]);
+  const [pulseLoading, setPulseLoading] = useState(false);
+  const [selectedPulse, setSelectedPulse] = useState<PulseItem | null>(null);
+  const pulseSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [pulseAiQuerying, setPulseAiQuerying] = useState(false);
+  const [pulseSearchText, setPulseSearchText] = useState('');
+
+  // Tongue analysis state
+  const [tongueAnalyzing, setTongueAnalyzing] = useState(false);
+  const [tongueResult, setTongueResult] = useState<string>('');
+  const [tongueImageUrl, setTongueImageUrl] = useState<string>('');
+  const [tongueUploading, setTongueUploading] = useState(false);
 
   // Search patients by name
   const searchPatients = useCallback(async (name?: string) => {
@@ -193,6 +217,12 @@ export default function RecordForm() {
             visit_date: string;
             attachments: AttachmentInfo[];
             patient: PatientOption;
+            chief_complaint: string;
+            pulse_id: number;
+            pulse_name: string;
+            tongue_image: string;
+            tongue_description: string;
+            tongue_analysis: string;
           };
         };
 
@@ -213,11 +243,35 @@ export default function RecordForm() {
         form.setFieldsValue({
           patient_id: record.patient_id,
           visit_date: dayjs(record.visit_date),
+          chief_complaint: record.chief_complaint || '',
+          pulse_id: record.pulse_id || undefined,
+          pulse_name: record.pulse_name || '',
+          tongue_image: record.tongue_image || '',
+          tongue_description: record.tongue_description || '',
+          tongue_analysis: record.tongue_analysis || '',
           diagnosis: record.diagnosis || '',
           treatment: record.treatment || '',
           notes: record.notes || '',
           attachments: record.attachments || [],
         });
+
+        // Load associated pulse details
+        if (record.pulse_name) {
+          try {
+            const pulseRes = await listPulses({ name: record.pulse_name, page: 1, size: 10 });
+            const pulseBody = pulseRes as unknown as { data: { list: PulseItem[] } };
+            const pList = pulseBody.data.list || [];
+            setPulseOptions(pList);
+            const found = pList.find((p: PulseItem) => p.id === record.pulse_id);
+            if (found) setSelectedPulse(found);
+          } catch { /* ignore */ }
+        }
+        if (record.tongue_image) {
+          setTongueImageUrl(getFileUrl(record.tongue_image));
+        }
+        if (record.tongue_analysis) {
+          setTongueResult(record.tongue_analysis);
+        }
       } catch {
         message.error('加载诊疗记录失败');
         navigate('/records');
@@ -254,6 +308,107 @@ export default function RecordForm() {
     }, 300);
   };
 
+  // Pulse search
+  const searchPulses = useCallback(async (name: string) => {
+    if (!name.trim()) {
+      setPulseOptions([]);
+      return;
+    }
+    setPulseLoading(true);
+    try {
+      const res = await listPulses({ name, page: 1, size: 10 });
+      const body = res as unknown as { data: { list: PulseItem[]; total: number } };
+      setPulseOptions(body.data.list || []);
+    } catch {
+      // handled
+    } finally {
+      setPulseLoading(false);
+    }
+  }, []);
+
+  const handlePulseSearch = (value: string) => {
+    setPulseSearchText(value);
+    if (pulseSearchTimerRef.current) {
+      clearTimeout(pulseSearchTimerRef.current);
+    }
+    pulseSearchTimerRef.current = setTimeout(() => {
+      searchPulses(value);
+    }, 300);
+  };
+
+  const handlePulseAiQuery = async () => {
+    if (!pulseSearchText.trim()) return;
+    setPulseAiQuerying(true);
+    try {
+      const res = await listPulses({ name: pulseSearchText, page: 1, size: 10 });
+      const body = res as unknown as { data: { list: PulseItem[]; total: number } };
+      const list = body.data.list || [];
+      setPulseOptions(list);
+      if (list.length > 0) {
+        const pulse = list[0];
+        setSelectedPulse(pulse);
+        form.setFieldsValue({ pulse_id: pulse.id, pulse_name: pulse.name });
+        message.success(`已从 AI 获取脉象「${pulse.name}」并自动入库`);
+      } else {
+        message.warning('AI 未能识别该脉象');
+      }
+    } catch {
+      message.error('AI 查询失败');
+    } finally {
+      setPulseAiQuerying(false);
+    }
+  };
+
+  const handlePulseSelect = (value: number) => {
+    const pulse = pulseOptions.find(p => p.id === value);
+    if (pulse) {
+      setSelectedPulse(pulse);
+      form.setFieldsValue({ pulse_name: pulse.name });
+    }
+  };
+
+  // Tongue upload & analysis
+  const handleTongueUpload = async (file: File) => {
+    setTongueUploading(true);
+    try {
+      const res = await uploadFile(file);
+      const body = res as unknown as { data: { file_path: string } };
+      const filePath = body.data.file_path;
+      form.setFieldValue('tongue_image', filePath);
+      setTongueImageUrl(getFileUrl(filePath));
+      message.success('舌象图片上传成功');
+    } catch {
+      message.error('上传失败');
+    } finally {
+      setTongueUploading(false);
+    }
+  };
+
+  const handleTongueAnalysis = async (force = false) => {
+    const description = form.getFieldValue('tongue_description');
+    if (!description?.trim()) {
+      message.warning('请先输入舌象描述');
+      return;
+    }
+    setTongueAnalyzing(true);
+    try {
+      const recordId = id ? Number(id) : undefined;
+      const res = await analyzeTongue({
+        description: description.trim(),
+        record_id: recordId,
+        force,
+      });
+      const body = res as unknown as { data: { analysis: string; cached: boolean } };
+      const analysis = body.data.analysis || '未获取到分析结果';
+      setTongueResult(analysis);
+      form.setFieldValue('tongue_analysis', analysis);
+    } catch {
+      message.error('舌象分析失败，请稍后重试');
+    } finally {
+      setTongueAnalyzing(false);
+    }
+  };
+
   const handleCreatePatient = async () => {
     try {
       const values = await patientForm.validateFields();
@@ -284,6 +439,12 @@ export default function RecordForm() {
       const payload = {
         patient_id: values.patient_id,
         visit_date: values.visit_date.format('YYYY-MM-DD'),
+        chief_complaint: values.chief_complaint || '',
+        pulse_id: values.pulse_id || null,
+        pulse_name: values.pulse_name || '',
+        tongue_image: values.tongue_image || '',
+        tongue_description: values.tongue_description || '',
+        tongue_analysis: values.tongue_analysis || '',
         diagnosis: values.diagnosis || '',
         treatment: values.treatment || '',
         notes: values.notes || '',
@@ -292,6 +453,12 @@ export default function RecordForm() {
 
       if (isEdit) {
         await updateRecord(Number(id), {
+          chief_complaint: payload.chief_complaint,
+          pulse_id: payload.pulse_id,
+          pulse_name: payload.pulse_name,
+          tongue_image: payload.tongue_image,
+          tongue_description: payload.tongue_description,
+          tongue_analysis: payload.tongue_analysis,
           diagnosis: payload.diagnosis,
           treatment: payload.treatment,
           notes: payload.notes,
@@ -503,6 +670,149 @@ export default function RecordForm() {
           </Form.Item>
         </div>
 
+        {/* 主诉 */}
+        <Form.Item label="主诉" name="chief_complaint">
+          <Input.TextArea rows={2} placeholder="请输入主诉（主要症状和持续时间）" />
+        </Form.Item>
+
+        {/* 脉象 */}
+        <div style={{ display: 'flex', gap: 16, flexDirection: isMobile ? 'column' : 'row', alignItems: 'flex-start' }}>
+          <Form.Item label="脉象" name="pulse_id" style={{ flex: 1 }}>
+            <Select
+              showSearch
+              placeholder="搜索脉象名称"
+              filterOption={false}
+              onSearch={handlePulseSearch}
+              onChange={handlePulseSelect}
+              loading={pulseLoading}
+              allowClear
+              onClear={() => {
+                setSelectedPulse(null);
+                form.setFieldsValue({ pulse_name: '' });
+              }}
+              notFoundContent={
+                pulseLoading ? (
+                  <Spin size="small" />
+                ) : pulseSearchText ? (
+                  <div style={{ textAlign: 'center', padding: '8px 0' }}>
+                    <div style={{ color: '#999', marginBottom: 8 }}>未找到匹配脉象</div>
+                    <Button
+                      type="link"
+                      icon={<SearchOutlined />}
+                      loading={pulseAiQuerying}
+                      onClick={handlePulseAiQuery}
+                    >
+                      从 AI 查询
+                    </Button>
+                  </div>
+                ) : '输入关键字搜索'
+              }
+              options={pulseOptions.map(p => ({
+                value: p.id,
+                label: `${p.name}${p.category ? ` (${p.category})` : ''}`,
+              }))}
+            />
+          </Form.Item>
+          <Form.Item name="pulse_name" hidden>
+            <Input />
+          </Form.Item>
+          {selectedPulse && (
+            <Card size="small" style={{ flex: 1, maxWidth: isMobile ? '100%' : 400 }}
+              title={<span>{selectedPulse.name} {selectedPulse.category && <Tag color="blue">{selectedPulse.category}</Tag>}</span>}
+            >
+              {selectedPulse.description && <div style={{ marginBottom: 4 }}><strong>特征：</strong>{selectedPulse.description}</div>}
+              {selectedPulse.clinical_meaning && <div style={{ marginBottom: 4 }}><strong>临床意义：</strong>{selectedPulse.clinical_meaning}</div>}
+              {selectedPulse.common_conditions && <div><strong>常见病症：</strong>{selectedPulse.common_conditions}</div>}
+            </Card>
+          )}
+        </div>
+
+        {/* 舌象 */}
+        <div style={{ display: 'flex', gap: 16, flexDirection: isMobile ? 'column' : 'row', alignItems: 'flex-start' }}>
+          <div style={{ flex: 1 }}>
+            <Form.Item label="舌象图片" name="tongue_image">
+              <div>
+                {tongueImageUrl ? (
+                  <div style={{ position: 'relative', display: 'inline-block' }}>
+                    <img src={tongueImageUrl} alt="舌象" style={{ maxWidth: 200, maxHeight: 150, borderRadius: 8, border: '1px solid #d9d9d9' }} />
+                    <Button
+                      size="small"
+                      danger
+                      style={{ position: 'absolute', top: 4, right: 4 }}
+                      onClick={() => {
+                        form.setFieldValue('tongue_image', '');
+                        setTongueImageUrl('');
+                      }}
+                    >
+                      删除
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    loading={tongueUploading}
+                    onClick={() => {
+                      const input = document.createElement('input');
+                      input.type = 'file';
+                      input.accept = 'image/*';
+                      input.onchange = (e) => {
+                        const file = (e.target as HTMLInputElement).files?.[0];
+                        if (file) handleTongueUpload(file);
+                      };
+                      input.click();
+                    }}
+                  >
+                    上传舌象图片
+                  </Button>
+                )}
+              </div>
+            </Form.Item>
+          </div>
+          <div style={{ flex: 2 }}>
+            <Form.Item label={
+              <Space>
+                <span>舌象描述</span>
+                <Button
+                  type="primary"
+                  ghost
+                  size="small"
+                  icon={<RobotOutlined />}
+                  loading={tongueAnalyzing}
+                  onClick={() => handleTongueAnalysis()}
+                >
+                  分析舌象
+                </Button>
+                {tongueResult && !tongueAnalyzing && (
+                  <Button size="small" icon={<ReloadOutlined />} onClick={() => handleTongueAnalysis(true)}>
+                    重新分析
+                  </Button>
+                )}
+              </Space>
+            } name="tongue_description">
+              <Input.TextArea rows={3} placeholder="描述舌象（如：舌质淡红，舌苔薄白，舌体胖大有齿痕）" />
+            </Form.Item>
+            <Form.Item name="tongue_analysis" hidden>
+              <Input />
+            </Form.Item>
+          </div>
+        </div>
+        {tongueResult && (
+          <Card size="small" style={{ marginBottom: 16 }} title={
+            <Space>
+              <RobotOutlined style={{ color: '#1677ff' }} />
+              <span>舌象 AI 分析结果</span>
+            </Space>
+          }>
+            <div className="ai-analysis-content" style={{ fontSize: 14, lineHeight: 1.8, maxHeight: 300, overflow: 'auto' }}>
+              <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+                {tongueResult}
+              </Markdown>
+            </div>
+            <div style={{ fontSize: 12, color: '#999', textAlign: 'center', marginTop: 8 }}>
+              以上分析由 AI 生成，仅供参考
+            </div>
+          </Card>
+        )}
+
         <div style={{ display: 'flex', gap: 16, flexDirection: isMobile ? 'column' : 'row' }}>
           <Form.Item
             label={
@@ -580,6 +890,12 @@ export default function RecordForm() {
                       const payload = {
                         patient_id: values.patient_id,
                         visit_date: values.visit_date.format('YYYY-MM-DD'),
+                        chief_complaint: values.chief_complaint || '',
+                        pulse_id: values.pulse_id || null,
+                        pulse_name: values.pulse_name || '',
+                        tongue_image: values.tongue_image || '',
+                        tongue_description: values.tongue_description || '',
+                        tongue_analysis: values.tongue_analysis || '',
                         diagnosis: values.diagnosis || '',
                         treatment: values.treatment || '',
                         notes: values.notes || '',
