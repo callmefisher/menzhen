@@ -13,6 +13,8 @@ export interface RecordListItem {
   patient_name: string;
   patient_age: number;
   diagnosis: string;
+  chief_complaint: string;
+  pulse_name: string;
   visit_date: string;
   created_at: string;
 }
@@ -47,4 +49,8 @@ export function getCachedAiAnalysis(recordId: number) {
 
 export function saveAiAnalysis(recordId: number, diagnosis: string, analysis: string) {
   return request.post(`/records/${recordId}/ai-analysis`, { diagnosis, analysis });
+}
+
+export function analyzeTongue(data: { description: string; record_id?: number; force?: boolean }) {
+  return request.post('/ai/analyze-tongue', data, { timeout: 120000 });
 }
