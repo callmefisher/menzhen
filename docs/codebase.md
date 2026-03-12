@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-03-04（新增临床经验集功能）
+> 最后更新：2026-03-12（诊疗记录新增主诉/脉象/舌象字段 + AI舌诊分析）
 
 ---
 
@@ -140,9 +140,13 @@ menzhen/
 │       │   │   ├── utils/
 │       │   │   │   └── surfaceProjection.ts # BVH加速表面投影（three-mesh-bvh）
 │       │   │   └── data/
-│       │   │       ├── types.ts         # MeridianData/AcupointData/SpecialPointType 类型
-│       │   │       ├── meridians.ts     # 20条经络静态数据（路径坐标+12正经specialPoints特殊穴位）
-│       │   │       └── acupoints.ts     # 穴位静态数据（367穴全部补全，14条正经+6条奇经）
+│       │   │       ├── types.ts         # 类型定义（MeridianData/AcupointData/BodyModelType/MeridianPathCoords）
+│       │   │       ├── meridians.ts     # 经络共享元数据 + 坐标组装（getMeridians(model)）
+│       │   │       ├── acupoints.ts     # 穴位共享元数据 + 坐标组装（getAcupoints(model)）
+│       │   │       ├── meridian-paths-female.ts  # 经络路径坐标 — sport-girl.glb 专属
+│       │   │       ├── meridian-paths-male.ts    # 经络路径坐标 — male.glb 专属（待校准）
+│       │   │       ├── acupoint-positions-female.ts # 穴位坐标 — sport-girl.glb 专属（367个）
+│       │   │       └── acupoint-positions-male.ts   # 穴位坐标 — male.glb 专属（待校准）
 │       │   ├── pulses/              # 脉象查询
 │       │   │   └── PulseList.tsx    # 脉象列表（分页+名称/分类搜索，管理员可行内编辑/新增/删除）
 │       │   ├── wuyun/               # 五运六气
@@ -164,10 +168,12 @@ menzhen/
 ├── nginx/
 │   └── nginx.conf                   # Nginx 反向代理配置
 ├── scripts/
-│   ├── backup.sh                    # 备份脚本（MySQL dump + 清理 3 天前备份 + 上传七牛云）
-│   ├── backup-loop.sh               # 定时备份守护进程（每小时备份，启动时检查）
-│   ├── restore.sh                   # 恢复脚本（MySQL + MinIO + 数据验证）
+│   ├── backup.sh                    # MySQL 备份脚本（dump + 清理 + 上传七牛云）
+│   ├── backup-minio.sh              # MinIO 备份脚本（mc mirror → tar.gz → 上传七牛云）
+│   ├── backup-loop.sh               # 定时备份守护进程（MySQL + MinIO 双循环，间隔可配置）
+│   ├── restore.sh                   # 恢复脚本（支持 --auto/--sql/--minio-tar 多模式）
 │   ├── upload_to_qiniu.py           # 七牛云上传脚本（AK/SK 从环境变量读取）
+│   ├── download_from_qiniu.py       # 七牛云下载脚本（下载最新备份文件）
 │   ├── seed-herbs-formulas.sh       # 中药/方剂数据播种（通过 API 触发 DeepSeek 回退自动入库）
 │   └── Dockerfile.backup            # 备份容器镜像（alpine + mysql-client + mc + python3 + qiniu SDK）
 ├── docker-compose.yml               # 6 个服务：nginx、web、api、mysql、minio、backup
@@ -355,11 +361,19 @@ menzhen/
 | BaseModel | — | id, created_at, updated_at, deleted_at |
 | `patient_id` | `uint64` | 患者 ID（索引） |
 | `tenant_id` | `uint64` | 租户 ID（索引） |
+| `chief_complaint` | `text` | 主诉 |
 | `diagnosis` | `text` | 诊断 |
 | `treatment` | `text` | 治疗方案 |
+| `pulse_id` | `*uint64` | 脉象 ID（FK → pulses，nullable） |
+| `pulse_name` | `varchar(100)` | 脉象名称（冗余，展示用） |
+| `tongue_image` | `varchar(500)` | 舌象图片路径（MinIO object key） |
+| `tongue_description` | `text` | 舌象描述（用户输入） |
+| `tongue_analysis` | `text` | 舌象 AI 分析结果（缓存） |
 | `notes` | `text` | 备注 |
 | `visit_date` | `date` | 就诊日期 |
 | `created_by` | `uint64` | 创建者用户 ID |
+
+**关联：** `Pulse` — belongs to `pulses`（通过 `pulse_id`），GetRecord 时 Preload
 
 #### `record_attachments` — 诊疗记录附件（无软删除）
 
@@ -670,6 +684,11 @@ menzhen/
 | `QINIU_SECRET_KEY` | （无默认） | 七牛云 Secret Key |
 | `QINIU_BUCKET` | （无默认） | 七牛云存储空间名 |
 | `QINIU_KEY_PREFIX` | `menzhen-backup/` | 七牛云上传路径前缀 |
+| `QINIU_DOMAIN` | `public.qnlinking.com` | 七牛云下载域名 |
+| `BACKUP_INTERVAL_MYSQL` | `7200` | MySQL 备份间隔（秒），默认 2 小时 |
+| `BACKUP_INTERVAL_MINIO` | `43200` | MinIO 备份间隔（秒），默认 12 小时 |
+| `QINIU_RETAIN_MYSQL` | `5` | 七牛云保留 MySQL 备份数 |
+| `QINIU_RETAIN_MINIO` | `5` | 七牛云保留 MinIO 备份数 |
 
 ---
 
@@ -690,10 +709,13 @@ menzhen/
 
 | 脚本 | 用途 |
 |------|------|
-| `scripts/backup.sh` | 全量备份：MySQL dump + 清理 3 月前 oplog + 清理 3 天前备份 + 上传七牛云 |
-| `scripts/backup-loop.sh` | 定时备份守护：每小时触发备份，启动时检测最近备份是否超过 1 小时 |
-| `scripts/restore.sh` | 恢复：导入 MySQL dump + 同步 MinIO 文件 + 验证数据完整性 |
+| `scripts/backup.sh` | MySQL 备份：dump + 清理 3 月前 oplog + 清理 3 天前备份 + 上传七牛云 + 清理云端旧备份 |
+| `scripts/backup-minio.sh` | MinIO 备份：mc mirror → tar.gz → 上传七牛云 → 清理云端旧备份 → 清理 3 天前本地备份 |
+| `scripts/backup-loop.sh` | 定时备份守护：双循环（MySQL + MinIO），间隔从环境变量读取，启动时检测 |
+| `scripts/restore.sh` | 恢复：支持旧格式目录 / --auto 自动检测 / --sql + --minio-tar 指定文件 |
 | `scripts/upload_to_qiniu.py` | 七牛云上传：备份完成后自动上传 SQL 文件，AK/SK 从环境变量读取 |
+| `scripts/download_from_qiniu.py` | 七牛云下载：列出并下载最新的 MySQL/MinIO 备份文件，支持 --type 过滤 |
+| `scripts/cleanup_qiniu.py` | 七牛云清理：上传后自动删除旧备份，按 `--type mysql\|minio` 分类，各保留最新 N 个（由 `QINIU_RETAIN_*` 配置） |
 | `scripts/seed-herbs-formulas.sh` | 中药/方剂数据播种：通过 API 逐条搜索触发 DeepSeek 回退自动入库，支持进度恢复、dry-run |
 | `scripts/Dockerfile.backup` | 备份容器镜像：alpine + mysql-client + MinIO Client (mc) + python3 + qiniu SDK |
 

@@ -26,3 +26,15 @@ export interface AcupointData {
   method: string;
   location?: string;
 }
+
+/** 经络路径坐标（模型专属） */
+export interface MeridianPathCoords {
+  path: Vec3[];
+  internalPath?: Vec3[];
+}
+
+/** 穴位元数据（不含坐标，模型通用） */
+export type AcupointMeta = Omit<AcupointData, 'position'>;
+
+/** 3D 人体模型类型 */
+export type BodyModelType = 'female' | 'male';

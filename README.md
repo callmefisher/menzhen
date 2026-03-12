@@ -29,7 +29,7 @@
 
 - **多租户** — 多诊所数据隔离，支持云端共享部署
 - **权限管理** — JWT 认证 + RBAC 细粒度权限控制（17 个权限码）
-- **自动备份** — 每小时备份数据库，3 天自动清理，支持七牛云远程存储
+- **自动备份** — 每 2 小时备份数据库、每 12 小时备份文件存储，3 天自动清理本地，支持七牛云远程存储及自动清理
 - **移动端适配** — 响应式布局（768px 断点），侧边栏变 Drawer、面板全屏自适应
 
 ## 技术栈
@@ -111,6 +111,11 @@ npm run build    # 构建生产包
 | `QINIU_SECRET_KEY` | 七牛云 Secret Key | — |
 | `QINIU_BUCKET` | 七牛云存储空间名 | — |
 | `QINIU_KEY_PREFIX` | 七牛云上传路径前缀 | `menzhen-backup/` |
+| `QINIU_DOMAIN` | 七牛云下载域名 | `public.qnlinking.com` |
+| `QINIU_RETAIN_MYSQL` | 七牛云保留 MySQL 备份数 | `5` |
+| `QINIU_RETAIN_MINIO` | 七牛云保留 MinIO 备份数 | `5` |
+| `BACKUP_INTERVAL_MYSQL` | MySQL 备份间隔（秒） | `7200`（2 小时） |
+| `BACKUP_INTERVAL_MINIO` | MinIO 备份间隔（秒） | `43200`（12 小时） |
 
 ## 项目结构
 
@@ -147,11 +152,14 @@ menzhen/
 ├── nginx/               # Nginx 反向代理配置
 ├── scripts/             # 备份/恢复/播种脚本
 │   ├── backup.sh        # MySQL dump + 清理 + 上传七牛云
-│   ├── backup-loop.sh   # 每小时定时备份守护进程
+│   ├── backup-minio.sh  # MinIO 镜像 + 压缩 + 上传七牛云
+│   ├── backup-loop.sh   # 定时备份守护进程（双循环）
 │   ├── restore.sh       # 恢复（MySQL + MinIO + 数据验证）
-│   ├── upload_to_qiniu.py   # 七牛云上传
-│   ├── seed-herbs-formulas.sh  # 中药/方剂数据批量播种
-│   └── Dockerfile.backup    # 备份容器镜像
+│   ├── upload_to_qiniu.py     # 七牛云上传
+│   ├── download_from_qiniu.py # 七牛云下载
+│   ├── cleanup_qiniu.py       # 七牛云旧备份清理（保留最新 N 个）
+│   ├── seed-herbs-formulas.sh # 中药/方剂数据批量播种
+│   └── Dockerfile.backup      # 备份容器镜像
 ├── docs/                # 项目文档
 │   ├── codebase.md      # 全局代码上下文（结构/模型/API）
 │   ├── operations-guide.md  # 运维手册
@@ -176,7 +184,7 @@ menzhen/
 
 - **部署**：`./deploy.sh`（自动生成随机密码、构建镜像、启动服务）
 - **备份恢复**：`./deploy.sh --restore /path/to/backup`
-- **自动备份**：每小时备份 MySQL，自动清理 3 天前备份，上传七牛云远程存储
+- **自动备份**：MySQL 每 2 小时、MinIO 每 12 小时，本地清理 3 天前备份，上传七牛云并自动清理云端旧备份（各保留最新 5 个）
 - **种子数据**：启动时幂等写入 17 个权限 + 默认租户 + 管理员角色/用户
 - **详细运维文档**：[docs/operations-guide.md](docs/operations-guide.md)
 

@@ -3,7 +3,7 @@ set -e
 
 # Hourly database backup script
 # Output: BACKUP_DIR/YYYYMMDD_HHMMSS.sql
-# Retention: 3 days
+# Retention: keep latest N files (QINIU_RETAIN_MYSQL, default 5)
 # After backup: upload to Qiniu cloud storage
 
 BACKUP_DIR="${BACKUP_DIR:-/backups}"
@@ -21,28 +21,48 @@ echo "[$(date)] Starting backup..."
 # Create backup directory
 mkdir -p "${BACKUP_DIR}"
 
-# 1. MySQL dump
+# 1. MySQL dump (write to temp file first, rename on success to avoid empty backups)
+TEMP_FILE="${BACKUP_FILE}.tmp"
 echo ">> Dumping MySQL to ${BACKUP_FILE}..."
-mysqldump -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASSWORD}" \
+if mysqldump -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASSWORD}" \
     --single-transaction --routines --triggers --no-tablespaces \
-    "${DB_NAME}" > "${BACKUP_FILE}"
-echo ">> MySQL dump complete: $(wc -c < "${BACKUP_FILE}") bytes"
+    "${DB_NAME}" > "${TEMP_FILE}" 2>&1; then
+    DUMP_SIZE=$(wc -c < "${TEMP_FILE}")
+    if [ "${DUMP_SIZE}" -lt 1024 ]; then
+        echo ">> ERROR: dump too small (${DUMP_SIZE} bytes), likely failed"
+        rm -f "${TEMP_FILE}"
+        exit 1
+    fi
+    mv "${TEMP_FILE}" "${BACKUP_FILE}"
+    echo ">> MySQL dump complete: ${DUMP_SIZE} bytes"
+else
+    echo ">> ERROR: mysqldump failed"
+    rm -f "${TEMP_FILE}"
+    exit 1
+fi
 
 # 2. Clean old oplog (keep 3 months)
 echo ">> Cleaning old operation logs (>3 months)..."
 mysql -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASSWORD}" "${DB_NAME}" \
     -e "DELETE FROM op_logs WHERE created_at < DATE_SUB(NOW(), INTERVAL 3 MONTH);" 2>/dev/null || true
 
-# 3. Clean backups older than 3 days
-echo ">> Cleaning backups older than 3 days..."
-find "${BACKUP_DIR}" -name "*.sql" -type f -mtime +3 -delete 2>/dev/null || true
-REMAINING=$(find "${BACKUP_DIR}" -name "*.sql" -type f | wc -l)
+# 3. Clean old local backups, keep latest N (same as cloud retention)
+LOCAL_RETAIN="${QINIU_RETAIN_MYSQL:-5}"
+echo ">> Cleaning local MySQL backups, keeping latest ${LOCAL_RETAIN}..."
+BACKUP_FILES=$(find "${BACKUP_DIR}" -maxdepth 1 -name "*.sql" -type f | sort -r)
+REMAINING=$(echo "${BACKUP_FILES}" | wc -l | tr -d ' ')
+if [ "${REMAINING}" -gt "${LOCAL_RETAIN}" ]; then
+    echo "${BACKUP_FILES}" | tail -n +$((LOCAL_RETAIN + 1)) | xargs rm -f
+fi
+REMAINING=$(find "${BACKUP_DIR}" -maxdepth 1 -name "*.sql" -type f | wc -l)
 echo ">> Remaining backup files: ${REMAINING}"
 
 # 4. Upload to Qiniu cloud storage
 echo ">> Uploading to Qiniu..."
 if python3 /scripts/upload_to_qiniu.py "${BACKUP_FILE}"; then
     echo ">> Qiniu upload complete"
+    # Clean up old backups on Qiniu, keep latest N
+    python3 /scripts/cleanup_qiniu.py --type mysql || echo ">> WARNING: Qiniu cleanup failed (non-fatal)"
 else
     echo ">> WARNING: Qiniu upload failed (backup is still saved locally)"
 fi

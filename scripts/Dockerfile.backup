@@ -5,6 +5,6 @@ RUN curl -fsSL https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/
     chmod +x /usr/local/bin/mc
 # Install Qiniu Python SDK
 RUN pip3 install --break-system-packages qiniu
-COPY backup-loop.sh backup.sh backup-minio.sh restore.sh upload_to_qiniu.py download_from_qiniu.py /scripts/
+COPY backup-loop.sh backup.sh backup-minio.sh restore.sh upload_to_qiniu.py download_from_qiniu.py cleanup_qiniu.py /scripts/
 RUN chmod +x /scripts/*.sh /scripts/*.py
 CMD ["/scripts/backup-loop.sh"]
