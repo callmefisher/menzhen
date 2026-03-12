@@ -337,6 +337,17 @@ export default function RecordForm() {
   };
 
   // Pulse search
+  const dedupPulses = (list: PulseItem[]) => {
+    const seen = new Set<string>();
+    return list.filter(p => {
+      if (!p.name?.trim()) return false;
+      const key = p.name.trim();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  };
+
   const searchPulses = useCallback(async (name: string) => {
     if (!name.trim()) {
       setPulseOptions([]);
@@ -346,7 +357,7 @@ export default function RecordForm() {
     try {
       const res = await listPulses({ name, page: 1, size: 10 });
       const body = res as unknown as { data: { list: PulseItem[]; total: number } };
-      setPulseOptions(body.data.list || []);
+      setPulseOptions(dedupPulses(body.data.list || []));
     } catch {
       // handled
     } finally {
@@ -361,7 +372,7 @@ export default function RecordForm() {
     }
     pulseSearchTimerRef.current = setTimeout(() => {
       searchPulses(value);
-    }, 300);
+    }, 800);
   };
 
   const handlePulseAiQuery = async () => {
@@ -370,7 +381,7 @@ export default function RecordForm() {
     try {
       const res = await listPulses({ name: pulseSearchText, page: 1, size: 10 });
       const body = res as unknown as { data: { list: PulseItem[]; total: number } };
-      const list = body.data.list || [];
+      const list = dedupPulses(body.data.list || []);
       setPulseOptions(list);
       if (list.length > 0) {
         const pulse = list[0];
@@ -830,21 +841,41 @@ export default function RecordForm() {
           </div>
         </div>
         {tongueResult && (
-          <Card size="small" style={{ marginBottom: 16 }} title={
-            <Space>
-              <RobotOutlined style={{ color: '#1677ff' }} />
-              <span>舌象 AI 分析结果</span>
-            </Space>
-          }>
-            <div className="ai-analysis-content" style={{ fontSize: 14, lineHeight: 1.8, maxHeight: 300, overflow: 'auto' }}>
-              <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-                {tongueResult}
-              </Markdown>
+          <div style={{
+            marginBottom: 16,
+            borderRadius: 12,
+            background: 'linear-gradient(135deg, #f0f7ff 0%, #e8f4f8 50%, #f0f0ff 100%)',
+            border: '1px solid #d6e4ff',
+            overflow: 'hidden',
+          }}>
+            <div style={{
+              padding: '12px 16px',
+              background: 'linear-gradient(90deg, #1677ff, #4096ff)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}>
+              <RobotOutlined style={{ color: '#fff', fontSize: 16 }} />
+              <span style={{ color: '#fff', fontWeight: 600, fontSize: 15 }}>舌象 AI 分析结果</span>
             </div>
-            <div style={{ fontSize: 12, color: '#999', textAlign: 'center', marginTop: 8 }}>
+            <div style={{ padding: '16px 20px', maxHeight: 400, overflow: 'auto' }}>
+              <div className="ai-analysis-content" style={{ fontSize: 14, lineHeight: 1.9, color: '#333' }}>
+                <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+                  {tongueResult}
+                </Markdown>
+              </div>
+            </div>
+            <div style={{
+              padding: '8px 16px',
+              borderTop: '1px dashed #d6e4ff',
+              textAlign: 'center',
+              fontSize: 12,
+              color: '#8c8c8c',
+              background: 'rgba(255,255,255,0.6)',
+            }}>
               以上分析由 AI 生成，仅供参考
             </div>
-          </Card>
+          </div>
         )}
 
         <div style={{ display: 'flex', gap: 16, flexDirection: isMobile ? 'column' : 'row' }}>
@@ -1018,6 +1049,8 @@ export default function RecordForm() {
                           prescription={item}
                           patientName={recordPatient?.name}
                           patientAge={recordPatient?.age}
+                          chiefComplaint={form.getFieldValue('chief_complaint')}
+                          treatment={form.getFieldValue('treatment')}
                         />
                         {hasPermission('prescription:create') && (
                           <Dropdown
