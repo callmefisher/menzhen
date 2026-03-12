@@ -77,6 +77,7 @@
 ### 关键架构要点
 - **租户隔离**：patients/records/prescriptions/ai_analyses 表含 `tenant_id`
 - **全局数据**：herbs/formulas/pulses/meridian_resources/wuyun_liuqi 无租户隔离
+- **3D经络坐标分模型**：坐标数据按人体模型独立存储（`meridian-paths-{female|male}.ts` / `acupoint-positions-{female|male}.ts`），元数据（名称、功效等）共享，通过 `getMeridians(model)` / `getAcupoints(model)` 按模型组装
 - **权限码**：`patient:create/read/update/delete`, `record:create/read/update/delete`, `oplog:read`, `user:manage`, `role:manage`, `herb:read`, `formula:read`, `pulse:read`, `prescription:create`, `prescription:read`, `tenant:manage`
 
 ## 开发环境
@@ -107,12 +108,20 @@ DeepSeek AI 相关（可选）：
 - `QINIU_SECRET_KEY` — 七牛 Secret Key
 - `QINIU_BUCKET` — 七牛存储空间名
 - `QINIU_KEY_PREFIX` — 上传路径前缀（默认 `menzhen-backup/`）
+- `QINIU_DOMAIN` — 下载域名（默认 `public.qnlinking.com`）
+- `QINIU_RETAIN_MYSQL` — 七牛云保留 MySQL 备份数（默认 `5`）
+- `QINIU_RETAIN_MINIO` — 七牛云保留 MinIO 备份数（默认 `5`）
+
+备份间隔配置（可选）：
+- `BACKUP_INTERVAL_MYSQL` — MySQL 备份间隔秒数（默认 `7200`，即 2 小时）
+- `BACKUP_INTERVAL_MINIO` — MinIO 备份间隔秒数（默认 `43200`，即 12 小时）
 
 ### 备份策略
-- 每 1 小时自动备份一次 MySQL 数据库
-- 备份文件命名：`YYYYMMDD_HHMMSS.sql`，统一存放于 `backups/` 目录
-- 自动清理超过 3 天的旧备份
-- 启动时检测：若最近备份超过 1 小时则立即触发
+- **MySQL**：每 2 小时自动备份（可通过 `BACKUP_INTERVAL_MYSQL` 配置），`YYYYMMDD_HHMMSS.sql` 存放于 `backups/`
+- **MinIO**：每 12 小时自动备份（可通过 `BACKUP_INTERVAL_MINIO` 配置），`minio_YYYYMMDD_HHMMSS.tar.gz` 存放于 `backups/minio/`
+- **本地清理**：本地和云端保留策略一致，默认各保留最新 5 个（`QINIU_RETAIN_MYSQL`/`QINIU_RETAIN_MINIO`）
+- **七牛云清理**：上传后自动清理云端旧备份，保留数与本地一致
+- 启动时检测：若最近备份超过配置间隔则立即触发
 - 备份完成后自动上传至七牛云对象存储（需配置 AK/SK）
 
 ## Claude Code 工具链

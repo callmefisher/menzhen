@@ -42,7 +42,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	deepSeekService := service.NewDeepSeekService(cfg)
 	herbHandler := handler.NewHerbHandler(db, deepSeekService)
 	formulaHandler := handler.NewFormulaHandler(db, deepSeekService)
-	pulseHandler := handler.NewPulseHandler(db)
+	pulseHandler := handler.NewPulseHandler(db, deepSeekService)
 	prescriptionHandler := handler.NewPrescriptionHandler(db)
 	tenantHandler := handler.NewTenantHandler(db)
 	aiAnalysisHandler := handler.NewAIAnalysisHandler(deepSeekService, db)
@@ -102,6 +102,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		// AI analysis routes (authenticated, requires record:read permission).
 		authenticated.POST("/ai/analyze-diagnosis", middleware.RequirePermission(db, "record:read"), aiAnalysisHandler.Analyze)
 		authenticated.POST("/ai/analyze-diagnosis-stream", middleware.RequirePermission(db, "record:read"), aiAnalysisHandler.AnalyzeStream)
+		authenticated.POST("/ai/analyze-tongue", middleware.RequirePermission(db, "record:read"), aiAnalysisHandler.AnalyzeTongue)
 
 		// Operation log routes.
 		oplogs := authenticated.Group("/oplogs")

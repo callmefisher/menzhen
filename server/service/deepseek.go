@@ -94,6 +94,15 @@ type FormulaAIResult struct {
 	Composition []FormulaCompositionAI `json:"composition"`
 }
 
+// PulseAIResult is the parsed result from DeepSeek for pulse queries.
+type PulseAIResult struct {
+	Name             string `json:"name"`
+	Category         string `json:"category"`
+	Description      string `json:"description"`
+	ClinicalMeaning  string `json:"clinical_meaning"`
+	CommonConditions string `json:"common_conditions"`
+}
+
 // QueryHerb queries DeepSeek for information about a specific herb.
 func (s *DeepSeekService) QueryHerb(name string) (*HerbAIResult, error) {
 	if !s.IsEnabled() {
@@ -173,6 +182,66 @@ JSON格式如下:
 	}
 
 	return &result, nil
+}
+
+// QueryPulse queries DeepSeek for information about a specific pulse type.
+func (s *DeepSeekService) QueryPulse(name string) (*PulseAIResult, error) {
+	if !s.IsEnabled() {
+		return nil, ErrDeepSeekDisabled
+	}
+
+	systemPrompt := `你是一个中医脉学数据库助手。用户会查询脉象信息，请以严格的JSON格式返回。
+不要返回任何其他文字，只返回JSON。
+JSON格式如下:
+{
+  "name": "脉象名称",
+  "category": "分类，如浮脉类、沉脉类、迟脉类、数脉类等",
+  "description": "脉象特征描述",
+  "clinical_meaning": "临床意义",
+  "common_conditions": "常见病症"
+}
+如果你不确定该脉象信息，请返回你最了解的内容，不要编造。`
+
+	userPrompt := fmt.Sprintf("请提供脉象「%s」的详细信息。", name)
+
+	content, err := s.chat(systemPrompt, userPrompt)
+	if err != nil {
+		return nil, err
+	}
+
+	var result PulseAIResult
+	if err := parseJSONFromContent(content, &result); err != nil {
+		log.Printf("DeepSeek: failed to parse pulse response: %v, content: %s", err, content)
+		return nil, fmt.Errorf("failed to parse AI response: %w", err)
+	}
+
+	if result.Name == "" {
+		result.Name = name
+	}
+
+	return &result, nil
+}
+
+// AnalyzeTongue calls DeepSeek to analyze tongue diagnosis description.
+func (s *DeepSeekService) AnalyzeTongue(description string) (string, error) {
+	if !s.IsEnabled() {
+		return "", ErrDeepSeekDisabled
+	}
+
+	systemPrompt := `你是一名中医舌诊专家，精通《舌鉴辨正》《察舌辨症新法》等舌诊经典著作，对舌质、舌苔、舌形、舌态的辨证分析有深入研究。
+
+请根据用户描述的舌象，从以下角度进行辨证分析：
+1. 舌象解读：对描述的舌质、舌苔等特征逐一分析
+2. 脏腑辨证：舌象反映的脏腑状态
+3. 病机分析：可能的病因病机
+4. 证型判断：最可能的证型
+5. 调治建议：饮食、生活调养建议
+
+请以 Markdown 格式输出，使用标题、列表、加粗等格式，确保层次分明。`
+
+	userPrompt := fmt.Sprintf("请分析以下舌象描述：\n\n%s", description)
+
+	return s.chatLong(systemPrompt, userPrompt)
 }
 
 // chat sends a request to the AI API (Anthropic Messages format) and returns the response text.

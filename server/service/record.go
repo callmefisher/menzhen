@@ -16,12 +16,17 @@ var (
 
 // CreateRecordRequest is the input for creating a new medical record.
 type CreateRecordRequest struct {
-	PatientID   uint64              `json:"patient_id" binding:"required"`
-	Diagnosis   string              `json:"diagnosis"`
-	Treatment   string              `json:"treatment"`
-	Notes       string              `json:"notes"`
-	VisitDate   string              `json:"visit_date" binding:"required"` // YYYY-MM-DD
-	Attachments []AttachmentRequest `json:"attachments"`
+	PatientID         uint64              `json:"patient_id" binding:"required"`
+	Diagnosis         string              `json:"diagnosis"`
+	Treatment         string              `json:"treatment"`
+	Notes             string              `json:"notes"`
+	VisitDate         string              `json:"visit_date" binding:"required"` // YYYY-MM-DD
+	ChiefComplaint    string              `json:"chief_complaint"`
+	PulseID           *uint64             `json:"pulse_id"`
+	PulseName         string              `json:"pulse_name"`
+	TongueImage       string              `json:"tongue_image"`
+	TongueDescription string              `json:"tongue_description"`
+	Attachments       []AttachmentRequest `json:"attachments"`
 }
 
 // AttachmentRequest describes a file attachment for a medical record.
@@ -35,22 +40,30 @@ type AttachmentRequest struct {
 // UpdateRecordRequest is the input for updating an existing medical record.
 // Pointer fields distinguish between "not provided" and "zero value".
 type UpdateRecordRequest struct {
-	Diagnosis   *string             `json:"diagnosis"`
-	Treatment   *string             `json:"treatment"`
-	Notes       *string             `json:"notes"`
-	VisitDate   *string             `json:"visit_date"`
-	Attachments []AttachmentRequest `json:"attachments"` // replace all attachments if provided (non-nil slice)
+	Diagnosis         *string             `json:"diagnosis"`
+	Treatment         *string             `json:"treatment"`
+	Notes             *string             `json:"notes"`
+	VisitDate         *string             `json:"visit_date"`
+	ChiefComplaint    *string             `json:"chief_complaint"`
+	PulseID           *uint64             `json:"pulse_id"`
+	PulseName         *string             `json:"pulse_name"`
+	TongueImage       *string             `json:"tongue_image"`
+	TongueDescription *string             `json:"tongue_description"`
+	TongueAnalysis    *string             `json:"tongue_analysis"`
+	Attachments       []AttachmentRequest `json:"attachments"` // replace all attachments if provided (non-nil slice)
 }
 
 // RecordListItem is a flattened view used for paginated listing.
 type RecordListItem struct {
-	ID          uint64    `json:"id"`
-	PatientID   uint64    `json:"patient_id"`
-	PatientName string    `json:"patient_name"`
-	PatientAge  int       `json:"patient_age"`
-	Diagnosis   string    `json:"diagnosis"`
-	VisitDate   string    `json:"visit_date"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID             uint64    `json:"id"`
+	PatientID      uint64    `json:"patient_id"`
+	PatientName    string    `json:"patient_name"`
+	PatientAge     int       `json:"patient_age"`
+	Diagnosis      string    `json:"diagnosis"`
+	ChiefComplaint string    `json:"chief_complaint"`
+	PulseName      string    `json:"pulse_name"`
+	VisitDate      string    `json:"visit_date"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 // RecordService handles medical-record-related business logic.
@@ -81,13 +94,18 @@ func (s *RecordService) CreateRecord(tenantID, createdBy uint64, req *CreateReco
 	}
 
 	record := model.MedicalRecord{
-		PatientID: req.PatientID,
-		TenantID:  tenantID,
-		Diagnosis: req.Diagnosis,
-		Treatment: req.Treatment,
-		Notes:     req.Notes,
-		VisitDate: visitDate,
-		CreatedBy: createdBy,
+		PatientID:         req.PatientID,
+		TenantID:          tenantID,
+		Diagnosis:         req.Diagnosis,
+		Treatment:         req.Treatment,
+		Notes:             req.Notes,
+		VisitDate:         visitDate,
+		CreatedBy:         createdBy,
+		ChiefComplaint:    req.ChiefComplaint,
+		PulseID:           req.PulseID,
+		PulseName:         req.PulseName,
+		TongueImage:       req.TongueImage,
+		TongueDescription: req.TongueDescription,
 	}
 
 	// Use a transaction to create record and attachments atomically.
@@ -130,6 +148,7 @@ func (s *RecordService) GetRecord(tenantID uint64, id uint64) (*model.MedicalRec
 		Where("tenant_id = ?", tenantID).
 		Preload("Attachments").
 		Preload("Patient").
+		Preload("Pulse").
 		First(&record, id).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -148,7 +167,7 @@ func (s *RecordService) ListRecords(tenantID uint64, name, date string, page, si
 	var total int64
 
 	query := s.DB.Table("medical_records").
-		Select("medical_records.id, medical_records.patient_id, patients.name AS patient_name, patients.age AS patient_age, medical_records.diagnosis, DATE_FORMAT(medical_records.visit_date, '%Y-%m-%d') AS visit_date, medical_records.created_at").
+		Select("medical_records.id, medical_records.patient_id, patients.name AS patient_name, patients.age AS patient_age, medical_records.diagnosis, medical_records.chief_complaint, medical_records.pulse_name, DATE_FORMAT(medical_records.visit_date, '%Y-%m-%d') AS visit_date, medical_records.created_at").
 		Joins("JOIN patients ON patients.id = medical_records.patient_id").
 		Where("medical_records.tenant_id = ? AND medical_records.deleted_at IS NULL", tenantID)
 
@@ -213,6 +232,24 @@ func (s *RecordService) UpdateRecord(tenantID uint64, id uint64, req *UpdateReco
 			return nil, nil, errors.New("invalid visit_date format, expected YYYY-MM-DD")
 		}
 		updates["visit_date"] = visitDate
+	}
+	if req.ChiefComplaint != nil {
+		updates["chief_complaint"] = *req.ChiefComplaint
+	}
+	if req.PulseID != nil {
+		updates["pulse_id"] = *req.PulseID
+	}
+	if req.PulseName != nil {
+		updates["pulse_name"] = *req.PulseName
+	}
+	if req.TongueImage != nil {
+		updates["tongue_image"] = *req.TongueImage
+	}
+	if req.TongueDescription != nil {
+		updates["tongue_description"] = *req.TongueDescription
+	}
+	if req.TongueAnalysis != nil {
+		updates["tongue_analysis"] = *req.TongueAnalysis
 	}
 
 	err := s.DB.Transaction(func(tx *gorm.DB) error {
