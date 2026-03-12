@@ -85,48 +85,118 @@ docker compose logs --tail 100 api
 
 ### 自动备份
 
-`backup` 服务会在每天凌晨自动执行备份（默认 2:00），备份文件保存在 `./backups/` 目录。
+`backup` 服务自动执行双重备份：
 
-可通过环境变量 `BACKUP_HOUR` 修改备份时间：
+- **MySQL 备份**：默认每 2 小时，文件名 `YYYYMMDD_HHMMSS.sql`，存放于 `./backups/`
+- **MinIO 备份**：默认每 12 小时，文件名 `minio_YYYYMMDD_HHMMSS.tar.gz`，存放于 `./backups/minio/`
+
+可通过 `.env` 配置备份间隔（秒）：
 
 ```bash
-# .env 中设置备份时间为凌晨 4 点
-BACKUP_HOUR=4
+BACKUP_INTERVAL_MYSQL=7200    # MySQL 备份间隔，默认 2 小时
+BACKUP_INTERVAL_MINIO=43200   # MinIO 备份间隔，默认 12 小时
+```
+
+备份文件结构：
+
+```
+backups/
+├── 20260312_120000.sql              # MySQL 备份
+├── 20260312_140000.sql
+├── minio/
+│   ├── minio_20260312_060000.tar.gz # MinIO 备份
+│   └── minio_20260312_180000.tar.gz
 ```
 
 ### 手动触发备份
 
 ```bash
+# 手动触发 MySQL 备份
 docker compose exec backup bash /scripts/backup.sh
-```
 
-备份产出的目录结构：
-
-```
-backups/backup-2026-02-24/
-├── database.sql     # MySQL 完整导出
-├── files/           # MinIO 附件文件
-└── metadata.json    # 备份时间等元信息
+# 手动触发 MinIO 备份
+docker compose exec backup bash /scripts/backup-minio.sh
 ```
 
 ### 恢复数据
 
-**方式一：随部署一起恢复（新环境）**
+#### 本机恢复（有本地备份文件）
 
 ```bash
-./deploy.sh --restore ./backups/backup-2026-02-24
+# 自动恢复最新备份（推荐）
+docker compose exec backup bash /scripts/restore.sh --auto
+
+# 指定文件恢复
+docker compose exec backup bash /scripts/restore.sh --sql /backups/20260312_120000.sql --minio-tar /backups/minio/minio_20260312_060000.tar.gz
 ```
 
-**方式二：服务已在运行，只恢复数据**
+#### 跨机器恢复（从七牛云下载）
+
+适用于新服务器部署、服务器迁移等场景。`restore.sh --auto` 在本地无备份文件时会自动从七牛云下载。
+
+**Linux / macOS：**
 
 ```bash
-docker compose exec backup bash /scripts/restore.sh /backups/backup-2026-02-24
+# 1. 克隆代码并部署
+git clone <repo-url> && cd menzhen
+./deploy.sh
+
+# 2. 确保 .env 中配置了七牛云 AK/SK/Bucket/Domain
+#    QINIU_ACCESS_KEY=xxx
+#    QINIU_SECRET_KEY=xxx
+#    QINIU_BUCKET=public
+#    QINIU_DOMAIN=public.qnlinking.com
+
+# 3. 一键恢复（自动下载 + 恢复）
+docker compose exec backup bash /scripts/restore.sh --auto
+
+# 或者分步操作：先下载，再恢复
+docker compose exec backup python3 /scripts/download_from_qiniu.py
+docker compose exec backup bash /scripts/restore.sh --auto
 ```
 
-恢复过程：
-1. 导入 `database.sql` 到 MySQL
-2. 同步 `files/` 目录到 MinIO（如有）
-3. 验证数据完整性（打印表数量、患者数、记录数）
+**Windows（Docker Desktop）：**
+
+Windows 通过 Docker Desktop 运行，命令完全一致，只需在 PowerShell 或 CMD 中执行：
+
+```powershell
+# 1. 克隆代码并部署
+git clone <repo-url>
+cd menzhen
+# 手动复制 .env.example 为 .env 并编辑配置（或用 deploy.sh 的 Git Bash 版本）
+copy .env.example .env
+# 编辑 .env 填入密码和七牛云配置
+docker compose up -d --build
+
+# 2. 等待服务就绪后恢复
+docker compose exec backup bash /scripts/restore.sh --auto
+```
+
+> **Windows 注意事项：**
+> - 需要安装 [Docker Desktop for Windows](https://www.docker.com/products/docker-desktop/)
+> - `deploy.sh` 是 Bash 脚本，可通过 Git Bash 或 WSL 执行，也可手动执行其中的步骤
+> - `docker compose` 命令在 PowerShell / CMD / Git Bash 中均可使用
+> - 备份文件目录 `./backups/` 会自动映射到容器内 `/backups/`
+
+#### 仅手动下载备份（不恢复）
+
+```bash
+# 下载全部（MySQL + MinIO）
+docker compose exec backup python3 /scripts/download_from_qiniu.py
+
+# 只下载 MySQL
+docker compose exec backup python3 /scripts/download_from_qiniu.py --type mysql
+
+# 只下载 MinIO
+docker compose exec backup python3 /scripts/download_from_qiniu.py --type minio
+```
+
+#### 恢复过程说明
+
+1. 若本地无备份文件，自动从七牛云下载最新备份
+2. 导入 `.sql` 到 MySQL
+3. 解压 `tar.gz` 并同步到 MinIO（如有）
+4. 验证数据完整性（打印表数量、患者数、记录数）
 
 ---
 
@@ -167,11 +237,22 @@ docker compose exec backup bash /scripts/restore.sh /backups/backup-2026-02-24
 | `DEEPSEEK_BASE_URL` | API 地址 | `https://api.qnaigc.com/v1/messages` |
 | `DEEPSEEK_MODEL` | 模型名 | `deepseek/deepseek-v3.2-251201` |
 
+### 七牛云（可选）
+
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `QINIU_ACCESS_KEY` | 七牛 Access Key | 无 |
+| `QINIU_SECRET_KEY` | 七牛 Secret Key | 无 |
+| `QINIU_BUCKET` | 存储空间名 | 无 |
+| `QINIU_KEY_PREFIX` | 上传路径前缀 | `menzhen-backup/` |
+| `QINIU_DOMAIN` | 下载域名 | `public.qnlinking.com` |
+
 ### 备份
 
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
-| `BACKUP_HOUR` | 每日自动备份时间（24h） | `2` |
+| `BACKUP_INTERVAL_MYSQL` | MySQL 备份间隔（秒） | `7200`（2小时） |
+| `BACKUP_INTERVAL_MINIO` | MinIO 备份间隔（秒） | `43200`（12小时） |
 
 ---
 
