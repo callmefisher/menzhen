@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"log"
+	"strings"
 
 	"github.com/callmefisher/menzhen/server/model"
 	"gorm.io/gorm"
@@ -25,7 +26,10 @@ func (s *PulseService) Search(name, category string, page, size int) ([]model.Pu
 
 	query := s.DB.Model(&model.Pulse{})
 	if name != "" {
-		query = query.Where("name LIKE ?", "%"+name+"%")
+		// Search with both "紧" and "紧脉" variants for better matching
+		trimmed := strings.TrimSuffix(name, "脉")
+		withSuffix := trimmed + "脉"
+		query = query.Where("name LIKE ? OR name LIKE ?", "%"+trimmed+"%", "%"+withSuffix+"%")
 	}
 	if category != "" {
 		query = query.Where("category = ?", category)
@@ -38,14 +42,36 @@ func (s *PulseService) Search(name, category string, page, size int) ([]model.Pu
 		return nil, 0, err
 	}
 
-	// If name search yielded no results and no category filter, try DeepSeek
-	if total == 0 && name != "" && category == "" && s.DeepSeek != nil && s.DeepSeek.IsEnabled() {
+	// Check if there is an exact match in the DB results (with/without 脉 suffix)
+	hasExactMatch := false
+	trimmedName := strings.TrimSuffix(name, "脉")
+	for _, p := range pulses {
+		pTrimmed := strings.TrimSuffix(p.Name, "脉")
+		if p.Name == name || pTrimmed == trimmedName {
+			hasExactMatch = true
+			break
+		}
+	}
+
+	// If no exact match and DeepSeek is enabled, query AI and merge results
+	if !hasExactMatch && name != "" && category == "" && s.DeepSeek != nil && s.DeepSeek.IsEnabled() {
 		pulse, err := s.queryAndSaveFromAI(name)
 		if err != nil {
 			log.Printf("DeepSeek pulse query failed for %q: %v", name, err)
-			return pulses, 0, nil
+			return pulses, total, nil
 		}
-		return []model.Pulse{*pulse}, 1, nil
+		// Avoid duplicating if AI result already in DB results
+		isDup := false
+		for _, p := range pulses {
+			if p.Name == pulse.Name {
+				isDup = true
+				break
+			}
+		}
+		if !isDup {
+			pulses = append([]model.Pulse{*pulse}, pulses...)
+			total++
+		}
 	}
 
 	return pulses, total, nil

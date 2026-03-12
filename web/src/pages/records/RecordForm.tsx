@@ -138,9 +138,8 @@ export default function RecordForm() {
 
   // Sync patient info + chief complaint + pulse to diagnosis template
   useEffect(() => {
-    if (isEdit) return;
     const diagnosis = form.getFieldValue('diagnosis') as string;
-    if (!diagnosis || !diagnosis.includes('性别：')) return;
+    if (!diagnosis || !diagnosis.includes('主诉：')) return;
 
     const patient = patients.find(p => p.id === watchedPatientId);
     const genderText = patient ? (patient.gender === 1 ? '男' : patient.gender === 2 ? '女' : '') : '';
@@ -157,7 +156,7 @@ export default function RecordForm() {
     if (updated !== diagnosis) {
       form.setFieldValue('diagnosis', updated);
     }
-  }, [isEdit, form, patients, watchedPatientId, watchedChiefComplaint, watchedPulseName]);
+  }, [form, patients, watchedPatientId, watchedChiefComplaint, watchedPulseName]);
 
   // Search patients by name
   const searchPatients = useCallback(async (name?: string) => {
@@ -372,7 +371,7 @@ export default function RecordForm() {
     }
     pulseSearchTimerRef.current = setTimeout(() => {
       searchPulses(value);
-    }, 800);
+    }, 1000);
   };
 
   const handlePulseAiQuery = async () => {
@@ -505,7 +504,7 @@ export default function RecordForm() {
           attachments: payload.attachments,
         });
         message.success('诊疗记录更新成功');
-        navigate('/records');
+        navigate('/records', { state: { highlightId: Number(id) } });
       } else {
         const res = await createRecord(payload);
         const body = res as unknown as { data: { id: number } };
@@ -721,56 +720,65 @@ export default function RecordForm() {
         </Form.Item>
 
         {/* 脉象 */}
-        <div style={{ display: 'flex', gap: 16, flexDirection: isMobile ? 'column' : 'row', alignItems: 'flex-start' }}>
-          <Form.Item label="脉象" name="pulse_id" style={{ flex: 1 }}>
-            <Select
-              showSearch
-              placeholder="搜索脉象名称"
-              filterOption={false}
-              onSearch={handlePulseSearch}
-              onChange={handlePulseSelect}
-              loading={pulseLoading}
-              allowClear
-              onClear={() => {
-                setSelectedPulse(null);
-                form.setFieldsValue({ pulse_name: '' });
-              }}
-              notFoundContent={
-                pulseLoading ? (
-                  <Spin size="small" />
-                ) : pulseSearchText ? (
-                  <div style={{ textAlign: 'center', padding: '8px 0' }}>
-                    <div style={{ color: '#999', marginBottom: 8 }}>未找到匹配脉象</div>
-                    <Button
-                      type="link"
-                      icon={<SearchOutlined />}
-                      loading={pulseAiQuerying}
-                      onClick={handlePulseAiQuery}
-                    >
-                      从 AI 查询
-                    </Button>
-                  </div>
-                ) : '输入关键字搜索'
-              }
-              options={pulseOptions.map(p => ({
-                value: p.id,
-                label: `${p.name}${p.category ? ` (${p.category})` : ''}`,
-              }))}
-            />
-          </Form.Item>
-          <Form.Item name="pulse_name" hidden>
-            <Input />
-          </Form.Item>
-          {selectedPulse && (
-            <Card size="small" style={{ flex: 1, maxWidth: isMobile ? '100%' : 400 }}
-              title={<span>{selectedPulse.name} {selectedPulse.category && <Tag color="blue">{selectedPulse.category}</Tag>}</span>}
-            >
-              {selectedPulse.description && <div style={{ marginBottom: 4 }}><strong>特征：</strong>{selectedPulse.description}</div>}
-              {selectedPulse.clinical_meaning && <div style={{ marginBottom: 4 }}><strong>临床意义：</strong>{selectedPulse.clinical_meaning}</div>}
-              {selectedPulse.common_conditions && <div><strong>常见病症：</strong>{selectedPulse.common_conditions}</div>}
-            </Card>
-          )}
-        </div>
+        <Form.Item label="脉象" name="pulse_id">
+          <Select
+            showSearch
+            placeholder="搜索脉象名称"
+            filterOption={false}
+            onSearch={handlePulseSearch}
+            onChange={handlePulseSelect}
+            loading={pulseLoading}
+            allowClear
+            onClear={() => {
+              setSelectedPulse(null);
+              form.setFieldsValue({ pulse_name: '' });
+            }}
+            notFoundContent={
+              pulseLoading ? (
+                <Spin size="small" />
+              ) : pulseSearchText ? (
+                <div style={{ textAlign: 'center', padding: '8px 0' }}>
+                  <div style={{ color: '#999', marginBottom: 8 }}>未找到匹配脉象</div>
+                  <Button
+                    type="link"
+                    icon={<SearchOutlined />}
+                    loading={pulseAiQuerying}
+                    onClick={handlePulseAiQuery}
+                  >
+                    从 AI 查询
+                  </Button>
+                </div>
+              ) : '输入关键字搜索'
+            }
+            options={pulseOptions.map(p => ({
+              value: p.id,
+              label: `${p.name}${p.category ? ` (${p.category})` : ''}`,
+            }))}
+          />
+        </Form.Item>
+        <Form.Item name="pulse_name" hidden>
+          <Input />
+        </Form.Item>
+        {selectedPulse && (
+          <div style={{
+            marginTop: -8,
+            marginBottom: 16,
+            padding: '12px 16px',
+            background: '#f6f8fa',
+            borderRadius: 8,
+            border: '1px solid #e8e8e8',
+            fontSize: 14,
+            lineHeight: 1.8,
+          }}>
+            <div style={{ marginBottom: 4 }}>
+              <strong>{selectedPulse.name}</strong>
+              {selectedPulse.category && <Tag color="blue" style={{ marginLeft: 8 }}>{selectedPulse.category}</Tag>}
+            </div>
+            {selectedPulse.description && <div><span style={{ color: '#666' }}>特征：</span>{selectedPulse.description}</div>}
+            {selectedPulse.clinical_meaning && <div><span style={{ color: '#666' }}>临床意义：</span>{selectedPulse.clinical_meaning}</div>}
+            {selectedPulse.common_conditions && <div><span style={{ color: '#666' }}>常见病症：</span>{selectedPulse.common_conditions}</div>}
+          </div>
+        )}
 
         {/* 舌象 */}
         <div style={{ display: 'flex', gap: 16, flexDirection: isMobile ? 'column' : 'row', alignItems: 'flex-start' }}>

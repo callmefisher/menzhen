@@ -99,6 +99,28 @@ func (h *RecordHandler) List(c *gin.Context) {
 	})
 }
 
+// FindPage handles GET /api/v1/records/:id/page — returns which page a record is on.
+func (h *RecordHandler) FindPage(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "invalid record id"})
+		return
+	}
+	size, _ := strconv.Atoi(c.DefaultQuery("size", "20"))
+	if size < 1 {
+		size = 20
+	}
+
+	svc := service.NewRecordService(h.db)
+	page, err := svc.FindRecordPage(tenantID, id, size)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"page": 1}})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"page": page}})
+}
+
 // Detail handles GET /api/v1/records/:id.
 func (h *RecordHandler) Detail(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)

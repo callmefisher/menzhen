@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Table,
   Input,
@@ -19,7 +19,7 @@ import {
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { Dayjs } from 'dayjs';
-import { listRecords, deleteRecord } from '../../api/record';
+import { listRecords, deleteRecord, findRecordPage } from '../../api/record';
 import type { RecordListItem, RecordListParams } from '../../api/record';
 import useIsMobile from '../../hooks/useIsMobile';
 
@@ -27,7 +27,11 @@ const { RangePicker } = DatePicker;
 
 export default function RecordList() {
   const navigate = useNavigate();
+  const location = useLocation();
   const isMobile = useIsMobile();
+  const highlightId = (location.state as { highlightId?: number })?.highlightId;
+  const highlightedRef = useRef(false);
+  const pageResolvedRef = useRef(false);
 
   const [data, setData] = useState<RecordListItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -36,6 +40,21 @@ export default function RecordList() {
     page: 1,
     size: 20,
   });
+
+  // If returning from edit, ask backend which page the record is on and jump there
+  useEffect(() => {
+    if (!highlightId || pageResolvedRef.current) return;
+    pageResolvedRef.current = true;
+    findRecordPage(highlightId, 20)
+      .then((res) => {
+        const body = res as unknown as { data: { page: number } };
+        const page = body.data?.page || 1;
+        if (page !== 1) {
+          setParams(prev => ({ ...prev, page }));
+        }
+      })
+      .catch(() => { /* ignore, stay on page 1 */ });
+  }, [highlightId]);
 
   // Search form local state (not submitted until user clicks search)
   const [searchName, setSearchName] = useState('');
@@ -65,6 +84,23 @@ export default function RecordList() {
   useEffect(() => {
     fetchData(params);
   }, [params, fetchData]);
+
+  // Scroll to and highlight the row after returning from edit
+  useEffect(() => {
+    if (!highlightId || highlightedRef.current || loading) return;
+    // Wait for DOM update after data render
+    const timer = setTimeout(() => {
+      const row = document.querySelector(`tr[data-row-key="${highlightId}"]`);
+      if (row) {
+        highlightedRef.current = true;
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        row.classList.add('row-highlight');
+        setTimeout(() => row.classList.remove('row-highlight'), 10000);
+        window.history.replaceState({}, '');
+      }
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [highlightId, loading, data]);
 
   const handleSearch = () => {
     const newParams: RecordListParams = {
