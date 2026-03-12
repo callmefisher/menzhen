@@ -54,3 +54,7 @@ export function saveAiAnalysis(recordId: number, diagnosis: string, analysis: st
 export function analyzeTongue(data: { description: string; record_id?: number; force?: boolean }) {
   return request.post('/ai/analyze-tongue', data, { timeout: 120000 });
 }
+
+export function findRecordPage(id: number, size = 20) {
+  return request.get(`/records/${id}/page`, { params: { size } });
+}

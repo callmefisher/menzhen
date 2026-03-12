@@ -92,6 +92,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			records.GET("", middleware.RequirePermission(db, "record:read"), recordHandler.List)
 			records.POST("", middleware.RequirePermission(db, "record:create"), recordHandler.Create)
 			records.GET("/:id", middleware.RequirePermission(db, "record:read"), recordHandler.Detail)
+			records.GET("/:id/page", middleware.RequirePermission(db, "record:read"), recordHandler.FindPage)
 			records.PUT("/:id", middleware.RequirePermission(db, "record:update"), recordHandler.Update)
 			records.DELETE("/:id", middleware.RequirePermission(db, "record:delete"), recordHandler.Delete)
 		}

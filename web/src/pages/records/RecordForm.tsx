@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate, useParams, useSearchParams, useLocation } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Form,
   Input,
@@ -83,9 +83,7 @@ interface NewPatientFormValues {
 
 export default function RecordForm() {
   const navigate = useNavigate();
-  const location = useLocation();
   const { id } = useParams<{ id: string }>();
-  const fromPage = (location.state as { fromPage?: number })?.fromPage;
   const [searchParams] = useSearchParams();
   const isEdit = Boolean(id);
   const { hasPermission } = useAuth();
@@ -506,7 +504,7 @@ export default function RecordForm() {
           attachments: payload.attachments,
         });
         message.success('诊疗记录更新成功');
-        navigate('/records', { state: { highlightId: Number(id), highlightPage: fromPage || 1 } });
+        navigate('/records', { state: { highlightId: Number(id) } });
       } else {
         const res = await createRecord(payload);
         const body = res as unknown as { data: { id: number } };

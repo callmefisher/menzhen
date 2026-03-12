@@ -756,15 +756,20 @@ function renderPointList() {
 function updateStatusHint() {
   const hint = document.getElementById('status-hint');
   const mode = document.getElementById('status-mode');
+  if (interactMode === 'drag') {
+    mode.textContent = '拖拽模式';
+    hint.textContent = '拖拽旋转/平移/缩放模型，不会编辑点位';
+    return;
+  }
   if (editMode === 'path') {
-    mode.textContent = '模式: 路径';
+    mode.textContent = '编辑: 路径';
     if (selectedPointIndex >= 0) {
       hint.textContent = '点击模型移动选中点 | Shift+点击插入 | 右键删除 | ESC取消选择';
     } else {
       hint.textContent = '点击模型表面添加路径点 | 点击已有点选中';
     }
   } else {
-    mode.textContent = '模式: 穴位';
+    mode.textContent = '编辑: 穴位';
     if (selectedAcupointCode) {
       hint.textContent = `点击模型放置 ${selectedAcupointCode} ${ACUPOINT_NAMES[selectedAcupointCode] || ''} | ESC取消`;
     } else {
