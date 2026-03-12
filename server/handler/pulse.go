@@ -12,11 +12,12 @@ import (
 )
 
 type PulseHandler struct {
-	db *gorm.DB
+	db       *gorm.DB
+	deepSeek *service.DeepSeekService
 }
 
-func NewPulseHandler(db *gorm.DB) *PulseHandler {
-	return &PulseHandler{db: db}
+func NewPulseHandler(db *gorm.DB, ds *service.DeepSeekService) *PulseHandler {
+	return &PulseHandler{db: db, deepSeek: ds}
 }
 
 // List handles GET /api/v1/pulses?name=&category=&page=&size=
@@ -32,7 +33,7 @@ func (h *PulseHandler) List(c *gin.Context) {
 		size = 20
 	}
 
-	svc := service.NewPulseService(h.db)
+	svc := service.NewPulseService(h.db, h.deepSeek)
 	pulses, total, err := svc.Search(name, category, page, size)
 	if err != nil {
 		Error(c, http.StatusInternalServerError, "failed to search pulses")
@@ -47,7 +48,7 @@ func (h *PulseHandler) List(c *gin.Context) {
 
 // Categories handles GET /api/v1/pulses/categories
 func (h *PulseHandler) Categories(c *gin.Context) {
-	svc := service.NewPulseService(h.db)
+	svc := service.NewPulseService(h.db, nil)
 	categories, err := svc.ListCategories()
 	if err != nil {
 		Error(c, http.StatusInternalServerError, "failed to list categories")
@@ -64,7 +65,7 @@ func (h *PulseHandler) Detail(c *gin.Context) {
 		return
 	}
 
-	svc := service.NewPulseService(h.db)
+	svc := service.NewPulseService(h.db, nil)
 	pulse, err := svc.GetByID(id)
 	if err != nil {
 		if errors.Is(err, service.ErrPulseNotFound) {
@@ -99,7 +100,7 @@ func (h *PulseHandler) Create(c *gin.Context) {
 		CommonConditions: req.CommonConditions,
 	}
 
-	svc := service.NewPulseService(h.db)
+	svc := service.NewPulseService(h.db, nil)
 	if err := svc.Create(&pulse); err != nil {
 		Error(c, http.StatusInternalServerError, "failed to create pulse")
 		return
@@ -144,7 +145,7 @@ func (h *PulseHandler) Update(c *gin.Context) {
 		updates["common_conditions"] = *req.CommonConditions
 	}
 
-	svc := service.NewPulseService(h.db)
+	svc := service.NewPulseService(h.db, nil)
 	if err := svc.Update(id, updates); err != nil {
 		if errors.Is(err, service.ErrPulseNotFound) {
 			Error(c, http.StatusNotFound, "pulse not found")
@@ -164,7 +165,7 @@ func (h *PulseHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	svc := service.NewPulseService(h.db)
+	svc := service.NewPulseService(h.db, nil)
 	if err := svc.DeleteByID(id); err != nil {
 		if errors.Is(err, service.ErrPulseNotFound) {
 			Error(c, http.StatusNotFound, "pulse not found")

@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"log"
 
 	"github.com/callmefisher/menzhen/server/model"
 	"gorm.io/gorm"
@@ -10,11 +11,12 @@ import (
 var ErrPulseNotFound = errors.New("pulse not found")
 
 type PulseService struct {
-	DB *gorm.DB
+	DB       *gorm.DB
+	DeepSeek *DeepSeekService
 }
 
-func NewPulseService(db *gorm.DB) *PulseService {
-	return &PulseService{DB: db}
+func NewPulseService(db *gorm.DB, ds *DeepSeekService) *PulseService {
+	return &PulseService{DB: db, DeepSeek: ds}
 }
 
 func (s *PulseService) Search(name, category string, page, size int) ([]model.Pulse, int64, error) {
@@ -35,6 +37,17 @@ func (s *PulseService) Search(name, category string, page, size int) ([]model.Pu
 	if err := query.Order("id ASC").Offset((page - 1) * size).Limit(size).Find(&pulses).Error; err != nil {
 		return nil, 0, err
 	}
+
+	// If name search yielded no results and no category filter, try DeepSeek
+	if total == 0 && name != "" && category == "" && s.DeepSeek != nil && s.DeepSeek.IsEnabled() {
+		pulse, err := s.queryAndSaveFromAI(name)
+		if err != nil {
+			log.Printf("DeepSeek pulse query failed for %q: %v", name, err)
+			return pulses, 0, nil
+		}
+		return []model.Pulse{*pulse}, 1, nil
+	}
+
 	return pulses, total, nil
 }
 
@@ -86,4 +99,41 @@ func (s *PulseService) DeleteByID(id uint64) error {
 		return ErrPulseNotFound
 	}
 	return nil
+}
+
+func isValidPulseResult(result *PulseAIResult) bool {
+	return result.Description != "" || result.ClinicalMeaning != ""
+}
+
+func (s *PulseService) queryAndSaveFromAI(name string) (*model.Pulse, error) {
+	result, err := s.DeepSeek.QueryPulse(name)
+	if err != nil {
+		return nil, err
+	}
+
+	pulse := model.Pulse{
+		Name:             result.Name,
+		Category:         result.Category,
+		Description:      result.Description,
+		ClinicalMeaning:  result.ClinicalMeaning,
+		CommonConditions: result.CommonConditions,
+	}
+
+	if !isValidPulseResult(result) {
+		log.Printf("AI pulse result for %q is invalid, skipping save", name)
+		return &pulse, nil
+	}
+
+	if err := s.DB.Create(&pulse).Error; err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			var existing model.Pulse
+			if err := s.DB.Where("name = ?", result.Name).First(&existing).Error; err == nil {
+				return &existing, nil
+			}
+		}
+		log.Printf("Failed to save AI pulse result: %v", err)
+		return &pulse, nil
+	}
+
+	return &pulse, nil
 }

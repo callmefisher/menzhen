@@ -42,7 +42,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	deepSeekService := service.NewDeepSeekService(cfg)
 	herbHandler := handler.NewHerbHandler(db, deepSeekService)
 	formulaHandler := handler.NewFormulaHandler(db, deepSeekService)
-	pulseHandler := handler.NewPulseHandler(db)
+	pulseHandler := handler.NewPulseHandler(db, deepSeekService)
 	prescriptionHandler := handler.NewPrescriptionHandler(db)
 	tenantHandler := handler.NewTenantHandler(db)
 	aiAnalysisHandler := handler.NewAIAnalysisHandler(deepSeekService, db)
