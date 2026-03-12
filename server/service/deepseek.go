@@ -235,8 +235,8 @@ func (s *DeepSeekService) AnalyzeTongue(description string) (string, error) {
 2. 脏腑辨证：舌象反映的脏腑状态
 3. 病机分析：可能的病因病机
 4. 证型判断：最可能的证型
-5. 调治建议：饮食、生活调养建议
 
+注意：只输出中医辨证分析内容，不要包含饮食、生活调养、养生保健等建议。
 请以 Markdown 格式输出，使用标题、列表、加粗等格式，确保层次分明。`
 
 	userPrompt := fmt.Sprintf("请分析以下舌象描述：\n\n%s", description)

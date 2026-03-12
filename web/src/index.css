@@ -10,6 +10,15 @@ body {
   min-height: 100vh;
 }
 
+/* Highlight row after edit */
+@keyframes row-flash {
+  0%, 80% { background-color: #e6f4ff; }
+  100% { background-color: transparent; }
+}
+tr.row-highlight > td {
+  animation: row-flash 10s ease-out;
+}
+
 /* Mobile responsive overrides */
 @media (max-width: 767px) {
   /* Tighter layout spacing */

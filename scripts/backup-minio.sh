@@ -57,11 +57,12 @@ ORIG_PREFIX="${QINIU_KEY_PREFIX}"
 export QINIU_KEY_PREFIX="${QINIU_KEY_PREFIX:-menzhen-backup/}minio/"
 if python3 /scripts/upload_to_qiniu.py "${BACKUP_FILE}"; then
     echo ">> Qiniu upload complete"
-    # Clean up old backups on Qiniu, keep latest N
-    python3 /scripts/cleanup_qiniu.py --type minio || echo ">> WARNING: Qiniu cleanup failed (non-fatal)"
 else
     echo ">> WARNING: Qiniu upload failed (backup saved locally)"
 fi
+
+# 6. Always clean up old backups on Qiniu (regardless of upload result)
+python3 /scripts/cleanup_qiniu.py --type minio || echo ">> WARNING: Qiniu cleanup failed (non-fatal)"
 export QINIU_KEY_PREFIX="${ORIG_PREFIX}"
 
 echo "[$(date)] MinIO backup completed: ${BACKUP_FILE}"

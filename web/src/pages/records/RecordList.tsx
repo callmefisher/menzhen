@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Table,
   Input,
@@ -27,13 +27,17 @@ const { RangePicker } = DatePicker;
 
 export default function RecordList() {
   const navigate = useNavigate();
+  const location = useLocation();
   const isMobile = useIsMobile();
+  const highlightId = (location.state as { highlightId?: number; highlightPage?: number })?.highlightId;
+  const highlightPage = (location.state as { highlightId?: number; highlightPage?: number })?.highlightPage;
+  const highlightedRef = useRef(false);
 
   const [data, setData] = useState<RecordListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
   const [params, setParams] = useState<RecordListParams>({
-    page: 1,
+    page: highlightPage || 1,
     size: 20,
   });
 
@@ -65,6 +69,20 @@ export default function RecordList() {
   useEffect(() => {
     fetchData(params);
   }, [params, fetchData]);
+
+  // Scroll to and highlight the row after returning from edit
+  useEffect(() => {
+    if (!highlightId || highlightedRef.current || loading) return;
+    const row = document.querySelector(`tr[data-row-key="${highlightId}"]`);
+    if (row) {
+      highlightedRef.current = true;
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      row.classList.add('row-highlight');
+      setTimeout(() => row.classList.remove('row-highlight'), 10000);
+      // Clear the state so refreshing won't re-highlight
+      window.history.replaceState({}, '');
+    }
+  }, [highlightId, loading, data]);
 
   const handleSearch = () => {
     const newParams: RecordListParams = {
@@ -139,7 +157,7 @@ export default function RecordList() {
             type="link"
             size="small"
             icon={<EyeOutlined />}
-            onClick={() => navigate(`/records/${record.id}`)}
+            onClick={() => navigate(`/records/${record.id}`, { state: { fromPage: params.page } })}
           >
             {!isMobile && '查看'}
           </Button>
@@ -147,7 +165,7 @@ export default function RecordList() {
             type="link"
             size="small"
             icon={<EditOutlined />}
-            onClick={() => navigate(`/records/${record.id}`)}
+            onClick={() => navigate(`/records/${record.id}`, { state: { fromPage: params.page } })}
           >
             {!isMobile && '编辑'}
           </Button>

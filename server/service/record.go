@@ -26,6 +26,7 @@ type CreateRecordRequest struct {
 	PulseName         string              `json:"pulse_name"`
 	TongueImage       string              `json:"tongue_image"`
 	TongueDescription string              `json:"tongue_description"`
+	TongueAnalysis    string              `json:"tongue_analysis"`
 	Attachments       []AttachmentRequest `json:"attachments"`
 }
 
@@ -106,6 +107,7 @@ func (s *RecordService) CreateRecord(tenantID, createdBy uint64, req *CreateReco
 		PulseName:         req.PulseName,
 		TongueImage:       req.TongueImage,
 		TongueDescription: req.TongueDescription,
+		TongueAnalysis:    req.TongueAnalysis,
 	}
 
 	// Use a transaction to create record and attachments atomically.
