@@ -8,6 +8,8 @@ interface PrescriptionPrintProps {
   patientName?: string;
   patientAge?: number;
   visitDate?: string;
+  chiefComplaint?: string;
+  treatment?: string;
 }
 
 function getCurrentBeijingTime(): string {
@@ -31,6 +33,8 @@ export default function PrescriptionPrint({
   prescription,
   patientName,
   patientAge,
+  chiefComplaint,
+  treatment,
 }: PrescriptionPrintProps) {
   const printRef = useRef<HTMLDivElement>(null);
 
@@ -56,6 +60,8 @@ export default function PrescriptionPrint({
             .prescription-print .subtitle { text-align: center; font-size: 12px; color: #666; margin-bottom: 16px; }
             .prescription-print .info-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; }
             .prescription-print .divider { border-top: 1px solid #000; margin: 12px 0; }
+            .prescription-print .clinical-info { font-size: 14px; margin-bottom: 4px; }
+            .prescription-print .clinical-info .label { font-weight: bold; }
             .prescription-print .rp { font-size: 18px; font-weight: bold; margin: 8px 0; }
             .prescription-print .herb-columns { display: flex; gap: 24px; }
             .prescription-print .herb-column { flex: 1; }
@@ -103,6 +109,17 @@ export default function PrescriptionPrint({
               <span>年龄：{patientAge ? `${patientAge}岁` : '—'}</span>
               <span>日期：<span className="print-time"></span></span>
             </div>
+
+            {chiefComplaint && (
+              <div className="clinical-info">
+                <span className="label">主诉：</span>{chiefComplaint}
+              </div>
+            )}
+            {treatment && (
+              <div className="clinical-info">
+                <span className="label">治疗方案：</span>{treatment}
+              </div>
+            )}
 
             <div className="divider" />
 

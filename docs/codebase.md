@@ -63,15 +63,15 @@ menzhen/
 │   ├── service/
 │   │   ├── auth.go                  # 登录/注册逻辑
 │   │   ├── patient.go               # 患者 CRUD
-│   │   ├── record.go                # 诊疗记录 CRUD
+│   │   ├── record.go                # 诊疗记录 CRUD（含主诉/脉象/舌象字段，列表含 chief_complaint+pulse_name，详情 Preload Pulse）
 │   │   ├── herb.go                  # 中药查询（DB + AI 回退 + 自动入库 + 分类列表）
 │   │   ├── formula.go               # 方剂查询（DB + AI 回退 + 自动入库）
 │   │   ├── prescription.go          # 处方 CRUD
-│   │   ├── pulse.go                 # 脉象 CRUD + 分类列表
+│   │   ├── pulse.go                 # 脉象 CRUD + 分类列表 + AI 回退（DB 无结果时调用 DeepSeek QueryPulse）
 │   │   ├── meridian_resource.go     # 经络资源 GetByMeridianID/Upsert
 │   │   ├── wuyun_liuqi.go          # 五运六气 GetByYear/SaveFromAI/Update/Delete
 │   │   ├── clinical_experience.go  # 临床经验 Search/ListCategories/GetByID/Create/Update/DeleteByID
-│   │   ├── deepseek.go              # DeepSeek API 客户端（chat/chatLong/chatStream/QueryHerb/QueryFormula/AnalyzeDiagnosis/QueryWuyunLiuqiStream）
+│   │   ├── deepseek.go              # DeepSeek API 客户端（chat/chatLong/chatStream/QueryHerb/QueryFormula/QueryPulse/AnalyzeDiagnosis/AnalyzeTongue/QueryWuyunLiuqiStream）
 │   │   ├── deepseek_test.go         # DeepSeek 测试
 │   │   ├── oplog.go                 # 操作日志 CRUD
 │   │   ├── permission.go            # HasPermission 检查
@@ -120,7 +120,7 @@ menzhen/
 │       │   │   └── PatientForm.tsx
 │       │   ├── records/             # 诊疗记录
 │       │   │   ├── RecordList.tsx
-│       │   │   └── RecordForm.tsx   # 含 AI 辩证论治 Drawer（rehype-raw + remark-gfm 表格渲染，支持 HTML br 标签）+ 新建记录保存时自动持久化AI结果 + 处方区域全宽浅灰底色 + 医嘱分行展示 + 移动端诊断标签 Space wrap
+│       │   │   └── RecordForm.tsx   # 含主诉(textarea) + 脉象(搜索下拉+AI回退+详情卡片) + 舌象(图片上传+描述+AI分析) + AI 辩证论治 Drawer（rehype-raw + remark-gfm 表格渲染）+ 诊断模板自动填充患者性别/年龄/生日/主诉/脉象 + 新建记录保存时自动持久化AI结果 + 处方区域全宽浅灰底色 + 医嘱分行展示 + 移动端诊断标签 Space wrap
 │       │   ├── herbs/               # 中药查询
 │       │   │   ├── HerbSearch.tsx   # 含分类筛选下拉框 + 管理员行内编辑 + AI重查询按钮 + 默认加载全部数据 + 药名列宽 160px
 │       │   │   └── __tests__/
@@ -489,6 +489,7 @@ menzhen/
 | 方法 | 路径 | 权限 | 说明 |
 |------|------|------|------|
 | POST | `/api/v1/ai/analyze-diagnosis` | `record:read` | AI 辅助辩证论治分析（支持缓存，超时 120s） |
+| POST | `/api/v1/ai/analyze-tongue` | `record:read` | AI 舌象分析（输入描述返回 Markdown，结果缓存到 medical_records.tongue_analysis） |
 | GET | `/api/v1/records/:id/ai-analysis` | `record:read` | 获取已缓存的 AI 分析结果 |
 | POST | `/api/v1/records/:id/ai-analysis` | `record:read` | 直接保存 AI 分析结果（用于新建记录保存后回写） |
 
@@ -518,7 +519,7 @@ menzhen/
 
 | 方法 | 路径 | 权限 | 说明 |
 |------|------|------|------|
-| GET | `/api/v1/pulses` | - | 搜索脉象（分页+名称/分类筛选） |
+| GET | `/api/v1/pulses` | - | 搜索脉象（分页+名称/分类筛选，DB 无结果时 AI 回退） |
 | GET | `/api/v1/pulses/categories` | - | 脉象分类列表 |
 | GET | `/api/v1/pulses/:id` | - | 脉象详情 |
 | POST | `/api/v1/pulses` | `role:manage` | 新增脉象 |
@@ -609,6 +610,19 @@ menzhen/
 ### 方剂查询（DB + AI 回退）
 
 流程与中药查询一致，区别在于方剂额外包含 `composition` JSON 字段（药物组成及剂量）。
+
+### 脉象查询（DB + AI 回退）
+
+流程与中药查询一致。PulseService 接受可选的 DeepSeek 参数，DB 搜索无结果时调用 `QueryPulse(name)` 返回 `PulseAIResult`（JSON：name/category/features/indications/description），验证后自动入库。
+
+### AI 舌象分析
+
+```
+前端提交舌象描述 + record_id (POST /api/v1/ai/analyze-tongue)
+  -> 调用 DeepSeek AnalyzeTongue(description)，返回 Markdown 文本
+  -> 若 record_id > 0，将分析结果写入 medical_records.tongue_analysis 字段
+  -> 返回分析结果给前端
+```
 
 ### AI 辩证论治分析（含缓存）
 
