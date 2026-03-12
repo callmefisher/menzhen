@@ -131,6 +131,34 @@ export default function RecordForm() {
   const [tongueImageUrl, setTongueImageUrl] = useState<string>('');
   const [tongueUploading, setTongueUploading] = useState(false);
 
+  // Watch form fields for template sync
+  const watchedPatientId = Form.useWatch('patient_id', form);
+  const watchedChiefComplaint = Form.useWatch('chief_complaint', form);
+  const watchedPulseName = Form.useWatch('pulse_name', form);
+
+  // Sync patient info + chief complaint + pulse to diagnosis template
+  useEffect(() => {
+    if (isEdit) return;
+    const diagnosis = form.getFieldValue('diagnosis') as string;
+    if (!diagnosis || !diagnosis.includes('性别：')) return;
+
+    const patient = patients.find(p => p.id === watchedPatientId);
+    const genderText = patient ? (patient.gender === 1 ? '男' : patient.gender === 2 ? '女' : '') : '';
+    const ageText = patient?.age ? `${patient.age}岁` : '';
+    const birthdayText = patient?.birthday ? dayjs(patient.birthday).format('YYYY年MM月') : '';
+
+    let updated = diagnosis;
+    updated = updated.replace(/^性别：.*$/m, `性别：${genderText}`);
+    updated = updated.replace(/^年龄：.*$/m, `年龄：${ageText}`);
+    updated = updated.replace(/^出生年月：.*$/m, `出生年月：${birthdayText}`);
+    updated = updated.replace(/^主诉：.*$/m, `主诉：${watchedChiefComplaint || ''}`);
+    updated = updated.replace(/^脉象：.*$/m, `脉象：${watchedPulseName || ''}`);
+
+    if (updated !== diagnosis) {
+      form.setFieldValue('diagnosis', updated);
+    }
+  }, [isEdit, form, patients, watchedPatientId, watchedChiefComplaint, watchedPulseName]);
+
   // Search patients by name
   const searchPatients = useCallback(async (name?: string) => {
     setPatientLoading(true);
@@ -597,7 +625,13 @@ export default function RecordForm() {
         initialValues={{
           attachments: [],
           visit_date: isEdit ? undefined : dayjs(),
-          diagnosis: isEdit ? undefined : `1. 大便：
+          diagnosis: isEdit ? undefined : `性别：
+年龄：
+出生年月：
+主诉：
+脉象：
+---
+1. 大便：
 2. 小便：
 3. 胃口：
 4. 腹泻，腹胀，腹痛：
