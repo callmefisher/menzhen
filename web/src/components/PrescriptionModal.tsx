@@ -75,6 +75,7 @@ export default function PrescriptionModal({
 
   // Inventory stock lookup
   const [inventoryMap, setInventoryMap] = useState<Record<string, InventoryDrug>>({});
+  const watchedTotalDoses = Form.useWatch('total_doses', form);
 
   useEffect(() => {
     if (!open) return;
@@ -235,17 +236,21 @@ export default function PrescriptionModal({
       key: 'herb_name',
       render: (_: string, record: HerbRow) => {
         const inv = inventoryMap[record.herb_name?.trim()];
-        const config = JSON.parse(localStorage.getItem('inventory-alert-config') || '{}');
-        const getThreshold = (d: InventoryDrug) =>
-          d.alert_threshold ?? (d.category === 'herb' ? (config.herbThreshold ?? 500) : (config.patentThreshold ?? 10));
         const unit = inv ? (inv.category === 'herb' ? '克' : '盒') : '';
+        const totalDoses = watchedTotalDoses || 7;
+        const dosageNum = record.dosage ? Number(record.dosage) || 0 : 0;
+        const needed = totalDoses * dosageNum;
 
         let stockHint: React.ReactNode = null;
         if (record.herb_name?.trim()) {
           if (inv) {
-            stockHint = inv.stock < getThreshold(inv)
-              ? <span style={{ fontSize: 11, color: '#ff4d4f' }}>库存不足: {inv.stock}{unit}</span>
-              : <span style={{ fontSize: 11, color: '#52c41a' }}>库存: {inv.stock}{unit}</span>;
+            if (needed > 0) {
+              stockHint = inv.stock < needed
+                ? <span style={{ fontSize: 11, color: '#ff4d4f' }}>库存不足: 需{needed}{unit}, 库存{inv.stock}{unit}</span>
+                : <span style={{ fontSize: 11, color: '#52c41a' }}>库存充足: 需{needed}{unit}, 库存{inv.stock}{unit}</span>;
+            } else {
+              stockHint = <span style={{ fontSize: 11, color: '#999' }}>库存: {inv.stock}{unit}</span>;
+            }
           } else {
             stockHint = <span style={{ fontSize: 11, color: '#999' }}>未录入库存</span>;
           }
