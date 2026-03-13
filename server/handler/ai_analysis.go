@@ -264,6 +264,88 @@ type tongueAnalysisRequest struct {
 	Force       bool   `json:"force"`
 }
 
+// AnalyzeTongueStream handles POST /api/v1/ai/analyze-tongue-stream (SSE streaming).
+func (h *AIAnalysisHandler) AnalyzeTongueStream(c *gin.Context) {
+	var req tongueAnalysisRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		Error(c, http.StatusBadRequest, "请输入舌象描述")
+		return
+	}
+
+	if !h.deepSeek.IsEnabled() {
+		Error(c, http.StatusServiceUnavailable, "AI 服务未配置")
+		return
+	}
+
+	tenantID := middleware.GetTenantID(c)
+
+	// If record_id provided and not forcing, check cached tongue_analysis
+	if req.RecordID > 0 && !req.Force {
+		var record model.MedicalRecord
+		if err := h.db.Where("id = ? AND tenant_id = ?", req.RecordID, tenantID).
+			First(&record).Error; err == nil {
+			if record.TongueAnalysis != "" {
+				c.Header("Content-Type", "text/event-stream")
+				c.Header("Cache-Control", "no-cache")
+				c.Header("Connection", "keep-alive")
+				w := c.Writer
+				data, _ := json.Marshal(map[string]interface{}{
+					"type":     "cached",
+					"analysis": record.TongueAnalysis,
+				})
+				fmt.Fprintf(w, "data: %s\n\n", string(data))
+				w.(http.Flusher).Flush()
+				return
+			}
+		}
+	}
+
+	// Set SSE headers
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	w := c.Writer
+	flusher := w.(http.Flusher)
+
+	fullContent, err := h.deepSeek.AnalyzeTongueStream(req.Description, func(chunk string) error {
+		data, _ := json.Marshal(map[string]interface{}{
+			"type":    "chunk",
+			"content": chunk,
+		})
+		_, writeErr := fmt.Fprintf(w, "data: %s\n\n", string(data))
+		if writeErr != nil {
+			return writeErr
+		}
+		flusher.Flush()
+		return nil
+	})
+
+	if err != nil {
+		log.Printf("Tongue analysis stream error: %v", err)
+		errData, _ := json.Marshal(map[string]interface{}{
+			"type":  "error",
+			"error": "舌象分析失败，请稍后重试",
+		})
+		fmt.Fprintf(w, "data: %s\n\n", string(errData))
+		flusher.Flush()
+		return
+	}
+
+	// Cache result in medical_records.tongue_analysis if record_id provided
+	if req.RecordID > 0 {
+		h.db.Model(&model.MedicalRecord{}).
+			Where("id = ? AND tenant_id = ?", req.RecordID, tenantID).
+			Update("tongue_analysis", fullContent)
+	}
+
+	doneData, _ := json.Marshal(map[string]interface{}{
+		"type":     "done",
+		"analysis": fullContent,
+	})
+	fmt.Fprintf(w, "data: %s\n\n", string(doneData))
+	flusher.Flush()
+}
+
 // AnalyzeTongue handles POST /api/v1/ai/analyze-tongue
 func (h *AIAnalysisHandler) AnalyzeTongue(c *gin.Context) {
 	var req tongueAnalysisRequest

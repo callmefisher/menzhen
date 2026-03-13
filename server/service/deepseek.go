@@ -244,6 +244,28 @@ func (s *DeepSeekService) AnalyzeTongue(description string) (string, error) {
 	return s.chatLong(systemPrompt, userPrompt)
 }
 
+// AnalyzeTongueStream calls DeepSeek to analyze tongue diagnosis description with streaming.
+func (s *DeepSeekService) AnalyzeTongueStream(description string, onChunk func(string) error) (string, error) {
+	if !s.IsEnabled() {
+		return "", ErrDeepSeekDisabled
+	}
+
+	systemPrompt := `你是一名中医舌诊专家，精通《舌鉴辨正》《察舌辨症新法》等舌诊经典著作,对舌质、舌苔、舌形、舌态的辨证分析有深入研究。
+
+请根据用户描述的舌象，从以下角度进行辨证分析：
+1. 舌象解读：对描述的舌质、舌苔等特征逐一分析
+2. 脏腑辨证：舌象反映的脏腑状态
+3. 病机分析：可能的病因病机
+4. 证型判断：最可能的证型
+
+注意：只输出中医辨证分析内容，不要包含饮食、生活调养、养生保健等建议。
+请以 Markdown 格式输出，使用标题、列表、加粗等格式，确保层次分明。`
+
+	userPrompt := fmt.Sprintf("请分析以下舌象描述：\n\n%s", description)
+
+	return s.chatStream(systemPrompt, userPrompt, onChunk)
+}
+
 // chat sends a request to the AI API (Anthropic Messages format) and returns the response text.
 func (s *DeepSeekService) chat(systemPrompt, userPrompt string) (string, error) {
 	reqBody := aiRequest{

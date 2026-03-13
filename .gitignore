@@ -1,0 +1,26 @@
+# Environment
+.env
+.env.*
+
+# Claude Code
+.claude/
+
+# Superpowers
+.superpowers/
+
+# Backups (local only)
+backups/
+
+# Coverage reports
+web/coverage/
+server/coverage.out
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

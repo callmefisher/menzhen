@@ -19,16 +19,16 @@ import {
   Tooltip,
   Dropdown,
 } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, RobotOutlined, ReloadOutlined, MoreOutlined, MedicineBoxOutlined, InboxOutlined, SearchOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, RobotOutlined, ReloadOutlined, MoreOutlined, MedicineBoxOutlined, InboxOutlined, SearchOutlined, DownOutlined, RightOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
-import { getRecord, createRecord, updateRecord, getCachedAiAnalysis, saveAiAnalysis, analyzeTongue } from '../../api/record';
+import { getRecord, createRecord, updateRecord, getCachedAiAnalysis, saveAiAnalysis } from '../../api/record';
 // Legacy non-streaming import kept for potential switch-back:
 // import { aiAnalyzeDiagnosis } from '../../api/record';
-import { streamAiAnalysis } from '../../utils/sse';
+import { streamAiAnalysis, streamTongueAnalysis } from '../../utils/sse';
 import { listPatients, createPatient, getPatient } from '../../api/patient';
 import {
   listPrescriptionsByRecord,
@@ -116,25 +116,39 @@ export default function RecordForm() {
   const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
   const [aiCached, setAiCached] = useState(false);
   const aiAbortRef = useRef<AbortController | null>(null);
+  const tongueAbortRef = useRef<AbortController | null>(null);
 
   // Pulse search state
   const [pulseOptions, setPulseOptions] = useState<PulseItem[]>([]);
   const [pulseLoading, setPulseLoading] = useState(false);
   const [selectedPulse, setSelectedPulse] = useState<PulseItem | null>(null);
-  const pulseSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [pulseAiQuerying, setPulseAiQuerying] = useState(false);
   const [pulseSearchText, setPulseSearchText] = useState('');
 
   // Tongue analysis state
   const [tongueAnalyzing, setTongueAnalyzing] = useState(false);
   const [tongueResult, setTongueResult] = useState<string>('');
-  const [tongueImageUrl, setTongueImageUrl] = useState<string>('');
+  const [tongueDrawerOpen, setTongueDrawerOpen] = useState(false);  const [tongueImageUrl, setTongueImageUrl] = useState<string>('');
   const [tongueUploading, setTongueUploading] = useState(false);
+
+  // Card 4 collapsible state (notes & attachments)
+  const [notesExpanded, setNotesExpanded] = useState(false);
+  const [attachmentsExpanded, setAttachmentsExpanded] = useState(false);
 
   // Watch form fields for template sync
   const watchedPatientId = Form.useWatch('patient_id', form);
   const watchedChiefComplaint = Form.useWatch('chief_complaint', form);
   const watchedPulseName = Form.useWatch('pulse_name', form);
+  const watchedNotes = Form.useWatch('notes', form);
+  const watchedAttachments = Form.useWatch('attachments', form);
+
+  // Auto-expand notes/attachments when they have content
+  useEffect(() => {
+    if (watchedNotes) setNotesExpanded(true);
+  }, [watchedNotes]);
+  useEffect(() => {
+    if (watchedAttachments?.length) setAttachmentsExpanded(true);
+  }, [watchedAttachments]);
 
   // Sync patient info + chief complaint + pulse to diagnosis template
   useEffect(() => {
@@ -364,16 +378,6 @@ export default function RecordForm() {
     }
   }, []);
 
-  const handlePulseSearch = (value: string) => {
-    setPulseSearchText(value);
-    if (pulseSearchTimerRef.current) {
-      clearTimeout(pulseSearchTimerRef.current);
-    }
-    pulseSearchTimerRef.current = setTimeout(() => {
-      searchPulses(value);
-    }, 1000);
-  };
-
   const handlePulseAiQuery = async () => {
     if (!pulseSearchText.trim()) return;
     setPulseAiQuerying(true);
@@ -422,29 +426,43 @@ export default function RecordForm() {
     }
   };
 
-  const handleTongueAnalysis = async (force = false) => {
+  const handleTongueAnalysis = (force = false) => {
     const description = form.getFieldValue('tongue_description');
     if (!description?.trim()) {
       message.warning('请先输入舌象描述');
       return;
     }
+    tongueAbortRef.current?.abort();
     setTongueAnalyzing(true);
-    try {
-      const recordId = id ? Number(id) : undefined;
-      const res = await analyzeTongue({
-        description: description.trim(),
-        record_id: recordId,
-        force,
-      });
-      const body = res as unknown as { data: { analysis: string; cached: boolean } };
-      const analysis = body.data.analysis || '未获取到分析结果';
-      setTongueResult(analysis);
-      form.setFieldValue('tongue_analysis', analysis);
-    } catch {
-      message.error('舌象分析失败，请稍后重试');
-    } finally {
-      setTongueAnalyzing(false);
-    }
+    setTongueDrawerOpen(true);
+    setTongueResult('');
+
+    let accumulated = '';
+    const recordId = id ? Number(id) : undefined;
+
+    const controller = streamTongueAnalysis(description.trim(), recordId, force, {
+      onChunk: (text) => {
+        accumulated += text;
+        setTongueResult(accumulated);
+      },
+      onDone: () => {
+        setTongueAnalyzing(false);
+        form.setFieldValue('tongue_analysis', accumulated);
+      },
+      onCached: (evt) => {
+        const e = evt as Record<string, unknown>;
+        const analysis = (e.analysis as string) || '未获取到分析结果';
+        setTongueResult(analysis);
+        form.setFieldValue('tongue_analysis', analysis);
+        setTongueAnalyzing(false);
+      },
+      onError: (error) => {
+        setTongueResult(error || '舌象分析失败，请稍后重试');
+        setTongueAnalyzing(false);
+      },
+    });
+
+    tongueAbortRef.current = controller;
   };
 
   const handleCreatePatient = async () => {
@@ -627,7 +645,18 @@ export default function RecordForm() {
   }
 
   return (
-    <Card title={isEdit ? '编辑诊疗记录' : '新增诊疗记录'}>
+    <div style={{ background: '#f0f2f5', minHeight: '100%' }}>
+      <div style={{
+        background: '#fff',
+        borderRadius: 8,
+        padding: '16px 24px',
+        marginBottom: 12,
+        boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
+        fontSize: 18,
+        fontWeight: 600,
+      }}>
+        {isEdit ? '编辑诊疗记录' : '新增诊疗记录'}
+      </div>
       <Form<RecordFormValues>
         form={form}
         layout="vertical"
@@ -663,98 +692,120 @@ export default function RecordForm() {
 20. 舌苔，舌体情况：`,
         }}
       >
-        <div style={{ display: 'flex', gap: 16, flexDirection: isMobile ? 'column' : 'row' }}>
-          <Form.Item
-            label="患者"
-            name="patient_id"
-            rules={[{ required: true, message: '请选择患者' }]}
-            style={{ flex: 1 }}
-          >
-          <Select
-            showSearch
-            placeholder="搜索患者姓名"
-            filterOption={false}
-            onSearch={handlePatientSearch}
-            loading={patientLoading}
-            notFoundContent={patientLoading ? <Spin size="small" /> : '无匹配患者'}
-            options={patients.map((p) => ({
-              value: p.id,
-              label: `${p.name}${p.gender === 1 ? '(男)' : p.gender === 2 ? '(女)' : ''} ${p.age ? p.age + '岁' : ''}`,
-            }))}
-            dropdownRender={(menu) => (
-              <>
-                {menu}
-                <div
-                  style={{
-                    padding: '8px 12px',
-                    borderTop: '1px solid #f0f0f0',
-                  }}
-                >
-                  <Button
-                    type="link"
-                    icon={<PlusOutlined />}
-                    onClick={() => setPatientModalOpen(true)}
-                    style={{ padding: 0 }}
-                  >
-                    新建患者
-                  </Button>
-                </div>
-              </>
-            )}
-          />
-        </Form.Item>
-
-          <Form.Item
-            label="就诊日期"
-            name="visit_date"
-            rules={[{ required: true, message: '请选择就诊日期' }]}
-            style={{ width: isMobile ? '100%' : 200 }}
-          >
-            <DatePicker style={{ width: '100%' }} />
-          </Form.Item>
+        {/* Card 1: 基本信息 */}
+        <div className="section-card">
+          <div className="section-card-title">
+            <div className="section-card-icon" style={{ background: '#1677ff' }}>i</div>
+            基本信息
+          </div>
+          <div className="form-row" style={isMobile ? undefined : { flexDirection: 'row' }}>
+            <Form.Item
+              label="患者"
+              name="patient_id"
+              rules={[{ required: true, message: '请选择患者' }]}
+              style={{ flex: 1, marginBottom: 0 }}
+            >
+              <Select
+                showSearch
+                placeholder="搜索患者姓名"
+                filterOption={false}
+                onSearch={handlePatientSearch}
+                loading={patientLoading}
+                notFoundContent={patientLoading ? <Spin size="small" /> : '无匹配患者'}
+                options={patients.map((p) => ({
+                  value: p.id,
+                  label: `${p.name}${p.gender === 1 ? '(男)' : p.gender === 2 ? '(女)' : ''} ${p.age ? p.age + '岁' : ''}`,
+                }))}
+                dropdownRender={(menu) => (
+                  <>
+                    {menu}
+                    <div style={{ padding: '8px 12px', borderTop: '1px solid #f0f0f0' }}>
+                      <Button
+                        type="link"
+                        icon={<PlusOutlined />}
+                        onClick={() => setPatientModalOpen(true)}
+                        style={{ padding: 0 }}
+                      >
+                        新建患者
+                      </Button>
+                    </div>
+                  </>
+                )}
+              />
+            </Form.Item>
+            <Form.Item
+              label="就诊日期"
+              name="visit_date"
+              rules={[{ required: true, message: '请选择就诊日期' }]}
+              style={{ width: isMobile ? '100%' : 200, marginBottom: 0 }}
+            >
+              <DatePicker style={{ width: '100%' }} />
+            </Form.Item>
+          </div>
+          <div style={{ marginTop: 16 }}>
+            <Form.Item label="主诉" name="chief_complaint" style={{ marginBottom: 0 }}>
+              <Input.TextArea rows={2} placeholder="请输入主诉（主要症状和持续时间）" />
+            </Form.Item>
+          </div>
         </div>
 
-        {/* 主诉 */}
-        <Form.Item label="主诉" name="chief_complaint">
-          <Input.TextArea rows={2} placeholder="请输入主诉（主要症状和持续时间）" />
-        </Form.Item>
+        {/* Card 2: 四诊采集 */}
+        <div className="section-card">
+          <div className="section-card-title">
+            <div className="section-card-icon" style={{ background: '#52c41a' }}>四</div>
+            四诊采集
+          </div>
 
-        {/* 脉象 */}
-        <Form.Item label="脉象" name="pulse_id">
-          <Select
-            showSearch
-            placeholder="搜索脉象名称"
-            filterOption={false}
-            onSearch={handlePulseSearch}
-            onChange={handlePulseSelect}
-            loading={pulseLoading}
-            allowClear
-            onClear={() => {
-              setSelectedPulse(null);
-              form.setFieldsValue({ pulse_name: '' });
-            }}
-            notFoundContent={
-              pulseLoading ? (
-                <Spin size="small" />
-              ) : pulseSearchText ? (
-                <div style={{ textAlign: 'center', padding: '8px 0' }}>
-                  <div style={{ color: '#999', marginBottom: 8 }}>未找到匹配脉象</div>
-                  <Button
-                    type="link"
-                    icon={<SearchOutlined />}
-                    loading={pulseAiQuerying}
-                    onClick={handlePulseAiQuery}
-                  >
-                    从 AI 查询
-                  </Button>
-                </div>
-              ) : '输入关键字搜索'
-            }
-            options={pulseOptions.map(p => ({
-              value: p.id,
-              label: `${p.name}${p.category ? ` (${p.category})` : ''}`,
-            }))}
-          />
+        <Form.Item label="脉象" style={{ marginBottom: selectedPulse ? 8 : 16 }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Form.Item name="pulse_id" noStyle>
+              <Select
+                showSearch
+                placeholder="输入脉象名称后点击查询"
+                filterOption={false}
+                onSearch={(value) => setPulseSearchText(value)}
+                onChange={handlePulseSelect}
+                loading={pulseLoading}
+                allowClear
+                onClear={() => {
+                  setSelectedPulse(null);
+                  form.setFieldsValue({ pulse_name: '' });
+                  setPulseSearchText('');
+                  setPulseOptions([]);
+                }}
+                notFoundContent={
+                  pulseLoading ? (
+                    <Spin size="small" />
+                  ) : pulseSearchText ? (
+                    <div style={{ textAlign: 'center', padding: '8px 0' }}>
+                      <div style={{ color: '#999', marginBottom: 8 }}>未找到匹配脉象</div>
+                      <Button
+                        type="link"
+                        icon={<SearchOutlined />}
+                        loading={pulseAiQuerying}
+                        onClick={handlePulseAiQuery}
+                      >
+                        从 AI 查询
+                      </Button>
+                    </div>
+                  ) : '输入关键字后点击查询'
+                }
+                options={pulseOptions.map(p => ({
+                  value: p.id,
+                  label: `${p.name}${p.category ? ` (${p.category})` : ''}`,
+                }))}
+                style={{ flex: 1 }}
+              />
+            </Form.Item>
+            <Button
+              icon={<SearchOutlined />}
+              loading={pulseLoading}
+              onClick={() => searchPulses(pulseSearchText)}
+              disabled={!pulseSearchText.trim()}
+            >
+              查询
+            </Button>
+          </div>
         </Form.Item>
         <Form.Item name="pulse_name" hidden>
           <Input />
@@ -781,112 +832,83 @@ export default function RecordForm() {
         )}
 
         {/* 舌象 */}
-        <div style={{ display: 'flex', gap: 16, flexDirection: isMobile ? 'column' : 'row', alignItems: 'flex-start' }}>
-          <div style={{ flex: 1 }}>
-            <Form.Item label="舌象图片" name="tongue_image">
-              <div>
-                {tongueImageUrl ? (
-                  <div style={{ position: 'relative', display: 'inline-block' }}>
-                    <img src={tongueImageUrl} alt="舌象" style={{ maxWidth: 200, maxHeight: 150, borderRadius: 8, border: '1px solid #d9d9d9' }} />
-                    <Button
-                      size="small"
-                      danger
-                      style={{ position: 'absolute', top: 4, right: 4 }}
-                      onClick={() => {
-                        form.setFieldValue('tongue_image', '');
-                        setTongueImageUrl('');
-                      }}
-                    >
-                      删除
-                    </Button>
-                  </div>
-                ) : (
-                  <Button
-                    loading={tongueUploading}
-                    onClick={() => {
-                      const input = document.createElement('input');
-                      input.type = 'file';
-                      input.accept = 'image/*';
-                      input.onchange = (e) => {
-                        const file = (e.target as HTMLInputElement).files?.[0];
-                        if (file) handleTongueUpload(file);
-                      };
-                      input.click();
-                    }}
-                  >
-                    上传舌象图片
-                  </Button>
-                )}
-              </div>
-            </Form.Item>
-          </div>
-          <div style={{ flex: 2 }}>
-            <Form.Item label={
-              <Space>
-                <span>舌象描述</span>
+        <Form.Item label="舌象图片" name="tongue_image" style={{ marginBottom: 12 }}>
+          <div>
+            {tongueImageUrl ? (
+              <div style={{ position: 'relative', display: 'inline-block' }}>
+                <img src={tongueImageUrl} alt="舌象" style={{ maxWidth: 200, maxHeight: 150, borderRadius: 8, border: '1px solid #d9d9d9' }} />
                 <Button
-                  type="primary"
-                  ghost
                   size="small"
-                  icon={<RobotOutlined />}
-                  loading={tongueAnalyzing}
-                  onClick={() => handleTongueAnalysis()}
+                  danger
+                  style={{ position: 'absolute', top: 4, right: 4 }}
+                  onClick={() => {
+                    form.setFieldValue('tongue_image', '');
+                    setTongueImageUrl('');
+                  }}
                 >
-                  分析舌象
+                  删除
                 </Button>
-                {tongueResult && !tongueAnalyzing && (
-                  <Button size="small" icon={<ReloadOutlined />} onClick={() => handleTongueAnalysis(true)}>
-                    重新分析
-                  </Button>
-                )}
-              </Space>
-            } name="tongue_description">
-              <Input.TextArea rows={3} placeholder="描述舌象（如：舌质淡红，舌苔薄白，舌体胖大有齿痕）" />
-            </Form.Item>
-            <Form.Item name="tongue_analysis" hidden>
-              <Input />
-            </Form.Item>
-          </div>
-        </div>
-        {tongueResult && (
-          <div style={{
-            marginBottom: 16,
-            borderRadius: 12,
-            background: 'linear-gradient(135deg, #f0f7ff 0%, #e8f4f8 50%, #f0f0ff 100%)',
-            border: '1px solid #d6e4ff',
-            overflow: 'hidden',
-          }}>
-            <div style={{
-              padding: '12px 16px',
-              background: 'linear-gradient(90deg, #1677ff, #4096ff)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-            }}>
-              <RobotOutlined style={{ color: '#fff', fontSize: 16 }} />
-              <span style={{ color: '#fff', fontWeight: 600, fontSize: 15 }}>舌象 AI 分析结果</span>
-            </div>
-            <div style={{ padding: '16px 20px', maxHeight: 400, overflow: 'auto' }}>
-              <div className="ai-analysis-content" style={{ fontSize: 14, lineHeight: 1.9, color: '#333' }}>
-                <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-                  {tongueResult}
-                </Markdown>
               </div>
-            </div>
-            <div style={{
-              padding: '8px 16px',
-              borderTop: '1px dashed #d6e4ff',
-              textAlign: 'center',
-              fontSize: 12,
-              color: '#8c8c8c',
-              background: 'rgba(255,255,255,0.6)',
-            }}>
-              以上分析由 AI 生成，仅供参考
-            </div>
+            ) : (
+              <Button
+                loading={tongueUploading}
+                onClick={() => {
+                  const input = document.createElement('input');
+                  input.type = 'file';
+                  input.accept = 'image/*';
+                  input.onchange = (e) => {
+                    const file = (e.target as HTMLInputElement).files?.[0];
+                    if (file) handleTongueUpload(file);
+                  };
+                  input.click();
+                }}
+              >
+                上传舌象图片
+              </Button>
+            )}
           </div>
-        )}
+        </Form.Item>
+        <Form.Item label={
+          <Space>
+            <span>舌象描述</span>
+            <Button
+              type="primary"
+              ghost
+              size="small"
+              icon={<RobotOutlined />}
+              loading={tongueAnalyzing}
+              onClick={() => handleTongueAnalysis()}
+            >
+              分析舌象
+            </Button>
+            {tongueResult && !tongueAnalyzing && !tongueDrawerOpen && (
+              <Tooltip title="已有分析结果，点击查看">
+                <Tag
+                  color="green"
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => setTongueDrawerOpen(true)}
+                >
+                  已有分析
+                </Tag>
+              </Tooltip>
+            )}
+          </Space>
+        } name="tongue_description">
+          <Input.TextArea rows={3} placeholder="描述舌象（如：舌质淡红，舌苔薄白，舌体胖大有齿痕）" />
+        </Form.Item>
+        <Form.Item name="tongue_analysis" hidden>
+          <Input />
+        </Form.Item>
 
-        <div style={{ display: 'flex', gap: 16, flexDirection: isMobile ? 'column' : 'row' }}>
+        </div>
+
+        {/* Card 3: 诊断治疗 */}
+        <div className="section-card">
+          <div className="section-card-title">
+            <div className="section-card-icon" style={{ background: '#fa8c16' }}>诊</div>
+            诊断治疗
+          </div>
+
           <Form.Item
             label={
               <Space wrap>
@@ -915,40 +937,72 @@ export default function RecordForm() {
               </Space>
             }
             name="diagnosis"
-            style={{ flex: 1 }}
           >
-            <Input.TextArea rows={isMobile ? 10 : 22} placeholder="请输入诊断内容" />
+            <Input.TextArea rows={isMobile ? 12 : 20} placeholder="请输入诊断内容" />
           </Form.Item>
 
-          <Form.Item label="治疗方案" name="treatment" style={{ flex: 1 }}>
-            <Input.TextArea rows={isMobile ? 10 : 22} placeholder="请输入治疗方案" />
-          </Form.Item>
-        </div>
-
-        <Divider style={{ margin: '8px 0 16px' }} />
-
-        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexDirection: isMobile ? 'column' : 'row' }}>
-          <Form.Item label="备注" name="notes" style={{ flex: 1, marginBottom: 0 }}>
-            <Input.TextArea
-              rows={6}
-              placeholder="请输入备注"
-              style={{ resize: 'none', minHeight: 160 }}
-            />
-          </Form.Item>
-
-          <Form.Item label="附件上传" name="attachments" style={{ flex: 1, marginBottom: 0 }}>
-            <FileUpload />
+          <Form.Item label="治疗方案" name="treatment" style={{ marginBottom: 0 }}>
+            <Input.TextArea rows={isMobile ? 4 : 6} placeholder="请输入治疗方案" />
           </Form.Item>
         </div>
 
-        <div style={{ height: 24 }} />
+        {/* Card 4: 备注附件 */}
+        <div className="section-card">
+          <div className="section-card-title" style={{ marginBottom: 0, borderBottom: 'none', paddingBottom: 0 }}>
+            <div className="section-card-icon" style={{ background: '#8c8c8c' }}>+</div>
+            备注附件
+          </div>
+
+          {/* 备注 - 可折叠 */}
+          <div style={{ borderTop: '1px solid #f0f0f0', marginTop: 12, paddingTop: 12 }}>
+            <div
+              style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none', marginBottom: notesExpanded ? 12 : 0 }}
+              onClick={() => setNotesExpanded(!notesExpanded)}
+            >
+              {notesExpanded ? <DownOutlined style={{ fontSize: 11, color: '#8c8c8c' }} /> : <RightOutlined style={{ fontSize: 11, color: '#8c8c8c' }} />}
+              <span style={{ fontSize: 14, fontWeight: 500 }}>备注</span>
+              {!notesExpanded && watchedNotes && (
+                <span style={{ fontSize: 12, color: '#666', marginLeft: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? 200 : 400, display: 'inline-block', verticalAlign: 'middle' }}>
+                  {watchedNotes}
+                </span>
+              )}
+            </div>
+            <div style={{ display: notesExpanded ? 'block' : 'none' }}>
+              <Form.Item name="notes" style={{ marginBottom: 0 }}>
+                <Input.TextArea rows={4} placeholder="请输入备注" style={{ resize: 'none' }} />
+              </Form.Item>
+            </div>
+          </div>
+
+          {/* 附件 - 可折叠 */}
+          <div style={{ borderTop: '1px solid #f0f0f0', marginTop: 12, paddingTop: 12 }}>
+            <div
+              style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none', marginBottom: attachmentsExpanded ? 12 : 0 }}
+              onClick={() => setAttachmentsExpanded(!attachmentsExpanded)}
+            >
+              {attachmentsExpanded ? <DownOutlined style={{ fontSize: 11, color: '#8c8c8c' }} /> : <RightOutlined style={{ fontSize: 11, color: '#8c8c8c' }} />}
+              <span style={{ fontSize: 14, fontWeight: 500 }}>附件上传</span>
+              {!attachmentsExpanded && watchedAttachments?.length > 0 && (
+                <span style={{ fontSize: 12, color: '#1677ff', marginLeft: 4 }}>
+                  {watchedAttachments.length} 个文件
+                </span>
+              )}
+            </div>
+            <div style={{ display: attachmentsExpanded ? 'block' : 'none' }}>
+              <Form.Item name="attachments" style={{ marginBottom: 0 }}>
+                <FileUpload />
+              </Form.Item>
+            </div>
+          </div>
+        </div>
 
         {/* 按钮 */}
-        <Form.Item>
-          <Space>
-            <Button type="primary" htmlType="submit" loading={submitting}>
-              保存
-            </Button>
+        <Form.Item style={{ marginTop: 8 }}>
+          <div className={isMobile ? 'record-form-actions' : undefined}>
+            <Space>
+              <Button type="primary" htmlType="submit" loading={submitting}>
+                保存
+              </Button>
             {hasPermission('prescription:create') && (
               <Button
                 type="primary"
@@ -1001,8 +1055,9 @@ export default function RecordForm() {
                 开方
               </Button>
             )}
-            <Button onClick={() => navigate('/records')}>取消</Button>
-          </Space>
+            {!isMobile && <Button onClick={() => navigate('/records')}>取消</Button>}
+            </Space>
+          </div>
         </Form.Item>
       </Form>
 
@@ -1225,6 +1280,75 @@ export default function RecordForm() {
         </Form>
       </Modal>
 
+      {/* 舌象AI分析抽屉 */}
+      <Drawer
+        title={
+          <Space>
+            <RobotOutlined style={{ color: '#1677ff' }} />
+            <span>舌象 AI 分析</span>
+          </Space>
+        }
+        placement="right"
+        width={isMobile ? '100%' : 720}
+        open={tongueDrawerOpen}
+        onClose={() => {
+          tongueAbortRef.current?.abort();
+          setTongueAnalyzing(false);
+          setTongueDrawerOpen(false);
+        }}
+        styles={{ body: { padding: 0 } }}
+        extra={
+          tongueResult && !tongueAnalyzing ? (
+            <Tooltip title="忽略缓存，重新调用 AI 分析">
+              <Button
+                size="small"
+                icon={<ReloadOutlined />}
+                onClick={() => handleTongueAnalysis(true)}
+              >
+                重新分析
+              </Button>
+            </Tooltip>
+          ) : undefined
+        }
+      >
+        {tongueAnalyzing && !tongueResult && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 300, gap: 24 }}>
+            <Spin size="large" />
+            <div style={{ color: '#666', fontSize: 15 }}>AI 正在分析舌象...</div>
+          </div>
+        )}
+        {tongueResult && (
+          <div style={{ padding: '24px 32px' }}>
+            <div style={{
+              background: 'linear-gradient(135deg, #e8f4fd 0%, #f0e6ff 100%)',
+              borderRadius: 12,
+              padding: '16px 20px',
+              marginBottom: 24,
+              border: '1px solid #d4e8f7',
+            }}>
+              <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>分析依据 — 舌象描述</div>
+              <div style={{ fontSize: 14, color: '#333', fontWeight: 500 }}>
+                {form.getFieldValue('tongue_description') || '—'}
+              </div>
+            </div>
+            <div className="ai-analysis-content" style={{ fontSize: 14, lineHeight: 1.8, color: '#333' }}>
+              <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+                {tongueResult}
+              </Markdown>
+              {tongueAnalyzing && <Spin size="small" style={{ marginLeft: 8, marginTop: 8 }} />}
+            </div>
+            {!tongueAnalyzing && (
+              <>
+                <Divider />
+                <div style={{ fontSize: 12, color: '#999', textAlign: 'center', padding: '8px 0' }}>
+                  以上分析由 AI 生成，仅供参考
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </Drawer>
+
       {/* AI辅助分析抽屉 */}
       <Drawer
         title={
@@ -1435,6 +1559,6 @@ export default function RecordForm() {
           </div>
         )}
       </Drawer>
-    </Card>
+    </div>
   );
 }

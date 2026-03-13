@@ -105,6 +105,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		authenticated.POST("/ai/analyze-diagnosis", middleware.RequirePermission(db, "record:read"), aiAnalysisHandler.Analyze)
 		authenticated.POST("/ai/analyze-diagnosis-stream", middleware.RequirePermission(db, "record:read"), aiAnalysisHandler.AnalyzeStream)
 		authenticated.POST("/ai/analyze-tongue", middleware.RequirePermission(db, "record:read"), aiAnalysisHandler.AnalyzeTongue)
+		authenticated.POST("/ai/analyze-tongue-stream", middleware.RequirePermission(db, "record:read"), aiAnalysisHandler.AnalyzeTongueStream)
 
 		// Operation log routes.
 		oplogs := authenticated.Group("/oplogs")
