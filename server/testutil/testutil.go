@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/callmefisher/menzhen/server/middleware"
 	"github.com/callmefisher/menzhen/server/model"
+	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -18,18 +19,41 @@ import (
 // TestJWTSecret is the JWT secret used in all tests.
 const TestJWTSecret = "test-jwt-secret-for-testing"
 
+var (
+	rootDB   *gorm.DB
+	rootOnce sync.Once
+)
+
+// getRootDB returns a shared root MySQL connection (no database selected).
+// This avoids opening a new connection per test, preventing "too many connections".
+func getRootDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	rootOnce.Do(func() {
+		dsn := getTestDSN()
+		var err error
+		rootDB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{
+			Logger: logger.Default.LogMode(logger.Silent),
+		})
+		if err != nil {
+			// Cannot use t.Fatalf inside sync.Once across tests; panic instead.
+			panic(fmt.Sprintf("failed to connect to test MySQL: %v", err))
+		}
+		// Limit root connection pool to avoid exhausting MySQL connections.
+		sqlDB, _ := rootDB.DB()
+		if sqlDB != nil {
+			sqlDB.SetMaxOpenConns(5)
+			sqlDB.SetMaxIdleConns(5)
+		}
+	})
+	return rootDB
+}
+
 // SetupTestDB creates a temporary test database and returns a *gorm.DB.
 // The database is automatically dropped when the test finishes.
 func SetupTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	dsn := getTestDSN()
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
-	if err != nil {
-		t.Fatalf("failed to connect to test MySQL: %v", err)
-	}
+	db := getRootDB(t)
 
 	// Create a unique database for this test.
 	dbName := fmt.Sprintf("test_mz_%d_%d", time.Now().UnixNano()%1e9, rand.Intn(10000))
@@ -38,6 +62,7 @@ func SetupTestDB(t *testing.T) *gorm.DB {
 	}
 
 	// Connect to the new database.
+	dsn := getTestDSN()
 	testDSN := fmt.Sprintf("%s%s?charset=utf8mb4&parseTime=True&loc=Local", dsn, dbName)
 	testDB, err := gorm.Open(mysql.Open(testDSN), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
@@ -45,6 +70,13 @@ func SetupTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		db.Exec("DROP DATABASE IF EXISTS " + dbName)
 		t.Fatalf("failed to connect to test database %s: %v", dbName, err)
+	}
+
+	// Limit test DB connections too.
+	sqlDB, _ := testDB.DB()
+	if sqlDB != nil {
+		sqlDB.SetMaxOpenConns(5)
+		sqlDB.SetMaxIdleConns(2)
 	}
 
 	// AutoMigrate all models.
@@ -149,7 +181,7 @@ func SeedTestUser(t *testing.T, db *gorm.DB, tenantID uint64, username, password
 		}
 	}
 
-	token, err := middleware.GenerateToken(user.ID, tenantID, username, TestJWTSecret)
+	token, err := generateTestToken(user.ID, tenantID, username)
 	if err != nil {
 		t.Fatalf("failed to generate test token: %v", err)
 	}
@@ -210,4 +242,18 @@ func SeedAdminUser(t *testing.T, db *gorm.DB) (*model.Tenant, *model.User, strin
 	role := SeedTestRole(t, db, tenant.ID, "admin", permList...)
 	user, token := SeedTestUser(t, db, tenant.ID, "admin", "admin123", role)
 	return tenant, user, token
+}
+
+// generateTestToken creates a JWT token for testing without importing middleware.
+// This breaks the circular dependency: testutil → middleware → service.
+func generateTestToken(userID, tenantID uint64, username string) (string, error) {
+	claims := jwt.MapClaims{
+		"user_id":   userID,
+		"tenant_id": tenantID,
+		"username":  username,
+		"exp":       time.Now().Add(24 * time.Hour).Unix(),
+		"iat":       time.Now().Unix(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(TestJWTSecret))
 }

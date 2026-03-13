@@ -481,6 +481,7 @@ func (s *DeepSeekService) chatStream(systemPrompt, userPrompt string, onChunk fu
 	// Increase buffer size for potentially large SSE lines.
 	scanner.Buffer(make([]byte, 0, 64*1024), 256*1024)
 
+	clientGone := false
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "data: ") {
@@ -498,9 +499,11 @@ func (s *DeepSeekService) chatStream(systemPrompt, userPrompt string, onChunk fu
 
 		if evt.Type == "content_block_delta" && evt.Delta != nil && evt.Delta.Type == "text_delta" {
 			fullText.WriteString(evt.Delta.Text)
-			if onChunk != nil {
+			// Keep reading from AI even if client disconnected, to get full content for DB persistence
+			if onChunk != nil && !clientGone {
 				if err := onChunk(evt.Delta.Text); err != nil {
-					return fullText.String(), err
+					log.Printf("Client disconnected during stream, continuing to accumulate content")
+					clientGone = true
 				}
 			}
 		}

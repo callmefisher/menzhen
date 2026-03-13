@@ -52,6 +52,7 @@
 - Ant Design `Timeline mode="left"` 在窄屏会导致 icon 与文字重叠，移动端应去掉 mode 改为默认单栏
 - 移动端表格优化统一模式：`isMobile ? 卡片列表 : Table`，分页用 `<Pagination size="small" simple />`
 - Modal 在移动端宽度应设为 `calc(100vw - 32px)` 防止溢出
+- **每次新增功能必须同步编写单元测试**：后端用 `testutil.SetupTestDB` + testify（middleware/service/handler 三层），前端用 vitest + testing-library（API service + store + page 组件），测试必须基于实际业务逻辑、覆盖正常流程/边界/错误场景，且全量测试通过（`go test ./...` + `npm test`）后才算完成
 
 ---
 

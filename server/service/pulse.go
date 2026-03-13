@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"strings"
 
@@ -117,12 +118,24 @@ func (s *PulseService) Update(id uint64, updates map[string]interface{}) error {
 }
 
 func (s *PulseService) DeleteByID(id uint64) error {
-	result := s.DB.Delete(&model.Pulse{}, id)
-	if result.Error != nil {
-		return result.Error
+	// First check if the pulse exists
+	var pulse model.Pulse
+	if err := s.DB.First(&pulse, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrPulseNotFound
+		}
+		return err
 	}
-	if result.RowsAffected == 0 {
-		return ErrPulseNotFound
+
+	// Null out references in medical_records to avoid FK constraint violation
+	if err := s.DB.Model(&model.MedicalRecord{}).
+		Where("pulse_id = ?", id).
+		Updates(map[string]interface{}{"pulse_id": nil, "pulse_name": ""}).Error; err != nil {
+		return fmt.Errorf("failed to clear pulse references: %w", err)
+	}
+
+	if err := s.DB.Delete(&pulse).Error; err != nil {
+		return err
 	}
 	return nil
 }
