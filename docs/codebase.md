@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-03-13（库存增强：批量入库、单个入库、状态显示、总览统计卡片）
+> 最后更新：2026-03-13（移动端优化：PatientDetail Timeline单栏+音视频全宽、PatientForm/Login/Register自适应、TenantList/UserList/RoleList卡片列表、MeridianPanel触摸优化）
 
 ---
 
@@ -114,13 +114,13 @@ menzhen/
 │       │   ├── PrescriptionPrint.tsx  # 处方打印（药物每10味一列多列并排，医嘱分行）
 │       │   └── __tests__/           # 组件测试
 │       ├── pages/
-│       │   ├── Login.tsx            # 登录页（登录后跳转患者管理）
-│       │   ├── Register.tsx         # 注册页
+│       │   ├── Login.tsx            # 登录页（登录后跳转患者管理，移动端标题/图标尺寸自适应）
+│       │   ├── Register.tsx         # 注册页（移动端标题/间距自适应）
 │       │   ├── OpLogList.tsx        # 操作日志列表
 │       │   ├── patients/            # 患者管理
 │       │   │   ├── PatientList.tsx
-│       │   │   ├── PatientDetail.tsx
-│       │   │   └── PatientForm.tsx
+│       │   │   ├── PatientDetail.tsx # 移动端 Timeline 单栏模式 + 音视频全宽 + 处方 wrap
+│       │   │   └── PatientForm.tsx  # 移动端表单全宽 + Modal 自适应
 │       │   ├── records/             # 诊疗记录
 │       │   │   ├── RecordList.tsx
 │       │   │   └── RecordForm.tsx   # 含主诉(textarea) + 脉象(搜索下拉+AI回退+详情卡片) + 舌象(图片上传+描述+AI分析) + AI 辩证论治 Drawer（rehype-raw + remark-gfm 表格渲染）+ 诊断模板自动填充患者性别/年龄/生日/主诉/脉象 + 新建记录保存时自动持久化AI结果 + 处方区域全宽浅灰底色 + 医嘱分行展示 + 移动端诊断标签 Space wrap
@@ -132,7 +132,7 @@ menzhen/
 │       │   │   └── __tests__/
 │       │   ├── meridians/           # 经络穴位3D可视化（Three.js + R3F）
 │       │   │   ├── MeridianView.tsx     # 页面入口（桌面端左右布局，移动端左面板→Drawer + 浮动按钮 left:56 避免与系统菜单重叠）
-│       │   │   ├── MeridianPanel.tsx    # 左侧控制面板（搜索/经络列表+穴位展开列表+info按钮打开详情抽屉）
+│       │   │   ├── MeridianPanel.tsx    # 左侧控制面板（搜索/经络列表+穴位展开列表+info按钮打开详情抽屉，移动端触摸区域≥44px+紧凑Tag间距）
 │       │   │   ├── MeridianDetailDrawer.tsx # 经络详情抽屉（特殊穴位属性+视频+出处，管理员可编辑）
 │       │   │   ├── MeridianScene.tsx    # 3D场景容器（Canvas + 合并BVH投影 + 相机旋转优化）
 │       │   │   ├── HumanBodyModel.tsx   # 人体模型（GLB加载，scale only无旋转，onModelLoaded回调）
@@ -161,9 +161,9 @@ menzhen/
 │       │   │   ├── DrugList.tsx       # 药物库存CRUD（分页+搜索+分类筛选，低库存红色高亮）
 │       │   │   └── InventoryAlert.tsx # 库存预警（前端定时扫描，屏蔽/全局阈值配置，存localStorage）
 │       │   └── settings/            # 系统设置
-│       │       ├── UserList.tsx
-│       │       ├── RoleList.tsx
-│       │       └── TenantList.tsx
+│       │       ├── UserList.tsx     # 移动端卡片列表 + Modal 自适应
+│       │       ├── RoleList.tsx     # 移动端卡片列表 + Modal 自适应
+│       │       └── TenantList.tsx   # 移动端卡片列表 + Modal 自适应
 │       ├── store/
 │       │   └── auth.tsx             # 认证状态管理
 │       ├── test/

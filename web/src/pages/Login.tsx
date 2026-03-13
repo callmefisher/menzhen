@@ -7,6 +7,7 @@ import {
   MedicineBoxOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../store/auth';
+import useIsMobile from '../hooks/useIsMobile';
 
 interface LoginFormValues {
   username: string;
@@ -18,6 +19,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
 
   const handleSubmit = async (values: LoginFormValues) => {
     setLoading(true);
@@ -51,13 +53,13 @@ export default function Login() {
           borderRadius: 8,
         }}
       >
-        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+        <div style={{ textAlign: 'center', marginBottom: isMobile ? 20 : 32 }}>
           <MedicineBoxOutlined
-            style={{ fontSize: 40, color: '#1677ff', marginBottom: 12 }}
+            style={{ fontSize: isMobile ? 32 : 40, color: '#1677ff', marginBottom: isMobile ? 8 : 12 }}
           />
           <h1
             style={{
-              fontSize: 22,
+              fontSize: isMobile ? 18 : 22,
               fontWeight: 600,
               color: '#1a1a1a',
               margin: 0,

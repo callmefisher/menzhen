@@ -27,6 +27,7 @@ import type { PrescriptionData } from '../../api/prescription';
 import { getFileUrl } from '../../api/upload';
 import dayjs from 'dayjs';
 import { PatientFormModal } from './PatientForm';
+import useIsMobile from '../../hooks/useIsMobile';
 
 const { Text, Paragraph } = Typography;
 
@@ -67,6 +68,7 @@ interface PatientData {
 export default function PatientDetail() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
+  const isMobile = useIsMobile();
 
   const [patient, setPatient] = useState<PatientData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -200,7 +202,7 @@ export default function PatientDetail() {
           <Empty description="暂无就诊记录" />
         ) : (
           <Timeline
-            mode="left"
+            mode={isMobile ? undefined : 'left'}
             items={records.map((record) => {
               const isExpanded = expandedRecords.has(record.id);
               const attachments = record.attachments || [];
@@ -217,13 +219,21 @@ export default function PatientDetail() {
 
               return {
                 key: record.id,
-                label: (
-                  <Text type="secondary">
-                    {record.visit_date?.slice(0, 10) || '-'}
-                  </Text>
-                ),
+                ...(isMobile ? {} : {
+                  label: (
+                    <Text type="secondary">
+                      {record.visit_date?.slice(0, 10) || '-'}
+                    </Text>
+                  ),
+                }),
                 children: (
                   <div>
+                    {/* Mobile: show date at top */}
+                    {isMobile && (
+                      <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>
+                        {record.visit_date?.slice(0, 10) || '-'}
+                      </Text>
+                    )}
                     {/* Summary line */}
                     <div style={{ marginBottom: 8 }}>
                       {record.diagnosis && (
@@ -388,7 +398,7 @@ export default function PatientDetail() {
                                   <audio
                                     controls
                                     src={getFileUrl(att.file_path)}
-                                    style={{ width: '100%', maxWidth: 400 }}
+                                    style={{ width: '100%', maxWidth: isMobile ? undefined : 400 }}
                                   >
                                     您的浏览器不支持音频播放
                                   </audio>
@@ -423,7 +433,7 @@ export default function PatientDetail() {
                                     src={getFileUrl(att.file_path)}
                                     style={{
                                       width: '100%',
-                                      maxWidth: 480,
+                                      maxWidth: isMobile ? undefined : 480,
                                       borderRadius: 4,
                                     }}
                                   >
@@ -442,7 +452,7 @@ export default function PatientDetail() {
                             <div style={{ marginTop: 4 }}>
                               {prescriptions.map((rx) => (
                                 <div key={rx.id} style={{ marginBottom: 8, padding: 8, background: '#fff', borderRadius: 4, border: '1px solid #e8e8e8' }}>
-                                  <Space>
+                                  <Space wrap>
                                     <Text strong>{rx.formula_name || '自定义处方'}</Text>
                                     <Tag color="blue">{rx.total_doses} 付</Tag>
                                   </Space>

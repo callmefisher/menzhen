@@ -4,6 +4,7 @@ import { SearchOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { regularMeridians, extraordinaryMeridians } from './data/meridians';
 import { acupoints, acupointsByMeridian } from './data/acupoints';
 import type { AcupointData, MeridianData } from './data/types';
+import useIsMobile from '../../hooks/useIsMobile';
 
 function MeridianItem({
   meridian,
@@ -11,12 +12,14 @@ function MeridianItem({
   onToggle,
   onAcupointClick,
   onInfoClick,
+  isMobile,
 }: {
   meridian: MeridianData;
   checked: boolean;
   onToggle: (id: string) => void;
   onAcupointClick: (acupoint: AcupointData) => void;
   onInfoClick: (meridian: MeridianData) => void;
+  isMobile: boolean;
 }) {
   const points = acupointsByMeridian[meridian.id] || [];
 
@@ -25,7 +28,7 @@ function MeridianItem({
       <Checkbox
         checked={checked}
         onChange={() => onToggle(meridian.id)}
-        style={{ marginInlineStart: 0 }}
+        style={{ marginInlineStart: 0, minHeight: isMobile ? 44 : undefined, display: 'flex', alignItems: 'center' }}
       >
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <span
@@ -41,7 +44,7 @@ function MeridianItem({
           <span style={{ fontSize: 13 }}>{meridian.name}</span>
           <span style={{ fontSize: 11, color: '#999' }}>({points.length})</span>
           <span
-            style={{ cursor: 'pointer', color: '#999', fontSize: 12, marginLeft: 2 }}
+            style={{ cursor: 'pointer', color: '#999', fontSize: 12, marginLeft: 2, padding: isMobile ? '8px 4px' : undefined }}
             onClick={(e) => { e.stopPropagation(); onInfoClick(meridian); }}
             title="查看经络详情"
           >
@@ -57,7 +60,7 @@ function MeridianItem({
             marginBottom: 4,
             display: 'flex',
             flexWrap: 'wrap',
-            gap: 4,
+            gap: isMobile ? 2 : 4,
           }}
         >
           {points.map(a => (
@@ -66,10 +69,11 @@ function MeridianItem({
               color={meridian.color}
               style={{
                 cursor: 'pointer',
-                fontSize: 11,
-                lineHeight: '20px',
+                fontSize: isMobile ? 10 : 11,
+                lineHeight: isMobile ? '22px' : '20px',
                 margin: 0,
                 borderRadius: 4,
+                padding: isMobile ? '0 4px' : undefined,
               }}
               onClick={() => onAcupointClick(a)}
             >
@@ -98,6 +102,7 @@ export default function MeridianPanel({
   const [searchValue, setSearchValue] = useState('');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const isMobile = useIsMobile();
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -183,10 +188,11 @@ export default function MeridianPanel({
                     display: 'flex',
                     alignItems: 'center',
                     gap: 6,
-                    padding: '6px 10px',
+                    padding: isMobile ? '10px 10px' : '6px 10px',
                     cursor: 'pointer',
                     whiteSpace: 'nowrap',
                     fontSize: 13,
+                    minHeight: isMobile ? 44 : undefined,
                   }}
                   onMouseEnter={e => (e.currentTarget.style.background = '#f5f5f5')}
                   onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
@@ -222,6 +228,7 @@ export default function MeridianPanel({
               onToggle={onMeridianToggle}
               onAcupointClick={handleSelect}
               onInfoClick={onMeridianInfoClick}
+              isMobile={isMobile}
             />
           ))}
         </div>
@@ -243,6 +250,7 @@ export default function MeridianPanel({
               onToggle={onMeridianToggle}
               onAcupointClick={handleSelect}
               onInfoClick={onMeridianInfoClick}
+              isMobile={isMobile}
             />
           ))}
         </div>

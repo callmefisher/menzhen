@@ -39,6 +39,8 @@ const ACTION_MAP: Record<string, { label: string; color: string }> = {
   create: { label: '新增', color: 'green' },
   update: { label: '修改', color: 'blue' },
   delete: { label: '删除', color: 'red' },
+  stock_in: { label: '入库', color: 'cyan' },
+  batch_stock_in: { label: '批量入库', color: 'cyan' },
 };
 
 const RESOURCE_TYPE_MAP: Record<string, string> = {
@@ -54,12 +56,14 @@ const RESOURCE_TYPE_MAP: Record<string, string> = {
 // Resource types that are associated with a patient
 const PATIENT_RELATED = new Set(['record', 'medical_record', 'prescription', 'attachment']);
 
-/** Extract patient name from oplog record data */
-function getPatientName(record: OpLogItem): string | undefined {
+/** Extract a display name from oplog record data (patient name, drug name, etc.) */
+function getResourceDisplayName(record: OpLogItem): string | undefined {
   const data = record.new_data || record.old_data;
   if (!data) return undefined;
   // patient resource: name is a direct field
   if (record.resource_type === 'patient') return data.name || undefined;
+  // inventory_drug: drug name is a direct field
+  if (record.resource_type === 'inventory_drug') return data.name || undefined;
   if (!PATIENT_RELATED.has(record.resource_type)) return undefined;
   // medical_record/attachment: patient is directly nested
   // prescription: patient is nested inside record
@@ -379,9 +383,9 @@ export default function OpLogList() {
       width: 160,
       render: (_: string, rec: OpLogItem) => {
         const label = RESOURCE_TYPE_MAP[rec.resource_type] || rec.resource_type;
-        const pName = getPatientName(rec);
-        if (!pName) return label;
-        return <>{label} <span style={{ color: '#1677ff' }}>({pName})</span></>;
+        const displayName = getResourceDisplayName(rec);
+        if (!displayName) return label;
+        return <>{label} <span style={{ color: '#1677ff' }}>({displayName})</span></>;
       },
     },
     {
@@ -426,7 +430,7 @@ export default function OpLogList() {
   const renderMobileCard = (record: OpLogItem) => {
     const actionCfg = ACTION_MAP[record.action];
     const resourceLabel = RESOURCE_TYPE_MAP[record.resource_type] || record.resource_type;
-    const patientName = getPatientName(record);
+    const displayName = getResourceDisplayName(record);
     const expanded = expandedIds.has(record.id);
     const diffFields = computeDiff(record.action, record.old_data, record.new_data, record.resource_type);
     const hasDetail = diffFields.length > 0;
@@ -446,8 +450,8 @@ export default function OpLogList() {
               <Tag color={actionCfg.color} style={{ margin: 0, flexShrink: 0 }}>{actionCfg.label}</Tag>
             )}
             <span style={{ fontWeight: 600, fontSize: 14 }}>{resourceLabel}</span>
-            {patientName && (
-              <span style={{ color: '#1677ff', fontSize: 13, flexShrink: 0 }}>({patientName})</span>
+            {displayName && (
+              <span style={{ color: '#1677ff', fontSize: 13, flexShrink: 0 }}>({displayName})</span>
             )}
           </div>
           <span style={{ fontSize: 12, color: '#999', flexShrink: 0 }}>

@@ -76,11 +76,14 @@ export default function MeridianView() {
             onClick={() => setPanelDrawerOpen(true)}
             style={{
               position: 'absolute',
-              top: 8,
-              left: 56,
+              bottom: 24,
+              left: 16,
               zIndex: 10,
+              borderRadius: 20,
+              boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+              height: 40,
+              paddingInline: 16,
             }}
-            size="small"
           >
             经络
           </Button>

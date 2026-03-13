@@ -8,6 +8,7 @@ import { getWuyunLiuqi, updateWuyunLiuqi, deleteWuyunLiuqi } from '../../api/wuy
 import type { WuyunLiuqiItem } from '../../api/wuyunLiuqi';
 import { streamWuyunLiuqiQuery } from '../../utils/sse';
 import NotesPanel from './NotesPanel';
+import useIsMobile from '../../hooks/useIsMobile';
 
 const { TextArea } = Input;
 const { Title, Text } = Typography;
@@ -27,6 +28,7 @@ export default function WuyunLiuqi() {
 
   const { hasPermission } = useAuth();
   const isAdmin = hasPermission('role:manage');
+  const isMobile = useIsMobile();
 
   // Load cached data for a year
   const loadCache = useCallback(async (y: number) => {
@@ -153,62 +155,99 @@ export default function WuyunLiuqi() {
     <div>
       <NotesPanel />
       {/* Header */}
-      <div style={{ marginBottom: 16, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
-        <Title level={4} style={{ margin: 0 }}>五运六气</Title>
-        <InputNumber
-          min={1}
-          max={9999}
-          value={year}
-          onChange={handleYearChange}
-          style={{ width: 120 }}
-          disabled={streaming}
-        />
-        <Button
-          type="primary"
-          icon={<SearchOutlined />}
-          onClick={() => handleQuery(false)}
-          loading={streaming}
-        >
-          查询
-        </Button>
-        {streaming && (
-          <Button onClick={handleCancel}>取消</Button>
-        )}
-        {isAdmin && !streaming && (
-          <Button
-            icon={<ReloadOutlined />}
-            onClick={() => handleQuery(true)}
+      {isMobile ? (
+        <div style={{ marginBottom: 16 }}>
+          <Title level={4} style={{ margin: '0 0 8px' }}>五运六气</Title>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+            <InputNumber min={1} max={9999} value={year} onChange={handleYearChange} style={{ flex: 1 }} disabled={streaming} />
+            <Button type="primary" icon={<SearchOutlined />} onClick={() => handleQuery(false)} loading={streaming}>查询</Button>
+            {streaming && <Button onClick={handleCancel}>取消</Button>}
+          </div>
+          {isAdmin && !streaming && (
+            <Button icon={<ReloadOutlined />} onClick={() => handleQuery(true)} size="small" block style={{ marginBottom: 4 }}>
+              强制重新查询
+            </Button>
+          )}
+        </div>
+      ) : (
+        <div style={{ marginBottom: 16, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
+          <Title level={4} style={{ margin: 0 }}>五运六气</Title>
+          <InputNumber
+            min={1}
+            max={9999}
+            value={year}
+            onChange={handleYearChange}
+            style={{ width: 120 }}
             disabled={streaming}
+          />
+          <Button
+            type="primary"
+            icon={<SearchOutlined />}
+            onClick={() => handleQuery(false)}
+            loading={streaming}
           >
-            强制重新查询
+            查询
           </Button>
-        )}
-      </div>
+          {streaming && (
+            <Button onClick={handleCancel}>取消</Button>
+          )}
+          {isAdmin && !streaming && (
+            <Button
+              icon={<ReloadOutlined />}
+              onClick={() => handleQuery(true)}
+              disabled={streaming}
+            >
+              强制重新查询
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* Status tags */}
       {record && !editing && (
-        <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Tag color={record.source === 'ai' ? 'blue' : 'green'}>
-            {record.source === 'ai' ? 'AI 生成' : '手动编辑'}
-          </Tag>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            更新时间: {new Date(record.updated_at).toLocaleString('zh-CN')}
-          </Text>
-          {isAdmin && (
-            <Space size="small" style={{ marginLeft: 'auto' }}>
-              <Button size="small" icon={<EditOutlined />} onClick={handleEdit}>编辑</Button>
-              <Popconfirm
-                title="确认删除？"
-                description="删除后需重新查询 AI 获取数据"
-                onConfirm={handleDelete}
-                okText="确认"
-                cancelText="取消"
-              >
-                <Button size="small" danger icon={<DeleteOutlined />}>删除</Button>
-              </Popconfirm>
-            </Space>
-          )}
-        </div>
+        isMobile ? (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ marginBottom: 4 }}>
+              <Tag color={record.source === 'ai' ? 'blue' : 'green'}>
+                {record.source === 'ai' ? 'AI 生成' : '手动编辑'}
+              </Tag>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                更新: {new Date(record.updated_at).toLocaleString('zh-CN')}
+              </Text>
+            </div>
+            {isAdmin && (
+              <Space size="small">
+                <Button size="small" icon={<EditOutlined />} onClick={handleEdit}>编辑</Button>
+                <Popconfirm title="确认删除？" description="删除后需重新查询 AI 获取数据" onConfirm={handleDelete} okText="确认" cancelText="取消">
+                  <Button size="small" danger icon={<DeleteOutlined />}>删除</Button>
+                </Popconfirm>
+              </Space>
+            )}
+          </div>
+        ) : (
+          <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Tag color={record.source === 'ai' ? 'blue' : 'green'}>
+              {record.source === 'ai' ? 'AI 生成' : '手动编辑'}
+            </Tag>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              更新时间: {new Date(record.updated_at).toLocaleString('zh-CN')}
+            </Text>
+            {isAdmin && (
+              <Space size="small" style={{ marginLeft: 'auto' }}>
+                <Button size="small" icon={<EditOutlined />} onClick={handleEdit}>编辑</Button>
+                <Popconfirm
+                  title="确认删除？"
+                  description="删除后需重新查询 AI 获取数据"
+                  onConfirm={handleDelete}
+                  okText="确认"
+                  cancelText="取消"
+                >
+                  <Button size="small" danger icon={<DeleteOutlined />}>删除</Button>
+                </Popconfirm>
+              </Space>
+            )}
+          </div>
+        )
       )}
 
       {/* Loading */}
@@ -244,7 +283,7 @@ export default function WuyunLiuqi() {
           ref={contentRef}
           className="wuyun-content"
           style={{
-            fontSize: 14,
+            fontSize: isMobile ? 13 : 14,
             lineHeight: 1.8,
             color: '#333',
           }}

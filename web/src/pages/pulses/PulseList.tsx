@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Input, Table, message, Button, Popconfirm, Select, Space, Modal, Form } from 'antd';
+import { Input, Table, message, Button, Popconfirm, Select, Space, Modal, Form, Pagination, Spin, Empty } from 'antd';
 import { SearchOutlined, DeleteOutlined, EditOutlined, SaveOutlined, CloseOutlined, PlusOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { listPulses, deletePulse, listPulseCategories, updatePulse, createPulse } from '../../api/pulse';
@@ -216,63 +216,157 @@ export default function PulseList() {
         )}
       </div>
 
-      <Table<PulseItem>
-        columns={columns}
-        dataSource={pulses}
-        rowKey="id"
-        loading={loading}
-        pagination={{
-          current: page,
-          pageSize: size,
-          total,
-          showSizeChanger: true,
-          showTotal: (t) => `共 ${t} 条`,
-        }}
-        onChange={handleTableChange}
-        expandable={{
-          expandedRowKeys,
-          onExpandedRowsChange: (keys) => setExpandedRowKeys(keys as number[]),
-          expandedRowRender: (record) => (
-            <div style={{ padding: '8px 0' }}>
-              {editingId === record.id ? (
-                <>
-                  <div style={{ marginBottom: 8 }}>
-                    <strong>脉名：</strong>
-                    <Input size="small" value={editingData.name} onChange={(e) => setEditingData((d) => ({ ...d, name: e.target.value }))} style={{ width: isMobile ? '100%' : 200 }} />
+      {isMobile ? (
+        <div>
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: 32 }}><Spin /></div>
+          ) : pulses.length === 0 ? (
+            <Empty description="暂无数据" />
+          ) : (
+            pulses.map((record) => {
+              const isExpanded = expandedRowKeys.includes(record.id);
+              const isEditing = editingId === record.id;
+              const desc = record.description || '';
+              const shortDesc = desc.slice(0, 50) + (desc.length > 50 ? '...' : '');
+              return (
+                <div key={record.id} style={{ background: '#fafafa', borderRadius: 8, padding: 12, marginBottom: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <span style={{ fontWeight: 'bold', fontSize: 15 }}>{record.name}</span>
+                    {hasPermission('role:manage') && (
+                      <Space size="small">
+                        <Button type="text" size="small" icon={<EditOutlined />} onClick={() => startEdit(record)}>编辑</Button>
+                        <Popconfirm title="确定删除此脉象？" onConfirm={() => handleDelete(record.id)} okText="删除" cancelText="取消">
+                          <Button type="text" danger size="small" icon={<DeleteOutlined />}>删除</Button>
+                        </Popconfirm>
+                      </Space>
+                    )}
                   </div>
-                  <div style={{ marginBottom: 8 }}>
-                    <strong>分类：</strong>
-                    <Input size="small" value={editingData.category} onChange={(e) => setEditingData((d) => ({ ...d, category: e.target.value }))} style={{ width: isMobile ? '100%' : 200 }} />
+                  <div style={{ color: '#666', fontSize: 13, marginBottom: 6 }}>
+                    {record.category && <span style={{ marginRight: 8 }}>{record.category}</span>}
+                    <span>{shortDesc}</span>
                   </div>
-                  <div style={{ marginBottom: 8 }}>
-                    <strong>特征描述：</strong>
-                    <Input.TextArea rows={2} value={editingData.description} onChange={(e) => setEditingData((d) => ({ ...d, description: e.target.value }))} />
+                  <div
+                    style={{ color: '#1677ff', fontSize: 13, cursor: 'pointer' }}
+                    onClick={() =>
+                      setExpandedRowKeys((keys) =>
+                        keys.includes(record.id) ? keys.filter((k) => k !== record.id) : [...keys, record.id]
+                      )
+                    }
+                  >
+                    {isExpanded ? '收起 ▲' : '展开详情 ▼'}
                   </div>
-                  <div style={{ marginBottom: 8 }}>
-                    <strong>临床意义：</strong>
-                    <Input.TextArea rows={2} value={editingData.clinical_meaning} onChange={(e) => setEditingData((d) => ({ ...d, clinical_meaning: e.target.value }))} />
-                  </div>
-                  <div style={{ marginBottom: 8 }}>
-                    <strong>常见病证：</strong>
-                    <Input.TextArea rows={2} value={editingData.common_conditions} onChange={(e) => setEditingData((d) => ({ ...d, common_conditions: e.target.value }))} />
-                  </div>
-                  <Space>
-                    <Button type="primary" size="small" icon={<SaveOutlined />} onClick={handleSave}>保存</Button>
-                    <Button size="small" icon={<CloseOutlined />} onClick={() => setEditingId(null)}>取消</Button>
-                  </Space>
-                </>
-              ) : (
-                <>
-                  <p><strong>分类：</strong>{record.category || '无'}</p>
-                  <p><strong>特征描述：</strong>{record.description || '无'}</p>
-                  <p><strong>临床意义：</strong>{record.clinical_meaning || '无'}</p>
-                  <p><strong>常见病证：</strong>{record.common_conditions || '无'}</p>
-                </>
-              )}
-            </div>
-          ),
-        }}
-      />
+                  {isExpanded && (
+                    <div style={{ marginTop: 8 }}>
+                      {isEditing ? (
+                        <>
+                          <div style={{ marginBottom: 8 }}>
+                            <strong>脉名：</strong>
+                            <Input size="small" value={editingData.name} onChange={(e) => setEditingData((d) => ({ ...d, name: e.target.value }))} style={{ width: '100%' }} />
+                          </div>
+                          <div style={{ marginBottom: 8 }}>
+                            <strong>分类：</strong>
+                            <Input size="small" value={editingData.category} onChange={(e) => setEditingData((d) => ({ ...d, category: e.target.value }))} style={{ width: '100%' }} />
+                          </div>
+                          <div style={{ marginBottom: 8 }}>
+                            <strong>特征描述：</strong>
+                            <Input.TextArea rows={2} value={editingData.description} onChange={(e) => setEditingData((d) => ({ ...d, description: e.target.value }))} style={{ width: '100%' }} />
+                          </div>
+                          <div style={{ marginBottom: 8 }}>
+                            <strong>临床意义：</strong>
+                            <Input.TextArea rows={2} value={editingData.clinical_meaning} onChange={(e) => setEditingData((d) => ({ ...d, clinical_meaning: e.target.value }))} style={{ width: '100%' }} />
+                          </div>
+                          <div style={{ marginBottom: 8 }}>
+                            <strong>常见病证：</strong>
+                            <Input.TextArea rows={2} value={editingData.common_conditions} onChange={(e) => setEditingData((d) => ({ ...d, common_conditions: e.target.value }))} style={{ width: '100%' }} />
+                          </div>
+                          <Space>
+                            <Button type="primary" size="small" icon={<SaveOutlined />} onClick={handleSave}>保存</Button>
+                            <Button size="small" icon={<CloseOutlined />} onClick={() => setEditingId(null)}>取消</Button>
+                          </Space>
+                        </>
+                      ) : (
+                        <>
+                          <p style={{ margin: '4px 0' }}><strong>分类：</strong>{record.category || '无'}</p>
+                          <p style={{ margin: '4px 0' }}><strong>特征描述：</strong>{record.description || '无'}</p>
+                          <p style={{ margin: '4px 0' }}><strong>临床意义：</strong>{record.clinical_meaning || '无'}</p>
+                          <p style={{ margin: '4px 0' }}><strong>常见病证：</strong>{record.common_conditions || '无'}</p>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+          <Pagination
+            simple
+            size="small"
+            current={page}
+            pageSize={size}
+            total={total}
+            onChange={(p, s) => handleTableChange({ current: p, pageSize: s })}
+            style={{ textAlign: 'center', marginTop: 16 }}
+          />
+        </div>
+      ) : (
+        <Table<PulseItem>
+          columns={columns}
+          dataSource={pulses}
+          rowKey="id"
+          loading={loading}
+          pagination={{
+            current: page,
+            pageSize: size,
+            total,
+            showSizeChanger: true,
+            showTotal: (t) => `共 ${t} 条`,
+          }}
+          onChange={handleTableChange}
+          expandable={{
+            expandedRowKeys,
+            onExpandedRowsChange: (keys) => setExpandedRowKeys(keys as number[]),
+            expandedRowRender: (record) => (
+              <div style={{ padding: '8px 0' }}>
+                {editingId === record.id ? (
+                  <>
+                    <div style={{ marginBottom: 8 }}>
+                      <strong>脉名：</strong>
+                      <Input size="small" value={editingData.name} onChange={(e) => setEditingData((d) => ({ ...d, name: e.target.value }))} style={{ width: isMobile ? '100%' : 200 }} />
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <strong>分类：</strong>
+                      <Input size="small" value={editingData.category} onChange={(e) => setEditingData((d) => ({ ...d, category: e.target.value }))} style={{ width: isMobile ? '100%' : 200 }} />
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <strong>特征描述：</strong>
+                      <Input.TextArea rows={2} value={editingData.description} onChange={(e) => setEditingData((d) => ({ ...d, description: e.target.value }))} />
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <strong>临床意义：</strong>
+                      <Input.TextArea rows={2} value={editingData.clinical_meaning} onChange={(e) => setEditingData((d) => ({ ...d, clinical_meaning: e.target.value }))} />
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <strong>常见病证：</strong>
+                      <Input.TextArea rows={2} value={editingData.common_conditions} onChange={(e) => setEditingData((d) => ({ ...d, common_conditions: e.target.value }))} />
+                    </div>
+                    <Space>
+                      <Button type="primary" size="small" icon={<SaveOutlined />} onClick={handleSave}>保存</Button>
+                      <Button size="small" icon={<CloseOutlined />} onClick={() => setEditingId(null)}>取消</Button>
+                    </Space>
+                  </>
+                ) : (
+                  <>
+                    <p><strong>分类：</strong>{record.category || '无'}</p>
+                    <p><strong>特征描述：</strong>{record.description || '无'}</p>
+                    <p><strong>临床意义：</strong>{record.clinical_meaning || '无'}</p>
+                    <p><strong>常见病证：</strong>{record.common_conditions || '无'}</p>
+                  </>
+                )}
+              </div>
+            ),
+          }}
+        />
+      )}
 
       {/* Create pulse modal */}
       <Modal

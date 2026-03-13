@@ -9,6 +9,7 @@ import {
   PhoneOutlined,
 } from '@ant-design/icons';
 import { register } from '../api/auth';
+import useIsMobile from '../hooks/useIsMobile';
 
 interface RegisterFormValues {
   tenant_code: string;
@@ -22,6 +23,7 @@ interface RegisterFormValues {
 export default function Register() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
 
   const handleSubmit = async (values: RegisterFormValues) => {
     setLoading(true);
@@ -61,10 +63,10 @@ export default function Register() {
           borderRadius: 8,
         }}
       >
-        <div style={{ textAlign: 'center', marginBottom: 24 }}>
+        <div style={{ textAlign: 'center', marginBottom: isMobile ? 16 : 24 }}>
           <h1
             style={{
-              fontSize: 22,
+              fontSize: isMobile ? 18 : 22,
               fontWeight: 600,
               color: '#1a1a1a',
               margin: 0,

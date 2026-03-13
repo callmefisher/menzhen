@@ -13,6 +13,9 @@ import {
   Radio,
   Checkbox,
   Select,
+  Pagination,
+  Spin,
+  Empty,
 } from 'antd';
 import {
   EditOutlined,
@@ -22,6 +25,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { listUsers, updateUser, assignRoles } from '../../api/user';
 import { listRoles } from '../../api/role';
 import { listTenants } from '../../api/tenant';
+import useIsMobile from '../../hooks/useIsMobile';
 
 interface TenantItem {
   id: number;
@@ -56,6 +60,7 @@ export default function UserList() {
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
   const [params, setParams] = useState<ListParams>({ page: 1, size: 20 });
+  const isMobile = useIsMobile();
 
   // Edit modal state
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -292,25 +297,89 @@ export default function UserList() {
 
   return (
     <Card>
-      <Table<UserItem>
-        rowKey="id"
-        columns={columns}
-        dataSource={data}
-        loading={loading}
-        pagination={{
-          current: params.page,
-          pageSize: params.size,
-          total,
-          showSizeChanger: true,
-          showTotal: (t) => `共 ${t} 条记录`,
-          onChange: (page, pageSize) => {
-            setParams({ page, size: pageSize });
-          },
-        }}
-        locale={{
-          emptyText: '暂无用户记录',
-        }}
-      />
+      {isMobile ? (
+        loading ? (
+          <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
+        ) : data.length === 0 ? (
+          <Empty description="暂无用户记录" />
+        ) : (
+          <>
+            {data.map((record) => (
+              <div
+                key={record.id}
+                style={{
+                  background: '#fafafa',
+                  borderRadius: 8,
+                  padding: 12,
+                  marginBottom: 8,
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <div>
+                    <span style={{ fontWeight: 600, fontSize: 15 }}>{record.username}</span>
+                    {record.real_name && <span style={{ color: '#666', marginLeft: 8, fontSize: 13 }}>{record.real_name}</span>}
+                  </div>
+                  {record.status === 1 ? <Tag color="green">启用</Tag> : <Tag color="red">禁用</Tag>}
+                </div>
+                {record.phone && <div style={{ color: '#666', fontSize: 13 }}>{record.phone}</div>}
+                {record.roles && record.roles.length > 0 && (
+                  <div style={{ marginTop: 4 }}>
+                    {record.roles.map((role) => (
+                      <Tag key={role.id} color="blue" style={{ marginBottom: 2 }}>{role.name}</Tag>
+                    ))}
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <Button type="link" size="small" style={{ padding: 0 }} icon={<EditOutlined />} onClick={() => handleEdit(record)}>编辑</Button>
+                  <Button type="link" size="small" style={{ padding: 0 }} icon={<UserSwitchOutlined />} onClick={() => handleOpenRoleModal(record)}>分配角色</Button>
+                  <Popconfirm
+                    title={record.status === 1 ? '确定禁用此用户？' : '确定启用此用户？'}
+                    onConfirm={() => handleToggleStatus(record)}
+                    okText="确定"
+                    cancelText="取消"
+                  >
+                    <Button type="link" size="small" style={{ padding: 0 }} danger={record.status === 1}>
+                      {record.status === 1 ? '禁用' : '启用'}
+                    </Button>
+                  </Popconfirm>
+                </div>
+              </div>
+            ))}
+            {total > params.size && (
+              <div style={{ textAlign: 'center', marginTop: 12 }}>
+                <Pagination
+                  size="small"
+                  simple
+                  current={params.page}
+                  pageSize={params.size}
+                  total={total}
+                  onChange={(page) => setParams({ page, size: params.size })}
+                />
+              </div>
+            )}
+          </>
+        )
+      ) : (
+        <Table<UserItem>
+          rowKey="id"
+          columns={columns}
+          dataSource={data}
+          loading={loading}
+          pagination={{
+            current: params.page,
+            pageSize: params.size,
+            total,
+            showSizeChanger: true,
+            showTotal: (t) => `共 ${t} 条记录`,
+            onChange: (page, pageSize) => {
+              setParams({ page, size: pageSize });
+            },
+          }}
+          locale={{
+            emptyText: '暂无用户记录',
+          }}
+        />
+      )}
 
       {/* Edit user modal */}
       <Modal
@@ -325,6 +394,7 @@ export default function UserList() {
         confirmLoading={editLoading}
         okText="保存"
         cancelText="取消"
+        width={isMobile ? 'calc(100vw - 32px)' : undefined}
       >
         <Form form={editForm} layout="vertical">
           <Form.Item
@@ -371,6 +441,7 @@ export default function UserList() {
         confirmLoading={roleLoading}
         okText="保存"
         cancelText="取消"
+        width={isMobile ? 'calc(100vw - 32px)' : undefined}
       >
         <Checkbox.Group
           value={selectedRoleIds}

@@ -56,4 +56,9 @@ tr.row-highlight > td {
   .ant-drawer-body {
     padding: 12px !important;
   }
+  /* Wuyun markdown table overflow */
+  .wuyun-content table {
+    display: block;
+    overflow-x: auto;
+  }
 }

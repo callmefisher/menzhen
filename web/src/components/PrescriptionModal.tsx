@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   Modal,
   Tabs,
@@ -75,6 +75,7 @@ export default function PrescriptionModal({
 
   // Inventory stock lookup
   const [inventoryMap, setInventoryMap] = useState<Record<string, InventoryDrug>>({});
+  const watchedTotalDoses = Form.useWatch('total_doses', form);
 
   useEffect(() => {
     if (!open) return;
@@ -228,51 +229,41 @@ export default function PrescriptionModal({
     }
   };
 
+  const renderStockHint = (row: HerbRow): React.ReactNode => {
+    const inv = inventoryMap[row.herb_name?.trim()];
+    const unit = inv ? (inv.category === 'herb' ? '克' : '盒') : '';
+    const totalDoses = watchedTotalDoses || 7;
+    const dosageNum = row.dosage ? Number(row.dosage) || 0 : 0;
+    const needed = totalDoses * dosageNum;
+
+    if (!row.herb_name?.trim()) return null;
+
+    if (inv) {
+      if (needed > 0) {
+        return inv.stock < needed
+          ? <span style={{ fontSize: 11, color: '#ff4d4f' }}>库存不足: 需{needed}{unit}, 库存{inv.stock}{unit}</span>
+          : <span style={{ fontSize: 11, color: '#52c41a' }}>库存充足: 需{needed}{unit}, 库存{inv.stock}{unit}</span>;
+      }
+      return <span style={{ fontSize: 11, color: '#999' }}>库存: {inv.stock}{unit}</span>;
+    }
+    return <span style={{ fontSize: 11, color: '#999' }}>未录入库存</span>;
+  };
+
   const herbColumns = [
     {
       title: '药名',
       dataIndex: 'herb_name',
       key: 'herb_name',
       render: (_: string, record: HerbRow) => {
-        const inv = inventoryMap[record.herb_name?.trim()];
-        const config = JSON.parse(localStorage.getItem('inventory-alert-config') || '{}');
-        const getThreshold = (d: InventoryDrug) =>
-          d.alert_threshold ?? (d.category === 'herb' ? (config.herbThreshold ?? 500) : (config.patentThreshold ?? 10));
-        const unit = inv ? (inv.category === 'herb' ? '克' : '盒') : '';
-
-        let stockHint: React.ReactNode = null;
-        if (record.herb_name?.trim()) {
-          if (inv) {
-            stockHint = inv.stock < getThreshold(inv)
-              ? <span style={{ fontSize: 11, color: '#ff4d4f' }}>库存不足: {inv.stock}{unit}</span>
-              : <span style={{ fontSize: 11, color: '#52c41a' }}>库存: {inv.stock}{unit}</span>;
-          } else {
-            stockHint = <span style={{ fontSize: 11, color: '#999' }}>未录入库存</span>;
-          }
-        }
-
         return (
           <div>
             <Space>
-              <Input
-                value={record.herb_name}
-                onChange={(e) => updateHerbRow(record.key, 'herb_name', e.target.value)}
-                placeholder="药名"
-              />
-              <Button
-                type="text"
-                size="small"
-                icon={<InfoCircleOutlined />}
-                onClick={() => {
-                  if (record.herb_name.trim()) {
-                    setHerbDetailName(record.herb_name.trim());
-                    setHerbDetailOpen(true);
-                  }
-                }}
-                disabled={!record.herb_name.trim()}
-              />
+              <Input value={record.herb_name} onChange={(e) => updateHerbRow(record.key, 'herb_name', e.target.value)} placeholder="药名" />
+              <Button type="text" size="small" icon={<InfoCircleOutlined />}
+                onClick={() => { if (record.herb_name.trim()) { setHerbDetailName(record.herb_name.trim()); setHerbDetailOpen(true); } }}
+                disabled={!record.herb_name.trim()} />
             </Space>
-            {stockHint && <div style={{ marginTop: 2 }}>{stockHint}</div>}
+            {renderStockHint(record) && <div style={{ marginTop: 2 }}>{renderStockHint(record)}</div>}
           </div>
         );
       },
@@ -433,18 +424,60 @@ export default function PrescriptionModal({
         <div style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <strong>药物列表</strong>
-            <Button type="dashed" icon={<PlusOutlined />} onClick={addHerbRow} size="small">
-              添加药物
-            </Button>
+            {!isMobile && <Button type="dashed" icon={<PlusOutlined />} onClick={addHerbRow} size="small">添加药物</Button>}
           </div>
-          <Table
-            dataSource={herbRows}
-            columns={herbColumns}
-            rowKey="key"
-            pagination={false}
-            size="small"
-            bordered
-          />
+          {isMobile ? (
+            <div>
+              {herbRows.map((row) => {
+                const stockHint = renderStockHint(row);
+                return (
+                  <div key={row.key} style={{ background: '#fafafa', borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 8 }}>
+                      <Input
+                        value={row.herb_name}
+                        onChange={(e) => updateHerbRow(row.key, 'herb_name', e.target.value)}
+                        placeholder="药名"
+                        style={{ flex: 1 }}
+                      />
+                      <Button type="text" size="small" icon={<InfoCircleOutlined />}
+                        onClick={() => { if (row.herb_name.trim()) { setHerbDetailName(row.herb_name.trim()); setHerbDetailOpen(true); } }}
+                        disabled={!row.herb_name.trim()} />
+                      <Button type="text" danger icon={<DeleteOutlined />} onClick={() => removeHerbRow(row.key)} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <Space.Compact style={{ flexShrink: 0 }}>
+                        <InputNumber
+                          value={row.dosage ? Number(row.dosage) || undefined : undefined}
+                          onChange={(val) => updateHerbRow(row.key, 'dosage', val != null ? String(val) : '')}
+                          placeholder="用量"
+                          min={0} max={999}
+                          style={{ width: 70 }}
+                        />
+                        <span style={{ display: 'inline-flex', alignItems: 'center', padding: '0 6px', background: '#fafafa', border: '1px solid #d9d9d9', borderLeft: 'none', borderRadius: '0 6px 6px 0', color: '#666', fontSize: 13 }}>克</span>
+                      </Space.Compact>
+                      <Input
+                        value={row.notes}
+                        onChange={(e) => updateHerbRow(row.key, 'notes', e.target.value)}
+                        placeholder="先煎/后下等"
+                        style={{ flex: 1 }}
+                      />
+                    </div>
+                    {stockHint && <div style={{ marginTop: 4 }}>{stockHint}</div>}
+                  </div>
+                );
+              })}
+              <Button type="dashed" block icon={<PlusOutlined />} onClick={addHerbRow} style={{ marginTop: 4 }}>添加药物</Button>
+            </div>
+          ) : (
+            <Table
+              dataSource={herbRows}
+              columns={herbColumns}
+              rowKey="key"
+              pagination={false}
+              size="small"
+              bordered
+            />
+          )}
         </div>
 
         <Form.Item label="总付数" name="total_doses">

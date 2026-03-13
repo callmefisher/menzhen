@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Input, Table, Tag, message, Button, Popconfirm, Space } from 'antd';
+import { Input, Table, Tag, message, Button, Popconfirm, Space, Pagination, Spin, Empty } from 'antd';
 import { SearchOutlined, RobotOutlined, DeleteOutlined, EditOutlined, PlusOutlined, MinusCircleOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { listFormulas, deleteFormula, updateFormulaComposition, updateFormulaName, updateFormulaNotes } from '../../api/formula';
@@ -34,6 +34,9 @@ export default function FormulaSearch() {
   // Inline notes edit state
   const [editingNotesId, setEditingNotesId] = useState<number | null>(null);
   const [editingNotesValue, setEditingNotesValue] = useState('');
+
+  // Mobile card expanded state
+  const [mobileExpanded, setMobileExpanded] = useState<number[]>([]);
 
   // Load all formulas on mount
   useEffect(() => {
@@ -261,171 +264,391 @@ export default function FormulaSearch() {
         />
       </div>
 
-      <Table<FormulaItem>
-        columns={columns}
-        dataSource={formulas}
-        rowKey="id"
-        loading={loading}
-        pagination={{
-          current: page,
-          pageSize: size,
-          total,
-          showSizeChanger: true,
-          showTotal: (t) => `共 ${t} 条`,
-        }}
-        onChange={handleTableChange}
-        expandable={{
-          expandedRowRender: (record) => {
-            const isEditing = hasPermission('role:manage') && inlineEditId === record.id;
-            const comp = isEditing ? inlineComposition : (record.composition || []);
-            const isEditingNotes = hasPermission('role:manage') && editingNotesId === record.id;
+      {isMobile ? (
+        <div>
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: 40 }}>
+              <Spin />
+            </div>
+          ) : formulas.length === 0 ? (
+            <Empty description="暂无数据" />
+          ) : (
+            formulas.map((record) => {
+              const isExpanded = mobileExpanded.includes(record.id);
+              const isEditing = hasPermission('role:manage') && inlineEditId === record.id;
+              const comp = isEditing ? inlineComposition : (record.composition || []);
+              const isEditingNotes = hasPermission('role:manage') && editingNotesId === record.id;
 
-            return (
-              <div style={{ padding: '8px 0' }}>
-                <p><strong>功效：</strong>{record.effects || '无'}</p>
-                <p><strong>主治：</strong>{record.indications || '无'}</p>
-                <p>
-                  <strong>备注：</strong>
-                  {isEditingNotes ? (
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                      <Input.TextArea
-                        size="small"
-                        value={editingNotesValue}
-                        onChange={(e) => setEditingNotesValue(e.target.value)}
-                        autoSize={{ minRows: 1, maxRows: 4 }}
-                        style={{ width: isMobile ? '100%' : 400 }}
-                        autoFocus
-                      />
-                      <Button type="primary" size="small" onClick={() => handleSaveNotes(record.id)}>保存</Button>
-                      <Button size="small" onClick={() => setEditingNotesId(null)}>取消</Button>
-                    </span>
-                  ) : (
-                    <span>
-                      {record.notes || '无'}
-                      {hasPermission('role:manage') && (
-                        <Button
-                          type="text"
+              return (
+                <div
+                  key={record.id}
+                  style={{ background: '#fafafa', borderRadius: 8, padding: 12, marginBottom: 8 }}
+                >
+                  {/* Title row */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {hasPermission('role:manage') && editingNameId === record.id ? (
+                        <Input
                           size="small"
-                          icon={<EditOutlined />}
-                          onClick={() => { setEditingNotesId(record.id); setEditingNotesValue(record.notes || ''); }}
-                          style={{ marginLeft: 8 }}
+                          value={editingNameValue}
+                          onChange={(e) => setEditingNameValue(e.target.value)}
+                          onBlur={() => handleSaveName(record.id)}
+                          onPressEnter={() => handleSaveName(record.id)}
+                          autoFocus
+                          style={{ fontWeight: 'bold', fontSize: 15 }}
                         />
+                      ) : hasPermission('role:manage') ? (
+                        <a
+                          onClick={() => { setEditingNameId(record.id); setEditingNameValue(record.name); }}
+                          style={{ fontWeight: 'bold', fontSize: 15 }}
+                        >
+                          {record.name}
+                        </a>
+                      ) : (
+                        <span style={{ fontWeight: 'bold', fontSize: 15 }}>{record.name}</span>
                       )}
-                    </span>
-                  )}
-                </p>
-                <p><strong>组成：</strong></p>
-                {comp.length > 0 || isEditing ? (
-                  <Table
-                    dataSource={comp.map((c: FormulaCompositionItem, idx: number) => ({ ...c, key: idx }))}
-                    columns={[
-                      {
-                        title: '药物',
-                        dataIndex: 'herb_name',
-                        key: 'herb_name',
-                        render: (_: unknown, _rec: FormulaCompositionItem & { key: number }, index: number) => (
-                          <Space>
-                            {isEditing ? (
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                      {record.source === 'deepseek' ? (
+                        <Tag icon={<RobotOutlined />} color="blue">AI</Tag>
+                      ) : (
+                        <Tag color="green">本地</Tag>
+                      )}
+                      {hasPermission('role:manage') && (
+                        <Popconfirm
+                          title="确定删除此方剂？"
+                          onConfirm={() => handleDelete(record.id)}
+                          okText="删除"
+                          cancelText="取消"
+                        >
+                          <Button type="text" danger size="small" icon={<DeleteOutlined />} />
+                        </Popconfirm>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Summary */}
+                  <div style={{ color: '#888', fontSize: 13, marginBottom: 6 }}>
+                    {(record.composition || []).length}味药
+                  </div>
+
+                  {/* Expand toggle */}
+                  <div
+                    style={{ color: '#1677ff', fontSize: 13, cursor: 'pointer', marginBottom: isExpanded ? 8 : 0 }}
+                    onClick={() =>
+                      setMobileExpanded((prev) =>
+                        prev.includes(record.id)
+                          ? prev.filter((id) => id !== record.id)
+                          : [...prev, record.id]
+                      )
+                    }
+                  >
+                    {isExpanded ? '收起 ▲' : '展开详情 ▼'}
+                  </div>
+
+                  {/* Expanded content */}
+                  {isExpanded && (
+                    <div style={{ marginTop: 4 }}>
+                      <p style={{ margin: '4px 0' }}><strong>功效：</strong>{record.effects || '无'}</p>
+                      <p style={{ margin: '4px 0' }}><strong>主治：</strong>{record.indications || '无'}</p>
+                      <p style={{ margin: '4px 0' }}>
+                        <strong>备注：</strong>
+                        {isEditingNotes ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                            <Input.TextArea
+                              size="small"
+                              value={editingNotesValue}
+                              onChange={(e) => setEditingNotesValue(e.target.value)}
+                              autoSize={{ minRows: 1, maxRows: 4 }}
+                              style={{ width: '100%' }}
+                              autoFocus
+                            />
+                            <Button type="primary" size="small" onClick={() => handleSaveNotes(record.id)}>保存</Button>
+                            <Button size="small" onClick={() => setEditingNotesId(null)}>取消</Button>
+                          </span>
+                        ) : (
+                          <span>
+                            {record.notes || '无'}
+                            {hasPermission('role:manage') && (
+                              <Button
+                                type="text"
+                                size="small"
+                                icon={<EditOutlined />}
+                                onClick={() => { setEditingNotesId(record.id); setEditingNotesValue(record.notes || ''); }}
+                                style={{ marginLeft: 8 }}
+                              />
+                            )}
+                          </span>
+                        )}
+                      </p>
+
+                      <p style={{ margin: '8px 0 4px' }}><strong>组成：</strong></p>
+                      {isEditing ? (
+                        <div>
+                          {inlineComposition.map((item, index) => (
+                            <div key={index} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
                               <Input
                                 size="small"
-                                value={inlineComposition[index]?.herb_name}
+                                value={item.herb_name}
                                 onChange={(e) => updateInlineRow(index, 'herb_name', e.target.value)}
                                 placeholder="药名"
+                                style={{ flex: 1 }}
                               />
-                            ) : (
-                              <span>{(record.composition || [])[index]?.herb_name}</span>
-                            )}
-                            <Button
-                              type="text"
-                              size="small"
-                              icon={<InfoCircleOutlined />}
-                              onClick={() => openHerbDetail(
-                                isEditing
-                                  ? (inlineComposition[index]?.herb_name || '')
-                                  : ((record.composition || [])[index]?.herb_name || '')
-                              )}
-                            />
-                          </Space>
-                        ),
-                      },
-                      {
-                        title: '用量',
-                        dataIndex: 'default_dosage',
-                        key: 'default_dosage',
-                        width: 120,
-                        render: isEditing
-                          ? (_: unknown, _rec: FormulaCompositionItem & { key: number }, index: number) => (
                               <Input
                                 size="small"
-                                value={inlineComposition[index]?.default_dosage}
+                                value={item.default_dosage}
                                 onChange={(e) => updateInlineRow(index, 'default_dosage', e.target.value)}
                                 placeholder="如 10g"
+                                style={{ width: 80 }}
                               />
-                            )
-                          : undefined,
-                      },
-                      ...(isEditing
-                        ? [
-                            {
-                              title: '操作',
-                              key: 'action',
-                              width: 60,
-                              render: (_: unknown, _rec: FormulaCompositionItem & { key: number }, index: number) => (
+                              <Button
+                                type="text"
+                                size="small"
+                                icon={<InfoCircleOutlined />}
+                                onClick={() => openHerbDetail(item.herb_name || '')}
+                              />
+                              <Button
+                                type="text"
+                                danger
+                                size="small"
+                                icon={<MinusCircleOutlined />}
+                                onClick={() => removeInlineRow(index)}
+                              />
+                            </div>
+                          ))}
+                          <Space style={{ marginTop: 4 }}>
+                            <Button type="dashed" size="small" icon={<PlusOutlined />} onClick={addInlineRow}>
+                              添加药物
+                            </Button>
+                            <Button type="primary" size="small" loading={inlineSaving} onClick={handleSaveInline}>
+                              保存
+                            </Button>
+                            <Button size="small" onClick={() => setInlineEditId(null)}>
+                              取消
+                            </Button>
+                          </Space>
+                        </div>
+                      ) : (
+                        <div>
+                          {comp.length === 0 ? (
+                            <span style={{ color: '#888' }}>无组成信息</span>
+                          ) : (
+                            comp.map((c: FormulaCompositionItem, index: number) => (
+                              <div key={index} style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                                <span>{c.herb_name}</span>
+                                {c.default_dosage && <span style={{ color: '#888' }}>{c.default_dosage}</span>}
                                 <Button
                                   type="text"
-                                  danger
-                                  icon={<MinusCircleOutlined />}
-                                  onClick={() => removeInlineRow(index)}
                                   size="small"
+                                  icon={<InfoCircleOutlined />}
+                                  onClick={() => openHerbDetail(c.herb_name)}
                                 />
-                              ),
-                            },
-                          ]
-                        : []),
-                    ]}
-                    pagination={false}
-                    size="small"
-                    bordered
-                    style={{ maxWidth: isMobile ? '100%' : 500 }}
-                  />
-                ) : (
-                  <span>无组成信息</span>
-                )}
-                <Space style={{ marginTop: 8 }}>
-                  {record.source === 'deepseek' && (
-                    <Tag icon={<RobotOutlined />} color="blue">
-                      数据来源：DeepSeek AI（仅供参考，请结合临床经验）
-                    </Tag>
+                              </div>
+                            ))
+                          )}
+                          {hasPermission('role:manage') && (
+                            <Button
+                              type="primary"
+                              size="small"
+                              icon={<EditOutlined />}
+                              onClick={() => startInlineEdit(record)}
+                              style={{ marginTop: 4 }}
+                            >
+                              编辑组成
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   )}
-                  {hasPermission('role:manage') && !isEditing && (
-                    <Button
-                      type="primary"
+                </div>
+              );
+            })
+          )}
+          {!loading && formulas.length > 0 && (
+            <div style={{ textAlign: 'center', marginTop: 16 }}>
+              <Pagination
+                simple
+                size="small"
+                current={page}
+                pageSize={size}
+                total={total}
+                onChange={(newPage, newSize) => {
+                  setPage(newPage);
+                  if (newSize) setSize(newSize);
+                  fetchFormulas(searchName, newPage, newSize || size);
+                }}
+              />
+            </div>
+          )}
+        </div>
+      ) : (
+        <Table<FormulaItem>
+          columns={columns}
+          dataSource={formulas}
+          rowKey="id"
+          loading={loading}
+          pagination={{
+            current: page,
+            pageSize: size,
+            total,
+            showSizeChanger: true,
+            showTotal: (t) => `共 ${t} 条`,
+          }}
+          onChange={handleTableChange}
+          expandable={{
+            expandedRowRender: (record) => {
+              const isEditing = hasPermission('role:manage') && inlineEditId === record.id;
+              const comp = isEditing ? inlineComposition : (record.composition || []);
+              const isEditingNotes = hasPermission('role:manage') && editingNotesId === record.id;
+
+              return (
+                <div style={{ padding: '8px 0' }}>
+                  <p><strong>功效：</strong>{record.effects || '无'}</p>
+                  <p><strong>主治：</strong>{record.indications || '无'}</p>
+                  <p>
+                    <strong>备注：</strong>
+                    {isEditingNotes ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                        <Input.TextArea
+                          size="small"
+                          value={editingNotesValue}
+                          onChange={(e) => setEditingNotesValue(e.target.value)}
+                          autoSize={{ minRows: 1, maxRows: 4 }}
+                          style={{ width: isMobile ? '100%' : 400 }}
+                          autoFocus
+                        />
+                        <Button type="primary" size="small" onClick={() => handleSaveNotes(record.id)}>保存</Button>
+                        <Button size="small" onClick={() => setEditingNotesId(null)}>取消</Button>
+                      </span>
+                    ) : (
+                      <span>
+                        {record.notes || '无'}
+                        {hasPermission('role:manage') && (
+                          <Button
+                            type="text"
+                            size="small"
+                            icon={<EditOutlined />}
+                            onClick={() => { setEditingNotesId(record.id); setEditingNotesValue(record.notes || ''); }}
+                            style={{ marginLeft: 8 }}
+                          />
+                        )}
+                      </span>
+                    )}
+                  </p>
+                  <p><strong>组成：</strong></p>
+                  {comp.length > 0 || isEditing ? (
+                    <Table
+                      dataSource={comp.map((c: FormulaCompositionItem, idx: number) => ({ ...c, key: idx }))}
+                      columns={[
+                        {
+                          title: '药物',
+                          dataIndex: 'herb_name',
+                          key: 'herb_name',
+                          render: (_: unknown, _rec: FormulaCompositionItem & { key: number }, index: number) => (
+                            <Space>
+                              {isEditing ? (
+                                <Input
+                                  size="small"
+                                  value={inlineComposition[index]?.herb_name}
+                                  onChange={(e) => updateInlineRow(index, 'herb_name', e.target.value)}
+                                  placeholder="药名"
+                                />
+                              ) : (
+                                <span>{(record.composition || [])[index]?.herb_name}</span>
+                              )}
+                              <Button
+                                type="text"
+                                size="small"
+                                icon={<InfoCircleOutlined />}
+                                onClick={() => openHerbDetail(
+                                  isEditing
+                                    ? (inlineComposition[index]?.herb_name || '')
+                                    : ((record.composition || [])[index]?.herb_name || '')
+                                )}
+                              />
+                            </Space>
+                          ),
+                        },
+                        {
+                          title: '用量',
+                          dataIndex: 'default_dosage',
+                          key: 'default_dosage',
+                          width: 120,
+                          render: isEditing
+                            ? (_: unknown, _rec: FormulaCompositionItem & { key: number }, index: number) => (
+                                <Input
+                                  size="small"
+                                  value={inlineComposition[index]?.default_dosage}
+                                  onChange={(e) => updateInlineRow(index, 'default_dosage', e.target.value)}
+                                  placeholder="如 10g"
+                                />
+                              )
+                            : undefined,
+                        },
+                        ...(isEditing
+                          ? [
+                              {
+                                title: '操作',
+                                key: 'action',
+                                width: 60,
+                                render: (_: unknown, _rec: FormulaCompositionItem & { key: number }, index: number) => (
+                                  <Button
+                                    type="text"
+                                    danger
+                                    icon={<MinusCircleOutlined />}
+                                    onClick={() => removeInlineRow(index)}
+                                    size="small"
+                                  />
+                                ),
+                              },
+                            ]
+                          : []),
+                      ]}
+                      pagination={false}
                       size="small"
-                      icon={<EditOutlined />}
-                      onClick={() => startInlineEdit(record)}
-                    >
-                      编辑组成
-                    </Button>
+                      bordered
+                      style={{ maxWidth: isMobile ? '100%' : 500 }}
+                    />
+                  ) : (
+                    <span>无组成信息</span>
                   )}
-                  {isEditing && (
-                    <>
-                      <Button type="dashed" size="small" icon={<PlusOutlined />} onClick={addInlineRow}>
-                        添加药物
+                  <Space style={{ marginTop: 8 }}>
+                    {record.source === 'deepseek' && (
+                      <Tag icon={<RobotOutlined />} color="blue">
+                        数据来源：DeepSeek AI（仅供参考，请结合临床经验）
+                      </Tag>
+                    )}
+                    {hasPermission('role:manage') && !isEditing && (
+                      <Button
+                        type="primary"
+                        size="small"
+                        icon={<EditOutlined />}
+                        onClick={() => startInlineEdit(record)}
+                      >
+                        编辑组成
                       </Button>
-                      <Button type="primary" size="small" loading={inlineSaving} onClick={handleSaveInline}>
-                        保存
-                      </Button>
-                      <Button size="small" onClick={() => setInlineEditId(null)}>
-                        取消
-                      </Button>
-                    </>
-                  )}
-                </Space>
-              </div>
-            );
-          },
-        }}
-      />
+                    )}
+                    {isEditing && (
+                      <>
+                        <Button type="dashed" size="small" icon={<PlusOutlined />} onClick={addInlineRow}>
+                          添加药物
+                        </Button>
+                        <Button type="primary" size="small" loading={inlineSaving} onClick={handleSaveInline}>
+                          保存
+                        </Button>
+                        <Button size="small" onClick={() => setInlineEditId(null)}>
+                          取消
+                        </Button>
+                      </>
+                    )}
+                  </Space>
+                </div>
+              );
+            },
+          }}
+        />
+      )}
 
       <HerbDetailModal
         open={herbDetailOpen}

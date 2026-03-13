@@ -10,6 +10,8 @@ import {
   Form,
   Input,
   Checkbox,
+  Spin,
+  Empty,
 } from 'antd';
 import {
   PlusOutlined,
@@ -18,6 +20,7 @@ import {
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { listRoles, createRole, updateRole, listPermissions } from '../../api/role';
+import useIsMobile from '../../hooks/useIsMobile';
 
 interface PermissionItem {
   id: number;
@@ -67,6 +70,7 @@ const PERMISSION_GROUPS: { label: string; codes: string[] }[] = [
 export default function RoleList() {
   const [data, setData] = useState<RoleItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const isMobile = useIsMobile();
 
   // All permissions from the backend
   const [allPermissions, setAllPermissions] = useState<PermissionItem[]>([]);
@@ -268,16 +272,48 @@ export default function RoleList() {
         </Button>
       </div>
 
-      <Table<RoleItem>
-        rowKey="id"
-        columns={columns}
-        dataSource={data}
-        loading={loading}
-        pagination={false}
-        locale={{
-          emptyText: '暂无角色记录',
-        }}
-      />
+      {isMobile ? (
+        loading ? (
+          <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
+        ) : data.length === 0 ? (
+          <Empty description="暂无角色记录" />
+        ) : (
+          data.map((record) => (
+            <div
+              key={record.id}
+              style={{
+                background: '#fafafa',
+                borderRadius: 8,
+                padding: 12,
+                marginBottom: 8,
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <span style={{ fontWeight: 600, fontSize: 15 }}>{record.name}</span>
+                <span style={{ color: '#999', fontSize: 12 }}>权限: {(record.permissions || []).length}</span>
+              </div>
+              {record.description && <div style={{ color: '#666', fontSize: 13, marginBottom: 8 }}>{record.description}</div>}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Button type="link" size="small" style={{ padding: 0 }} icon={<EditOutlined />} onClick={() => handleEdit(record)}>编辑</Button>
+                <Popconfirm title="确定删除此角色？" onConfirm={() => handleDelete(record.id)} okText="确定" cancelText="取消">
+                  <Button type="link" size="small" style={{ padding: 0 }} danger icon={<DeleteOutlined />}>删除</Button>
+                </Popconfirm>
+              </div>
+            </div>
+          ))
+        )
+      ) : (
+        <Table<RoleItem>
+          rowKey="id"
+          columns={columns}
+          dataSource={data}
+          loading={loading}
+          pagination={false}
+          locale={{
+            emptyText: '暂无角色记录',
+          }}
+        />
+      )}
 
       {/* Add / Edit role modal */}
       <Modal
@@ -288,7 +324,7 @@ export default function RoleList() {
         confirmLoading={submitLoading}
         okText="保存"
         cancelText="取消"
-        width={600}
+        width={isMobile ? 'calc(100vw - 32px)' : 600}
       >
         <Form form={form} layout="vertical">
           <Form.Item
