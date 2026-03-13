@@ -961,16 +961,16 @@ export default function RecordForm() {
               {notesExpanded ? <DownOutlined style={{ fontSize: 11, color: '#8c8c8c' }} /> : <RightOutlined style={{ fontSize: 11, color: '#8c8c8c' }} />}
               <span style={{ fontSize: 14, fontWeight: 500 }}>备注</span>
               {!notesExpanded && watchedNotes && (
-                <span style={{ fontSize: 12, color: '#8c8c8c', marginLeft: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 300 }}>
+                <span style={{ fontSize: 12, color: '#666', marginLeft: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? 200 : 400, display: 'inline-block', verticalAlign: 'middle' }}>
                   {watchedNotes}
                 </span>
               )}
             </div>
-            {notesExpanded && (
+            <div style={{ display: notesExpanded ? 'block' : 'none' }}>
               <Form.Item name="notes" style={{ marginBottom: 0 }}>
                 <Input.TextArea rows={4} placeholder="请输入备注" style={{ resize: 'none' }} />
               </Form.Item>
-            )}
+            </div>
           </div>
 
           {/* 附件 - 可折叠 */}
@@ -987,11 +987,11 @@ export default function RecordForm() {
                 </span>
               )}
             </div>
-            {attachmentsExpanded && (
+            <div style={{ display: attachmentsExpanded ? 'block' : 'none' }}>
               <Form.Item name="attachments" style={{ marginBottom: 0 }}>
                 <FileUpload />
               </Form.Item>
-            )}
+            </div>
           </div>
         </div>
 
