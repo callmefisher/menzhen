@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Card, Table, Button, Space, InputNumber, Tag, message, Dropdown } from 'antd';
+import { Card, Table, Button, Space, InputNumber, Tag, message } from 'antd';
 import { ReloadOutlined, BellOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { listInventoryDrugs } from '../../api/inventory';
@@ -7,7 +7,6 @@ import type { InventoryDrug } from '../../api/inventory';
 import useIsMobile from '../../hooks/useIsMobile';
 
 const CONFIG_KEY = 'inventory-alert-config';
-const MUTED_KEY = 'inventory-alert-muted';
 
 interface AlertConfig {
   herbThreshold: number;
@@ -37,20 +36,6 @@ function loadConfig(): AlertConfig {
   return { herbThreshold: 500, patentThreshold: 10, scanInterval: 30 };
 }
 
-function loadMuted(): Record<number, number> {
-  try {
-    const raw = localStorage.getItem(MUTED_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch {
-    // ignore
-  }
-  return {};
-}
-
-function saveMuted(muted: Record<number, number>) {
-  localStorage.setItem(MUTED_KEY, JSON.stringify(muted));
-}
-
 export default function InventoryAlert() {
   const isMobile = useIsMobile();
   const [config, setConfig] = useState<AlertConfig>(loadConfig);
@@ -65,23 +50,12 @@ export default function InventoryAlert() {
       const body = res as any;
       const drugs: InventoryDrug[] = body.data?.list || [];
 
-      const muted = loadMuted();
-      const now = Date.now();
-
-      // Clean up expired mutes
-      let mutedChanged = false;
-      for (const key of Object.keys(muted)) {
-        const id = Number(key);
-        if (now > muted[id]) {
-          delete muted[id];
-          mutedChanged = true;
-        }
-      }
-      if (mutedChanged) saveMuted(muted);
-
       const currentConfig = loadConfig();
+      const muted: number[] = JSON.parse(localStorage.getItem('inventory-alert-muted') || '[]');
       const rows: AlertRow[] = [];
       for (const drug of drugs) {
+        if (muted.includes(drug.id)) continue;
+
         const threshold =
           drug.alert_threshold != null
             ? drug.alert_threshold
@@ -89,10 +63,7 @@ export default function InventoryAlert() {
             ? currentConfig.herbThreshold
             : currentConfig.patentThreshold;
 
-        if (drug.stock >= threshold) continue;
-
-        const muteUntil = muted[drug.id];
-        if (muteUntil && now < muteUntil) continue;
+        if (drug.stock > threshold) continue;
 
         rows.push({
           ...drug,
@@ -108,10 +79,21 @@ export default function InventoryAlert() {
     }
   }, []);
 
-  // Run scan on mount and on config changes
+  // Run scan on mount and on config changes — clear muted so all alerts re-evaluate
   useEffect(() => {
+    localStorage.removeItem('inventory-alert-muted');
     runScan();
   }, [runScan, config]);
+
+  // Clear muted list and re-scan when inventory data changes
+  useEffect(() => {
+    const onDataChanged = () => {
+      localStorage.removeItem('inventory-alert-muted');
+      runScan();
+    };
+    window.addEventListener('inventory-data-changed', onDataChanged);
+    return () => window.removeEventListener('inventory-data-changed', onDataChanged);
+  }, [runScan]);
 
   // Set up periodic scan timer
   useEffect(() => {
@@ -133,20 +115,19 @@ export default function InventoryAlert() {
     message.success('配置已保存');
   };
 
-  const handleMute = (drugId: number, hours: number) => {
-    const muted = loadMuted();
-    muted[drugId] = Date.now() + hours * 3600 * 1000;
-    saveMuted(muted);
+  const handleDismiss = (drugId: number) => {
+    const muted = JSON.parse(localStorage.getItem('inventory-alert-muted') || '[]');
+    muted.push(drugId);
+    localStorage.setItem('inventory-alert-muted', JSON.stringify(muted));
     setAlertRows((prev) => prev.filter((r) => r.id !== drugId));
-    message.success(`已屏蔽 ${hours} 小时`);
+    window.dispatchEvent(new Event('inventory-alert-changed'));
+    message.success('已忽略该告警');
   };
 
-  const getMuteMenuItems = (drugId: number) => [
-    { key: '1', label: '1小时', onClick: () => handleMute(drugId, 1) },
-    { key: '6', label: '6小时', onClick: () => handleMute(drugId, 6) },
-    { key: '12', label: '12小时', onClick: () => handleMute(drugId, 12) },
-    { key: '24', label: '24小时', onClick: () => handleMute(drugId, 24) },
-  ];
+  const handleManualScan = () => {
+    localStorage.removeItem('inventory-alert-muted');
+    runScan();
+  };
 
   const columns: ColumnsType<AlertRow> = [
     {
@@ -160,6 +141,7 @@ export default function InventoryAlert() {
       dataIndex: 'category',
       key: 'category',
       width: 80,
+      responsive: ['md'] as any,
       render: (val: string) =>
         val === 'herb' ? (
           <Tag color="green">本草</Tag>
@@ -178,6 +160,7 @@ export default function InventoryAlert() {
       title: '阈值',
       key: 'effectiveThreshold',
       width: 100,
+      responsive: ['md'] as any,
       render: (_, record) =>
         `${record.effectiveThreshold} ${record.category === 'herb' ? '克' : '盒'}`,
     },
@@ -185,22 +168,151 @@ export default function InventoryAlert() {
       title: '缺口量',
       key: 'gap',
       width: 100,
+      responsive: ['md'] as any,
       render: (_, record) =>
         `${record.gap.toFixed(2)} ${record.category === 'herb' ? '克' : '盒'}`,
     },
     {
       title: '操作',
       key: 'action',
-      width: isMobile ? 80 : 120,
+      width: 80,
       render: (_, record) => (
-        <Dropdown menu={{ items: getMuteMenuItems(record.id) }} trigger={['click']}>
-          <Button size="small" type="default">
-            屏蔽
-          </Button>
-        </Dropdown>
+        <Button
+          size="small"
+          type="default"
+          onClick={() => handleDismiss(record.id)}
+        >
+          忽略
+        </Button>
       ),
     },
   ];
+
+  // --- Mobile card view for alerts ---
+  const renderMobileAlertCard = (row: AlertRow) => {
+    const unit = row.category === 'herb' ? '克' : '盒';
+    return (
+      <Card
+        key={row.id}
+        size="small"
+        style={{ marginBottom: 8, background: '#fff1f0', borderColor: '#ffccc7' }}
+        styles={{ body: { padding: '10px 12px' } }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontWeight: 600, fontSize: 15 }}>{row.name}</span>
+            <Tag color={row.category === 'herb' ? 'green' : 'blue'} style={{ margin: 0 }}>
+              {row.category === 'herb' ? '草' : '成'}
+            </Tag>
+          </div>
+          <Button size="small" onClick={() => handleDismiss(row.id)}>忽略</Button>
+        </div>
+        <div style={{ display: 'flex', gap: 12, fontSize: 13, color: '#666' }}>
+          <span>库存 <span style={{ color: '#ff4d4f', fontWeight: 500 }}>{row.stock}{unit}</span></span>
+          <span>阈值 {row.effectiveThreshold}{unit}</span>
+          <span>缺 <span style={{ color: '#ff4d4f', fontWeight: 500 }}>{row.gap.toFixed(0)}{unit}</span></span>
+        </div>
+      </Card>
+    );
+  };
+
+  // --- Mobile config ---
+  const renderMobileConfig = () => (
+    <Card
+      title={
+        <Space>
+          <BellOutlined style={{ color: '#ff4d4f' }} />
+          <span>预警配置</span>
+        </Space>
+      }
+      style={{ marginBottom: 12 }}
+      size="small"
+      styles={{ body: { padding: 12 } }}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 13, flexShrink: 0, width: 80 }}>本草阈值</span>
+          <InputNumber
+            min={0}
+            value={editConfig.herbThreshold}
+            onChange={(val) => setEditConfig((prev) => ({ ...prev, herbThreshold: val ?? 500 }))}
+            addonAfter="克"
+            style={{ flex: 1 }}
+            size="small"
+          />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 13, flexShrink: 0, width: 80 }}>成药阈值</span>
+          <InputNumber
+            min={0}
+            value={editConfig.patentThreshold}
+            onChange={(val) => setEditConfig((prev) => ({ ...prev, patentThreshold: val ?? 10 }))}
+            addonAfter="盒"
+            style={{ flex: 1 }}
+            size="small"
+          />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 13, flexShrink: 0, width: 80 }}>扫描频率</span>
+          <InputNumber
+            min={1}
+            value={editConfig.scanInterval}
+            onChange={(val) => setEditConfig((prev) => ({ ...prev, scanInterval: val ?? 30 }))}
+            addonAfter="分钟"
+            style={{ flex: 1 }}
+            size="small"
+          />
+        </div>
+        <Button type="primary" onClick={handleSaveConfig} block size="small">
+          保存配置
+        </Button>
+      </div>
+    </Card>
+  );
+
+  // --- Desktop config ---
+  const renderDesktopConfig = () => (
+    <Card
+      title={
+        <Space>
+          <BellOutlined style={{ color: '#ff4d4f' }} />
+          <span>预警配置</span>
+        </Space>
+      }
+      style={{ marginBottom: 16 }}
+      size="small"
+    >
+      <Space wrap align="center">
+        <span>本草默认阈值：</span>
+        <InputNumber
+          min={0}
+          value={editConfig.herbThreshold}
+          onChange={(val) => setEditConfig((prev) => ({ ...prev, herbThreshold: val ?? 500 }))}
+          addonAfter="克"
+          style={{ width: 140 }}
+        />
+        <span>成药默认阈值：</span>
+        <InputNumber
+          min={0}
+          value={editConfig.patentThreshold}
+          onChange={(val) => setEditConfig((prev) => ({ ...prev, patentThreshold: val ?? 10 }))}
+          addonAfter="盒"
+          style={{ width: 140 }}
+        />
+        <span>扫描频率：</span>
+        <InputNumber
+          min={1}
+          value={editConfig.scanInterval}
+          onChange={(val) => setEditConfig((prev) => ({ ...prev, scanInterval: val ?? 30 }))}
+          addonAfter="分钟"
+          style={{ width: 140 }}
+        />
+        <Button type="primary" onClick={handleSaveConfig}>
+          保存配置
+        </Button>
+      </Space>
+    </Card>
+  );
 
   return (
     <>
@@ -209,85 +321,53 @@ export default function InventoryAlert() {
         .alert-row:hover > td { background-color: #ffccc7 !important; }
       `}</style>
 
-      {/* Global threshold config */}
-      <Card
-        title={
-          <Space>
-            <BellOutlined style={{ color: '#ff4d4f' }} />
-            <span>预警配置</span>
-          </Space>
-        }
-        style={{ marginBottom: 16 }}
-        size="small"
-      >
-        <Space wrap align="center">
-          <span>本草默认阈值：</span>
-          <InputNumber
-            min={0}
-            value={editConfig.herbThreshold}
-            onChange={(val) =>
-              setEditConfig((prev) => ({ ...prev, herbThreshold: val ?? 500 }))
-            }
-            addonAfter="克"
-            style={{ width: 140 }}
-          />
-          <span>成药默认阈值：</span>
-          <InputNumber
-            min={0}
-            value={editConfig.patentThreshold}
-            onChange={(val) =>
-              setEditConfig((prev) => ({ ...prev, patentThreshold: val ?? 10 }))
-            }
-            addonAfter="盒"
-            style={{ width: 140 }}
-          />
-          <span>扫描频率：</span>
-          <InputNumber
-            min={1}
-            value={editConfig.scanInterval}
-            onChange={(val) =>
-              setEditConfig((prev) => ({ ...prev, scanInterval: val ?? 30 }))
-            }
-            addonAfter="分钟"
-            style={{ width: 140 }}
-          />
-          <Button type="primary" onClick={handleSaveConfig}>
-            保存配置
-          </Button>
-        </Space>
-      </Card>
+      {/* Config */}
+      {isMobile ? renderMobileConfig() : renderDesktopConfig()}
 
       {/* Alert list */}
       <Card
         title={
-          <Space>
+          <Space size={isMobile ? 4 : 8}>
             <BellOutlined style={{ color: '#ff4d4f' }} />
-            <span>库存预警列表</span>
+            <span style={isMobile ? { fontSize: 14 } : undefined}>预警列表</span>
             {alertRows.length > 0 && (
-              <Tag color="red">{alertRows.length} 项需补货</Tag>
+              <Tag color="red">{alertRows.length} 项</Tag>
             )}
           </Space>
         }
         extra={
           <Button
             icon={<ReloadOutlined />}
-            onClick={runScan}
+            onClick={handleManualScan}
             loading={loading}
             type="default"
+            size={isMobile ? 'small' : 'middle'}
           >
             {!isMobile && '立即扫描'}
           </Button>
         }
+        size={isMobile ? 'small' : 'default'}
+        styles={isMobile ? { body: { padding: 8 } } : undefined}
       >
-        <Table<AlertRow>
-          rowKey="id"
-          columns={columns}
-          dataSource={alertRows}
-          loading={loading}
-          rowClassName={() => 'alert-row'}
-          pagination={false}
-          locale={{ emptyText: '暂无库存预警，库存充足' }}
-        />
+        {isMobile ? (
+          loading ? (
+            <div style={{ textAlign: 'center', padding: 24, color: '#999' }}>扫描中...</div>
+          ) : alertRows.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 24, color: '#52c41a' }}>暂无库存预警，库存充足</div>
+          ) : (
+            alertRows.map(renderMobileAlertCard)
+          )
+        ) : (
+          <Table<AlertRow>
+            rowKey="id"
+            columns={columns}
+            dataSource={alertRows}
+            loading={loading}
+            rowClassName={() => 'alert-row'}
+            pagination={false}
+            locale={{ emptyText: '暂无库存预警，库存充足' }}
+          />
+        )}
       </Card>
     </>
   );

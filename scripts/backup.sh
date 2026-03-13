@@ -57,12 +57,23 @@ fi
 REMAINING=$(find "${BACKUP_DIR}" -maxdepth 1 -name "*.sql" -type f | wc -l)
 echo ">> Remaining backup files: ${REMAINING}"
 
-# 4. Upload to Qiniu cloud storage
-echo ">> Uploading to Qiniu..."
-if python3 /scripts/upload_to_qiniu.py "${BACKUP_FILE}"; then
-    echo ">> Qiniu upload complete"
-else
-    echo ">> WARNING: Qiniu upload failed (backup is still saved locally)"
+# 4. Upload to Qiniu cloud storage (retry up to 10 times)
+MYSQL_UPLOAD_MAX=10
+MYSQL_UPLOAD_OK=false
+for attempt in $(seq 1 ${MYSQL_UPLOAD_MAX}); do
+    echo ">> Uploading to Qiniu (attempt ${attempt}/${MYSQL_UPLOAD_MAX})..."
+    if python3 /scripts/upload_to_qiniu.py "${BACKUP_FILE}"; then
+        echo ">> Qiniu upload complete"
+        MYSQL_UPLOAD_OK=true
+        break
+    fi
+    if [ "${attempt}" -lt "${MYSQL_UPLOAD_MAX}" ]; then
+        echo ">> Upload failed, retrying in 10s..."
+        sleep 10
+    fi
+done
+if [ "${MYSQL_UPLOAD_OK}" = false ]; then
+    echo ">> WARNING: Qiniu upload failed after ${MYSQL_UPLOAD_MAX} attempts (backup saved locally)"
 fi
 
 # 5. Always clean up old backups on Qiniu (regardless of upload result)

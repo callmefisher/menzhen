@@ -176,3 +176,84 @@ func (h *InventoryDrugHandler) Delete(c *gin.Context) {
 		"message": "success",
 	})
 }
+
+// BatchStockIn handles POST /api/v1/inventory/drugs/batch-stock-in.
+func (h *InventoryDrugHandler) BatchStockIn(c *gin.Context) {
+	var req service.BatchStockInRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "invalid request: " + err.Error(),
+		})
+		return
+	}
+
+	tenantID := middleware.GetTenantID(c)
+	svc := service.NewInventoryDrugService(h.db)
+	result, err := svc.BatchStockIn(tenantID, &req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "batch stock-in failed",
+		})
+		return
+	}
+
+	middleware.LogOperation(h.db, c, "batch_stock_in", "inventory_drug", 0, nil, result)
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    result,
+	})
+}
+
+// StockIn handles POST /api/v1/inventory/drugs/:id/stock-in.
+func (h *InventoryDrugHandler) StockIn(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "invalid inventory drug id",
+		})
+		return
+	}
+
+	var req service.StockInRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "invalid request: " + err.Error(),
+		})
+		return
+	}
+
+	svc := service.NewInventoryDrugService(h.db)
+
+	// Find the drug first
+	var drug service.StockInDrugResult
+	drug, err = svc.StockIn(tenantID, id, &req)
+	if err != nil {
+		if errors.Is(err, service.ErrInventoryDrugNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"code":    404,
+				"message": "inventory drug not found",
+			})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "stock-in failed",
+		})
+		return
+	}
+
+	middleware.LogOperation(h.db, c, "stock_in", "inventory_drug", id, drug.OldDrug, drug.NewDrug)
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    drug.NewDrug,
+	})
+}

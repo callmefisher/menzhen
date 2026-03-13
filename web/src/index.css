@@ -18,6 +18,10 @@ body {
 tr.row-highlight > td {
   animation: row-flash 10s ease-out;
 }
+/* Mobile card highlight after edit */
+.ant-card.row-highlight {
+  animation: row-flash 10s ease-out;
+}
 
 /* Mobile responsive overrides */
 @media (max-width: 767px) {

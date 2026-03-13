@@ -248,7 +248,7 @@ export default function HerbSearch() {
           placeholder="按分类筛选"
           allowClear
           size="large"
-          style={{ minWidth: 160 }}
+          style={{ minWidth: isMobile ? '100%' : 160 }}
           value={selectedCategory}
           onChange={handleCategoryChange}
           options={categories.map((c) => ({ label: c, value: c }))}
@@ -277,7 +277,7 @@ export default function HerbSearch() {
                 <>
                   <div style={{ marginBottom: 8 }}>
                     <strong>药名：</strong>
-                    <Input size="small" value={editingData.name} onChange={(e) => setEditingData((d) => ({ ...d, name: e.target.value }))} style={{ width: 200 }} />
+                    <Input size="small" value={editingData.name} onChange={(e) => setEditingData((d) => ({ ...d, name: e.target.value }))} style={{ width: isMobile ? '100%' : 200 }} />
                   </div>
                   <div style={{ marginBottom: 8 }}>
                     <strong>别名：</strong>
@@ -285,7 +285,7 @@ export default function HerbSearch() {
                   </div>
                   <div style={{ marginBottom: 8 }}>
                     <strong>分类：</strong>
-                    <Input size="small" value={editingData.category} onChange={(e) => setEditingData((d) => ({ ...d, category: e.target.value }))} style={{ width: 200 }} />
+                    <Input size="small" value={editingData.category} onChange={(e) => setEditingData((d) => ({ ...d, category: e.target.value }))} style={{ width: isMobile ? '100%' : 200 }} />
                   </div>
                   <div style={{ marginBottom: 8 }}>
                     <strong>性味归经：</strong>

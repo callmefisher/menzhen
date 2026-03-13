@@ -217,6 +217,8 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		{
 			inventoryDrugs.GET("", middleware.RequirePermission(db, "inventory:read"), inventoryDrugHandler.List)
 			inventoryDrugs.POST("", middleware.RequirePermission(db, "inventory:create"), inventoryDrugHandler.Create)
+			inventoryDrugs.POST("/batch-stock-in", middleware.RequirePermission(db, "inventory:create"), inventoryDrugHandler.BatchStockIn)
+			inventoryDrugs.POST("/:id/stock-in", middleware.RequirePermission(db, "inventory:update"), inventoryDrugHandler.StockIn)
 			inventoryDrugs.PUT("/:id", middleware.RequirePermission(db, "inventory:update"), inventoryDrugHandler.Update)
 			inventoryDrugs.DELETE("/:id", middleware.RequirePermission(db, "inventory:delete"), inventoryDrugHandler.Delete)
 		}
