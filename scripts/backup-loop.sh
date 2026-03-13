@@ -1,62 +1,60 @@
 #!/bin/bash
 
-# Backup daemon: dual-loop for MySQL and MinIO backups
-# MySQL interval: BACKUP_INTERVAL_MYSQL (default 7200s = 2 hours)
-# MinIO interval: BACKUP_INTERVAL_MINIO (default 43200s = 12 hours)
+# Backup daemon: poll-based for MySQL and MinIO backups
+# Checks every 60s if last backup exceeds the configured interval.
+# This ensures backups trigger promptly after system wake from sleep,
+# since sleep(1) uses monotonic clock which pauses during hibernation.
 
 BACKUP_DIR="${BACKUP_DIR:-/backups}"
 MYSQL_INTERVAL="${BACKUP_INTERVAL_MYSQL:-7200}"
 MINIO_INTERVAL="${BACKUP_INTERVAL_MINIO:-43200}"
+POLL_INTERVAL=60
 
 echo "[$(date)] Backup daemon started"
 echo "  MySQL interval: ${MYSQL_INTERVAL}s ($(( MYSQL_INTERVAL / 3600 ))h$(( (MYSQL_INTERVAL % 3600) / 60 ))m)"
 echo "  MinIO interval: ${MINIO_INTERVAL}s ($(( MINIO_INTERVAL / 3600 ))h$(( (MINIO_INTERVAL % 3600) / 60 ))m)"
+echo "  Poll interval: ${POLL_INTERVAL}s"
+
+# Get age (in seconds) of the most recent backup file
+# Usage: get_backup_age <dir> <pattern>
+# Returns: age in seconds, or empty string if no file found
+get_backup_age() {
+    local dir="$1" pattern="$2"
+    local latest
+    latest=$(find "${dir}" -maxdepth 1 -name "${pattern}" -type f -exec stat -c '%Y' {} \; 2>/dev/null | sort -rn | head -1)
+    if [ -n "${latest}" ]; then
+        echo $(( $(date +%s) - ${latest%.*} ))
+    fi
+}
 
 # --- MySQL backup loop ---
 mysql_loop() {
-    # Startup check: if last backup is recent enough, skip immediate
-    latest=$(find "${BACKUP_DIR}" -maxdepth 1 -name "*.sql" -type f -exec stat -c '%Y' {} \; 2>/dev/null | sort -rn | head -1)
-    if [ -n "${latest}" ]; then
-        age=$(( $(date +%s) - ${latest%.*} ))
-        echo "[$(date)] MySQL: last backup ${age}s ago"
-        if [ "${age}" -lt "${MYSQL_INTERVAL}" ]; then
-            echo "[$(date)] MySQL: recent backup exists, skipping immediate"
-        else
-            echo "[$(date)] MySQL: backup is stale, triggering immediate..."
+    while true; do
+        age=$(get_backup_age "${BACKUP_DIR}" "*.sql")
+        if [ -z "${age}" ]; then
+            echo "[$(date)] MySQL: no backup found, triggering immediate..."
+            /scripts/backup.sh
+        elif [ "${age}" -ge "${MYSQL_INTERVAL}" ]; then
+            echo "[$(date)] MySQL: last backup ${age}s ago (>= ${MYSQL_INTERVAL}s), triggering backup..."
             /scripts/backup.sh
         fi
-    else
-        echo "[$(date)] MySQL: no backup found, triggering immediate..."
-        /scripts/backup.sh
-    fi
-    while true; do
-        sleep ${MYSQL_INTERVAL}
-        echo "[$(date)] MySQL: triggering scheduled backup..."
-        /scripts/backup.sh
+        sleep ${POLL_INTERVAL}
     done
 }
 
 # --- MinIO backup loop ---
 minio_loop() {
     MINIO_BACKUP_DIR="${BACKUP_DIR}/minio"
-    latest=$(find "${MINIO_BACKUP_DIR}" -name "minio_*.tar.gz" -type f -exec stat -c '%Y' {} \; 2>/dev/null | sort -rn | head -1)
-    if [ -n "${latest}" ]; then
-        age=$(( $(date +%s) - ${latest%.*} ))
-        echo "[$(date)] MinIO: last backup ${age}s ago"
-        if [ "${age}" -lt "${MINIO_INTERVAL}" ]; then
-            echo "[$(date)] MinIO: recent backup exists, skipping immediate"
-        else
-            echo "[$(date)] MinIO: backup is stale, triggering immediate..."
+    while true; do
+        age=$(get_backup_age "${MINIO_BACKUP_DIR}" "minio_*.tar.gz")
+        if [ -z "${age}" ]; then
+            echo "[$(date)] MinIO: no backup found, triggering immediate..."
+            /scripts/backup-minio.sh
+        elif [ "${age}" -ge "${MINIO_INTERVAL}" ]; then
+            echo "[$(date)] MinIO: last backup ${age}s ago (>= ${MINIO_INTERVAL}s), triggering backup..."
             /scripts/backup-minio.sh
         fi
-    else
-        echo "[$(date)] MinIO: no backup found, triggering immediate..."
-        /scripts/backup-minio.sh
-    fi
-    while true; do
-        sleep ${MINIO_INTERVAL}
-        echo "[$(date)] MinIO: triggering scheduled backup..."
-        /scripts/backup-minio.sh
+        sleep ${POLL_INTERVAL}
     done
 }
 
