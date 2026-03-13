@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-03-12（诊疗记录新增主诉/脉象/舌象字段 + AI舌诊分析）
+> 最后更新：2026-03-13（新增库存管理模块：药物CRUD + 库存预警 + 开方库存提示）
 
 ---
 
@@ -31,7 +31,7 @@ menzhen/
 │   ├── config/
 │   │   └── config.go                # Config 结构体 + Load()，全部读取环境变量
 │   ├── database/
-│   │   ├── database.go              # InitDB：连接 MySQL + AutoMigrate 全部 16 个模型
+│   │   ├── database.go              # InitDB：连接 MySQL + AutoMigrate 全部 20 个模型
 │   │   └── seed.go                  # Seed：幂等写入 permissions/tenant/admin role/admin user
 │   ├── handler/
 │   │   ├── response.go              # 统一 Success/Error 响应
@@ -46,6 +46,7 @@ menzhen/
 │   │   ├── meridian_resource.go     # Get/Update（经络视频+出处，upsert模式）
 │   │   ├── wuyun_liuqi.go          # Get/QueryStream/Update/Delete（五运六气，SSE流式查询）
 │   │   ├── clinical_experience.go  # List/Detail/Create/Update/Delete/Categories（临床经验集）
+│   │   ├── inventory_drug.go      # List/Create/Update/Delete（库存药物，租户隔离）
 │   │   ├── ai_analysis.go           # Analyze（AI 辩证论治，含缓存）+ SaveCached + GetCached
 │   │   ├── oplog.go                 # ListOpLogs/DeleteOpLog/BatchDeleteOpLogs
 │   │   ├── user.go                  # List/Update/Delete/AssignRoles
@@ -71,6 +72,7 @@ menzhen/
 │   │   ├── meridian_resource.go     # 经络资源 GetByMeridianID/Upsert
 │   │   ├── wuyun_liuqi.go          # 五运六气 GetByYear/SaveFromAI/Update/Delete
 │   │   ├── clinical_experience.go  # 临床经验 Search/ListCategories/GetByID/Create/Update/DeleteByID
+│   │   ├── inventory_drug.go      # 库存药物 List/Create/Update/Delete（租户隔离）
 │   │   ├── deepseek.go              # DeepSeek API 客户端（chat/chatLong/chatStream/QueryHerb/QueryFormula/QueryPulse/AnalyzeDiagnosis/AnalyzeTongue/QueryWuyunLiuqiStream）
 │   │   ├── deepseek_test.go         # DeepSeek 测试
 │   │   ├── oplog.go                 # 操作日志 CRUD
@@ -95,6 +97,7 @@ menzhen/
 │       │   ├── formula.ts           # 方剂搜索/详情/删除/更新组成/更新备注
 │       │   ├── prescription.ts      # 处方 CRUD + 按记录查询
 │       │   ├── pulse.ts             # 脉象搜索/详情/分类/新增/更新/删除
+│       │   ├── inventory.ts         # 库存药物 CRUD（listInventoryDrugs/create/update/delete）
 │       │   ├── wuyunLiuqi.ts        # 五运六气缓存获取/更新/删除
 │       │   ├── clinicalExperience.ts # 临床经验集 CRUD + 分类列表
 │       │   ├── meridian.ts          # 经络资源获取/更新（视频+出处）
@@ -106,7 +109,7 @@ menzhen/
 │       ├── components/
 │       │   ├── Layout.tsx           # 侧边栏 + 顶部导航布局（移动端 Sider→Drawer + 汉堡按钮）
 │       │   ├── FileUpload.tsx       # 文件上传组件
-│       │   ├── PrescriptionModal.tsx  # 处方弹窗（开方/编辑，含药物详情查看，医嘱预填分行，按方开药自动追加方剂备注，选方后横排展示功效/主治/备注，编辑模式自动根据方剂名加载详情）
+│       │   ├── PrescriptionModal.tsx  # 处方弹窗（开方/编辑，含药物详情查看，医嘱预填分行，按方开药自动追加方剂备注，选方后横排展示功效/主治/备注，编辑模式自动根据方剂名加载详情，开方时显示库存提示）
 │       │   ├── HerbDetailModal.tsx   # 通用中药详情弹窗（方剂/处方复用）
 │       │   ├── PrescriptionPrint.tsx  # 处方打印（药物每10味一列多列并排，医嘱分行）
 │       │   └── __tests__/           # 组件测试
@@ -154,6 +157,9 @@ menzhen/
 │       │   │   └── NotesPanel.tsx   # 笔记侧边栏（移动端全屏宽度自适应 + useIsMobile 响应式）
 │       │   ├── clinical-experience/ # 临床经验集
 │       │   │   └── ClinicalExperienceList.tsx # 临床经验列表（分页+搜索+分类筛选，管理员可新增/编辑/删除，AutoComplete分类选择）
+│       │   ├── inventory/             # 库存管理
+│       │   │   ├── DrugList.tsx       # 药物库存CRUD（分页+搜索+分类筛选，低库存红色高亮）
+│       │   │   └── InventoryAlert.tsx # 库存预警（前端定时扫描，屏蔽/全局阈值配置，存localStorage）
 │       │   └── settings/            # 系统设置
 │       │       ├── UserList.tsx
 │       │       ├── RoleList.tsx
@@ -178,6 +184,9 @@ menzhen/
 │   └── Dockerfile.backup            # 备份容器镜像（alpine + mysql-client + mc + python3 + qiniu SDK）
 ├── docker-compose.yml               # 6 个服务：nginx、web、api、mysql、minio、backup
 ├── deploy.sh                        # 一键部署脚本（生成 .env + build + 启动 + 可选恢复）
+├── web/public/
+│   ├── meridian-calibrator.html     # 经络坐标校正工具（Three.js 独立页面，穴位支持拖拽编辑）
+│   └── calibrator-server.mjs        # 校正工具 Node.js 服务（静态文件 + POST /api/save-calibration 写入 TS 源码）
 └── CLAUDE.md                        # Claude Code 指导文件
 ```
 
@@ -205,7 +214,7 @@ menzhen/
 | `name` | `varchar(50)` | 权限名称 |
 | `description` | `varchar(200)` | 描述 |
 
-**全部权限码：** `patient:create`, `patient:read`, `patient:update`, `patient:delete`, `record:create`, `record:read`, `record:update`, `record:delete`, `oplog:read`, `user:manage`, `role:manage`, `herb:read`, `formula:read`, `pulse:read`, `prescription:create`, `prescription:read`, `tenant:manage`
+**全部权限码：** `patient:create`, `patient:read`, `patient:update`, `patient:delete`, `record:create`, `record:read`, `record:update`, `record:delete`, `oplog:read`, `user:manage`, `role:manage`, `herb:read`, `formula:read`, `pulse:read`, `prescription:create`, `prescription:read`, `tenant:manage`, `inventory:read`, `inventory:create`, `inventory:update`, `inventory:delete`
 
 #### `herbs` — 中药
 
@@ -436,6 +445,20 @@ menzhen/
 | `diagnosis` | `text` | 输入的诊断文本（用于判断内容是否变化） |
 | `analysis` | `longtext` | AI 返回的 Markdown 分析结果 |
 
+#### `inventory_drugs` — 库存药物（含 BaseModel 软删除）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| BaseModel | — | id, created_at, updated_at, deleted_at |
+| `tenant_id` | `uint64` | 租户 ID（索引） |
+| `name` | `varchar(100)` | 药物名称 |
+| `category` | `varchar(10)` | 种类：herb=本草, patent=成药（索引） |
+| `stock` | `decimal(10,2)` | 库存量（本草:克, 成药:盒） |
+| `purchase_price` | `decimal(10,2)` | 进货单价（本草:元/500克, 成药:元/盒） |
+| `selling_price` | `decimal(10,2)` | 出售价（同上） |
+| `alert_threshold` | `decimal(10,2)` | 预警阈值（NULL=用全局默认） |
+| `remark` | `text` | 备注 |
+
 ---
 
 ## API 路由清单
@@ -588,6 +611,15 @@ menzhen/
 | POST | `/api/v1/tenants` | `tenant:manage` | 创建租户 |
 | PUT | `/api/v1/tenants/:id` | `tenant:manage` | 更新租户 |
 | DELETE | `/api/v1/tenants/:id` | `tenant:manage` | 删除租户 |
+
+#### 库存管理（租户隔离）
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| GET | `/api/v1/inventory/drugs` | `inventory:read` | 库存药物列表（分页，支持 name/category 筛选） |
+| POST | `/api/v1/inventory/drugs` | `inventory:create` | 新增库存药物 |
+| PUT | `/api/v1/inventory/drugs/:id` | `inventory:update` | 更新库存药物 |
+| DELETE | `/api/v1/inventory/drugs/:id` | `inventory:delete` | 删除库存药物 |
 
 ---
 
@@ -747,7 +779,7 @@ menzhen/
 ### 种子数据
 
 启动时 `Seed()` 幂等写入：
-1. **17 个权限** — upsert 模式（逐条检查 code，不存在则创建）
+1. **21 个权限** — upsert 模式（逐条检查 code，不存在则创建）
 2. **默认租户** — code=`default`, name=`默认诊所`
 3. **管理员角色** — 关联全部权限（已存在则同步权限集）
 4. **管理员用户** — username=`admin`, password=`admin123`
