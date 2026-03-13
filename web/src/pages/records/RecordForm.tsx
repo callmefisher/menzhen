@@ -627,7 +627,18 @@ export default function RecordForm() {
   }
 
   return (
-    <Card title={isEdit ? '编辑诊疗记录' : '新增诊疗记录'}>
+    <div style={{ background: '#f0f2f5', minHeight: '100%' }}>
+      <div style={{
+        background: '#fff',
+        borderRadius: 8,
+        padding: '16px 24px',
+        marginBottom: 12,
+        boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
+        fontSize: 18,
+        fontWeight: 600,
+      }}>
+        {isEdit ? '编辑诊疗记录' : '新增诊疗记录'}
+      </div>
       <Form<RecordFormValues>
         form={form}
         layout="vertical"
@@ -663,64 +674,71 @@ export default function RecordForm() {
 20. 舌苔，舌体情况：`,
         }}
       >
-        <div style={{ display: 'flex', gap: 16, flexDirection: isMobile ? 'column' : 'row' }}>
-          <Form.Item
-            label="患者"
-            name="patient_id"
-            rules={[{ required: true, message: '请选择患者' }]}
-            style={{ flex: 1 }}
-          >
-          <Select
-            showSearch
-            placeholder="搜索患者姓名"
-            filterOption={false}
-            onSearch={handlePatientSearch}
-            loading={patientLoading}
-            notFoundContent={patientLoading ? <Spin size="small" /> : '无匹配患者'}
-            options={patients.map((p) => ({
-              value: p.id,
-              label: `${p.name}${p.gender === 1 ? '(男)' : p.gender === 2 ? '(女)' : ''} ${p.age ? p.age + '岁' : ''}`,
-            }))}
-            dropdownRender={(menu) => (
-              <>
-                {menu}
-                <div
-                  style={{
-                    padding: '8px 12px',
-                    borderTop: '1px solid #f0f0f0',
-                  }}
-                >
-                  <Button
-                    type="link"
-                    icon={<PlusOutlined />}
-                    onClick={() => setPatientModalOpen(true)}
-                    style={{ padding: 0 }}
-                  >
-                    新建患者
-                  </Button>
-                </div>
-              </>
-            )}
-          />
-        </Form.Item>
-
-          <Form.Item
-            label="就诊日期"
-            name="visit_date"
-            rules={[{ required: true, message: '请选择就诊日期' }]}
-            style={{ width: isMobile ? '100%' : 200 }}
-          >
-            <DatePicker style={{ width: '100%' }} />
-          </Form.Item>
+        {/* Card 1: 基本信息 */}
+        <div className="section-card">
+          <div className="section-card-title">
+            <div className="section-card-icon" style={{ background: '#1677ff' }}>i</div>
+            基本信息
+          </div>
+          <div className="form-row" style={isMobile ? undefined : { flexDirection: 'row' }}>
+            <Form.Item
+              label="患者"
+              name="patient_id"
+              rules={[{ required: true, message: '请选择患者' }]}
+              style={{ flex: 1, marginBottom: 0 }}
+            >
+              <Select
+                showSearch
+                placeholder="搜索患者姓名"
+                filterOption={false}
+                onSearch={handlePatientSearch}
+                loading={patientLoading}
+                notFoundContent={patientLoading ? <Spin size="small" /> : '无匹配患者'}
+                options={patients.map((p) => ({
+                  value: p.id,
+                  label: `${p.name}${p.gender === 1 ? '(男)' : p.gender === 2 ? '(女)' : ''} ${p.age ? p.age + '岁' : ''}`,
+                }))}
+                dropdownRender={(menu) => (
+                  <>
+                    {menu}
+                    <div style={{ padding: '8px 12px', borderTop: '1px solid #f0f0f0' }}>
+                      <Button
+                        type="link"
+                        icon={<PlusOutlined />}
+                        onClick={() => setPatientModalOpen(true)}
+                        style={{ padding: 0 }}
+                      >
+                        新建患者
+                      </Button>
+                    </div>
+                  </>
+                )}
+              />
+            </Form.Item>
+            <Form.Item
+              label="就诊日期"
+              name="visit_date"
+              rules={[{ required: true, message: '请选择就诊日期' }]}
+              style={{ width: isMobile ? '100%' : 200, marginBottom: 0 }}
+            >
+              <DatePicker style={{ width: '100%' }} />
+            </Form.Item>
+          </div>
+          <div style={{ marginTop: 16 }}>
+            <Form.Item label="主诉" name="chief_complaint" style={{ marginBottom: 0 }}>
+              <Input.TextArea rows={2} placeholder="请输入主诉（主要症状和持续时间）" />
+            </Form.Item>
+          </div>
         </div>
 
-        {/* 主诉 */}
-        <Form.Item label="主诉" name="chief_complaint">
-          <Input.TextArea rows={2} placeholder="请输入主诉（主要症状和持续时间）" />
-        </Form.Item>
+        {/* Card 2: 四诊采集 */}
+        <div className="section-card">
+          <div className="section-card-title">
+            <div className="section-card-icon" style={{ background: '#52c41a' }}>四</div>
+            四诊采集
+          </div>
 
-        {/* 脉象 */}
-        <Form.Item label="脉象" name="pulse_id">
+        <Form.Item label="脉象" name="pulse_id" style={{ marginBottom: selectedPulse ? 8 : 16 }}>
           <Select
             showSearch
             placeholder="搜索脉象名称"
@@ -781,8 +799,8 @@ export default function RecordForm() {
         )}
 
         {/* 舌象 */}
-        <div style={{ display: 'flex', gap: 16, flexDirection: isMobile ? 'column' : 'row', alignItems: 'flex-start' }}>
-          <div style={{ flex: 1 }}>
+        <div className="form-row" style={isMobile ? undefined : { flexDirection: 'row', alignItems: 'flex-start' }}>
+          <div style={{ width: isMobile ? '100%' : 160, flexShrink: 0 }}>
             <Form.Item label="舌象图片" name="tongue_image">
               <div>
                 {tongueImageUrl ? (
@@ -820,7 +838,7 @@ export default function RecordForm() {
               </div>
             </Form.Item>
           </div>
-          <div style={{ flex: 2 }}>
+          <div style={{ flex: 1 }}>
             <Form.Item label={
               <Space>
                 <span>舌象描述</span>
@@ -849,44 +867,33 @@ export default function RecordForm() {
           </div>
         </div>
         {tongueResult && (
-          <div style={{
-            marginBottom: 16,
-            borderRadius: 12,
-            background: 'linear-gradient(135deg, #f0f7ff 0%, #e8f4f8 50%, #f0f0ff 100%)',
-            border: '1px solid #d6e4ff',
-            overflow: 'hidden',
-          }}>
-            <div style={{
-              padding: '12px 16px',
-              background: 'linear-gradient(90deg, #1677ff, #4096ff)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-            }}>
-              <RobotOutlined style={{ color: '#fff', fontSize: 16 }} />
-              <span style={{ color: '#fff', fontWeight: 600, fontSize: 15 }}>舌象 AI 分析结果</span>
+          <div className="ai-result-card" style={{ marginTop: 12, marginBottom: 0 }}>
+            <div className="ai-result-card-header">
+              <RobotOutlined style={{ fontSize: 16 }} />
+              <span>舌象 AI 分析结果</span>
             </div>
-            <div style={{ padding: '16px 20px', maxHeight: 400, overflow: 'auto' }}>
-              <div className="ai-analysis-content" style={{ fontSize: 14, lineHeight: 1.9, color: '#333' }}>
+            <div className="ai-result-card-body">
+              <div className="ai-analysis-content">
                 <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
                   {tongueResult}
                 </Markdown>
               </div>
             </div>
-            <div style={{
-              padding: '8px 16px',
-              borderTop: '1px dashed #d6e4ff',
-              textAlign: 'center',
-              fontSize: 12,
-              color: '#8c8c8c',
-              background: 'rgba(255,255,255,0.6)',
-            }}>
+            <div className="ai-result-card-footer">
               以上分析由 AI 生成，仅供参考
             </div>
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: 16, flexDirection: isMobile ? 'column' : 'row' }}>
+        </div>
+
+        {/* Card 3: 诊断治疗 */}
+        <div className="section-card">
+          <div className="section-card-title">
+            <div className="section-card-icon" style={{ background: '#fa8c16' }}>诊</div>
+            诊断治疗
+          </div>
+
           <Form.Item
             label={
               <Space wrap>
@@ -915,40 +922,40 @@ export default function RecordForm() {
               </Space>
             }
             name="diagnosis"
-            style={{ flex: 1 }}
           >
-            <Input.TextArea rows={isMobile ? 10 : 22} placeholder="请输入诊断内容" />
+            <Input.TextArea rows={isMobile ? 12 : 20} placeholder="请输入诊断内容" />
           </Form.Item>
 
-          <Form.Item label="治疗方案" name="treatment" style={{ flex: 1 }}>
-            <Input.TextArea rows={isMobile ? 10 : 22} placeholder="请输入治疗方案" />
+          <Form.Item label="治疗方案" name="treatment" style={{ marginBottom: 0 }}>
+            <Input.TextArea rows={isMobile ? 4 : 6} placeholder="请输入治疗方案" />
           </Form.Item>
         </div>
 
-        <Divider style={{ margin: '8px 0 16px' }} />
+        {/* Card 4: 备注附件 */}
+        <div className="section-card">
+          <div className="section-card-title">
+            <div className="section-card-icon" style={{ background: '#8c8c8c' }}>+</div>
+            备注附件
+          </div>
 
-        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexDirection: isMobile ? 'column' : 'row' }}>
+          <div className="form-row" style={isMobile ? undefined : { flexDirection: 'row', alignItems: 'flex-start' }}>
           <Form.Item label="备注" name="notes" style={{ flex: 1, marginBottom: 0 }}>
-            <Input.TextArea
-              rows={6}
-              placeholder="请输入备注"
-              style={{ resize: 'none', minHeight: 160 }}
-            />
+            <Input.TextArea rows={4} placeholder="请输入备注" style={{ resize: 'none' }} />
           </Form.Item>
 
           <Form.Item label="附件上传" name="attachments" style={{ flex: 1, marginBottom: 0 }}>
             <FileUpload />
           </Form.Item>
+          </div>
         </div>
 
-        <div style={{ height: 24 }} />
-
         {/* 按钮 */}
-        <Form.Item>
-          <Space>
-            <Button type="primary" htmlType="submit" loading={submitting}>
-              保存
-            </Button>
+        <Form.Item style={{ marginTop: 8 }}>
+          <div className={isMobile ? 'record-form-actions' : undefined}>
+            <Space>
+              <Button type="primary" htmlType="submit" loading={submitting}>
+                保存
+              </Button>
             {hasPermission('prescription:create') && (
               <Button
                 type="primary"
@@ -1001,8 +1008,9 @@ export default function RecordForm() {
                 开方
               </Button>
             )}
-            <Button onClick={() => navigate('/records')}>取消</Button>
-          </Space>
+            {!isMobile && <Button onClick={() => navigate('/records')}>取消</Button>}
+            </Space>
+          </div>
         </Form.Item>
       </Form>
 
@@ -1435,6 +1443,6 @@ export default function RecordForm() {
           </div>
         )}
       </Drawer>
-    </Card>
+    </div>
   );
 }
