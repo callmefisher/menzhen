@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Input, Table, Tag, message, Button, Popconfirm, Select, Space } from 'antd';
+import { Input, Table, Tag, message, Button, Popconfirm, Select, Space, Pagination, Spin, Empty } from 'antd';
 import { SearchOutlined, RobotOutlined, DeleteOutlined, EditOutlined, SaveOutlined, CloseOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { listHerbs, deleteHerb, listHerbCategories, updateHerb, aiRefreshHerb } from '../../api/herb';
@@ -255,78 +255,197 @@ export default function HerbSearch() {
         />
       </div>
 
-      <Table<HerbItem>
-        columns={columns}
-        dataSource={herbs}
-        rowKey="id"
-        loading={loading}
-        pagination={{
-          current: page,
-          pageSize: size,
-          total,
-          showSizeChanger: true,
-          showTotal: (t) => `共 ${t} 条`,
-        }}
-        onChange={handleTableChange}
-        expandable={{
-          expandedRowKeys,
-          onExpandedRowsChange: (keys) => setExpandedRowKeys(keys as number[]),
-          expandedRowRender: (record) => (
-            <div style={{ padding: '8px 0' }}>
-              {editingId === record.id ? (
-                <>
-                  <div style={{ marginBottom: 8 }}>
-                    <strong>药名：</strong>
-                    <Input size="small" value={editingData.name} onChange={(e) => setEditingData((d) => ({ ...d, name: e.target.value }))} style={{ width: isMobile ? '100%' : 200 }} />
+      {isMobile ? (
+        loading ? (
+          <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
+        ) : herbs.length === 0 ? (
+          <Empty description="暂无数据" />
+        ) : (
+          <>
+            {herbs.map((herb) => {
+              const isExpanded = expandedRowKeys.includes(herb.id);
+              const isEditing = editingId === herb.id;
+              return (
+                <div key={herb.id} style={{ background: '#fafafa', borderRadius: 8, padding: 12, marginBottom: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <span style={{ fontWeight: 'bold', fontSize: 15 }}>{herb.name}</span>
+                    <Space size="small">
+                      {herb.source === 'deepseek' ? (
+                        <Tag icon={<RobotOutlined />} color="blue">AI</Tag>
+                      ) : (
+                        <Tag color="green">本地</Tag>
+                      )}
+                      {hasPermission('role:manage') && (
+                        <>
+                          <Button type="text" size="small" icon={<EditOutlined />} onClick={() => startEdit(herb)} />
+                          <Popconfirm
+                            title="确定删除此中药？"
+                            onConfirm={() => handleDelete(herb.id)}
+                            okText="删除"
+                            cancelText="取消"
+                          >
+                            <Button type="text" danger size="small" icon={<DeleteOutlined />} />
+                          </Popconfirm>
+                        </>
+                      )}
+                    </Space>
                   </div>
-                  <div style={{ marginBottom: 8 }}>
-                    <strong>别名：</strong>
-                    <Input size="small" value={editingData.alias} onChange={(e) => setEditingData((d) => ({ ...d, alias: e.target.value }))} />
+                  <div style={{ fontSize: 13, color: '#666', marginBottom: 6 }}>
+                    {herb.category && <span>{herb.category}</span>}
+                    {herb.category && herb.properties && <span> · </span>}
+                    {herb.properties && <span>{herb.properties}</span>}
                   </div>
-                  <div style={{ marginBottom: 8 }}>
-                    <strong>分类：</strong>
-                    <Input size="small" value={editingData.category} onChange={(e) => setEditingData((d) => ({ ...d, category: e.target.value }))} style={{ width: isMobile ? '100%' : 200 }} />
+                  <div
+                    style={{ fontSize: 13, color: '#1677ff', cursor: 'pointer', userSelect: 'none' }}
+                    onClick={() =>
+                      setExpandedRowKeys((keys) =>
+                        keys.includes(herb.id) ? keys.filter((k) => k !== herb.id) : [...keys, herb.id]
+                      )
+                    }
+                  >
+                    {isExpanded ? '收起 ▲' : '展开详情 ▼'}
                   </div>
-                  <div style={{ marginBottom: 8 }}>
-                    <strong>性味归经：</strong>
-                    <Input size="small" value={editingData.properties} onChange={(e) => setEditingData((d) => ({ ...d, properties: e.target.value }))} />
-                  </div>
-                  <div style={{ marginBottom: 8 }}>
-                    <strong>功效：</strong>
-                    <Input.TextArea rows={2} value={editingData.effects} onChange={(e) => setEditingData((d) => ({ ...d, effects: e.target.value }))} />
-                  </div>
-                  <div style={{ marginBottom: 8 }}>
-                    <strong>主治：</strong>
-                    <Input.TextArea rows={2} value={editingData.indications} onChange={(e) => setEditingData((d) => ({ ...d, indications: e.target.value }))} />
-                  </div>
-                  <div style={{ marginBottom: 8 }}>
-                    <strong>道地产区：</strong>
-                    <Input size="small" value={editingData.origin} onChange={(e) => setEditingData((d) => ({ ...d, origin: e.target.value }))} />
-                  </div>
-                  <Space>
-                    <Button type="primary" size="small" icon={<SaveOutlined />} onClick={handleSave}>保存</Button>
-                    <Button size="small" icon={<ThunderboltOutlined />} loading={aiRefreshing} onClick={handleAiRefresh}>AI查询</Button>
-                    <Button size="small" icon={<CloseOutlined />} onClick={() => setEditingId(null)}>取消</Button>
-                  </Space>
-                </>
-              ) : (
-                <>
-                  <p><strong>别名：</strong>{record.alias || '无'}</p>
-                  <p><strong>性味归经：</strong>{record.properties || '无'}</p>
-                  <p><strong>功效：</strong>{record.effects || '无'}</p>
-                  <p><strong>主治：</strong>{record.indications || '无'}</p>
-                  <p><strong>道地产区：</strong>{record.origin || '无'}</p>
-                  {record.source === 'deepseek' && (
-                    <Tag icon={<RobotOutlined />} color="blue">
-                      数据来源：DeepSeek AI（仅供参考，请结合临床经验）
-                    </Tag>
+                  {isExpanded && (
+                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #eee' }}>
+                      {isEditing ? (
+                        <>
+                          <div style={{ marginBottom: 8 }}>
+                            <strong>药名：</strong>
+                            <Input size="small" value={editingData.name} onChange={(e) => setEditingData((d) => ({ ...d, name: e.target.value }))} style={{ width: '100%' }} />
+                          </div>
+                          <div style={{ marginBottom: 8 }}>
+                            <strong>别名：</strong>
+                            <Input size="small" value={editingData.alias} onChange={(e) => setEditingData((d) => ({ ...d, alias: e.target.value }))} style={{ width: '100%' }} />
+                          </div>
+                          <div style={{ marginBottom: 8 }}>
+                            <strong>分类：</strong>
+                            <Input size="small" value={editingData.category} onChange={(e) => setEditingData((d) => ({ ...d, category: e.target.value }))} style={{ width: '100%' }} />
+                          </div>
+                          <div style={{ marginBottom: 8 }}>
+                            <strong>性味归经：</strong>
+                            <Input size="small" value={editingData.properties} onChange={(e) => setEditingData((d) => ({ ...d, properties: e.target.value }))} style={{ width: '100%' }} />
+                          </div>
+                          <div style={{ marginBottom: 8 }}>
+                            <strong>功效：</strong>
+                            <Input.TextArea rows={2} value={editingData.effects} onChange={(e) => setEditingData((d) => ({ ...d, effects: e.target.value }))} style={{ width: '100%' }} />
+                          </div>
+                          <div style={{ marginBottom: 8 }}>
+                            <strong>主治：</strong>
+                            <Input.TextArea rows={2} value={editingData.indications} onChange={(e) => setEditingData((d) => ({ ...d, indications: e.target.value }))} style={{ width: '100%' }} />
+                          </div>
+                          <div style={{ marginBottom: 8 }}>
+                            <strong>道地产区：</strong>
+                            <Input size="small" value={editingData.origin} onChange={(e) => setEditingData((d) => ({ ...d, origin: e.target.value }))} style={{ width: '100%' }} />
+                          </div>
+                          <Space>
+                            <Button type="primary" size="small" icon={<SaveOutlined />} onClick={handleSave}>保存</Button>
+                            <Button size="small" icon={<ThunderboltOutlined />} loading={aiRefreshing} onClick={handleAiRefresh}>AI查询</Button>
+                            <Button size="small" icon={<CloseOutlined />} onClick={() => setEditingId(null)}>取消</Button>
+                          </Space>
+                        </>
+                      ) : (
+                        <>
+                          <p style={{ margin: '4px 0' }}><strong>别名：</strong>{herb.alias || '无'}</p>
+                          <p style={{ margin: '4px 0' }}><strong>功效：</strong>{herb.effects || '无'}</p>
+                          <p style={{ margin: '4px 0' }}><strong>主治：</strong>{herb.indications || '无'}</p>
+                          <p style={{ margin: '4px 0' }}><strong>道地产区：</strong>{herb.origin || '无'}</p>
+                          {herb.source === 'deepseek' && (
+                            <Tag icon={<RobotOutlined />} color="blue" style={{ marginTop: 4 }}>
+                              数据来源：DeepSeek AI（仅供参考，请结合临床经验）
+                            </Tag>
+                          )}
+                        </>
+                      )}
+                    </div>
                   )}
-                </>
-              )}
-            </div>
-          ),
-        }}
-      />
+                </div>
+              );
+            })}
+            <Pagination
+              current={page}
+              pageSize={size}
+              total={total}
+              onChange={(p, s) => handleTableChange({ current: p, pageSize: s })}
+              size="small"
+              simple
+              style={{ textAlign: 'center', marginTop: 16 }}
+            />
+          </>
+        )
+      ) : (
+        <Table<HerbItem>
+          columns={columns}
+          dataSource={herbs}
+          rowKey="id"
+          loading={loading}
+          pagination={{
+            current: page,
+            pageSize: size,
+            total,
+            showSizeChanger: true,
+            showTotal: (t) => `共 ${t} 条`,
+          }}
+          onChange={handleTableChange}
+          expandable={{
+            expandedRowKeys,
+            onExpandedRowsChange: (keys) => setExpandedRowKeys(keys as number[]),
+            expandedRowRender: (record) => (
+              <div style={{ padding: '8px 0' }}>
+                {editingId === record.id ? (
+                  <>
+                    <div style={{ marginBottom: 8 }}>
+                      <strong>药名：</strong>
+                      <Input size="small" value={editingData.name} onChange={(e) => setEditingData((d) => ({ ...d, name: e.target.value }))} style={{ width: isMobile ? '100%' : 200 }} />
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <strong>别名：</strong>
+                      <Input size="small" value={editingData.alias} onChange={(e) => setEditingData((d) => ({ ...d, alias: e.target.value }))} />
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <strong>分类：</strong>
+                      <Input size="small" value={editingData.category} onChange={(e) => setEditingData((d) => ({ ...d, category: e.target.value }))} style={{ width: isMobile ? '100%' : 200 }} />
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <strong>性味归经：</strong>
+                      <Input size="small" value={editingData.properties} onChange={(e) => setEditingData((d) => ({ ...d, properties: e.target.value }))} />
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <strong>功效：</strong>
+                      <Input.TextArea rows={2} value={editingData.effects} onChange={(e) => setEditingData((d) => ({ ...d, effects: e.target.value }))} />
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <strong>主治：</strong>
+                      <Input.TextArea rows={2} value={editingData.indications} onChange={(e) => setEditingData((d) => ({ ...d, indications: e.target.value }))} />
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <strong>道地产区：</strong>
+                      <Input size="small" value={editingData.origin} onChange={(e) => setEditingData((d) => ({ ...d, origin: e.target.value }))} />
+                    </div>
+                    <Space>
+                      <Button type="primary" size="small" icon={<SaveOutlined />} onClick={handleSave}>保存</Button>
+                      <Button size="small" icon={<ThunderboltOutlined />} loading={aiRefreshing} onClick={handleAiRefresh}>AI查询</Button>
+                      <Button size="small" icon={<CloseOutlined />} onClick={() => setEditingId(null)}>取消</Button>
+                    </Space>
+                  </>
+                ) : (
+                  <>
+                    <p><strong>别名：</strong>{record.alias || '无'}</p>
+                    <p><strong>性味归经：</strong>{record.properties || '无'}</p>
+                    <p><strong>功效：</strong>{record.effects || '无'}</p>
+                    <p><strong>主治：</strong>{record.indications || '无'}</p>
+                    <p><strong>道地产区：</strong>{record.origin || '无'}</p>
+                    {record.source === 'deepseek' && (
+                      <Tag icon={<RobotOutlined />} color="blue">
+                        数据来源：DeepSeek AI（仅供参考，请结合临床经验）
+                      </Tag>
+                    )}
+                  </>
+                )}
+              </div>
+            ),
+          }}
+        />
+      )}
     </div>
   );
 }
