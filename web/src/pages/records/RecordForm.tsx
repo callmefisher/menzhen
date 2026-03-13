@@ -19,7 +19,7 @@ import {
   Tooltip,
   Dropdown,
 } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, RobotOutlined, ReloadOutlined, MoreOutlined, MedicineBoxOutlined, InboxOutlined, SearchOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, RobotOutlined, ReloadOutlined, MoreOutlined, MedicineBoxOutlined, InboxOutlined, SearchOutlined, DownOutlined, RightOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import Markdown from 'react-markdown';
@@ -131,10 +131,24 @@ export default function RecordForm() {
   const [tongueImageUrl, setTongueImageUrl] = useState<string>('');
   const [tongueUploading, setTongueUploading] = useState(false);
 
+  // Card 4 collapsible state (notes & attachments)
+  const [notesExpanded, setNotesExpanded] = useState(false);
+  const [attachmentsExpanded, setAttachmentsExpanded] = useState(false);
+
   // Watch form fields for template sync
   const watchedPatientId = Form.useWatch('patient_id', form);
   const watchedChiefComplaint = Form.useWatch('chief_complaint', form);
   const watchedPulseName = Form.useWatch('pulse_name', form);
+  const watchedNotes = Form.useWatch('notes', form);
+  const watchedAttachments = Form.useWatch('attachments', form);
+
+  // Auto-expand notes/attachments when they have content
+  useEffect(() => {
+    if (watchedNotes) setNotesExpanded(true);
+  }, [watchedNotes]);
+  useEffect(() => {
+    if (watchedAttachments?.length) setAttachmentsExpanded(true);
+  }, [watchedAttachments]);
 
   // Sync patient info + chief complaint + pulse to diagnosis template
   useEffect(() => {
@@ -933,19 +947,51 @@ export default function RecordForm() {
 
         {/* Card 4: 备注附件 */}
         <div className="section-card">
-          <div className="section-card-title">
+          <div className="section-card-title" style={{ marginBottom: 0, borderBottom: 'none', paddingBottom: 0 }}>
             <div className="section-card-icon" style={{ background: '#8c8c8c' }}>+</div>
             备注附件
           </div>
 
-          <div className="form-row" style={isMobile ? undefined : { flexDirection: 'row', alignItems: 'flex-start' }}>
-          <Form.Item label="备注" name="notes" style={{ flex: 1, marginBottom: 0 }}>
-            <Input.TextArea rows={4} placeholder="请输入备注" style={{ resize: 'none' }} />
-          </Form.Item>
+          {/* 备注 - 可折叠 */}
+          <div style={{ borderTop: '1px solid #f0f0f0', marginTop: 12, paddingTop: 12 }}>
+            <div
+              style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none', marginBottom: notesExpanded ? 12 : 0 }}
+              onClick={() => setNotesExpanded(!notesExpanded)}
+            >
+              {notesExpanded ? <DownOutlined style={{ fontSize: 11, color: '#8c8c8c' }} /> : <RightOutlined style={{ fontSize: 11, color: '#8c8c8c' }} />}
+              <span style={{ fontSize: 14, fontWeight: 500 }}>备注</span>
+              {!notesExpanded && watchedNotes && (
+                <span style={{ fontSize: 12, color: '#8c8c8c', marginLeft: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 300 }}>
+                  {watchedNotes}
+                </span>
+              )}
+            </div>
+            {notesExpanded && (
+              <Form.Item name="notes" style={{ marginBottom: 0 }}>
+                <Input.TextArea rows={4} placeholder="请输入备注" style={{ resize: 'none' }} />
+              </Form.Item>
+            )}
+          </div>
 
-          <Form.Item label="附件上传" name="attachments" style={{ flex: 1, marginBottom: 0 }}>
-            <FileUpload />
-          </Form.Item>
+          {/* 附件 - 可折叠 */}
+          <div style={{ borderTop: '1px solid #f0f0f0', marginTop: 12, paddingTop: 12 }}>
+            <div
+              style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none', marginBottom: attachmentsExpanded ? 12 : 0 }}
+              onClick={() => setAttachmentsExpanded(!attachmentsExpanded)}
+            >
+              {attachmentsExpanded ? <DownOutlined style={{ fontSize: 11, color: '#8c8c8c' }} /> : <RightOutlined style={{ fontSize: 11, color: '#8c8c8c' }} />}
+              <span style={{ fontSize: 14, fontWeight: 500 }}>附件上传</span>
+              {!attachmentsExpanded && watchedAttachments?.length > 0 && (
+                <span style={{ fontSize: 12, color: '#1677ff', marginLeft: 4 }}>
+                  {watchedAttachments.length} 个文件
+                </span>
+              )}
+            </div>
+            {attachmentsExpanded && (
+              <Form.Item name="attachments" style={{ marginBottom: 0 }}>
+                <FileUpload />
+              </Form.Item>
+            )}
           </div>
         </div>
 
