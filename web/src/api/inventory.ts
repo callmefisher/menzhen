@@ -56,3 +56,30 @@ export function updateInventoryDrug(id: number, data: UpdateInventoryDrugReq) {
 export function deleteInventoryDrug(id: number) {
   return request.delete(`/inventory/drugs/${id}`);
 }
+
+export interface StockInReq {
+  quantity: number;
+  purchase_price?: number;
+  selling_price?: number;
+  alert_threshold?: number | null;
+}
+
+export function stockInDrug(id: number, data: StockInReq) {
+  return request.post(`/inventory/drugs/${id}/stock-in`, data);
+}
+
+export interface BatchStockInItem {
+  name: string;
+  quantity: number;
+  purchase_price: number;
+  selling_price: number;
+}
+
+export interface BatchStockInReq {
+  items: BatchStockInItem[];
+  alert_threshold?: number | null;
+}
+
+export function batchStockIn(data: BatchStockInReq) {
+  return request.post('/inventory/drugs/batch-stock-in', data);
+}

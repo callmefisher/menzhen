@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Layout as AntLayout, Menu, Button, theme, Dropdown, Modal, Form, Input, message, Drawer, Badge } from 'antd';
+import { Layout as AntLayout, Menu, Button, theme, Dropdown, Modal, Form, Input, message, Drawer } from 'antd';
 import {
   MedicineBoxOutlined,
   UserOutlined,
@@ -59,15 +59,12 @@ export default function AppLayout() {
         const body = res as any;
         const drugs: InventoryDrug[] = body.data?.list || [];
         const config = JSON.parse(localStorage.getItem('inventory-alert-config') || '{}');
-        const muted = JSON.parse(localStorage.getItem('inventory-alert-muted') || '{}');
-        const now = Date.now();
 
+        const muted: number[] = JSON.parse(localStorage.getItem('inventory-alert-muted') || '[]');
         const count = drugs.filter((d) => {
+          if (muted.includes(d.id)) return false;
           const threshold = d.alert_threshold ?? (d.category === 'herb' ? (config.herbThreshold ?? 500) : (config.patentThreshold ?? 10));
-          if (d.stock >= threshold) return false;
-          const muteUntil = muted[d.id];
-          if (muteUntil && now < muteUntil) return false;
-          return true;
+          return d.stock <= threshold;
         }).length;
 
         setAlertCount(count);
@@ -77,7 +74,20 @@ export default function AppLayout() {
     checkAlerts();
     const interval = JSON.parse(localStorage.getItem('inventory-alert-config') || '{}').scanInterval ?? 30;
     const timer = setInterval(checkAlerts, interval * 60 * 1000);
-    return () => clearInterval(timer);
+
+    const onAlertChanged = () => checkAlerts();
+    const onDataChanged = () => {
+      localStorage.removeItem('inventory-alert-muted');
+      checkAlerts();
+    };
+    window.addEventListener('inventory-alert-changed', onAlertChanged);
+    window.addEventListener('inventory-data-changed', onDataChanged);
+
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('inventory-alert-changed', onAlertChanged);
+      window.removeEventListener('inventory-data-changed', onDataChanged);
+    };
   }, [hasPermission]);
 
   const menuItems = useMemo(() => {
@@ -141,7 +151,23 @@ export default function AppLayout() {
       items.push({
         key: '/inventory',
         icon: <ShopOutlined />,
-        label: alertCount > 0 ? <Badge count={alertCount} offset={[10, 0]} size="small"><span>库存</span></Badge> : '库存',
+        label: alertCount > 0
+          ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              库存
+              <span style={{
+                background: '#ff4d4f',
+                color: '#fff',
+                fontSize: 11,
+                lineHeight: '16px',
+                minWidth: 16,
+                height: 16,
+                borderRadius: 8,
+                padding: '0 4px',
+                textAlign: 'center',
+                fontWeight: 500,
+              }}>{alertCount}</span>
+            </span>
+          : '库存',
         children: [
           {
             key: '/inventory/drugs',
@@ -151,7 +177,19 @@ export default function AppLayout() {
           {
             key: '/inventory/alerts',
             icon: <AlertOutlined />,
-            label: alertCount > 0 ? <Badge dot><span>库存预警</span></Badge> : '库存预警',
+            label: alertCount > 0
+              ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  库存预警
+                  <span style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    background: '#ff4d4f',
+                    boxShadow: '0 0 4px #ff4d4f',
+                    flexShrink: 0,
+                  }} />
+                </span>
+              : '库存预警',
           },
         ],
       });
@@ -228,7 +266,7 @@ export default function AppLayout() {
     if (path.startsWith('/settings')) return ['/settings'];
     if (path.startsWith('/inventory')) return ['/inventory'];
     if (path.startsWith('/herbs') || path.startsWith('/formulas') || path.startsWith('/meridians') || path.startsWith('/pulses') || path.startsWith('/wuyun') || path.startsWith('/clinical-experience')) return ['/tcm'];
-    return ['/tcm', '/settings'];
+    return ['/tcm', '/settings', '/inventory'];
   }, [location.pathname]);
 
   const handleMenuClick = (info: { key: string }) => {

@@ -214,7 +214,7 @@ export default function ClinicalExperienceList() {
           placeholder="按分类筛选"
           allowClear
           size="large"
-          style={{ minWidth: 160 }}
+          style={{ minWidth: isMobile ? '100%' : 160 }}
           value={selectedCategory}
           onChange={handleCategoryChange}
           options={categories.map((c) => ({ label: c, value: c }))}
@@ -270,7 +270,8 @@ export default function ClinicalExperienceList() {
         okText="确认"
         cancelText="取消"
         destroyOnClose
-        width={600}
+        width={isMobile ? '100%' : 600}
+        style={isMobile ? { top: 16, maxWidth: '100%', margin: '0 8px' } : undefined}
       >
         <Form
           form={form}

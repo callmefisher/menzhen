@@ -201,7 +201,7 @@ export default function FormulaSearch() {
     {
       title: '组成',
       key: 'composition',
-      width: 300,
+      width: isMobile ? 200 : 300,
       responsive: ['md'] as any,
       render: (_: unknown, record: FormulaItem) => {
         const comp = record.composition || [];
@@ -293,7 +293,7 @@ export default function FormulaSearch() {
                         value={editingNotesValue}
                         onChange={(e) => setEditingNotesValue(e.target.value)}
                         autoSize={{ minRows: 1, maxRows: 4 }}
-                        style={{ width: 400 }}
+                        style={{ width: isMobile ? '100%' : 400 }}
                         autoFocus
                       />
                       <Button type="primary" size="small" onClick={() => handleSaveNotes(record.id)}>保存</Button>
@@ -386,7 +386,7 @@ export default function FormulaSearch() {
                     pagination={false}
                     size="small"
                     bordered
-                    style={{ maxWidth: 500 }}
+                    style={{ maxWidth: isMobile ? '100%' : 500 }}
                   />
                 ) : (
                   <span>无组成信息</span>

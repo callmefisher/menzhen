@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-03-13（新增库存管理模块：药物CRUD + 库存预警 + 开方库存提示）
+> 最后更新：2026-03-13（库存增强：批量入库、单个入库、状态显示、总览统计卡片）
 
 ---
 
@@ -46,7 +46,7 @@ menzhen/
 │   │   ├── meridian_resource.go     # Get/Update（经络视频+出处，upsert模式）
 │   │   ├── wuyun_liuqi.go          # Get/QueryStream/Update/Delete（五运六气，SSE流式查询）
 │   │   ├── clinical_experience.go  # List/Detail/Create/Update/Delete/Categories（临床经验集）
-│   │   ├── inventory_drug.go      # List/Create/Update/Delete（库存药物，租户隔离）
+│   │   ├── inventory_drug.go      # List/Create/Update/Delete/StockIn/BatchStockIn（库存药物，租户隔离）
 │   │   ├── ai_analysis.go           # Analyze（AI 辩证论治，含缓存）+ SaveCached + GetCached
 │   │   ├── oplog.go                 # ListOpLogs/DeleteOpLog/BatchDeleteOpLogs
 │   │   ├── user.go                  # List/Update/Delete/AssignRoles
@@ -72,7 +72,7 @@ menzhen/
 │   │   ├── meridian_resource.go     # 经络资源 GetByMeridianID/Upsert
 │   │   ├── wuyun_liuqi.go          # 五运六气 GetByYear/SaveFromAI/Update/Delete
 │   │   ├── clinical_experience.go  # 临床经验 Search/ListCategories/GetByID/Create/Update/DeleteByID
-│   │   ├── inventory_drug.go      # 库存药物 List/Create/Update/Delete（租户隔离）
+│   │   ├── inventory_drug.go      # 库存药物 List/Create/Update/Delete/StockIn/BatchStockIn（租户隔离）
 │   │   ├── deepseek.go              # DeepSeek API 客户端（chat/chatLong/chatStream/QueryHerb/QueryFormula/QueryPulse/AnalyzeDiagnosis/AnalyzeTongue/QueryWuyunLiuqiStream）
 │   │   ├── deepseek_test.go         # DeepSeek 测试
 │   │   ├── oplog.go                 # 操作日志 CRUD
@@ -97,7 +97,7 @@ menzhen/
 │       │   ├── formula.ts           # 方剂搜索/详情/删除/更新组成/更新备注
 │       │   ├── prescription.ts      # 处方 CRUD + 按记录查询
 │       │   ├── pulse.ts             # 脉象搜索/详情/分类/新增/更新/删除
-│       │   ├── inventory.ts         # 库存药物 CRUD（listInventoryDrugs/create/update/delete）
+│       │   ├── inventory.ts         # 库存药物 CRUD + 入库（listInventoryDrugs/create/update/delete/stockIn/batchStockIn）
 │       │   ├── wuyunLiuqi.ts        # 五运六气缓存获取/更新/删除
 │       │   ├── clinicalExperience.ts # 临床经验集 CRUD + 分类列表
 │       │   ├── meridian.ts          # 经络资源获取/更新（视频+出处）
@@ -618,6 +618,8 @@ menzhen/
 |------|------|------|------|
 | GET | `/api/v1/inventory/drugs` | `inventory:read` | 库存药物列表（分页，支持 name/category 筛选） |
 | POST | `/api/v1/inventory/drugs` | `inventory:create` | 新增库存药物 |
+| POST | `/api/v1/inventory/drugs/batch-stock-in` | `inventory:create` | 批量入库（已有药物累加库存，新药物自动创建） |
+| POST | `/api/v1/inventory/drugs/:id/stock-in` | `inventory:update` | 单个药物入库（累加库存量） |
 | PUT | `/api/v1/inventory/drugs/:id` | `inventory:update` | 更新库存药物 |
 | DELETE | `/api/v1/inventory/drugs/:id` | `inventory:delete` | 删除库存药物 |
 

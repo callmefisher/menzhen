@@ -52,13 +52,25 @@ fi
 REMAINING=$(find "${MINIO_BACKUP_DIR}" -name "minio_*.tar.gz" -type f | wc -l)
 echo ">> Remaining MinIO backup files: ${REMAINING}"
 
-# 5. Upload to Qiniu (reuse upload_to_qiniu.py with minio/ sub-prefix)
+# 5. Upload to Qiniu with retry up to 10 times (reuse upload_to_qiniu.py with minio/ sub-prefix)
 ORIG_PREFIX="${QINIU_KEY_PREFIX}"
 export QINIU_KEY_PREFIX="${QINIU_KEY_PREFIX:-menzhen-backup/}minio/"
-if python3 /scripts/upload_to_qiniu.py "${BACKUP_FILE}"; then
-    echo ">> Qiniu upload complete"
-else
-    echo ">> WARNING: Qiniu upload failed (backup saved locally)"
+MINIO_UPLOAD_MAX=10
+MINIO_UPLOAD_OK=false
+for attempt in $(seq 1 ${MINIO_UPLOAD_MAX}); do
+    echo ">> Uploading to Qiniu (attempt ${attempt}/${MINIO_UPLOAD_MAX})..."
+    if python3 /scripts/upload_to_qiniu.py "${BACKUP_FILE}"; then
+        echo ">> Qiniu upload complete"
+        MINIO_UPLOAD_OK=true
+        break
+    fi
+    if [ "${attempt}" -lt "${MINIO_UPLOAD_MAX}" ]; then
+        echo ">> Upload failed, retrying in 10s..."
+        sleep 10
+    fi
+done
+if [ "${MINIO_UPLOAD_OK}" = false ]; then
+    echo ">> WARNING: Qiniu upload failed after ${MINIO_UPLOAD_MAX} attempts (backup saved locally)"
 fi
 
 # 6. Always clean up old backups on Qiniu (regardless of upload result)

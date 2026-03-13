@@ -55,6 +55,10 @@ const PERMISSION_GROUPS: { label: string; codes: string[] }[] = [
     codes: ['oplog:read'],
   },
   {
+    label: '库存管理',
+    codes: ['inventory:create', 'inventory:read', 'inventory:update', 'inventory:delete'],
+  },
+  {
     label: '系统管理',
     codes: ['user:manage', 'role:manage', 'tenant:manage'],
   },

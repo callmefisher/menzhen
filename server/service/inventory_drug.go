@@ -169,3 +169,125 @@ func (s *InventoryDrugService) Delete(tenantID, id uint64) (*model.InventoryDrug
 
 	return &drug, nil
 }
+
+// StockInItem represents a single item in a batch stock-in request.
+type StockInItem struct {
+	Name          string  `json:"name" binding:"required"`
+	Quantity      float64 `json:"quantity" binding:"required,gt=0"`
+	PurchasePrice float64 `json:"purchase_price"`
+	SellingPrice  float64 `json:"selling_price"`
+}
+
+// BatchStockInRequest is the input for batch stocking in drugs.
+type BatchStockInRequest struct {
+	Items          []StockInItem `json:"items" binding:"required,min=1"`
+	AlertThreshold *float64      `json:"alert_threshold"`
+}
+
+// BatchStockInResult holds the result of a batch stock-in operation.
+type BatchStockInResult struct {
+	Created int `json:"created"`
+	Updated int `json:"updated"`
+	Total   int `json:"total"`
+}
+
+// BatchStockIn adds stock to existing drugs or creates new ones.
+func (s *InventoryDrugService) BatchStockIn(tenantID uint64, req *BatchStockInRequest) (*BatchStockInResult, error) {
+	result := &BatchStockInResult{Total: len(req.Items)}
+
+	for _, item := range req.Items {
+		var drug model.InventoryDrug
+		err := s.DB.Where("tenant_id = ? AND name = ?", tenantID, item.Name).First(&drug).Error
+
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// Create new drug
+			newDrug := model.InventoryDrug{
+				TenantID:       tenantID,
+				Name:           item.Name,
+				Category:       "herb",
+				Stock:          item.Quantity,
+				PurchasePrice:  item.PurchasePrice,
+				SellingPrice:   item.SellingPrice,
+				AlertThreshold: req.AlertThreshold,
+			}
+			if err := s.DB.Create(&newDrug).Error; err != nil {
+				return nil, err
+			}
+			result.Created++
+		} else if err != nil {
+			return nil, err
+		} else {
+			// Update existing drug: add stock, update prices
+			updates := map[string]interface{}{
+				"stock": gorm.Expr("stock + ?", item.Quantity),
+			}
+			if item.PurchasePrice > 0 {
+				updates["purchase_price"] = item.PurchasePrice
+			}
+			if item.SellingPrice > 0 {
+				updates["selling_price"] = item.SellingPrice
+			}
+			if err := s.DB.Model(&drug).Updates(updates).Error; err != nil {
+				return nil, err
+			}
+			result.Updated++
+		}
+	}
+
+	return result, nil
+}
+
+// StockInRequest is the input for single drug stock-in (adds to existing stock).
+type StockInRequest struct {
+	Quantity       float64  `json:"quantity" binding:"required,gt=0"`
+	PurchasePrice  float64  `json:"purchase_price"`
+	SellingPrice   float64  `json:"selling_price"`
+	AlertThreshold *float64 `json:"alert_threshold"`
+}
+
+// StockInDrugResult holds old and new drug data for oplog.
+type StockInDrugResult struct {
+	OldDrug *model.InventoryDrug
+	NewDrug *model.InventoryDrug
+}
+
+// StockIn adds quantity to an existing drug's stock.
+func (s *InventoryDrugService) StockIn(tenantID, id uint64, req *StockInRequest) (StockInDrugResult, error) {
+	var drug model.InventoryDrug
+	if err := s.DB.Where("tenant_id = ?", tenantID).First(&drug, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return StockInDrugResult{}, ErrInventoryDrugNotFound
+		}
+		return StockInDrugResult{}, err
+	}
+
+	oldDrug := drug
+
+	updates := map[string]interface{}{
+		"stock": gorm.Expr("stock + ?", req.Quantity),
+	}
+	if req.PurchasePrice > 0 {
+		updates["purchase_price"] = req.PurchasePrice
+	}
+	if req.SellingPrice > 0 {
+		updates["selling_price"] = req.SellingPrice
+	}
+	if req.AlertThreshold != nil {
+		if *req.AlertThreshold < 0 {
+			updates["alert_threshold"] = nil
+		} else {
+			updates["alert_threshold"] = *req.AlertThreshold
+		}
+	}
+
+	if err := s.DB.Model(&drug).Updates(updates).Error; err != nil {
+		return StockInDrugResult{}, err
+	}
+
+	// Reload
+	if err := s.DB.Where("tenant_id = ?", tenantID).First(&drug, id).Error; err != nil {
+		return StockInDrugResult{}, err
+	}
+
+	return StockInDrugResult{OldDrug: &oldDrug, NewDrug: &drug}, nil
+}

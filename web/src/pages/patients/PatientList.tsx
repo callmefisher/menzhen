@@ -8,6 +8,8 @@ import {
   Popconfirm,
   message,
   Card,
+  Tag,
+  Pagination,
 } from 'antd';
 import {
   PlusOutlined,
@@ -15,6 +17,9 @@ import {
   EditOutlined,
   DeleteOutlined,
   EyeOutlined,
+  PhoneOutlined,
+  ManOutlined,
+  WomanOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
@@ -225,59 +230,173 @@ export default function PatientList() {
     },
   ];
 
-  return (
-    <Card>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          marginBottom: 16,
-          flexWrap: 'wrap',
-          gap: 12,
-        }}
+  // --- Mobile patient card ---
+  const renderMobilePatientCard = (patient: PatientItem) => {
+    const genderIcon = patient.gender === 1
+      ? <ManOutlined style={{ color: '#1890ff' }} />
+      : patient.gender === 2
+      ? <WomanOutlined style={{ color: '#eb2f96' }} />
+      : null;
+    return (
+      <Card
+        key={patient.id}
+        size="small"
+        style={{ marginBottom: 8 }}
+        styles={{ body: { padding: '10px 12px' } }}
+        onClick={() => navigate(`/patients/${patient.id}`)}
       >
-        <Space wrap>
-          <Input
-            placeholder="搜索患者姓名"
-            value={searchName}
-            onChange={(e) => setSearchName(e.target.value)}
-            onPressEnter={handleSearch}
-            style={{ width: 200 }}
-            allowClear
-          />
-          <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>
-            搜索
+        {/* Row 1: name + gender/age */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontWeight: 600, fontSize: 15 }}>{patient.name}</span>
+            {genderIcon}
+            <Tag color={patient.gender === 1 ? 'blue' : patient.gender === 2 ? 'pink' : 'default'} style={{ margin: 0 }}>
+              {patient.age}岁
+            </Tag>
+          </div>
+          {patient.phone && (
+            <span style={{ fontSize: 12, color: '#888' }}>
+              <PhoneOutlined style={{ marginRight: 2 }} />{patient.phone}
+            </span>
+          )}
+        </div>
+        {/* Row 2: extra info */}
+        <div style={{ fontSize: 12, color: '#999', marginBottom: 6 }}>
+          {patient.address && <span>{patient.address}</span>}
+          {patient.address && patient.notes && <span> · </span>}
+          {patient.notes && <span>{patient.notes.length > 20 ? patient.notes.slice(0, 20) + '...' : patient.notes}</span>}
+          {!patient.address && !patient.notes && <span>暂无备注</span>}
+        </div>
+        {/* Row 3: actions */}
+        <div style={{ display: 'flex', gap: 8 }} onClick={(e) => e.stopPropagation()}>
+          <Button size="small" type="primary" ghost icon={<EyeOutlined />} onClick={() => navigate(`/patients/${patient.id}`)}>
+            查看
           </Button>
-          <Button onClick={handleReset}>重置</Button>
-        </Space>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => navigate('/patients/new')}
-        >
-          新增患者
-        </Button>
-      </div>
+          <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(patient)}>
+            编辑
+          </Button>
+          <Popconfirm
+            title="确定删除此患者？"
+            onConfirm={() => handleDelete(patient.id)}
+            okText="确定"
+            cancelText="取消"
+          >
+            <Button size="small" danger icon={<DeleteOutlined />}>
+              删除
+            </Button>
+          </Popconfirm>
+        </div>
+      </Card>
+    );
+  };
 
-      <Table<PatientItem>
-        rowKey="id"
-        columns={columns}
-        dataSource={data}
-        loading={loading}
-        pagination={{
-          current: params.page,
-          pageSize: params.size,
-          total,
-          showSizeChanger: true,
-          showTotal: (t) => `共 ${t} 条记录`,
-          onChange: (page, pageSize) => {
-            setParams((prev) => ({ ...prev, page, size: pageSize }));
-          },
-        }}
-        locale={{
-          emptyText: '暂无患者记录',
-        }}
-      />
+  return (
+    <Card styles={isMobile ? { body: { padding: 12 } } : undefined}>
+      {/* Search bar */}
+      {isMobile ? (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+            <Input
+              placeholder="搜索患者姓名"
+              value={searchName}
+              onChange={(e) => setSearchName(e.target.value)}
+              onPressEnter={handleSearch}
+              allowClear
+              style={{ flex: 1 }}
+            />
+            <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>
+              搜索
+            </Button>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Button onClick={handleReset}>重置</Button>
+            <div style={{ flex: 1 }} />
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/patients/new')}>
+              新增
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            marginBottom: 16,
+            flexWrap: 'wrap',
+            gap: 12,
+          }}
+        >
+          <Space wrap>
+            <Input
+              placeholder="搜索患者姓名"
+              value={searchName}
+              onChange={(e) => setSearchName(e.target.value)}
+              onPressEnter={handleSearch}
+              style={{ width: 200 }}
+              allowClear
+            />
+            <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>
+              搜索
+            </Button>
+            <Button onClick={handleReset}>重置</Button>
+          </Space>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => navigate('/patients/new')}
+          >
+            新增患者
+          </Button>
+        </div>
+      )}
+
+      {/* Patient list */}
+      {isMobile ? (
+        <>
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: 32, color: '#999' }}>加载中...</div>
+          ) : data.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 32, color: '#999' }}>暂无患者记录</div>
+          ) : (
+            data.map(renderMobilePatientCard)
+          )}
+          {total > 0 && (
+            <div style={{ textAlign: 'center', paddingTop: 12 }}>
+              <Pagination
+                current={params.page}
+                pageSize={params.size}
+                total={total}
+                size="small"
+                simple
+                onChange={(page, pageSize) => {
+                  setParams(prev => ({ ...prev, page, size: pageSize }));
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+              />
+            </div>
+          )}
+        </>
+      ) : (
+        <Table<PatientItem>
+          rowKey="id"
+          columns={columns}
+          dataSource={data}
+          loading={loading}
+          pagination={{
+            current: params.page,
+            pageSize: params.size,
+            total,
+            showSizeChanger: true,
+            showTotal: (t) => `共 ${t} 条记录`,
+            onChange: (page, pageSize) => {
+              setParams((prev) => ({ ...prev, page, size: pageSize }));
+            },
+          }}
+          locale={{
+            emptyText: '暂无患者记录',
+          }}
+        />
+      )}
 
       <PatientFormModal
         visible={editModalVisible}

@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/callmefisher/menzhen/server/middleware"
+	"github.com/callmefisher/menzhen/server/model"
 	"github.com/callmefisher/menzhen/server/service"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -19,6 +20,23 @@ type PrescriptionHandler struct {
 // NewPrescriptionHandler creates a new PrescriptionHandler.
 func NewPrescriptionHandler(db *gorm.DB) *PrescriptionHandler {
 	return &PrescriptionHandler{db: db}
+}
+
+// preloadPatient loads Record.Patient onto a prescription for oplog display.
+func (h *PrescriptionHandler) preloadPatient(p *model.Prescription) {
+	if p == nil || p.RecordID == 0 {
+		return
+	}
+	var rec model.MedicalRecord
+	if err := h.db.Select("id", "patient_id").First(&rec, p.RecordID).Error; err != nil {
+		return
+	}
+	var pat model.Patient
+	if err := h.db.Select("id", "name").First(&pat, rec.PatientID).Error; err != nil {
+		return
+	}
+	rec.Patient = pat
+	p.Record = rec
 }
 
 // Create handles POST /api/v1/prescriptions.
@@ -43,6 +61,7 @@ func (h *PrescriptionHandler) Create(c *gin.Context) {
 		return
 	}
 
+	h.preloadPatient(prescription)
 	middleware.LogOperation(h.db, c, "create", "prescription", prescription.ID, nil, prescription)
 
 	Created(c, prescription)
@@ -116,6 +135,8 @@ func (h *PrescriptionHandler) Update(c *gin.Context) {
 		return
 	}
 
+	h.preloadPatient(oldPrescription)
+	h.preloadPatient(newPrescription)
 	middleware.LogOperation(h.db, c, "update", "prescription", id, oldPrescription, newPrescription)
 
 	Success(c, newPrescription)
@@ -141,6 +162,7 @@ func (h *PrescriptionHandler) Delete(c *gin.Context) {
 		return
 	}
 
+	h.preloadPatient(oldPrescription)
 	middleware.LogOperation(h.db, c, "delete", "prescription", id, oldPrescription, nil)
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success"})
