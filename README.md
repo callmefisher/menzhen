@@ -1,36 +1,45 @@
 # 门诊管理系统
 
-患者病历管理系统，支持中小诊所局域网部署和多诊所云端共享（多租户架构）。集成中医药知识库、AI 辅助辩证论治、经络穴位 3D 可视化和电子处方功能。
+患者病历管理系统，支持中小诊所局域网部署和多诊所云端共享（多租户架构）。集成中医药知识库、AI 辅助辩证论治、经络穴位 3D 可视化、电子处方和库存管理功能。
 
 ## 功能特性
 
 ### 患者与诊疗
 
 - **患者管理** — 建档、查询、编辑，支持生日自动计算年龄、籍贯、体重等完整档案
-- **诊疗记录** — 就诊记录管理，支持附件上传（图片/音频/视频），诊断标签移动端自适应
-- **电子处方** — 基于方剂一键开方、编辑药物及剂量、多列排版打印（每 10 味一列），医嘱分行展示
+- **诊疗记录** — 就诊记录管理，支持主诉（textarea）、脉象（搜索下拉 + AI 回退 + 详情卡片）、舌象（图片上传 + 描述 + AI 分析）、附件上传（图片/音频/视频），诊断标签移动端自适应
+- **电子处方** — 基于方剂一键开方、编辑药物及剂量、多列排版打印（每 10 味一列），医嘱分行展示，开方时显示库存提示
 - **操作日志** — 关键操作全程留痕（新旧数据快照），支持批量删除
 
 ### AI 智能辅助
 
-- **AI 辩证论治** — 基于 DeepSeek AI，从中医学、现代医学等多维度分析，结果自动缓存、Markdown 表格渲染（rehype-raw + remark-gfm）
+- **AI 辩证论治** — 基于 DeepSeek AI，从中医学、现代医学等多维度分析，结果自动缓存、Markdown 表格渲染（rehype-raw + remark-gfm），新建记录保存时自动持久化 AI 结果
+- **AI 舌象分析** — 输入舌象描述，AI 返回详细分析（Markdown），结果缓存到诊疗记录
 - **中药智能查询** — 数据库优先 + AI 回退自动入库，管理员可行内编辑、AI 重查询，含分类筛选和道地产区
 - **方剂智能查询** — 同中药回退机制，含药物组成/功效/主治/备注，支持按方开药自动追加方剂备注
+- **脉象智能查询** — 同中药回退机制，DB 无结果时调用 DeepSeek 自动入库
 - **五运六气分析** — 年份选择 + AI 流式查询（SSE），Markdown 渲染，支持编辑/删除/笔记侧边栏
 
 ### 中医知识库
 
 - **脉象管理** — 分类浏览（浮脉类、沉脉类等）、搜索，管理员可新增/编辑/删除
 - **临床经验集** — 记录临床用药经验（出处、分类、药物、方剂、使用经验），全局共享，管理员可新增/编辑/删除，支持分类筛选和关键词搜索
-- **经络穴位 3D 可视化** — Three.js 人体模型，20 条经络路径 + 367 穴位标记，BVH 表面投影，点击穴位查看详情
+- **经络穴位 3D 可视化** — Three.js 人体模型（男/女双模型），20 条经络路径 + 367 穴位标记，BVH 表面投影，点击穴位查看详情
 - **经络详情** — 特殊穴位属性（五输穴、原穴、络穴等）、教学视频、出处介绍，管理员可编辑
+
+### 库存管理
+
+- **药物库存** — 支持本草（克）和成药（盒）两种分类，CRUD + 分页搜索 + 分类筛选
+- **入库管理** — 单个入库（累加库存量）+ 批量入库（已有药物累加、新药物自动创建）
+- **库存预警** — 前端定时扫描低库存药物，红色高亮提示，支持屏蔽/全局阈值配置（存 localStorage）
+- **处方联动** — 开方时自动显示对应药物的库存数量提示
 
 ### 系统管理
 
 - **多租户** — 多诊所数据隔离，支持云端共享部署
-- **权限管理** — JWT 认证 + RBAC 细粒度权限控制（17 个权限码）
-- **自动备份** — 每 2 小时备份数据库、每 12 小时备份文件存储，3 天自动清理本地，支持七牛云远程存储及自动清理
-- **移动端适配** — 响应式布局（768px 断点），侧边栏变 Drawer、面板全屏自适应
+- **权限管理** — JWT 认证 + RBAC 细粒度权限控制（21 个权限码）
+- **自动备份** — 每 2 小时备份数据库、每 12 小时备份文件存储，本地清理旧备份，支持七牛云远程存储及自动清理
+- **移动端适配** — 响应式布局（768px 断点），侧边栏变 Drawer、表格变卡片列表、面板全屏自适应、Modal/Timeline/音视频宽度自适应、触摸区域优化（≥44px）
 
 ## 技术栈
 
@@ -125,9 +134,9 @@ menzhen/
 │   ├── main.go          # 入口
 │   ├── config/          # 配置加载（环境变量）
 │   ├── database/        # DB 连接、迁移、种子数据
-│   ├── handler/         # HTTP 处理器（auth/patient/record/herb/formula/pulse/prescription/meridian/wuyun/clinical-experience/ai/oplog/user/role/tenant）
+│   ├── handler/         # HTTP 处理器（auth/patient/record/herb/formula/pulse/prescription/meridian/wuyun/clinical-experience/inventory/ai/oplog/user/role/tenant）
 │   ├── middleware/       # JWT 认证、RBAC、租户隔离、操作审计
-│   ├── model/           # GORM 数据模型（17 个表）
+│   ├── model/           # GORM 数据模型（20 个表）
 │   ├── router/          # 路由注册
 │   ├── service/         # 业务逻辑 + DeepSeek AI 客户端
 │   └── storage/         # MinIO 客户端
@@ -145,6 +154,7 @@ menzhen/
 │       │   ├── pulses/      # 脉象管理
 │       │   ├── wuyun/       # 五运六气（SSE 流式）
 │       │   ├── clinical-experience/ # 临床经验集
+│       │   ├── inventory/   # 库存管理（药物 CRUD + 入库 + 预警）
 │       │   └── settings/    # 用户/角色/租户管理
 │       ├── store/       # 认证状态管理
 │       ├── test/        # 测试配置（polyfill）
@@ -184,8 +194,8 @@ menzhen/
 
 - **部署**：`./deploy.sh`（自动生成随机密码、构建镜像、启动服务）
 - **备份恢复**：`./deploy.sh --restore /path/to/backup`
-- **自动备份**：MySQL 每 2 小时、MinIO 每 12 小时，本地清理 3 天前备份，上传七牛云并自动清理云端旧备份（各保留最新 5 个）
-- **种子数据**：启动时幂等写入 17 个权限 + 默认租户 + 管理员角色/用户
+- **自动备份**：MySQL 每 2 小时、MinIO 每 12 小时，本地清理旧备份，上传七牛云并自动清理云端旧备份（各保留最新 5 个）
+- **种子数据**：启动时幂等写入 21 个权限 + 默认租户 + 管理员角色/用户
 - **详细运维文档**：[docs/operations-guide.md](docs/operations-guide.md)
 
 ## 文档索引
@@ -194,11 +204,16 @@ menzhen/
 |------|------|
 | [Codebase 全局上下文](docs/codebase.md) | 文件结构、数据模型、API 路由清单 |
 | [运维操作手册](docs/operations-guide.md) | 部署、备份、恢复、监控 |
+| [方剂信息展示设计](docs/plans/2026-02-26-formula-info-display-design.md) | 方剂详情展示优化 |
 | [经络 3D 可视化设计](docs/plans/2026-02-27-meridian-3d-design.md) | Three.js + BVH 投影架构 |
 | [经络 3D 优化记录](docs/plans/2026-02-28-meridian-optimization.md) | Phase 1-8 优化历程 |
-| [脉象功能设计](docs/plans/2026-03-02-pulse-types-design.md) | 脉象 CRUD + 分类 |
+| [脉象功能设计](docs/plans/2026-03-02-pulse-types-design.md) | 脉象 CRUD + 分类 + AI 回退 |
 | [经络详情增强设计](docs/plans/2026-03-03-meridian-detail-design.md) | 特殊穴位 + 视频/出处 |
 | [临床经验集设计](docs/plans/2026-03-04-clinical-experience-design.md) | 临床经验 CRUD + 分类筛选 |
+| [诊疗记录增强设计](docs/plans/2026-03-12-record-enhancement-design.md) | 主诉/脉象/舌象字段扩展 |
+| [库存管理功能设计](docs/plans/2026-03-13-inventory-management-design.md) | 药物库存 + 入库 + 预警 |
+| [库存管理实施计划](docs/plans/2026-03-13-inventory-management-plan.md) | 库存功能分步实施 |
+| [移动端 UI 优化设计](docs/plans/2026-03-13-tcm-mobile-ui-design.md) | 全站移动端适配方案 |
 
 ## 许可证
 

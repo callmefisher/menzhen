@@ -49,6 +49,9 @@
 - AI 分析 Markdown 渲染需要 `rehype-raw` 插件才能正确处理 `<br>` 等 HTML 标签
 - 移动端布局要注意 position:absolute 元素与系统 Header 菜单按钮的位置冲突
 - 移动端固定宽度面板（如 420px NotesPanel）必须用 `useIsMobile` 做响应式适配，否则会超出屏幕
+- Ant Design `Timeline mode="left"` 在窄屏会导致 icon 与文字重叠，移动端应去掉 mode 改为默认单栏
+- 移动端表格优化统一模式：`isMobile ? 卡片列表 : Table`，分页用 `<Pagination size="small" simple />`
+- Modal 在移动端宽度应设为 `calc(100vw - 32px)` 防止溢出
 
 ---
 

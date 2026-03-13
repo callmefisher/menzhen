@@ -11,6 +11,9 @@ import {
   Form,
   Input,
   Radio,
+  Pagination,
+  Spin,
+  Empty,
 } from 'antd';
 import {
   PlusOutlined,
@@ -19,6 +22,7 @@ import {
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { listTenants, createTenant, updateTenant, deleteTenant } from '../../api/tenant';
+import useIsMobile from '../../hooks/useIsMobile';
 
 interface TenantItem {
   id: number;
@@ -38,6 +42,7 @@ export default function TenantList() {
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
   const [params, setParams] = useState<ListParams>({ page: 1, size: 20 });
+  const isMobile = useIsMobile();
 
   // Modal state
   const [modalVisible, setModalVisible] = useState(false);
@@ -214,25 +219,73 @@ export default function TenantList() {
         </Button>
       </div>
 
-      <Table<TenantItem>
-        rowKey="id"
-        columns={columns}
-        dataSource={data}
-        loading={loading}
-        pagination={{
-          current: params.page,
-          pageSize: params.size,
-          total,
-          showSizeChanger: true,
-          showTotal: (t) => `共 ${t} 条记录`,
-          onChange: (page, pageSize) => {
-            setParams({ page, size: pageSize });
-          },
-        }}
-        locale={{
-          emptyText: '暂无诊所记录',
-        }}
-      />
+      {isMobile ? (
+        loading ? (
+          <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
+        ) : data.length === 0 ? (
+          <Empty description="暂无诊所记录" />
+        ) : (
+          <>
+            {data.map((record) => (
+              <div
+                key={record.id}
+                style={{
+                  background: '#fafafa',
+                  borderRadius: 8,
+                  padding: 12,
+                  marginBottom: 8,
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <span style={{ fontWeight: 600, fontSize: 15 }}>{record.name}</span>
+                  {record.status === 1 ? <Tag color="green">启用</Tag> : <Tag color="red">禁用</Tag>}
+                </div>
+                <div style={{ color: '#666', fontSize: 13, marginBottom: 8 }}>
+                  编码：{record.code}
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Button type="link" size="small" style={{ padding: 0 }} icon={<EditOutlined />} onClick={() => handleOpenModal(record)}>编辑</Button>
+                  <Popconfirm title="确定删除此诊所？" onConfirm={() => handleDelete(record.id)} okText="确定" cancelText="取消">
+                    <Button type="link" size="small" style={{ padding: 0 }} danger icon={<DeleteOutlined />}>删除</Button>
+                  </Popconfirm>
+                </div>
+              </div>
+            ))}
+            {total > params.size && (
+              <div style={{ textAlign: 'center', marginTop: 12 }}>
+                <Pagination
+                  size="small"
+                  simple
+                  current={params.page}
+                  pageSize={params.size}
+                  total={total}
+                  onChange={(page) => setParams({ page, size: params.size })}
+                />
+              </div>
+            )}
+          </>
+        )
+      ) : (
+        <Table<TenantItem>
+          rowKey="id"
+          columns={columns}
+          dataSource={data}
+          loading={loading}
+          pagination={{
+            current: params.page,
+            pageSize: params.size,
+            total,
+            showSizeChanger: true,
+            showTotal: (t) => `共 ${t} 条记录`,
+            onChange: (page, pageSize) => {
+              setParams({ page, size: pageSize });
+            },
+          }}
+          locale={{
+            emptyText: '暂无诊所记录',
+          }}
+        />
+      )}
 
       <Modal
         title={isEdit ? '编辑诊所' : '新增诊所'}
@@ -247,6 +300,7 @@ export default function TenantList() {
         okText="保存"
         cancelText="取消"
         destroyOnClose
+        width={isMobile ? 'calc(100vw - 32px)' : undefined}
       >
         <Form
           form={form}

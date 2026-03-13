@@ -15,6 +15,7 @@ import {
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import { createPatient, updatePatient } from '../../api/patient';
+import useIsMobile from '../../hooks/useIsMobile';
 
 interface PatientFormValues {
   name: string;
@@ -46,11 +47,12 @@ interface PatientFormModalProps {
 
 /* ---- Internal form content (shared between page and modal) ---- */
 function PatientFormFields({ form }: { form: ReturnType<typeof Form.useForm<PatientFormValues>>[0] }) {
+  const isMobile = useIsMobile();
   return (
     <Form<PatientFormValues>
       form={form}
       layout="vertical"
-      style={{ maxWidth: 520 }}
+      style={{ maxWidth: isMobile ? undefined : 520 }}
       initialValues={{ gender: 1 }}
     >
       <Form.Item
@@ -136,6 +138,7 @@ export function PatientFormModal({
 }: PatientFormModalProps) {
   const [form] = Form.useForm<PatientFormValues>();
   const [submitting, setSubmitting] = useState(false);
+  const isMobile = useIsMobile();
 
   const isEdit = Boolean(initialData?.id);
 
@@ -195,6 +198,7 @@ export function PatientFormModal({
       okText="保存"
       cancelText="取消"
       destroyOnClose
+      width={isMobile ? 'calc(100vw - 32px)' : undefined}
     >
       <PatientFormFields form={form} />
     </Modal>
@@ -206,6 +210,7 @@ export default function PatientForm() {
   const navigate = useNavigate();
   const [form] = Form.useForm<PatientFormValues>();
   const [submitting, setSubmitting] = useState(false);
+  const isMobile = useIsMobile();
 
   const handleSubmit = async () => {
     try {
@@ -230,7 +235,7 @@ export default function PatientForm() {
   return (
     <Card title="新增患者">
       <PatientFormFields form={form} />
-      <Form.Item style={{ maxWidth: 520 }}>
+      <Form.Item style={{ maxWidth: isMobile ? undefined : 520 }}>
         <Space>
           <Button type="primary" loading={submitting} onClick={handleSubmit}>
             保存
