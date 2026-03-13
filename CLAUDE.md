@@ -78,7 +78,7 @@
 - **租户隔离**：patients/records/prescriptions/ai_analyses 表含 `tenant_id`
 - **全局数据**：herbs/formulas/pulses/meridian_resources/wuyun_liuqi 无租户隔离
 - **3D经络坐标分模型**：坐标数据按人体模型独立存储（`meridian-paths-{female|male}.ts` / `acupoint-positions-{female|male}.ts`），元数据（名称、功效等）共享，通过 `getMeridians(model)` / `getAcupoints(model)` 按模型组装
-- **权限码**：`patient:create/read/update/delete`, `record:create/read/update/delete`, `oplog:read`, `user:manage`, `role:manage`, `herb:read`, `formula:read`, `pulse:read`, `prescription:create`, `prescription:read`, `tenant:manage`
+- **权限码**：`patient:create/read/update/delete`, `record:create/read/update/delete`, `oplog:read`, `user:manage`, `role:manage`, `herb:read`, `formula:read`, `pulse:read`, `prescription:create`, `prescription:read`, `tenant:manage`, `inventory:create/read/update/delete`
 
 ## 开发环境
 
@@ -178,4 +178,6 @@ DeepSeek AI 相关（可选）：
 - [经络详情增强设计](docs/plans/2026-03-03-meridian-detail-design.md)
 - [临床经验集设计](docs/plans/2026-03-04-clinical-experience-design.md)
 - [诊疗记录增强设计（主诉/脉象/舌象）](docs/plans/2026-03-12-record-enhancement-design.md)
+- [库存管理功能设计](docs/plans/2026-03-13-inventory-management-design.md)
+- [库存管理实施计划](docs/plans/2026-03-13-inventory-management-plan.md)
 - [Codebase 全局上下文](docs/codebase.md)

@@ -38,6 +38,10 @@ func seedPermissions(db *gorm.DB) {
 		{Code: "prescription:create", Name: "开方", Description: "创建处方"},
 		{Code: "prescription:read", Name: "查看处方", Description: "查看处方信息"},
 		{Code: "tenant:manage", Name: "诊所管理", Description: "管理租户/诊所"},
+		{Code: "inventory:read", Name: "查看库存", Description: "查看药物库存"},
+		{Code: "inventory:create", Name: "新增库存", Description: "新增库存药物"},
+		{Code: "inventory:update", Name: "修改库存", Description: "修改库存药物"},
+		{Code: "inventory:delete", Name: "删除库存", Description: "删除库存药物"},
 	}
 
 	for _, p := range permissions {

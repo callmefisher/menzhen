@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Layout as AntLayout, Menu, Button, theme, Dropdown, Modal, Form, Input, message, Drawer } from 'antd';
+import { Layout as AntLayout, Menu, Button, theme, Dropdown, Modal, Form, Input, message, Drawer, Badge } from 'antd';
 import {
   MedicineBoxOutlined,
   UserOutlined,
@@ -20,10 +20,14 @@ import {
   HeartOutlined,
   CloudOutlined,
   BookOutlined,
+  ShopOutlined,
+  AlertOutlined,
 } from '@ant-design/icons';
 import type { MenuProps as AntMenuProps } from 'antd';
 import { useAuth } from '../store/auth';
 import { changePassword } from '../api/auth';
+import { listInventoryDrugs } from '../api/inventory';
+import type { InventoryDrug } from '../api/inventory';
 import useIsMobile from '../hooks/useIsMobile';
 
 const { Header, Sider, Content } = AntLayout;
@@ -43,6 +47,38 @@ export default function AppLayout() {
   const {
     token: { colorBgContainer, borderRadiusLG },
   } = theme.useToken();
+
+  const [alertCount, setAlertCount] = useState(0);
+
+  useEffect(() => {
+    if (!hasPermission('inventory:read')) return;
+
+    const checkAlerts = async () => {
+      try {
+        const res = await listInventoryDrugs({ size: 9999 });
+        const body = res as any;
+        const drugs: InventoryDrug[] = body.data?.list || [];
+        const config = JSON.parse(localStorage.getItem('inventory-alert-config') || '{}');
+        const muted = JSON.parse(localStorage.getItem('inventory-alert-muted') || '{}');
+        const now = Date.now();
+
+        const count = drugs.filter((d) => {
+          const threshold = d.alert_threshold ?? (d.category === 'herb' ? (config.herbThreshold ?? 500) : (config.patentThreshold ?? 10));
+          if (d.stock >= threshold) return false;
+          const muteUntil = muted[d.id];
+          if (muteUntil && now < muteUntil) return false;
+          return true;
+        }).length;
+
+        setAlertCount(count);
+      } catch { /* ignore */ }
+    };
+
+    checkAlerts();
+    const interval = JSON.parse(localStorage.getItem('inventory-alert-config') || '{}').scanInterval ?? 30;
+    const timer = setInterval(checkAlerts, interval * 60 * 1000);
+    return () => clearInterval(timer);
+  }, [hasPermission]);
 
   const menuItems = useMemo(() => {
     const items: MenuItem[] = [];
@@ -101,6 +137,26 @@ export default function AppLayout() {
       children: tcmChildren,
     });
 
+    if (hasPermission('inventory:read')) {
+      items.push({
+        key: '/inventory',
+        icon: <ShopOutlined />,
+        label: alertCount > 0 ? <Badge count={alertCount} offset={[10, 0]} size="small"><span>库存</span></Badge> : '库存',
+        children: [
+          {
+            key: '/inventory/drugs',
+            icon: <MedicineBoxOutlined />,
+            label: '药物',
+          },
+          {
+            key: '/inventory/alerts',
+            icon: <AlertOutlined />,
+            label: alertCount > 0 ? <Badge dot><span>库存预警</span></Badge> : '库存预警',
+          },
+        ],
+      });
+    }
+
     const canManageUsers = hasPermission('user:manage');
     const canManageRoles = hasPermission('role:manage');
     const canManageTenants = hasPermission('tenant:manage');
@@ -145,7 +201,7 @@ export default function AppLayout() {
     }
 
     return items;
-  }, [hasPermission]);
+  }, [hasPermission, alertCount]);
 
   // Determine selected keys from current path
   const selectedKeys = useMemo(() => {
@@ -161,6 +217,8 @@ export default function AppLayout() {
     if (path.startsWith('/pulses')) return ['/pulses'];
     if (path.startsWith('/wuyun')) return ['/wuyun'];
     if (path.startsWith('/clinical-experience')) return ['/clinical-experience'];
+    if (path.startsWith('/inventory/drugs')) return ['/inventory/drugs'];
+    if (path.startsWith('/inventory/alerts')) return ['/inventory/alerts'];
     if (path.startsWith('/records')) return ['/records'];
     return ['/records'];
   }, [location.pathname]);
@@ -168,6 +226,7 @@ export default function AppLayout() {
   const openKeys = useMemo(() => {
     const path = location.pathname;
     if (path.startsWith('/settings')) return ['/settings'];
+    if (path.startsWith('/inventory')) return ['/inventory'];
     if (path.startsWith('/herbs') || path.startsWith('/formulas') || path.startsWith('/meridians') || path.startsWith('/pulses') || path.startsWith('/wuyun') || path.startsWith('/clinical-experience')) return ['/tcm'];
     return ['/tcm', '/settings'];
   }, [location.pathname]);

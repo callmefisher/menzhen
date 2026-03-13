@@ -49,6 +49,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	meridianResourceHandler := handler.NewMeridianResourceHandler(db)
 	wuyunLiuqiHandler := handler.NewWuyunLiuqiHandler(db, deepSeekService)
 	clinicalExpHandler := handler.NewClinicalExperienceHandler(db)
+	inventoryDrugHandler := handler.NewInventoryDrugHandler(db)
 
 	// ---------- Route groups ----------
 
@@ -209,6 +210,15 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			prescriptions.GET("/:id", middleware.RequirePermission(db, "prescription:read"), prescriptionHandler.Detail)
 			prescriptions.PUT("/:id", middleware.RequirePermission(db, "prescription:create"), prescriptionHandler.Update)
 			prescriptions.DELETE("/:id", middleware.RequirePermission(db, "prescription:create"), prescriptionHandler.Delete)
+		}
+
+		// Inventory drug routes (tenant-scoped).
+		inventoryDrugs := authenticated.Group("/inventory/drugs")
+		{
+			inventoryDrugs.GET("", middleware.RequirePermission(db, "inventory:read"), inventoryDrugHandler.List)
+			inventoryDrugs.POST("", middleware.RequirePermission(db, "inventory:create"), inventoryDrugHandler.Create)
+			inventoryDrugs.PUT("/:id", middleware.RequirePermission(db, "inventory:update"), inventoryDrugHandler.Update)
+			inventoryDrugs.DELETE("/:id", middleware.RequirePermission(db, "inventory:delete"), inventoryDrugHandler.Delete)
 		}
 
 		// Prescription list by record (nested under records).
