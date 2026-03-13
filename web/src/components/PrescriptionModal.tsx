@@ -13,6 +13,8 @@ import {
 } from 'antd';
 import { PlusOutlined, DeleteOutlined, SearchOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import HerbDetailModal from './HerbDetailModal';
+import { listInventoryDrugs } from '../api/inventory';
+import type { InventoryDrug } from '../api/inventory';
 import { listFormulas } from '../api/formula';
 import type { FormulaItem, FormulaCompositionItem } from '../api/formula';
 import {
@@ -70,6 +72,23 @@ export default function PrescriptionModal({
   );
   const [herbDetailOpen, setHerbDetailOpen] = useState(false);
   const [herbDetailName, setHerbDetailName] = useState('');
+
+  // Inventory stock lookup
+  const [inventoryMap, setInventoryMap] = useState<Record<string, InventoryDrug>>({});
+
+  useEffect(() => {
+    if (!open) return;
+    (async () => {
+      try {
+        const res = await listInventoryDrugs({ size: 9999 });
+        const body = res as unknown as { data: { list: InventoryDrug[] } };
+        const drugs = body.data?.list || [];
+        const map: Record<string, InventoryDrug> = {};
+        drugs.forEach((d) => { map[d.name] = d; });
+        setInventoryMap(map);
+      } catch { /* ignore */ }
+    })();
+  }, [open]);
 
   // Formula search state
   const [formulaOptions, setFormulaOptions] = useState<FormulaItem[]>([]);
@@ -214,27 +233,49 @@ export default function PrescriptionModal({
       title: '药名',
       dataIndex: 'herb_name',
       key: 'herb_name',
-      render: (_: string, record: HerbRow) => (
-        <Space>
-          <Input
-            value={record.herb_name}
-            onChange={(e) => updateHerbRow(record.key, 'herb_name', e.target.value)}
-            placeholder="药名"
-          />
-          <Button
-            type="text"
-            size="small"
-            icon={<InfoCircleOutlined />}
-            onClick={() => {
-              if (record.herb_name.trim()) {
-                setHerbDetailName(record.herb_name.trim());
-                setHerbDetailOpen(true);
-              }
-            }}
-            disabled={!record.herb_name.trim()}
-          />
-        </Space>
-      ),
+      render: (_: string, record: HerbRow) => {
+        const inv = inventoryMap[record.herb_name?.trim()];
+        const config = JSON.parse(localStorage.getItem('inventory-alert-config') || '{}');
+        const getThreshold = (d: InventoryDrug) =>
+          d.alert_threshold ?? (d.category === 'herb' ? (config.herbThreshold ?? 500) : (config.patentThreshold ?? 10));
+        const unit = inv ? (inv.category === 'herb' ? '克' : '盒') : '';
+
+        let stockHint: React.ReactNode = null;
+        if (record.herb_name?.trim()) {
+          if (inv) {
+            stockHint = inv.stock < getThreshold(inv)
+              ? <span style={{ fontSize: 11, color: '#ff4d4f' }}>库存不足: {inv.stock}{unit}</span>
+              : <span style={{ fontSize: 11, color: '#52c41a' }}>库存: {inv.stock}{unit}</span>;
+          } else {
+            stockHint = <span style={{ fontSize: 11, color: '#999' }}>未录入库存</span>;
+          }
+        }
+
+        return (
+          <div>
+            <Space>
+              <Input
+                value={record.herb_name}
+                onChange={(e) => updateHerbRow(record.key, 'herb_name', e.target.value)}
+                placeholder="药名"
+              />
+              <Button
+                type="text"
+                size="small"
+                icon={<InfoCircleOutlined />}
+                onClick={() => {
+                  if (record.herb_name.trim()) {
+                    setHerbDetailName(record.herb_name.trim());
+                    setHerbDetailOpen(true);
+                  }
+                }}
+                disabled={!record.herb_name.trim()}
+              />
+            </Space>
+            {stockHint && <div style={{ marginTop: 2 }}>{stockHint}</div>}
+          </div>
+        );
+      },
     },
     {
       title: '用量',
