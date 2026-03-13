@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Input, Table, message, Button, Popconfirm, Select, Space, Modal, Form, AutoComplete } from 'antd';
+import { Input, Table, message, Button, Popconfirm, Select, Space, Modal, Form, AutoComplete, Pagination, Spin, Empty } from 'antd';
 import { SearchOutlined, DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import {
@@ -28,6 +28,7 @@ export default function ClinicalExperienceList() {
   const { hasPermission } = useAuth();
   const isMobile = useIsMobile();
   const [form] = Form.useForm();
+  const [mobileExpanded, setMobileExpanded] = useState<number[]>([]);
 
   useEffect(() => {
     loadCategories();
@@ -231,6 +232,82 @@ export default function ClinicalExperienceList() {
         )}
       </div>
 
+      {isMobile ? (
+        <div>
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: 32 }}><Spin /></div>
+          ) : items.length === 0 ? (
+            <Empty description="暂无数据" />
+          ) : (
+            items.map((item) => {
+              const isExpanded = mobileExpanded.includes(item.id);
+              const summary = [item.category, item.herbs].filter(Boolean).join(' · ');
+              const summaryTruncated = summary.length > 40 ? summary.slice(0, 40) + '…' : summary;
+              return (
+                <div
+                  key={item.id}
+                  style={{ background: '#fafafa', borderRadius: 8, padding: 12, marginBottom: 8 }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontWeight: 'bold', fontSize: 15 }}>{item.source || '—'}</span>
+                    {hasPermission('role:manage') && (
+                      <Space size="small">
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={<EditOutlined />}
+                          onClick={() => openEditModal(item)}
+                        >
+                          编辑
+                        </Button>
+                        <Popconfirm
+                          title="确定删除此条经验？"
+                          onConfirm={() => handleDelete(item.id)}
+                          okText="删除"
+                          cancelText="取消"
+                        >
+                          <Button type="text" danger size="small" icon={<DeleteOutlined />}>
+                            删除
+                          </Button>
+                        </Popconfirm>
+                      </Space>
+                    )}
+                  </div>
+                  {summaryTruncated && (
+                    <div style={{ color: '#666', fontSize: 13, marginTop: 4 }}>{summaryTruncated}</div>
+                  )}
+                  <div
+                    style={{ color: '#1677ff', fontSize: 13, marginTop: 6, cursor: 'pointer' }}
+                    onClick={() =>
+                      setMobileExpanded((prev) =>
+                        isExpanded ? prev.filter((id) => id !== item.id) : [...prev, item.id]
+                      )
+                    }
+                  >
+                    {isExpanded ? '收起 ▲' : '展开详情 ▼'}
+                  </div>
+                  {isExpanded && (
+                    <div style={{ marginTop: 8, fontSize: 13 }}>
+                      <p style={{ margin: '4px 0' }}><strong>药物：</strong>{item.herbs || '无'}</p>
+                      <p style={{ margin: '4px 0' }}><strong>方剂：</strong>{item.formula || '无'}</p>
+                      <p style={{ margin: '4px 0' }}><strong>使用经验：</strong>{item.experience || '无'}</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+          <Pagination
+            simple
+            size="small"
+            current={page}
+            pageSize={size}
+            total={total}
+            onChange={(p, s) => handleTableChange({ current: p, pageSize: s })}
+            style={{ textAlign: 'center', marginTop: 16 }}
+          />
+        </div>
+      ) : (
       <Table<ClinicalExperienceItem>
         columns={columns}
         dataSource={items}
@@ -256,6 +333,7 @@ export default function ClinicalExperienceList() {
           ),
         }}
       />
+      )}
 
       <Modal
         title={editingItem ? '编辑临床经验' : '新增临床经验'}
