@@ -190,8 +190,8 @@ func (s *RecordService) ListRecords(tenantID uint64, name, date string, page, si
 		return nil, 0, err
 	}
 
-	// Fetch paginated results.
-	if err := query.Order("medical_records.visit_date DESC").
+	// Fetch paginated results (deterministic order: newest visit first, then highest id first).
+	if err := query.Order("medical_records.visit_date DESC, medical_records.id DESC").
 		Offset((page - 1) * size).
 		Limit(size).
 		Scan(&items).Error; err != nil {
@@ -206,7 +206,7 @@ func (s *RecordService) FindRecordPage(tenantID, recordID uint64, size int) (int
 	if size <= 0 {
 		size = 20
 	}
-	// Count how many records come before this one in visit_date DESC order.
+	// Count how many records come before this one in visit_date DESC, id DESC order.
 	// Records with a later visit_date, or same date but higher ID, come first.
 	var record model.MedicalRecord
 	if err := s.DB.Select("visit_date").Where("id = ? AND tenant_id = ? AND deleted_at IS NULL", recordID, tenantID).First(&record).Error; err != nil {
@@ -216,7 +216,7 @@ func (s *RecordService) FindRecordPage(tenantID, recordID uint64, size int) (int
 	var position int64
 	s.DB.Table("medical_records").
 		Where("tenant_id = ? AND deleted_at IS NULL", tenantID).
-		Where("visit_date > ? OR (visit_date = ? AND id < ?)", record.VisitDate, record.VisitDate, recordID).
+		Where("visit_date > ? OR (visit_date = ? AND id > ?)", record.VisitDate, record.VisitDate, recordID).
 		Count(&position)
 
 	page := int(position)/size + 1

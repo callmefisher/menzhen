@@ -89,6 +89,7 @@ export default function RecordList() {
   // Scroll to and highlight the row/card after returning from edit
   useEffect(() => {
     if (!highlightId || highlightedRef.current || loading) return;
+    let removeTimer: ReturnType<typeof setTimeout>;
     // Wait for DOM update after data render
     const timer = setTimeout(() => {
       // Desktop: table row; Mobile: card with data-record-id
@@ -98,11 +99,14 @@ export default function RecordList() {
         highlightedRef.current = true;
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
         el.classList.add('row-highlight');
-        setTimeout(() => el.classList.remove('row-highlight'), 10000);
+        removeTimer = setTimeout(() => el.classList.remove('row-highlight'), 15000);
         window.history.replaceState({}, '');
       }
     }, 100);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      clearTimeout(removeTimer);
+    };
   }, [highlightId, loading, data]);
 
   const handleSearch = () => {

@@ -217,19 +217,8 @@ func (h *AIAnalysisHandler) AnalyzeStream(c *gin.Context) {
 		return nil
 	})
 
-	if err != nil {
-		log.Printf("AI analysis stream error: %v", err)
-		errData, _ := json.Marshal(map[string]interface{}{
-			"type":  "error",
-			"error": "AI 分析失败，请稍后重试",
-		})
-		fmt.Fprintf(w, "data: %s\n\n", string(errData))
-		flusher.Flush()
-		return
-	}
-
-	// Persist result if record_id is provided
-	if req.RecordID > 0 {
+	// Always persist result to DB even if client disconnected (chatStream continues accumulating)
+	if req.RecordID > 0 && fullContent != "" {
 		analysis := model.AIAnalysis{
 			RecordID:  req.RecordID,
 			TenantID:  tenantID,
@@ -245,6 +234,17 @@ func (h *AIAnalysisHandler) AnalyzeStream(c *gin.Context) {
 		} else {
 			h.db.Create(&analysis)
 		}
+	}
+
+	if err != nil {
+		log.Printf("AI analysis stream error: %v", err)
+		errData, _ := json.Marshal(map[string]interface{}{
+			"type":  "error",
+			"error": "AI 分析失败，请稍后重试",
+		})
+		fmt.Fprintf(w, "data: %s\n\n", string(errData))
+		flusher.Flush()
+		return
 	}
 
 	// Send done event
@@ -320,6 +320,13 @@ func (h *AIAnalysisHandler) AnalyzeTongueStream(c *gin.Context) {
 		return nil
 	})
 
+	// Always persist result to DB even if client disconnected (chatStream continues accumulating)
+	if req.RecordID > 0 && fullContent != "" {
+		h.db.Model(&model.MedicalRecord{}).
+			Where("id = ? AND tenant_id = ?", req.RecordID, tenantID).
+			Update("tongue_analysis", fullContent)
+	}
+
 	if err != nil {
 		log.Printf("Tongue analysis stream error: %v", err)
 		errData, _ := json.Marshal(map[string]interface{}{
@@ -329,13 +336,6 @@ func (h *AIAnalysisHandler) AnalyzeTongueStream(c *gin.Context) {
 		fmt.Fprintf(w, "data: %s\n\n", string(errData))
 		flusher.Flush()
 		return
-	}
-
-	// Cache result in medical_records.tongue_analysis if record_id provided
-	if req.RecordID > 0 {
-		h.db.Model(&model.MedicalRecord{}).
-			Where("id = ? AND tenant_id = ?", req.RecordID, tenantID).
-			Update("tongue_analysis", fullContent)
 	}
 
 	doneData, _ := json.Marshal(map[string]interface{}{

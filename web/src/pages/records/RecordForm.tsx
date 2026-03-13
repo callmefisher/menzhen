@@ -109,6 +109,8 @@ export default function RecordForm() {
 
   // Debounce timer ref for patient search
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Debounce timer ref for pulse search
+  const pulseSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // AI analysis state
   const [aiAnalyzing, setAiAnalyzing] = useState(false);
@@ -426,19 +428,73 @@ export default function RecordForm() {
     }
   };
 
-  const handleTongueAnalysis = (force = false) => {
+  const handleTongueAnalysis = async (force = false) => {
     const description = form.getFieldValue('tongue_description');
     if (!description?.trim()) {
       message.warning('请先输入舌象描述');
       return;
     }
+
+    let recordId = id ? Number(id) : undefined;
+
+    // Auto-save form data before starting analysis
+    const patientId = form.getFieldValue('patient_id');
+    const visitDate = form.getFieldValue('visit_date');
+    if (!patientId || !visitDate) {
+      message.warning('请先选择患者和就诊日期，以便自动保存记录');
+      return;
+    }
+    try {
+      const savePayload = {
+        patient_id: patientId,
+        visit_date: visitDate.format('YYYY-MM-DD'),
+        chief_complaint: form.getFieldValue('chief_complaint') || '',
+        pulse_id: form.getFieldValue('pulse_id') || null,
+        pulse_name: form.getFieldValue('pulse_name') || '',
+        tongue_image: form.getFieldValue('tongue_image') || '',
+        tongue_description: description.trim(),
+        tongue_analysis: form.getFieldValue('tongue_analysis') || '',
+        diagnosis: form.getFieldValue('diagnosis') || '',
+        treatment: form.getFieldValue('treatment') || '',
+        notes: form.getFieldValue('notes') || '',
+        attachments: form.getFieldValue('attachments') || [],
+      };
+      if (recordId) {
+        // Existing record: update
+        await updateRecord(recordId, {
+          chief_complaint: savePayload.chief_complaint,
+          pulse_id: savePayload.pulse_id,
+          pulse_name: savePayload.pulse_name,
+          tongue_image: savePayload.tongue_image,
+          tongue_description: savePayload.tongue_description,
+          tongue_analysis: savePayload.tongue_analysis,
+          diagnosis: savePayload.diagnosis,
+          treatment: savePayload.treatment,
+          notes: savePayload.notes,
+          visit_date: savePayload.visit_date,
+          attachments: savePayload.attachments,
+        });
+      } else {
+        // New record: create to get ID
+        const res = await createRecord(savePayload);
+        const body = res as unknown as { data: { id: number } };
+        if (body.data?.id) {
+          recordId = body.data.id;
+          navigate(`/records/${recordId}`, { replace: true });
+        }
+      }
+      message.success('诊疗记录已自动保存');
+    } catch {
+      message.error('自动保存失败，请先手动保存记录');
+      return;
+    }
+
     tongueAbortRef.current?.abort();
     setTongueAnalyzing(true);
     setTongueDrawerOpen(true);
     setTongueResult('');
 
     let accumulated = '';
-    const recordId = id ? Number(id) : undefined;
 
     const controller = streamTongueAnalysis(description.trim(), recordId, force, {
       onChunk: (text) => {
@@ -560,12 +616,51 @@ export default function RecordForm() {
   };
 
   // --- Streaming AI analysis (current implementation) ---
-  const handleAiAnalysis = (force = false) => {
+  const handleAiAnalysis = async (force = false) => {
     const diagnosis = form.getFieldValue('diagnosis');
     if (!diagnosis?.trim()) {
       message.warning('请先输入诊断内容');
       return;
     }
+
+    let recordId = id ? Number(id) : undefined;
+
+    // For new records, auto-save first to get a record_id so backend can persist the analysis
+    if (!recordId) {
+      const patientId = form.getFieldValue('patient_id');
+      const visitDate = form.getFieldValue('visit_date');
+      if (!patientId || !visitDate) {
+        message.warning('请先选择患者和就诊日期，以便自动保存记录');
+        return;
+      }
+      try {
+        const payload = {
+          patient_id: patientId,
+          visit_date: visitDate.format('YYYY-MM-DD'),
+          chief_complaint: form.getFieldValue('chief_complaint') || '',
+          pulse_id: form.getFieldValue('pulse_id') || null,
+          pulse_name: form.getFieldValue('pulse_name') || '',
+          tongue_image: form.getFieldValue('tongue_image') || '',
+          tongue_description: form.getFieldValue('tongue_description') || '',
+          tongue_analysis: form.getFieldValue('tongue_analysis') || '',
+          diagnosis: diagnosis.trim(),
+          treatment: form.getFieldValue('treatment') || '',
+          notes: form.getFieldValue('notes') || '',
+          attachments: form.getFieldValue('attachments') || [],
+        };
+        const res = await createRecord(payload);
+        const body = res as unknown as { data: { id: number } };
+        if (body.data?.id) {
+          recordId = body.data.id;
+          message.success('诊疗记录已自动保存');
+          navigate(`/records/${recordId}`, { replace: true });
+        }
+      } catch {
+        message.error('自动保存失败，请先手动保存记录');
+        return;
+      }
+    }
+
     // Cancel any previous stream
     aiAbortRef.current?.abort();
 
@@ -575,7 +670,6 @@ export default function RecordForm() {
     setAiCached(false);
 
     let accumulated = '';
-    const recordId = id ? Number(id) : undefined;
 
     const controller = streamAiAnalysis(diagnosis.trim(), recordId, force, {
       onChunk: (text) => {
@@ -763,7 +857,15 @@ export default function RecordForm() {
                 showSearch
                 placeholder="输入脉象名称后点击查询"
                 filterOption={false}
-                onSearch={(value) => setPulseSearchText(value)}
+                onSearch={(value) => {
+                  setPulseSearchText(value);
+                  if (pulseSearchTimerRef.current) clearTimeout(pulseSearchTimerRef.current);
+                  if (value.trim()) {
+                    pulseSearchTimerRef.current = setTimeout(() => searchPulses(value), 300);
+                  } else {
+                    setPulseOptions([]);
+                  }
+                }}
                 onChange={handlePulseSelect}
                 loading={pulseLoading}
                 allowClear
