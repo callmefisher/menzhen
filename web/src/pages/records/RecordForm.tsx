@@ -25,10 +25,10 @@ import type { Dayjs } from 'dayjs';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
-import { getRecord, createRecord, updateRecord, getCachedAiAnalysis, saveAiAnalysis, analyzeTongue } from '../../api/record';
+import { getRecord, createRecord, updateRecord, getCachedAiAnalysis, saveAiAnalysis } from '../../api/record';
 // Legacy non-streaming import kept for potential switch-back:
 // import { aiAnalyzeDiagnosis } from '../../api/record';
-import { streamAiAnalysis } from '../../utils/sse';
+import { streamAiAnalysis, streamTongueAnalysis } from '../../utils/sse';
 import { listPatients, createPatient, getPatient } from '../../api/patient';
 import {
   listPrescriptionsByRecord,
@@ -116,19 +116,19 @@ export default function RecordForm() {
   const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
   const [aiCached, setAiCached] = useState(false);
   const aiAbortRef = useRef<AbortController | null>(null);
+  const tongueAbortRef = useRef<AbortController | null>(null);
 
   // Pulse search state
   const [pulseOptions, setPulseOptions] = useState<PulseItem[]>([]);
   const [pulseLoading, setPulseLoading] = useState(false);
   const [selectedPulse, setSelectedPulse] = useState<PulseItem | null>(null);
-  const pulseSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [pulseAiQuerying, setPulseAiQuerying] = useState(false);
   const [pulseSearchText, setPulseSearchText] = useState('');
 
   // Tongue analysis state
   const [tongueAnalyzing, setTongueAnalyzing] = useState(false);
   const [tongueResult, setTongueResult] = useState<string>('');
-  const [tongueImageUrl, setTongueImageUrl] = useState<string>('');
+  const [tongueDrawerOpen, setTongueDrawerOpen] = useState(false);  const [tongueImageUrl, setTongueImageUrl] = useState<string>('');
   const [tongueUploading, setTongueUploading] = useState(false);
 
   // Card 4 collapsible state (notes & attachments)
@@ -378,16 +378,6 @@ export default function RecordForm() {
     }
   }, []);
 
-  const handlePulseSearch = (value: string) => {
-    setPulseSearchText(value);
-    if (pulseSearchTimerRef.current) {
-      clearTimeout(pulseSearchTimerRef.current);
-    }
-    pulseSearchTimerRef.current = setTimeout(() => {
-      searchPulses(value);
-    }, 1000);
-  };
-
   const handlePulseAiQuery = async () => {
     if (!pulseSearchText.trim()) return;
     setPulseAiQuerying(true);
@@ -436,29 +426,43 @@ export default function RecordForm() {
     }
   };
 
-  const handleTongueAnalysis = async (force = false) => {
+  const handleTongueAnalysis = (force = false) => {
     const description = form.getFieldValue('tongue_description');
     if (!description?.trim()) {
       message.warning('请先输入舌象描述');
       return;
     }
+    tongueAbortRef.current?.abort();
     setTongueAnalyzing(true);
-    try {
-      const recordId = id ? Number(id) : undefined;
-      const res = await analyzeTongue({
-        description: description.trim(),
-        record_id: recordId,
-        force,
-      });
-      const body = res as unknown as { data: { analysis: string; cached: boolean } };
-      const analysis = body.data.analysis || '未获取到分析结果';
-      setTongueResult(analysis);
-      form.setFieldValue('tongue_analysis', analysis);
-    } catch {
-      message.error('舌象分析失败，请稍后重试');
-    } finally {
-      setTongueAnalyzing(false);
-    }
+    setTongueDrawerOpen(true);
+    setTongueResult('');
+
+    let accumulated = '';
+    const recordId = id ? Number(id) : undefined;
+
+    const controller = streamTongueAnalysis(description.trim(), recordId, force, {
+      onChunk: (text) => {
+        accumulated += text;
+        setTongueResult(accumulated);
+      },
+      onDone: () => {
+        setTongueAnalyzing(false);
+        form.setFieldValue('tongue_analysis', accumulated);
+      },
+      onCached: (evt) => {
+        const e = evt as Record<string, unknown>;
+        const analysis = (e.analysis as string) || '未获取到分析结果';
+        setTongueResult(analysis);
+        form.setFieldValue('tongue_analysis', analysis);
+        setTongueAnalyzing(false);
+      },
+      onError: (error) => {
+        setTongueResult(error || '舌象分析失败，请稍后重试');
+        setTongueAnalyzing(false);
+      },
+    });
+
+    tongueAbortRef.current = controller;
   };
 
   const handleCreatePatient = async () => {
@@ -752,41 +756,56 @@ export default function RecordForm() {
             四诊采集
           </div>
 
-        <Form.Item label="脉象" name="pulse_id" style={{ marginBottom: selectedPulse ? 8 : 16 }}>
-          <Select
-            showSearch
-            placeholder="搜索脉象名称"
-            filterOption={false}
-            onSearch={handlePulseSearch}
-            onChange={handlePulseSelect}
-            loading={pulseLoading}
-            allowClear
-            onClear={() => {
-              setSelectedPulse(null);
-              form.setFieldsValue({ pulse_name: '' });
-            }}
-            notFoundContent={
-              pulseLoading ? (
-                <Spin size="small" />
-              ) : pulseSearchText ? (
-                <div style={{ textAlign: 'center', padding: '8px 0' }}>
-                  <div style={{ color: '#999', marginBottom: 8 }}>未找到匹配脉象</div>
-                  <Button
-                    type="link"
-                    icon={<SearchOutlined />}
-                    loading={pulseAiQuerying}
-                    onClick={handlePulseAiQuery}
-                  >
-                    从 AI 查询
-                  </Button>
-                </div>
-              ) : '输入关键字搜索'
-            }
-            options={pulseOptions.map(p => ({
-              value: p.id,
-              label: `${p.name}${p.category ? ` (${p.category})` : ''}`,
-            }))}
-          />
+        <Form.Item label="脉象" style={{ marginBottom: selectedPulse ? 8 : 16 }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Form.Item name="pulse_id" noStyle>
+              <Select
+                showSearch
+                placeholder="输入脉象名称后点击查询"
+                filterOption={false}
+                onSearch={(value) => setPulseSearchText(value)}
+                onChange={handlePulseSelect}
+                loading={pulseLoading}
+                allowClear
+                onClear={() => {
+                  setSelectedPulse(null);
+                  form.setFieldsValue({ pulse_name: '' });
+                  setPulseSearchText('');
+                  setPulseOptions([]);
+                }}
+                notFoundContent={
+                  pulseLoading ? (
+                    <Spin size="small" />
+                  ) : pulseSearchText ? (
+                    <div style={{ textAlign: 'center', padding: '8px 0' }}>
+                      <div style={{ color: '#999', marginBottom: 8 }}>未找到匹配脉象</div>
+                      <Button
+                        type="link"
+                        icon={<SearchOutlined />}
+                        loading={pulseAiQuerying}
+                        onClick={handlePulseAiQuery}
+                      >
+                        从 AI 查询
+                      </Button>
+                    </div>
+                  ) : '输入关键字后点击查询'
+                }
+                options={pulseOptions.map(p => ({
+                  value: p.id,
+                  label: `${p.name}${p.category ? ` (${p.category})` : ''}`,
+                }))}
+                style={{ flex: 1 }}
+              />
+            </Form.Item>
+            <Button
+              icon={<SearchOutlined />}
+              loading={pulseLoading}
+              onClick={() => searchPulses(pulseSearchText)}
+              disabled={!pulseSearchText.trim()}
+            >
+              查询
+            </Button>
+          </div>
         </Form.Item>
         <Form.Item name="pulse_name" hidden>
           <Input />
@@ -813,91 +832,73 @@ export default function RecordForm() {
         )}
 
         {/* 舌象 */}
-        <div className="form-row" style={isMobile ? undefined : { flexDirection: 'row', alignItems: 'flex-start' }}>
-          <div style={{ width: isMobile ? '100%' : 160, flexShrink: 0 }}>
-            <Form.Item label="舌象图片" name="tongue_image">
-              <div>
-                {tongueImageUrl ? (
-                  <div style={{ position: 'relative', display: 'inline-block' }}>
-                    <img src={tongueImageUrl} alt="舌象" style={{ maxWidth: 200, maxHeight: 150, borderRadius: 8, border: '1px solid #d9d9d9' }} />
-                    <Button
-                      size="small"
-                      danger
-                      style={{ position: 'absolute', top: 4, right: 4 }}
-                      onClick={() => {
-                        form.setFieldValue('tongue_image', '');
-                        setTongueImageUrl('');
-                      }}
-                    >
-                      删除
-                    </Button>
-                  </div>
-                ) : (
-                  <Button
-                    loading={tongueUploading}
-                    onClick={() => {
-                      const input = document.createElement('input');
-                      input.type = 'file';
-                      input.accept = 'image/*';
-                      input.onchange = (e) => {
-                        const file = (e.target as HTMLInputElement).files?.[0];
-                        if (file) handleTongueUpload(file);
-                      };
-                      input.click();
-                    }}
-                  >
-                    上传舌象图片
-                  </Button>
-                )}
-              </div>
-            </Form.Item>
-          </div>
-          <div style={{ flex: 1 }}>
-            <Form.Item label={
-              <Space>
-                <span>舌象描述</span>
+        <Form.Item label="舌象图片" name="tongue_image" style={{ marginBottom: 12 }}>
+          <div>
+            {tongueImageUrl ? (
+              <div style={{ position: 'relative', display: 'inline-block' }}>
+                <img src={tongueImageUrl} alt="舌象" style={{ maxWidth: 200, maxHeight: 150, borderRadius: 8, border: '1px solid #d9d9d9' }} />
                 <Button
-                  type="primary"
-                  ghost
                   size="small"
-                  icon={<RobotOutlined />}
-                  loading={tongueAnalyzing}
-                  onClick={() => handleTongueAnalysis()}
+                  danger
+                  style={{ position: 'absolute', top: 4, right: 4 }}
+                  onClick={() => {
+                    form.setFieldValue('tongue_image', '');
+                    setTongueImageUrl('');
+                  }}
                 >
-                  分析舌象
+                  删除
                 </Button>
-                {tongueResult && !tongueAnalyzing && (
-                  <Button size="small" icon={<ReloadOutlined />} onClick={() => handleTongueAnalysis(true)}>
-                    重新分析
-                  </Button>
-                )}
-              </Space>
-            } name="tongue_description">
-              <Input.TextArea rows={3} placeholder="描述舌象（如：舌质淡红，舌苔薄白，舌体胖大有齿痕）" />
-            </Form.Item>
-            <Form.Item name="tongue_analysis" hidden>
-              <Input />
-            </Form.Item>
-          </div>
-        </div>
-        {tongueResult && (
-          <div className="ai-result-card" style={{ marginTop: 12, marginBottom: 0 }}>
-            <div className="ai-result-card-header">
-              <RobotOutlined style={{ fontSize: 16 }} />
-              <span>舌象 AI 分析结果</span>
-            </div>
-            <div className="ai-result-card-body">
-              <div className="ai-analysis-content">
-                <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-                  {tongueResult}
-                </Markdown>
               </div>
-            </div>
-            <div className="ai-result-card-footer">
-              以上分析由 AI 生成，仅供参考
-            </div>
+            ) : (
+              <Button
+                loading={tongueUploading}
+                onClick={() => {
+                  const input = document.createElement('input');
+                  input.type = 'file';
+                  input.accept = 'image/*';
+                  input.onchange = (e) => {
+                    const file = (e.target as HTMLInputElement).files?.[0];
+                    if (file) handleTongueUpload(file);
+                  };
+                  input.click();
+                }}
+              >
+                上传舌象图片
+              </Button>
+            )}
           </div>
-        )}
+        </Form.Item>
+        <Form.Item label={
+          <Space>
+            <span>舌象描述</span>
+            <Button
+              type="primary"
+              ghost
+              size="small"
+              icon={<RobotOutlined />}
+              loading={tongueAnalyzing}
+              onClick={() => handleTongueAnalysis()}
+            >
+              分析舌象
+            </Button>
+            {tongueResult && !tongueAnalyzing && !tongueDrawerOpen && (
+              <Tooltip title="已有分析结果，点击查看">
+                <Tag
+                  color="green"
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => setTongueDrawerOpen(true)}
+                >
+                  已有分析
+                </Tag>
+              </Tooltip>
+            )}
+          </Space>
+        } name="tongue_description">
+          <Input.TextArea rows={3} placeholder="描述舌象（如：舌质淡红，舌苔薄白，舌体胖大有齿痕）" />
+        </Form.Item>
+        <Form.Item name="tongue_analysis" hidden>
+          <Input />
+        </Form.Item>
 
         </div>
 
@@ -1278,6 +1279,75 @@ export default function RecordForm() {
           </Form.Item>
         </Form>
       </Modal>
+
+      {/* 舌象AI分析抽屉 */}
+      <Drawer
+        title={
+          <Space>
+            <RobotOutlined style={{ color: '#1677ff' }} />
+            <span>舌象 AI 分析</span>
+          </Space>
+        }
+        placement="right"
+        width={isMobile ? '100%' : 720}
+        open={tongueDrawerOpen}
+        onClose={() => {
+          tongueAbortRef.current?.abort();
+          setTongueAnalyzing(false);
+          setTongueDrawerOpen(false);
+        }}
+        styles={{ body: { padding: 0 } }}
+        extra={
+          tongueResult && !tongueAnalyzing ? (
+            <Tooltip title="忽略缓存，重新调用 AI 分析">
+              <Button
+                size="small"
+                icon={<ReloadOutlined />}
+                onClick={() => handleTongueAnalysis(true)}
+              >
+                重新分析
+              </Button>
+            </Tooltip>
+          ) : undefined
+        }
+      >
+        {tongueAnalyzing && !tongueResult && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 300, gap: 24 }}>
+            <Spin size="large" />
+            <div style={{ color: '#666', fontSize: 15 }}>AI 正在分析舌象...</div>
+          </div>
+        )}
+        {tongueResult && (
+          <div style={{ padding: '24px 32px' }}>
+            <div style={{
+              background: 'linear-gradient(135deg, #e8f4fd 0%, #f0e6ff 100%)',
+              borderRadius: 12,
+              padding: '16px 20px',
+              marginBottom: 24,
+              border: '1px solid #d4e8f7',
+            }}>
+              <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>分析依据 — 舌象描述</div>
+              <div style={{ fontSize: 14, color: '#333', fontWeight: 500 }}>
+                {form.getFieldValue('tongue_description') || '—'}
+              </div>
+            </div>
+            <div className="ai-analysis-content" style={{ fontSize: 14, lineHeight: 1.8, color: '#333' }}>
+              <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+                {tongueResult}
+              </Markdown>
+              {tongueAnalyzing && <Spin size="small" style={{ marginLeft: 8, marginTop: 8 }} />}
+            </div>
+            {!tongueAnalyzing && (
+              <>
+                <Divider />
+                <div style={{ fontSize: 12, color: '#999', textAlign: 'center', padding: '8px 0' }}>
+                  以上分析由 AI 生成，仅供参考
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </Drawer>
 
       {/* AI辅助分析抽屉 */}
       <Drawer

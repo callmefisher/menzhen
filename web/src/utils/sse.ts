@@ -119,6 +119,25 @@ export function streamWuyunLiuqiQuery(
  * Stream an AI diagnosis analysis via SSE.
  * Returns an AbortController so the caller can cancel the request.
  */
+/**
+ * Stream a tongue analysis via SSE.
+ */
+export function streamTongueAnalysis(
+  description: string,
+  recordId: number | undefined,
+  force: boolean,
+  callbacks: SSECallbacks,
+): AbortController {
+  const controller = new AbortController();
+  fetchSSE(
+    '/api/v1/ai/analyze-tongue-stream',
+    { description, record_id: recordId || 0, force },
+    callbacks,
+    controller,
+  );
+  return controller;
+}
+
 export function streamAiAnalysis(
   diagnosis: string,
   recordId: number | undefined,
