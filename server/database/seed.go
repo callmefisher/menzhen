@@ -50,6 +50,8 @@ func seedPermissions(db *gorm.DB) {
 		{Code: "inventory:create", Name: "新增库存", Description: "新增库存药物"},
 		{Code: "inventory:update", Name: "修改库存", Description: "修改库存药物"},
 		{Code: "inventory:delete", Name: "删除库存", Description: "删除库存药物"},
+		{Code: "billing:create", Name: "收费", Description: "创建收费记录"},
+		{Code: "billing:read", Name: "查看收费", Description: "查看收费记录"},
 	}
 
 	for _, p := range permissions {

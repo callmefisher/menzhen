@@ -19,7 +19,7 @@ import {
   Tooltip,
   Dropdown,
 } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, RobotOutlined, ReloadOutlined, MoreOutlined, MedicineBoxOutlined, InboxOutlined, SearchOutlined, DownOutlined, RightOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, RobotOutlined, ReloadOutlined, MoreOutlined, MedicineBoxOutlined, InboxOutlined, SearchOutlined, DownOutlined, RightOutlined, DollarOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import Markdown from 'react-markdown';
@@ -39,6 +39,9 @@ import FileUpload from '../../components/FileUpload';
 import type { AttachmentInfo } from '../../components/FileUpload';
 import PrescriptionModal from '../../components/PrescriptionModal';
 import PrescriptionPrint from '../../components/PrescriptionPrint';
+import BillingDrawer from '../../components/BillingDrawer';
+import { listRecordBillings } from '../../api/billing';
+import type { BillingRecord } from '../../api/billing';
 import { useAuth } from '../../store/auth';
 import useIsMobile from '../../hooks/useIsMobile';
 import { listPulses } from '../../api/pulse';
@@ -86,7 +89,7 @@ export default function RecordForm() {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
   const isEdit = Boolean(id);
-  const { hasPermission } = useAuth();
+  const { hasPermission, user } = useAuth();
   const isMobile = useIsMobile();
 
   const [form] = Form.useForm<RecordFormValues>();
@@ -103,6 +106,11 @@ export default function RecordForm() {
   const [prescriptions, setPrescriptions] = useState<PrescriptionData[]>([]);
   const [prescriptionModalOpen, setPrescriptionModalOpen] = useState(false);
   const [editingPrescription, setEditingPrescription] = useState<PrescriptionData | null>(null);
+
+  // Billing state
+  const [billingDrawerOpen, setBillingDrawerOpen] = useState(false);
+  const [billingPrescriptionId, setBillingPrescriptionId] = useState<number>(0);
+  const [billingMap, setBillingMap] = useState<Record<number, BillingRecord>>({});
 
   // Record data for prescription print
   const [recordPatient, setRecordPatient] = useState<PatientOption | null>(null);
@@ -198,6 +206,21 @@ export default function RecordForm() {
       const res = await listPrescriptionsByRecord(Number(id));
       const body = res as unknown as { data: PrescriptionData[] };
       setPrescriptions(body.data || []);
+    } catch {
+      // handled
+    }
+  }, [id]);
+
+  const loadBillings = useCallback(async () => {
+    if (!id) return;
+    try {
+      const res = await listRecordBillings(Number(id));
+      const list = (res.data.data || []) as BillingRecord[];
+      const map: Record<number, BillingRecord> = {};
+      for (const b of list) {
+        map[b.prescription_id] = b;
+      }
+      setBillingMap(map);
     } catch {
       // handled
     }
@@ -326,6 +349,7 @@ export default function RecordForm() {
 
     loadRecord();
     loadPrescriptions();
+    loadBillings();
 
     // Load cached AI analysis
     const loadCachedAnalysis = async () => {
@@ -341,7 +365,7 @@ export default function RecordForm() {
       }
     };
     loadCachedAnalysis();
-  }, [id, form, navigate, loadPrescriptions]);
+  }, [id, form, navigate, loadPrescriptions, loadBillings]);
 
   const handlePatientSearch = (value: string) => {
     if (searchTimerRef.current) {
@@ -1225,6 +1249,17 @@ export default function RecordForm() {
                     }
                     extra={
                       <Space size={4}>
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={<DollarOutlined />}
+                          onClick={() => {
+                            setBillingPrescriptionId(item.id);
+                            setBillingDrawerOpen(true);
+                          }}
+                        >
+                          收费
+                        </Button>
                         <PrescriptionPrint
                           key="print"
                           prescription={item}
@@ -1305,6 +1340,16 @@ export default function RecordForm() {
                         开方医师：{item.creator.real_name}
                       </div>
                     )}
+                    {billingMap[item.id] && (
+                      <div style={{
+                        marginTop: 8, paddingTop: 8, borderTop: '1px dashed #e8e8e8',
+                        display: 'flex', gap: 16, fontSize: 12, color: '#666', flexWrap: 'wrap',
+                      }}>
+                        <span>诊疗费：¥{billingMap[item.id].consultation_fee.toFixed(2)}</span>
+                        <span>实收：<span style={{ color: '#52c41a', fontWeight: 500 }}>¥{billingMap[item.id].actual_paid.toFixed(2)}</span></span>
+                        {billingMap[item.id].stock_deducted && <Tag color="green" style={{ fontSize: 11 }}>已扣库存</Tag>}
+                      </div>
+                    )}
                   </Card>
                 ))}
               </div>
@@ -1338,6 +1383,19 @@ export default function RecordForm() {
           onSuccess={loadPrescriptions}
         />
       )}
+
+      {/* 收费抽屉 */}
+      <BillingDrawer
+        open={billingDrawerOpen}
+        prescriptionId={billingPrescriptionId}
+        patientName={recordPatient?.name}
+        patientAge={recordPatient?.age}
+        doctorName={user?.real_name || user?.username}
+        onClose={() => {
+          setBillingDrawerOpen(false);
+          loadBillings();
+        }}
+      />
 
       {/* 新建患者弹窗 */}
       <Modal

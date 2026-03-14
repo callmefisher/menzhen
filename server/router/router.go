@@ -50,6 +50,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	wuyunLiuqiHandler := handler.NewWuyunLiuqiHandler(db, deepSeekService)
 	clinicalExpHandler := handler.NewClinicalExperienceHandler(db)
 	inventoryDrugHandler := handler.NewInventoryDrugHandler(db)
+	billingHandler := handler.NewBillingHandler(db)
 	solarTermHandler := handler.NewSolarTermHandler(db)
 	hexagramHandler := handler.NewHexagramHandler(db)
 
@@ -232,6 +233,11 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			prescriptions.GET("/:id", middleware.RequirePermission(db, "prescription:read"), prescriptionHandler.Detail)
 			prescriptions.PUT("/:id", middleware.RequirePermission(db, "prescription:create"), prescriptionHandler.Update)
 			prescriptions.DELETE("/:id", middleware.RequirePermission(db, "prescription:create"), prescriptionHandler.Delete)
+
+			// Billing routes (nested under prescriptions).
+			prescriptions.GET("/:id/billing", middleware.RequirePermission(db, "billing:read"), billingHandler.GetDetail)
+			prescriptions.POST("/:id/billing", middleware.RequirePermission(db, "billing:create"), billingHandler.Create)
+			prescriptions.POST("/:id/billing/deduct-stock", middleware.RequirePermission(db, "billing:create"), billingHandler.DeductStock)
 		}
 
 		// Inventory drug routes (tenant-scoped).
@@ -247,6 +253,9 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 
 		// Prescription list by record (nested under records).
 		records.GET("/:id/prescriptions", middleware.RequirePermission(db, "prescription:read"), prescriptionHandler.ListByRecord)
+
+		// Billings list by record (nested under records).
+		records.GET("/:id/billings", middleware.RequirePermission(db, "billing:read"), billingHandler.ListByRecord)
 
 		// Cached AI analysis for a record (nested under records).
 		records.GET("/:id/ai-analysis", middleware.RequirePermission(db, "record:read"), aiAnalysisHandler.GetCached)
