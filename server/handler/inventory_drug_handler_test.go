@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -51,6 +52,53 @@ func TestInventoryHandler_List_Success(t *testing.T) {
 
 	list := data["list"].([]interface{})
 	assert.GreaterOrEqual(t, len(list), 1)
+}
+
+func TestInventoryHandler_Create_WithShelfNo(t *testing.T) {
+	env := setupTestEnv(t)
+
+	reqBody := map[string]interface{}{
+		"name":     "川芎",
+		"category": "herb",
+		"stock":    200,
+		"shelf_no": "A-03",
+	}
+
+	w := env.doRequest("POST", "/api/v1/inventory/drugs", reqBody)
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	body := parseJSON(w)
+	data := body["data"].(map[string]interface{})
+	assert.Equal(t, "A-03", data["shelf_no"])
+}
+
+func TestInventoryHandler_Update_ShelfNo(t *testing.T) {
+	env := setupTestEnv(t)
+
+	// Create drug first
+	createBody := map[string]interface{}{
+		"name":     "白芍",
+		"category": "herb",
+		"stock":    100,
+		"shelf_no": "A-01",
+	}
+	w := env.doRequest("POST", "/api/v1/inventory/drugs", createBody)
+	assert.Equal(t, http.StatusCreated, w.Code)
+	createData := parseJSON(w)["data"].(map[string]interface{})
+	drugID := int(createData["id"].(float64))
+	assert.Equal(t, "A-01", createData["shelf_no"])
+
+	// Update shelf_no
+	updateBody := map[string]interface{}{
+		"shelf_no": "B-05",
+	}
+	url := fmt.Sprintf("/api/v1/inventory/drugs/%d", drugID)
+	t.Logf("Update URL: %s, drugID: %d", url, drugID)
+	w = env.doRequest("PUT", url, updateBody)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	updateData := parseJSON(w)["data"].(map[string]interface{})
+	assert.Equal(t, "B-05", updateData["shelf_no"])
 }
 
 func TestInventoryHandler_NoToken(t *testing.T) {

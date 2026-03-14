@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/callmefisher/menzhen/server/model"
 	"github.com/callmefisher/menzhen/server/testutil"
 	"github.com/stretchr/testify/assert"
 )
@@ -142,15 +143,56 @@ func TestRecordHandler_Delete_Success(t *testing.T) {
 	createData := getData(w)
 	recordID := createData["id"]
 
+	// Create a prescription for this record
+	w = env.doRequest("POST", "/api/v1/prescriptions", map[string]interface{}{
+		"record_id":    recordID,
+		"formula_name": "桂枝汤",
+		"total_doses":  7,
+		"items": []map[string]interface{}{
+			{"herb_name": "桂枝", "dosage": "9g"},
+		},
+	})
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	// Seed an AI analysis directly
+	recordIDUint := uint64(recordID.(float64))
+	aiAnalysis := model.AIAnalysis{
+		RecordID:  recordIDUint,
+		TenantID:  env.TenantID,
+		Diagnosis: "风寒",
+		Analysis:  "AI分析结果",
+	}
+	err := env.DB.Create(&aiAnalysis).Error
+	assert.NoError(t, err)
+
 	// Delete the record
 	w = env.doRequest("DELETE", fmt.Sprintf("/api/v1/records/%.0f", recordID), nil)
 	assert.Equal(t, http.StatusOK, w.Code)
 	body := parseJSON(w)
 	assert.Equal(t, float64(0), body["code"])
 
-	// Verify it's gone
+	// Verify record is gone
 	w = env.doRequest("GET", fmt.Sprintf("/api/v1/records/%.0f", recordID), nil)
 	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	// Verify all related data is cleaned up
+	var attachmentCount, prescCount, itemCount, aiCount int64
+	env.DB.Model(&model.RecordAttachment{}).Where("record_id = ?", recordIDUint).Count(&attachmentCount)
+	assert.Equal(t, int64(0), attachmentCount, "attachments should be deleted")
+
+	env.DB.Model(&model.Prescription{}).Where("record_id = ?", recordIDUint).Count(&prescCount)
+	assert.Equal(t, int64(0), prescCount, "prescriptions should be soft-deleted")
+
+	env.DB.Model(&model.PrescriptionItem{}).
+		Joins("JOIN prescriptions ON prescriptions.id = prescription_items.prescription_id").
+		Where("prescriptions.record_id = ?", recordIDUint).Count(&itemCount)
+	// prescription items should be hard-deleted, but query via join on soft-deleted prescriptions returns 0 either way
+	// so check directly via unscoped
+	env.DB.Unscoped().Model(&model.Prescription{}).Where("record_id = ?", recordIDUint).Count(&prescCount)
+	assert.Equal(t, int64(1), prescCount, "prescriptions should exist with deleted_at set")
+
+	env.DB.Model(&model.AIAnalysis{}).Where("record_id = ?", recordIDUint).Count(&aiCount)
+	assert.Equal(t, int64(0), aiCount, "AI analysis should be soft-deleted")
 }
 
 func TestRecordHandler_NoToken(t *testing.T) {

@@ -33,6 +33,7 @@ func setupTestRouter(db *gorm.DB) *gin.Engine {
 	inventoryDrugHandler := NewInventoryDrugHandler(db)
 	meridianResourceHandler := NewMeridianResourceHandler(db)
 	wuyunLiuqiHandler := NewWuyunLiuqiHandler(db, nil)
+	solarTermHandler := NewSolarTermHandler(db)
 
 	deepSeekService := service.NewDeepSeekService(cfg)
 	herbHandler := NewHerbHandler(db, deepSeekService)
@@ -113,12 +114,21 @@ func setupTestRouter(db *gorm.DB) *gin.Engine {
 	inventoryDrugs := authed.Group("/inventory/drugs")
 	inventoryDrugs.GET("", middleware.RequirePermission(db, "inventory:read"), inventoryDrugHandler.List)
 	inventoryDrugs.POST("", middleware.RequirePermission(db, "inventory:create"), inventoryDrugHandler.Create)
+	inventoryDrugs.PUT("/:id", middleware.RequirePermission(db, "inventory:update"), inventoryDrugHandler.Update)
+	inventoryDrugs.DELETE("/:id", middleware.RequirePermission(db, "inventory:delete"), inventoryDrugHandler.Delete)
+	inventoryDrugs.POST("/:id/stock-in", middleware.RequirePermission(db, "inventory:update"), inventoryDrugHandler.StockIn)
+	inventoryDrugs.POST("/batch-stock-in", middleware.RequirePermission(db, "inventory:create"), inventoryDrugHandler.BatchStockIn)
 
 	meridianRes := authed.Group("/meridians")
 	meridianRes.GET("/:id/resource", meridianResourceHandler.Get)
 
 	wuyunLiuqi := authed.Group("/wuyun-liuqi")
 	wuyunLiuqi.GET("", wuyunLiuqiHandler.Get)
+
+	solarTerms := authed.Group("/solar-terms")
+	solarTerms.GET("", solarTermHandler.List)
+	solarTerms.PUT("/:id", middleware.RequirePermission(db, "role:manage"), solarTermHandler.Update)
+	solarTerms.DELETE("/:id/content", middleware.RequirePermission(db, "role:manage"), solarTermHandler.DeleteContent)
 
 	return r
 }

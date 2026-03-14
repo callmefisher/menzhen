@@ -50,6 +50,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	wuyunLiuqiHandler := handler.NewWuyunLiuqiHandler(db, deepSeekService)
 	clinicalExpHandler := handler.NewClinicalExperienceHandler(db)
 	inventoryDrugHandler := handler.NewInventoryDrugHandler(db)
+	solarTermHandler := handler.NewSolarTermHandler(db)
 
 	// ---------- Route groups ----------
 
@@ -202,6 +203,14 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			clinicalExp.POST("", middleware.RequirePermission(db, "role:manage"), clinicalExpHandler.Create)
 			clinicalExp.PUT("/:id", middleware.RequirePermission(db, "role:manage"), clinicalExpHandler.Update)
 			clinicalExp.DELETE("/:id", middleware.RequirePermission(db, "role:manage"), clinicalExpHandler.Delete)
+		}
+
+		// Solar terms routes (global data, authenticated).
+		solarTerms := authenticated.Group("/solar-terms")
+		{
+			solarTerms.GET("", solarTermHandler.List)
+			solarTerms.PUT("/:id", middleware.RequirePermission(db, "role:manage"), solarTermHandler.Update)
+			solarTerms.DELETE("/:id/content", middleware.RequirePermission(db, "role:manage"), solarTermHandler.DeleteContent)
 		}
 
 		// Prescription routes (tenant-scoped).

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/callmefisher/menzhen/server/model"
 	"github.com/callmefisher/menzhen/server/service"
 	"github.com/callmefisher/menzhen/server/testutil"
 	"github.com/stretchr/testify/assert"
@@ -332,6 +333,95 @@ func TestDeleteRecord_Success(t *testing.T) {
 	// Verify it's gone.
 	_, err = svc.GetRecord(tenantID, created.ID)
 	assert.ErrorIs(t, err, service.ErrRecordNotFound)
+}
+
+func TestDeleteRecord_CascadeDeletesAllRelatedData(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	svc := service.NewRecordService(db)
+	prescSvc := service.NewPrescriptionService(db)
+
+	tenant := testutil.SeedTestTenant(t, db, "诊所A", "clinic-a")
+	user, _ := testutil.SeedTestUser(t, db, tenant.ID, "doc1", "pass", nil)
+	patient := testutil.SeedTestPatient(t, db, tenant.ID, user.ID, "张三")
+
+	// Create a record with attachments
+	req := baseCreateRecordReq(patient.ID)
+	req.Attachments = []service.AttachmentRequest{
+		{FileType: "image", FileName: "tongue.jpg", FilePath: "/uploads/tongue.jpg", FileSize: 1024},
+		{FileType: "audio", FileName: "voice.mp3", FilePath: "/uploads/voice.mp3", FileSize: 2048},
+	}
+	record, err := svc.CreateRecord(tenant.ID, user.ID, req)
+	assert.NoError(t, err)
+
+	// Create a prescription with items
+	presc, err := prescSvc.Create(tenant.ID, user.ID, &service.CreatePrescriptionRequest{
+		RecordID:    record.ID,
+		FormulaName: "桂枝汤",
+		TotalDoses:  7,
+		Items: []service.PrescriptionItemRequest{
+			{HerbName: "桂枝", Dosage: "9g"},
+			{HerbName: "白芍", Dosage: "9g"},
+		},
+	})
+	assert.NoError(t, err)
+
+	// Create an AI analysis
+	aiAnalysis := model.AIAnalysis{
+		RecordID:  record.ID,
+		TenantID:  tenant.ID,
+		Diagnosis: "风寒感冒",
+		Analysis:  "辩证分析：太阳中风证...",
+	}
+	err = db.Create(&aiAnalysis).Error
+	assert.NoError(t, err)
+
+	// Verify all data exists before deletion
+	var attachmentCount int64
+	db.Model(&model.RecordAttachment{}).Where("record_id = ?", record.ID).Count(&attachmentCount)
+	assert.Equal(t, int64(2), attachmentCount)
+
+	var prescCount int64
+	db.Model(&model.Prescription{}).Where("record_id = ?", record.ID).Count(&prescCount)
+	assert.Equal(t, int64(1), prescCount)
+
+	var itemCount int64
+	db.Model(&model.PrescriptionItem{}).Where("prescription_id = ?", presc.ID).Count(&itemCount)
+	assert.Equal(t, int64(2), itemCount)
+
+	var aiCount int64
+	db.Model(&model.AIAnalysis{}).Where("record_id = ?", record.ID).Count(&aiCount)
+	assert.Equal(t, int64(1), aiCount)
+
+	// Delete the record
+	deleted, err := svc.DeleteRecord(tenant.ID, record.ID)
+	assert.NoError(t, err)
+	assert.Equal(t, record.ID, deleted.ID)
+
+	// Verify record is soft-deleted
+	_, err = svc.GetRecord(tenant.ID, record.ID)
+	assert.ErrorIs(t, err, service.ErrRecordNotFound)
+
+	// Verify attachments are hard-deleted
+	db.Model(&model.RecordAttachment{}).Where("record_id = ?", record.ID).Count(&attachmentCount)
+	assert.Equal(t, int64(0), attachmentCount, "attachments should be deleted")
+
+	// Verify prescriptions are soft-deleted (use Unscoped to check they still exist but are soft-deleted)
+	db.Model(&model.Prescription{}).Where("record_id = ?", record.ID).Count(&prescCount)
+	assert.Equal(t, int64(0), prescCount, "prescriptions should be soft-deleted")
+	var prescUnscopedCount int64
+	db.Unscoped().Model(&model.Prescription{}).Where("record_id = ? AND deleted_at IS NOT NULL", record.ID).Count(&prescUnscopedCount)
+	assert.Equal(t, int64(1), prescUnscopedCount, "prescriptions should exist with deleted_at set")
+
+	// Verify prescription items are hard-deleted
+	db.Model(&model.PrescriptionItem{}).Where("prescription_id = ?", presc.ID).Count(&itemCount)
+	assert.Equal(t, int64(0), itemCount, "prescription items should be deleted")
+
+	// Verify AI analysis is soft-deleted
+	db.Model(&model.AIAnalysis{}).Where("record_id = ?", record.ID).Count(&aiCount)
+	assert.Equal(t, int64(0), aiCount, "AI analysis should be soft-deleted")
+	var aiUnscopedCount int64
+	db.Unscoped().Model(&model.AIAnalysis{}).Where("record_id = ? AND deleted_at IS NOT NULL", record.ID).Count(&aiUnscopedCount)
+	assert.Equal(t, int64(1), aiUnscopedCount, "AI analysis should exist with deleted_at set")
 }
 
 func TestDeleteRecord_CrossTenant(t *testing.T) {

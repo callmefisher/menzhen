@@ -5,6 +5,7 @@ export interface PrescriptionItemReq {
   dosage: string;
   sort_order: number;
   notes?: string;
+  category?: 'herb' | 'patent';
 }
 
 export interface CreatePrescriptionReq {
@@ -29,6 +30,7 @@ export interface PrescriptionItemData {
   dosage: string;
   sort_order: number;
   notes: string;
+  category: string;
   created_at: string;
 }
 

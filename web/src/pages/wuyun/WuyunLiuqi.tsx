@@ -9,6 +9,7 @@ import type { WuyunLiuqiItem } from '../../api/wuyunLiuqi';
 import { streamWuyunLiuqiQuery } from '../../utils/sse';
 import NotesPanel from './NotesPanel';
 import useIsMobile from '../../hooks/useIsMobile';
+import SpeechButton from '../../components/SpeechButton';
 
 const { TextArea } = Input;
 const { Title, Text } = Typography;
@@ -157,7 +158,12 @@ export default function WuyunLiuqi() {
       {/* Header */}
       {isMobile ? (
         <div style={{ marginBottom: 16 }}>
-          <Title level={4} style={{ margin: '0 0 8px' }}>五运六气</Title>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '0 0 8px' }}>
+            <Title level={4} style={{ margin: 0 }}>五运六气</Title>
+            {content && !streaming && !editing && (
+              <SpeechButton getText={() => content} disabled={streaming} />
+            )}
+          </div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
             <InputNumber min={1} max={9999} value={year} onChange={handleYearChange} style={{ flex: 1 }} disabled={streaming} />
             <Button type="primary" icon={<SearchOutlined />} onClick={() => handleQuery(false)} loading={streaming}>查询</Button>
@@ -172,6 +178,9 @@ export default function WuyunLiuqi() {
       ) : (
         <div style={{ marginBottom: 16, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
           <Title level={4} style={{ margin: 0 }}>五运六气</Title>
+          {content && !streaming && !editing && (
+            <SpeechButton getText={() => content} disabled={streaming} />
+          )}
           <InputNumber
             min={1}
             max={9999}

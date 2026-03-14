@@ -22,6 +22,7 @@ import {
   BookOutlined,
   ShopOutlined,
   AlertOutlined,
+  CalendarOutlined,
 } from '@ant-design/icons';
 import type { MenuProps as AntMenuProps } from 'antd';
 import { useAuth } from '../store/auth';
@@ -139,6 +140,11 @@ export default function AppLayout() {
         icon: <BookOutlined />,
         label: '临床经验集',
       },
+      {
+        key: '/solar-terms',
+        icon: <CalendarOutlined />,
+        label: '节气',
+      },
     ];
     items.push({
       key: '/tcm',
@@ -153,7 +159,7 @@ export default function AppLayout() {
         icon: <ShopOutlined />,
         label: alertCount > 0
           ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              库存
+              运营
               <span style={{
                 background: '#ff4d4f',
                 color: '#fff',
@@ -167,12 +173,12 @@ export default function AppLayout() {
                 fontWeight: 500,
               }}>{alertCount}</span>
             </span>
-          : '库存',
+          : '运营',
         children: [
           {
             key: '/inventory/drugs',
             icon: <MedicineBoxOutlined />,
-            label: '药物',
+            label: '库存药物',
           },
           {
             key: '/inventory/alerts',
@@ -255,6 +261,7 @@ export default function AppLayout() {
     if (path.startsWith('/pulses')) return ['/pulses'];
     if (path.startsWith('/wuyun')) return ['/wuyun'];
     if (path.startsWith('/clinical-experience')) return ['/clinical-experience'];
+    if (path.startsWith('/solar-terms')) return ['/solar-terms'];
     if (path.startsWith('/inventory/drugs')) return ['/inventory/drugs'];
     if (path.startsWith('/inventory/alerts')) return ['/inventory/alerts'];
     if (path.startsWith('/records')) return ['/records'];
@@ -265,8 +272,8 @@ export default function AppLayout() {
     const path = location.pathname;
     if (path.startsWith('/settings')) return ['/settings'];
     if (path.startsWith('/inventory')) return ['/inventory'];
-    if (path.startsWith('/herbs') || path.startsWith('/formulas') || path.startsWith('/meridians') || path.startsWith('/pulses') || path.startsWith('/wuyun') || path.startsWith('/clinical-experience')) return ['/tcm'];
-    return ['/tcm', '/settings', '/inventory'];
+    if (path.startsWith('/herbs') || path.startsWith('/formulas') || path.startsWith('/meridians') || path.startsWith('/pulses') || path.startsWith('/wuyun') || path.startsWith('/clinical-experience') || path.startsWith('/solar-terms')) return ['/tcm'];
+    return [];
   }, [location.pathname]);
 
   const handleMenuClick = (info: { key: string }) => {

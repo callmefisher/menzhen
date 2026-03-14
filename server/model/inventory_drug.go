@@ -11,6 +11,7 @@ type InventoryDrug struct {
 	SellingPrice   float64  `gorm:"column:selling_price;type:decimal(10,2);not null;default:0" json:"selling_price"`
 	AlertThreshold *float64 `gorm:"column:alert_threshold;type:decimal(10,2)" json:"alert_threshold"`
 	Remark         string   `gorm:"column:remark;type:text" json:"remark"`
+	ShelfNo        string   `gorm:"column:shelf_no;type:varchar(20);not null;default:'H1'" json:"shelf_no"`
 }
 
 func (InventoryDrug) TableName() string {

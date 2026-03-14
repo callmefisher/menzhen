@@ -20,6 +20,7 @@ import PulseList from './pages/pulses/PulseList';
 import WuyunLiuqi from './pages/wuyun/WuyunLiuqi';
 import ClinicalExperienceList from './pages/clinical-experience/ClinicalExperienceList';
 import DrugList from './pages/inventory/DrugList';
+import SolarTerms from './pages/solar-terms/SolarTerms';
 import InventoryAlert from './pages/inventory/InventoryAlert';
 import type { ReactNode } from 'react';
 
@@ -76,6 +77,7 @@ function AppRoutes() {
         <Route path="meridians" element={<Suspense fallback={<Spin />}><MeridianView /></Suspense>} />
         <Route path="wuyun" element={<WuyunLiuqi />} />
         <Route path="clinical-experience" element={<ClinicalExperienceList />} />
+        <Route path="solar-terms" element={<SolarTerms />} />
         <Route path="inventory/drugs" element={<DrugList />} />
         <Route path="inventory/alerts" element={<InventoryAlert />} />
         <Route path="oplogs" element={<OpLogList />} />

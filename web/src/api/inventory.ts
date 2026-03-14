@@ -10,6 +10,7 @@ export interface InventoryDrug {
   selling_price: number;
   alert_threshold: number | null;
   remark: string;
+  shelf_no: string;
   created_at: string;
   updated_at: string;
 }
@@ -29,6 +30,7 @@ export interface CreateInventoryDrugReq {
   selling_price: number;
   alert_threshold?: number | null;
   remark?: string;
+  shelf_no?: string;
 }
 
 export interface UpdateInventoryDrugReq {
@@ -39,6 +41,7 @@ export interface UpdateInventoryDrugReq {
   selling_price?: number;
   alert_threshold?: number | null;
   remark?: string;
+  shelf_no?: string;
 }
 
 export function listInventoryDrugs(params: InventoryDrugListParams) {
@@ -62,6 +65,7 @@ export interface StockInReq {
   purchase_price?: number;
   selling_price?: number;
   alert_threshold?: number | null;
+  shelf_no?: string;
 }
 
 export function stockInDrug(id: number, data: StockInReq) {
@@ -73,6 +77,7 @@ export interface BatchStockInItem {
   quantity: number;
   purchase_price: number;
   selling_price: number;
+  shelf_no?: string;
 }
 
 export interface BatchStockInReq {
