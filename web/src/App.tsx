@@ -21,6 +21,7 @@ import WuyunLiuqi from './pages/wuyun/WuyunLiuqi';
 import ClinicalExperienceList from './pages/clinical-experience/ClinicalExperienceList';
 import DrugList from './pages/inventory/DrugList';
 import SolarTerms from './pages/solar-terms/SolarTerms';
+import YijingList from './pages/yijing/YijingList';
 import InventoryAlert from './pages/inventory/InventoryAlert';
 import type { ReactNode } from 'react';
 
@@ -78,6 +79,7 @@ function AppRoutes() {
         <Route path="wuyun" element={<WuyunLiuqi />} />
         <Route path="clinical-experience" element={<ClinicalExperienceList />} />
         <Route path="solar-terms" element={<SolarTerms />} />
+        <Route path="yijing" element={<YijingList />} />
         <Route path="inventory/drugs" element={<DrugList />} />
         <Route path="inventory/alerts" element={<InventoryAlert />} />
         <Route path="oplogs" element={<OpLogList />} />
