@@ -186,4 +186,5 @@ DeepSeek AI 相关（可选）：
 - [库存管理实施计划](docs/plans/2026-03-13-inventory-management-plan.md)
 - [节气功能设计](docs/plans/2026-03-14-solar-terms-design.md)
 - [节气功能实施计划](docs/plans/2026-03-14-solar-terms-plan.md)
+- [易理卦象功能设计](docs/plans/2026-03-14-yijing-hexagram-design.md)
 - [Codebase 全局上下文](docs/codebase.md)
