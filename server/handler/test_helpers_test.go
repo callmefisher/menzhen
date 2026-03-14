@@ -34,6 +34,7 @@ func setupTestRouter(db *gorm.DB) *gin.Engine {
 	meridianResourceHandler := NewMeridianResourceHandler(db)
 	wuyunLiuqiHandler := NewWuyunLiuqiHandler(db, nil)
 	solarTermHandler := NewSolarTermHandler(db)
+	hexagramHandler := NewHexagramHandler(db)
 
 	deepSeekService := service.NewDeepSeekService(cfg)
 	herbHandler := NewHerbHandler(db, deepSeekService)
@@ -129,6 +130,14 @@ func setupTestRouter(db *gorm.DB) *gin.Engine {
 	solarTerms.GET("", solarTermHandler.List)
 	solarTerms.PUT("/:id", middleware.RequirePermission(db, "role:manage"), solarTermHandler.Update)
 	solarTerms.DELETE("/:id/content", middleware.RequirePermission(db, "role:manage"), solarTermHandler.DeleteContent)
+
+	hexagrams := authed.Group("/hexagrams")
+	hexagrams.GET("", hexagramHandler.List)
+	hexagrams.GET("/trigrams", hexagramHandler.Trigrams)
+	hexagrams.GET("/:id", hexagramHandler.Detail)
+	hexagrams.POST("", middleware.RequirePermission(db, "role:manage"), hexagramHandler.Create)
+	hexagrams.PUT("/:id", middleware.RequirePermission(db, "role:manage"), hexagramHandler.Update)
+	hexagrams.DELETE("/:id", middleware.RequirePermission(db, "role:manage"), hexagramHandler.Delete)
 
 	return r
 }
