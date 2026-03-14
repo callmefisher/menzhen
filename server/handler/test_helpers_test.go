@@ -35,6 +35,7 @@ func setupTestRouter(db *gorm.DB) *gin.Engine {
 	wuyunLiuqiHandler := NewWuyunLiuqiHandler(db, nil)
 	solarTermHandler := NewSolarTermHandler(db)
 	hexagramHandler := NewHexagramHandler(db)
+	billingHandler := NewBillingHandler(db)
 
 	deepSeekService := service.NewDeepSeekService(cfg)
 	herbHandler := NewHerbHandler(db, deepSeekService)
@@ -70,10 +71,14 @@ func setupTestRouter(db *gorm.DB) *gin.Engine {
 	records.PUT("/:id", middleware.RequirePermission(db, "record:update"), recordHandler.Update)
 	records.DELETE("/:id", middleware.RequirePermission(db, "record:delete"), recordHandler.Delete)
 	records.GET("/:id/prescriptions", middleware.RequirePermission(db, "prescription:read"), prescriptionHandler.ListByRecord)
+	records.GET("/:id/billings", middleware.RequirePermission(db, "billing:read"), billingHandler.ListByRecord)
 
 	prescriptions := authed.Group("/prescriptions")
 	prescriptions.POST("", middleware.RequirePermission(db, "prescription:create"), prescriptionHandler.Create)
 	prescriptions.GET("/:id", middleware.RequirePermission(db, "prescription:read"), prescriptionHandler.Detail)
+	prescriptions.GET("/:id/billing", middleware.RequirePermission(db, "billing:read"), billingHandler.GetDetail)
+	prescriptions.POST("/:id/billing", middleware.RequirePermission(db, "billing:create"), billingHandler.Create)
+	prescriptions.POST("/:id/billing/deduct-stock", middleware.RequirePermission(db, "billing:create"), billingHandler.DeductStock)
 
 	herbs := authed.Group("/herbs")
 	herbs.GET("", herbHandler.List)
