@@ -220,7 +220,7 @@ export default function SolarTerms() {
   }
 
   const landmarkTerms = [1, 7, 13, 19];
-  const svgSize = isMobile ? 340 : 480;
+  const svgSize = isMobile ? 380 : 480;
 
   return (
     <div style={{
@@ -234,18 +234,18 @@ export default function SolarTerms() {
       {/* Header */}
       <div style={{ textAlign: 'center', marginBottom: isMobile ? 8 : 16, position: 'relative', zIndex: 1 }}>
         <div style={{
-          fontSize: isMobile ? 22 : 28,
+          fontSize: isMobile ? 30 : 28,
           fontWeight: 700,
           background: 'linear-gradient(135deg, #e8d5b7, #f5e6cc, #d4a574)',
           WebkitBackgroundClip: 'text',
           WebkitTextFillColor: 'transparent',
-          letterSpacing: isMobile ? 6 : 10,
+          letterSpacing: isMobile ? 8 : 10,
           fontFamily: 'serif',
         }}>
           二十四节气
         </div>
         <div style={{
-          fontSize: isMobile ? 11 : 13,
+          fontSize: isMobile ? 15 : 13,
           color: '#6b7280',
           marginTop: 4,
           letterSpacing: 2,
@@ -339,7 +339,7 @@ export default function SolarTerms() {
             const angle = indexToAngle(midIdx);
             const [x, y] = circleXY(angle, RING_RADIUS + LABEL_OFFSET);
             return (
-              <text key={s} x={x} y={y} fill={SEASON_COLORS[s]} fontSize={isMobile ? 14 : 16} fontWeight="bold"
+              <text key={s} x={x} y={y} fill={SEASON_COLORS[s]} fontSize={isMobile ? 18 : 16} fontWeight="bold"
                 textAnchor="middle" dominantBaseline="central" opacity={0.9}
                 style={{ textShadow: `0 0 8px ${SEASON_GLOW[s]}` }}>
                 {s}
@@ -364,7 +364,7 @@ export default function SolarTerms() {
                 {/* Click target */}
                 <circle cx={cx} cy={cy} r={18} fill="transparent" />
 
-                <Tooltip title={`${t.name}  ${t.month}月${t.day}日`}>
+                <Tooltip title={`${t.name}  ${t.month}月${t.day}日`} open={isMobile ? false : undefined}>
                   <circle cx={cx} cy={cy} r={dotRadius} fill={color} opacity={opacity} data-dot=""
                     filter={isCurrent ? 'url(#glow-current)' : isNext ? 'url(#glow-next)' : undefined} />
                 </Tooltip>
@@ -377,7 +377,7 @@ export default function SolarTerms() {
                     {/* Name label with background */}
                     <rect x={cx + 14} y={cy - 18} width={t.name.length * 14 + 8} height={20} rx={4}
                       fill="#ff4d4f30" stroke="#ff4d4f60" strokeWidth={0.5} />
-                    <text x={cx + 18} y={cy - 5} fill={CURRENT_COLOR} fontSize={isMobile ? 12 : 13} fontWeight="bold">
+                    <text x={cx + 18} y={cy - 5} fill={CURRENT_COLOR} fontSize={isMobile ? 16 : 13} fontWeight="bold">
                       {t.name}
                     </text>
                   </>
@@ -391,7 +391,7 @@ export default function SolarTerms() {
                       <animateTransform attributeName="transform" type="rotate"
                         from={`0 ${cx} ${cy}`} to={`360 ${cx} ${cy}`} dur="8s" repeatCount="indefinite" />
                     </circle>
-                    <text x={cx + 14} y={cy - 4} fill={NEXT_COLOR} fontSize={isMobile ? 11 : 12} opacity={0.9}
+                    <text x={cx + 14} y={cy - 4} fill={NEXT_COLOR} fontSize={isMobile ? 15 : 12} opacity={0.9}
                       fontWeight="500">{t.name}</text>
                   </>
                 )}
@@ -401,8 +401,8 @@ export default function SolarTerms() {
                   const isLM = isLandmark;
                   // All labels outside the ring; landmarks further out
                   const labelR = isLM
-                    ? RING_RADIUS + (isMobile ? 28 : 32)
-                    : RING_RADIUS + (isMobile ? 16 : 18);
+                    ? RING_RADIUS + (isMobile ? 34 : 32)
+                    : RING_RADIUS + (isMobile ? 20 : 18);
                   const [lx, ly] = circleXY(angle, labelR);
                   const deg = (t.order_index - 1) * 15 - 90;
                   const anchor = Math.abs(deg + 90) < 10 || Math.abs(deg - 90) < 10 ? 'middle'
@@ -410,7 +410,7 @@ export default function SolarTerms() {
                   return (
                     <text x={lx} y={ly}
                       fill={isLM ? SEASON_COLORS[t.season] : '#9ca3af'}
-                      fontSize={isLM ? (isMobile ? 11 : 13) : (isMobile ? 10 : 12)}
+                      fontSize={isLM ? (isMobile ? 14 : 13) : (isMobile ? 12 : 12)}
                       textAnchor={anchor} dominantBaseline="central"
                       opacity={isLM ? 0.85 : 0.6} fontWeight={isLM ? '600' : '400'}>
                       {t.name}
@@ -433,11 +433,11 @@ export default function SolarTerms() {
 
           {currentTerm && (
             <g style={{ animation: 'st-float 4s ease-in-out infinite' }}>
-              <text x={CENTER} y={CENTER - 30} fill="#e8d5b7" fontSize={isMobile ? 30 : 36} fontWeight="bold"
+              <text x={CENTER} y={CENTER - 30} fill="#e8d5b7" fontSize={isMobile ? 40 : 36} fontWeight="bold"
                 textAnchor="middle" style={{ fontFamily: 'serif' }}>
                 {currentTerm.name}
               </text>
-              <text x={CENTER} y={CENTER - 8} fill="#8b95a8" fontSize={isMobile ? 11 : 12} textAnchor="middle">
+              <text x={CENTER} y={CENTER - 8} fill="#8b95a8" fontSize={isMobile ? 14 : 12} textAnchor="middle">
                 {formatDateRange(currentTerm)}
               </text>
               {/* Decorative divider */}
@@ -445,12 +445,12 @@ export default function SolarTerms() {
               <circle cx={CENTER - 44} cy={CENTER + 6} r={1.5} fill="#e8d5b740" />
               <circle cx={CENTER + 44} cy={CENTER + 6} r={1.5} fill="#e8d5b740" />
 
-              <text x={CENTER} y={CENTER + 28} fill="#d4d4d8" fontSize={isMobile ? 14 : 16} fontWeight="600" textAnchor="middle"
+              <text x={CENTER} y={CENTER + 28} fill="#d4d4d8" fontSize={isMobile ? 18 : 16} fontWeight="600" textAnchor="middle"
                 letterSpacing={2}>
                 第 {currentIdx} / 24 节气
               </text>
               {nextTerm && (
-                <text x={CENTER} y={CENTER + 50} fill={NEXT_COLOR} fontSize={isMobile ? 11 : 12} textAnchor="middle" opacity={0.9}>
+                <text x={CENTER} y={CENTER + 50} fill={NEXT_COLOR} fontSize={isMobile ? 14 : 12} textAnchor="middle" opacity={0.9}>
                   {nextTerm.name} · {daysToNext}天后
                 </text>
               )}
@@ -463,7 +463,7 @@ export default function SolarTerms() {
       <div style={{
         textAlign: 'center',
         color: '#6b7280',
-        fontSize: isMobile ? 11 : 12,
+        fontSize: isMobile ? 14 : 12,
         margin: '8px 0 0',
         position: 'relative',
         zIndex: 1,
