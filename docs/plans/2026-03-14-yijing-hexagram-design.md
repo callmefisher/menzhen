@@ -20,10 +20,10 @@
 | `upper_trigram` | varchar(10) | index | 上卦（乾/坤/震/巽/坎/离/艮/兑） |
 | `lower_trigram` | varchar(10) | index | 下卦 |
 | `judgment` | text | | 卦辞 |
-| `yao_texts` | JSON | | 六爻爻辞 `[{position:1,name:"初九",text:"潜龙勿用"},...]` |
+| `yao_texts` | JSON | | 六爻爻辞 `[{position:1,name:"初九",text:"潜龙勿用"},...]`，Go 类型 `datatypes.JSON` |
 | `commentary` | text | | 传文（彖传、象传等，Markdown 格式） |
 | `tcm_application` | text | | 中医应用阐述（Markdown 格式） |
-| `related_hexagrams` | JSON | | 关联卦 `{mutual:"既济",opposite:"坤",reverse:"乾"}` |
+| `related_hexagrams` | JSON | | 关联卦 `{mutual:"既济",opposite:"坤",reverse:"乾"}`，Go 类型 `datatypes.JSON` |
 | `description` | text | | 总体描述/注解 |
 | `created_at` | datetime | auto | 创建时间 |
 | `updated_at` | datetime | auto | 更新时间 |
@@ -35,11 +35,11 @@
 | 方法 | 路径 | 权限 | 说明 |
 |------|------|------|------|
 | GET | `/api/v1/hexagrams` | 认证即可 | 列表（name/upper_trigram/lower_trigram 搜索 + 分页） |
-| GET | `/api/v1/hexagrams/trigrams` | 认证即可 | 八卦分类列表 |
+| GET | `/api/v1/hexagrams/trigrams` | 认证即可 | 八卦分类列表（返回 `["乾","坤","震","巽","坎","离","艮","兑"]` 字符串数组） |
 | GET | `/api/v1/hexagrams/:id` | 认证即可 | 单个卦象详情 |
-| POST | `/api/v1/hexagrams` | `hexagram:manage` | 创建 |
-| PUT | `/api/v1/hexagrams/:id` | `hexagram:manage` | 更新 |
-| DELETE | `/api/v1/hexagrams/:id` | `hexagram:manage` | 删除 |
+| POST | `/api/v1/hexagrams` | `role:manage` | 创建 |
+| PUT | `/api/v1/hexagrams/:id` | `role:manage` | 更新 |
+| DELETE | `/api/v1/hexagrams/:id` | `role:manage` | 删除 |
 
 ### 查询参数（GET /hexagrams）
 
@@ -55,32 +55,38 @@
 
 ```json
 {
-  "total": 64,
-  "items": [
-    {
-      "id": 1,
-      "number": 1,
-      "name": "乾",
-      "symbol": "☰☰",
-      "upper_trigram": "乾",
-      "lower_trigram": "乾",
-      "judgment": "元亨利贞",
-      "yao_texts": [
-        {"position": 1, "name": "初九", "text": "潜龙勿用"},
-        {"position": 2, "name": "九二", "text": "见龙在田，利见大人"},
-        {"position": 3, "name": "九三", "text": "君子终日乾乾，夕惕若厉，无咎"},
-        {"position": 4, "name": "九四", "text": "或跃在渊，无咎"},
-        {"position": 5, "name": "九五", "text": "飞龙在天，利见大人"},
-        {"position": 6, "name": "上九", "text": "亢龙有悔"}
-      ],
-      "commentary": "彖曰：大哉乾元...",
-      "tcm_application": "",
-      "related_hexagrams": {"mutual": "", "opposite": "坤", "reverse": "乾"},
-      "description": "",
-      "created_at": "2026-03-14T00:00:00Z",
-      "updated_at": "2026-03-14T00:00:00Z"
-    }
-  ]
+  "code": 0,
+  "message": "success",
+  "data": {
+    "list": [
+      {
+        "id": 1,
+        "number": 1,
+        "name": "乾",
+        "symbol": "☰☰",
+        "upper_trigram": "乾",
+        "lower_trigram": "乾",
+        "judgment": "元亨利贞",
+        "yao_texts": [
+          {"position": 1, "name": "初九", "text": "潜龙勿用"},
+          {"position": 2, "name": "九二", "text": "见龙在田，利见大人"},
+          {"position": 3, "name": "九三", "text": "君子终日乾乾，夕惕若厉，无咎"},
+          {"position": 4, "name": "九四", "text": "或跃在渊，无咎"},
+          {"position": 5, "name": "九五", "text": "飞龙在天，利见大人"},
+          {"position": 6, "name": "上九", "text": "亢龙有悔"}
+        ],
+        "commentary": "彖曰：大哉乾元...",
+        "tcm_application": "",
+        "related_hexagrams": {"mutual": "", "opposite": "坤", "reverse": "乾"},
+        "description": "",
+        "created_at": "2026-03-14T00:00:00Z",
+        "updated_at": "2026-03-14T00:00:00Z"
+      }
+    ],
+    "total": 64,
+    "page": 1,
+    "size": 20
+  }
 }
 ```
 
@@ -93,7 +99,7 @@
 ### 列表页
 
 **桌面端**：
-- 顶部：搜索栏（卦名输入 + 上卦下拉 + 下卦下拉） + 新增按钮（需 `hexagram:manage` 权限）
+- 顶部：搜索栏（卦名输入 + 上卦下拉 + 下卦下拉） + 新增按钮（需 `role:manage` 权限）
 - 主体：卡片网格（4 列，`gutter: [16, 16]`）
 - 每卡：卦象符号（大号 32px）+ 卦名 + 第 N 卦 + 上下卦标签
 - 底部：Pagination 分页器
@@ -116,7 +122,7 @@ Drawer 内部分 Tab：
 4. **中医应用** — Markdown 渲染
 5. **关联卦** — 互卦/错卦/综卦（可点击切换到对应卦的详情）
 
-右上角操作按钮：编辑 / 删除（需 `hexagram:manage` 权限）
+右上角操作按钮：编辑 / 删除（需 `role:manage` 权限）
 
 ### 编辑模式
 
@@ -134,11 +140,11 @@ Drawer 内部分 Tab：
 
 ## 权限
 
-新增权限码：
-- `hexagram:read` — 查看卦象（可选，默认认证即可读取）
-- `hexagram:manage` — 创建/编辑/删除卦象
+复用现有权限码 `role:manage`（与 herbs/pulses/solar-terms 等全局数据一致）。
+- 读取：认证即可，无需额外权限
+- 写入/删除：需 `role:manage` 权限
 
-在 `seed.go` 中新增以上权限。
+无需在 `seed.go` 中新增权限。
 
 ## Seed 数据
 
@@ -160,28 +166,40 @@ Drawer 内部分 Tab：
 - `related_hexagrams`（关联卦）
 - `description`（描述）
 
+### Seed 实现方式
+
+64 卦数据量较大，使用 Go `embed` 嵌入 JSON 文件 (`server/database/hexagram_seed.json`) 而非在 `seed.go` 中硬编码，保持代码整洁。
+
+### 删除行为
+
+- 硬删除（无 soft delete，与 pulses/herbs 一致）
+- 无级联引用，直接 DELETE
+- 已删除的预置卦象不会在重启时重新创建（seed 使用"已存在则跳过"模式）
+
 ## 文件清单
 
 ### 后端（Go）
 1. `server/model/hexagram.go` — 数据模型
 2. `server/service/hexagram.go` — 业务逻辑
 3. `server/handler/hexagram.go` — HTTP 处理器
-4. `server/database/seed.go` — 新增权限 + 64 卦 seed 数据
-5. `server/database/database.go` — AutoMigrate 新增 Hexagram
-6. `server/router/router.go` — 注册路由
+4. `server/database/hexagram_seed.json` — 64 卦预置数据（JSON 嵌入）
+5. `server/database/seed.go` — 新增 seedHexagrams() 调用
+6. `server/database/database.go` — AutoMigrate 新增 Hexagram
+7. `server/router/router.go` — 注册路由
 
 ### 前端（React + TypeScript）
-7. `web/src/api/yijing.ts` — API 客户端
-8. `web/src/pages/yijing/YijingList.tsx` — 列表页（卡片网格 + 搜索 + 分页）
-9. `web/src/pages/yijing/HexagramDrawer.tsx` — 详情抽屉（Tab + 编辑模式）
-10. `web/src/App.tsx` — 添加路由
-11. `web/src/components/Layout.tsx` — 添加菜单项
+8. `web/src/api/yijing.ts` — API 客户端
+9. `web/src/pages/yijing/YijingList.tsx` — 列表页（卡片网格 + 搜索 + 分页）
+10. `web/src/pages/yijing/HexagramDrawer.tsx` — 详情抽屉（Tab + 编辑模式）
+11. `web/src/App.tsx` — 添加路由
+12. `web/src/components/Layout.tsx` — 添加菜单项
 
 ### 测试
-12. `server/service/hexagram_test.go` — Service 层测试
-13. `server/handler/hexagram_handler_test.go` — Handler 层测试
-14. `web/src/pages/yijing/__tests__/YijingList.test.tsx` — 前端测试
+13. `server/service/hexagram_test.go` — Service 层测试
+14. `server/handler/hexagram_handler_test.go` — Handler 层测试
+15. `web/src/pages/yijing/__tests__/YijingList.test.tsx` — 列表页测试
+16. `web/src/pages/yijing/__tests__/HexagramDrawer.test.tsx` — 抽屉组件测试
 
 ### 文档
-15. `docs/codebase.md` — 更新数据模型和 API 路由
-16. `CLAUDE.md` — 引用设计文档
+17. `docs/codebase.md` — 更新数据模型和 API 路由
+18. `CLAUDE.md` — 引用设计文档
