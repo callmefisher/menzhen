@@ -10,6 +10,7 @@ type PrescriptionItem struct {
 	Dosage         string    `gorm:"column:dosage;type:varchar(50)" json:"dosage"`
 	SortOrder      int       `gorm:"column:sort_order;default:0" json:"sort_order"`
 	Notes          string    `gorm:"column:notes;type:varchar(200)" json:"notes"`
+	Category       string    `gorm:"column:category;type:varchar(10);not null;default:'herb'" json:"category"`
 	CreatedAt      time.Time `json:"created_at"`
 }
 

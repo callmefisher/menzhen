@@ -20,6 +20,7 @@ type CreateInventoryDrugRequest struct {
 	SellingPrice   float64  `json:"selling_price"`
 	AlertThreshold *float64 `json:"alert_threshold"`
 	Remark         string   `json:"remark"`
+	ShelfNo        string   `json:"shelf_no"`
 }
 
 // UpdateInventoryDrugRequest is the input for updating an existing inventory drug.
@@ -32,6 +33,7 @@ type UpdateInventoryDrugRequest struct {
 	SellingPrice   *float64 `json:"selling_price"`
 	AlertThreshold *float64 `json:"alert_threshold"`
 	Remark         *string  `json:"remark"`
+	ShelfNo        *string  `json:"shelf_no"`
 }
 
 // InventoryDrugService handles inventory drug business logic.
@@ -86,6 +88,7 @@ func (s *InventoryDrugService) Create(tenantID uint64, req *CreateInventoryDrugR
 		SellingPrice:   req.SellingPrice,
 		AlertThreshold: req.AlertThreshold,
 		Remark:         req.Remark,
+		ShelfNo:        req.ShelfNo,
 	}
 
 	if err := s.DB.Create(&drug).Error; err != nil {
@@ -137,6 +140,9 @@ func (s *InventoryDrugService) Update(tenantID, id uint64, req *UpdateInventoryD
 	if req.Remark != nil {
 		updates["remark"] = *req.Remark
 	}
+	if req.ShelfNo != nil {
+		updates["shelf_no"] = *req.ShelfNo
+	}
 
 	if len(updates) > 0 {
 		if err := s.DB.Model(&drug).Updates(updates).Error; err != nil {
@@ -176,6 +182,7 @@ type StockInItem struct {
 	Quantity      float64 `json:"quantity" binding:"required,gt=0"`
 	PurchasePrice float64 `json:"purchase_price"`
 	SellingPrice  float64 `json:"selling_price"`
+	ShelfNo       string  `json:"shelf_no"`
 }
 
 // BatchStockInRequest is the input for batch stocking in drugs.
@@ -209,6 +216,7 @@ func (s *InventoryDrugService) BatchStockIn(tenantID uint64, req *BatchStockInRe
 				PurchasePrice:  item.PurchasePrice,
 				SellingPrice:   item.SellingPrice,
 				AlertThreshold: req.AlertThreshold,
+				ShelfNo:        item.ShelfNo,
 			}
 			if err := s.DB.Create(&newDrug).Error; err != nil {
 				return nil, err
@@ -227,6 +235,9 @@ func (s *InventoryDrugService) BatchStockIn(tenantID uint64, req *BatchStockInRe
 			if item.SellingPrice > 0 {
 				updates["selling_price"] = item.SellingPrice
 			}
+			if item.ShelfNo != "" {
+				updates["shelf_no"] = item.ShelfNo
+			}
 			if err := s.DB.Model(&drug).Updates(updates).Error; err != nil {
 				return nil, err
 			}
@@ -243,6 +254,7 @@ type StockInRequest struct {
 	PurchasePrice  float64  `json:"purchase_price"`
 	SellingPrice   float64  `json:"selling_price"`
 	AlertThreshold *float64 `json:"alert_threshold"`
+	ShelfNo        *string  `json:"shelf_no"`
 }
 
 // StockInDrugResult holds old and new drug data for oplog.
@@ -278,6 +290,9 @@ func (s *InventoryDrugService) StockIn(tenantID, id uint64, req *StockInRequest)
 		} else {
 			updates["alert_threshold"] = *req.AlertThreshold
 		}
+	}
+	if req.ShelfNo != nil {
+		updates["shelf_no"] = *req.ShelfNo
 	}
 
 	if err := s.DB.Model(&drug).Updates(updates).Error; err != nil {

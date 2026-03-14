@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-03-13（移动端优化：PatientDetail Timeline单栏+音视频全宽、PatientForm/Login/Register自适应、TenantList/UserList/RoleList卡片列表、MeridianPanel触摸优化）
+> 最后更新：2026-03-14（新增：节气养生功能 solar_terms 表+API+页面）
 
 ---
 
@@ -109,9 +109,9 @@ menzhen/
 │       ├── components/
 │       │   ├── Layout.tsx           # 侧边栏 + 顶部导航布局（移动端 Sider→Drawer + 汉堡按钮）
 │       │   ├── FileUpload.tsx       # 文件上传组件
-│       │   ├── PrescriptionModal.tsx  # 处方弹窗（开方/编辑，含药物详情查看，医嘱预填分行，按方开药自动追加方剂备注，选方后横排展示功效/主治/备注，编辑模式自动根据方剂名加载详情，开方时显示库存提示）
+│       │   ├── PrescriptionModal.tsx  # 处方弹窗（开方/编辑，草药+中成药双区域，含药物详情查看，医嘱预填分行，按方开药自动追加方剂备注，选方后横排展示功效/主治/备注，编辑模式自动根据方剂名加载详情，开方时显示库存提示，中成药自动查询方剂功效/主治和库存）
 │       │   ├── HerbDetailModal.tsx   # 通用中药详情弹窗（方剂/处方复用）
-│       │   ├── PrescriptionPrint.tsx  # 处方打印（药物每10味一列多列并排，医嘱分行）
+│       │   ├── PrescriptionPrint.tsx  # 处方打印（草药每10味一列多列并排，中成药单独一段，医嘱分行）
 │       │   └── __tests__/           # 组件测试
 │       ├── pages/
 │       │   ├── Login.tsx            # 登录页（登录后跳转患者管理，移动端标题/图标尺寸自适应）
@@ -123,7 +123,7 @@ menzhen/
 │       │   │   └── PatientForm.tsx  # 移动端表单全宽 + Modal 自适应
 │       │   ├── records/             # 诊疗记录
 │       │   │   ├── RecordList.tsx
-│       │   │   └── RecordForm.tsx   # 含主诉(textarea) + 脉象(搜索下拉+AI回退+详情卡片) + 舌象(图片上传+描述+AI分析) + AI 辩证论治 Drawer（rehype-raw + remark-gfm 表格渲染）+ 诊断模板自动填充患者性别/年龄/生日/主诉/脉象 + 新建记录保存时自动持久化AI结果 + 处方区域全宽浅灰底色 + 医嘱分行展示 + 移动端诊断标签 Space wrap
+│       │   │   └── RecordForm.tsx   # 含主诉(textarea) + 脉象(搜索下拉+AI回退+详情卡片) + 舌象(图片上传+描述+AI分析) + AI 辩证论治 Drawer（rehype-raw + remark-gfm 表格渲染）+ 诊断模板自动填充患者性别/年龄/生日/主诉/脉象/舌象 + 新建记录保存时自动持久化AI结果 + 处方区域全宽浅灰底色 + 医嘱分行展示 + 处方按herb/patent分组展示 + 移动端诊断标签 Space wrap
 │       │   ├── herbs/               # 中药查询
 │       │   │   ├── HerbSearch.tsx   # 含分类筛选下拉框 + 管理员行内编辑 + AI重查询按钮 + 默认加载全部数据 + 药名列宽 160px
 │       │   │   └── __tests__/
@@ -155,11 +155,13 @@ menzhen/
 │       │   ├── wuyun/               # 五运六气
 │       │   │   ├── WuyunLiuqi.tsx   # 五运六气页面（年份选择+AI流式查询SSE+Markdown渲染+编辑/删除）
 │       │   │   └── NotesPanel.tsx   # 笔记侧边栏（移动端全屏宽度自适应 + useIsMobile 响应式）
+│       │   ├── solar-terms/         # 节气养生
+│       │   │   └── SolarTerms.tsx   # 节气页面（24节气列表+养生内容编辑）
 │       │   ├── clinical-experience/ # 临床经验集
 │       │   │   └── ClinicalExperienceList.tsx # 临床经验列表（分页+搜索+分类筛选，管理员可新增/编辑/删除，AutoComplete分类选择）
 │       │   ├── inventory/             # 库存管理
-│       │   │   ├── DrugList.tsx       # 药物库存CRUD（分页+搜索+分类筛选，低库存红色高亮）
-│       │   │   └── InventoryAlert.tsx # 库存预警（前端定时扫描，屏蔽/全局阈值配置，存localStorage）
+│       │   │   ├── DrugList.tsx       # 药物库存CRUD（分页+搜索+分类筛选，低库存红色高亮，货架号显示/编辑，批量入库支持货架号列）
+│       │   │   └── InventoryAlert.tsx # 库存预警（前端定时扫描，屏蔽/全局阈值配置，存localStorage，显示货架号便于定位补货）
 │       │   └── settings/            # 系统设置
 │       │       ├── UserList.tsx     # 移动端卡片列表 + Modal 自适应
 │       │       ├── RoleList.tsx     # 移动端卡片列表 + Modal 自适应
@@ -296,6 +298,22 @@ menzhen/
 | `created_at` | `time.Time` | 创建时间 |
 | `updated_at` | `time.Time` | 更新时间 |
 
+#### `solar_terms` — 节气
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | `uint64` | 主键 |
+| `name` | `varchar(100)` | 节气名称 |
+| `season` | `varchar(20)` | 所属季节 |
+| `order_index` | `int` | 排序序号 |
+| `month` | `int` | 起始月份 |
+| `day` | `int` | 起始日 |
+| `end_month` | `int` | 结束月份 |
+| `end_day` | `int` | 结束日 |
+| `content` | `text` | 养生内容 |
+| `created_at` | `time.Time` | 创建时间 |
+| `updated_at` | `time.Time` | 更新时间 |
+
 #### `role_permissions` — 角色-权限关联表
 
 | 字段 | 类型 | 说明 |
@@ -418,6 +436,7 @@ menzhen/
 | `dosage` | `varchar(50)` | 用量 |
 | `sort_order` | `int` | 排序号（默认 0） |
 | `notes` | `varchar(200)` | 备注 |
+| `category` | `varchar(10)` | 分类：herb=草药, patent=中成药（默认 herb） |
 | `created_at` | `time.Time` | 创建时间 |
 
 #### `op_logs` — 操作日志（无软删除）
@@ -458,6 +477,7 @@ menzhen/
 | `selling_price` | `decimal(10,2)` | 出售价（同上） |
 | `alert_threshold` | `decimal(10,2)` | 预警阈值（NULL=用全局默认） |
 | `remark` | `text` | 备注 |
+| `shelf_no` | `varchar(20)` | 货架号（默认 H1） |
 
 ---
 
@@ -566,6 +586,14 @@ menzhen/
 | POST | `/api/v1/clinical-experiences` | `role:manage` | 新增临床经验 |
 | PUT | `/api/v1/clinical-experiences/:id` | `role:manage` | 更新临床经验 |
 | DELETE | `/api/v1/clinical-experiences/:id` | `role:manage` | 删除临床经验 |
+
+#### 节气（全局数据）
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| GET | `/api/v1/solar-terms` | - | 获取全部24节气 |
+| PUT | `/api/v1/solar-terms/:id` | `role:manage` | 更新节气养生内容 |
+| DELETE | `/api/v1/solar-terms/:id/content` | `role:manage` | 清空节气养生内容 |
 
 #### 处方管理（租户隔离）
 

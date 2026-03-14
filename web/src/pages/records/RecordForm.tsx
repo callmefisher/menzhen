@@ -110,7 +110,6 @@ export default function RecordForm() {
   // Debounce timer ref for patient search
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Debounce timer ref for pulse search
-  const pulseSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // AI analysis state
   const [aiAnalyzing, setAiAnalyzing] = useState(false);
@@ -141,6 +140,7 @@ export default function RecordForm() {
   const watchedPatientId = Form.useWatch('patient_id', form);
   const watchedChiefComplaint = Form.useWatch('chief_complaint', form);
   const watchedPulseName = Form.useWatch('pulse_name', form);
+  const watchedTongueDescription = Form.useWatch('tongue_description', form);
   const watchedNotes = Form.useWatch('notes', form);
   const watchedAttachments = Form.useWatch('attachments', form);
 
@@ -168,11 +168,12 @@ export default function RecordForm() {
     updated = updated.replace(/^出生年月：.*$/m, `出生年月：${birthdayText}`);
     updated = updated.replace(/^主诉：.*$/m, `主诉：${watchedChiefComplaint || ''}`);
     updated = updated.replace(/^脉象：.*$/m, `脉象：${watchedPulseName || ''}`);
+    updated = updated.replace(/^舌象：.*$/m, `舌象：${watchedTongueDescription || ''}`);
 
     if (updated !== diagnosis) {
       form.setFieldValue('diagnosis', updated);
     }
-  }, [form, patients, watchedPatientId, watchedChiefComplaint, watchedPulseName]);
+  }, [form, patients, watchedPatientId, watchedChiefComplaint, watchedPulseName, watchedTongueDescription]);
 
   // Search patients by name
   const searchPatients = useCallback(async (name?: string) => {
@@ -400,14 +401,6 @@ export default function RecordForm() {
       message.error('AI 查询失败');
     } finally {
       setPulseAiQuerying(false);
-    }
-  };
-
-  const handlePulseSelect = (value: number) => {
-    const pulse = pulseOptions.find(p => p.id === value);
-    if (pulse) {
-      setSelectedPulse(pulse);
-      form.setFieldsValue({ pulse_name: pulse.name });
     }
   };
 
@@ -763,6 +756,7 @@ export default function RecordForm() {
 出生年月：
 主诉：
 脉象：
+舌象：
 ---
 1. 大便：
 2. 小便：
@@ -851,64 +845,89 @@ export default function RecordForm() {
           </div>
 
         <Form.Item label="脉象" style={{ marginBottom: selectedPulse ? 8 : 16 }}>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <Form.Item name="pulse_id" noStyle>
-              <Select
-                showSearch
-                placeholder="输入脉象名称后点击查询"
-                filterOption={false}
-                onSearch={(value) => {
-                  setPulseSearchText(value);
-                  if (pulseSearchTimerRef.current) clearTimeout(pulseSearchTimerRef.current);
-                  if (value.trim()) {
-                    pulseSearchTimerRef.current = setTimeout(() => searchPulses(value), 300);
-                  } else {
-                    setPulseOptions([]);
-                  }
-                }}
-                onChange={handlePulseSelect}
-                loading={pulseLoading}
-                allowClear
-                onClear={() => {
-                  setSelectedPulse(null);
-                  form.setFieldsValue({ pulse_name: '' });
-                  setPulseSearchText('');
-                  setPulseOptions([]);
-                }}
-                notFoundContent={
-                  pulseLoading ? (
-                    <Spin size="small" />
-                  ) : pulseSearchText ? (
-                    <div style={{ textAlign: 'center', padding: '8px 0' }}>
-                      <div style={{ color: '#999', marginBottom: 8 }}>未找到匹配脉象</div>
-                      <Button
-                        type="link"
-                        icon={<SearchOutlined />}
-                        loading={pulseAiQuerying}
-                        onClick={handlePulseAiQuery}
-                      >
-                        从 AI 查询
-                      </Button>
-                    </div>
-                  ) : '输入关键字后点击查询'
-                }
-                options={pulseOptions.map(p => ({
-                  value: p.id,
-                  label: `${p.name}${p.category ? ` (${p.category})` : ''}`,
-                }))}
-                style={{ flex: 1 }}
-              />
-            </Form.Item>
-            <Button
-              icon={<SearchOutlined />}
-              loading={pulseLoading}
-              onClick={() => searchPulses(pulseSearchText)}
-              disabled={!pulseSearchText.trim()}
+          {selectedPulse ? (
+            /* 状态3: 已选中 — 显示选中标签 */
+            <Tag
+              closable
+              onClose={() => {
+                setSelectedPulse(null);
+                setPulseSearchText('');
+                setPulseOptions([]);
+                form.setFieldsValue({ pulse_id: undefined, pulse_name: '' });
+              }}
+              color="blue"
+              style={{ fontSize: 14, padding: '4px 10px', lineHeight: '22px' }}
             >
-              查询
-            </Button>
-          </div>
+              {selectedPulse.name}
+              {selectedPulse.category && ` (${selectedPulse.category})`}
+            </Tag>
+          ) : pulseOptions.length > 0 ? (
+            /* 状态2: 有搜索结果 — 只显示结果标签，隐藏输入框 */
+            <div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                {pulseOptions.map(p => (
+                  <Tag
+                    key={p.id}
+                    color="processing"
+                    style={{ cursor: 'pointer', fontSize: 13, padding: '2px 10px' }}
+                    onClick={() => {
+                      setSelectedPulse(p);
+                      setPulseSearchText(p.name);
+                      form.setFieldsValue({ pulse_id: p.id, pulse_name: p.name });
+                      setPulseOptions([]);
+                    }}
+                  >
+                    {p.name}{p.category ? ` (${p.category})` : ''}
+                  </Tag>
+                ))}
+                <Button
+                  type="link"
+                  size="small"
+                  onClick={() => { setPulseOptions([]); setPulseSearchText(''); }}
+                  style={{ fontSize: 12, padding: 0 }}
+                >
+                  重新搜索
+                </Button>
+              </div>
+            </div>
+          ) : (
+            /* 状态1: 初始/无结果 — 显示搜索输入框 */
+            <>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Input
+                  value={pulseSearchText}
+                  onChange={(e) => setPulseSearchText(e.target.value)}
+                  onPressEnter={() => pulseSearchText.trim() && searchPulses(pulseSearchText)}
+                  placeholder="输入脉象名称后点击查询"
+                  allowClear
+                  style={{ flex: 1 }}
+                />
+                <Button
+                  icon={<SearchOutlined />}
+                  loading={pulseLoading}
+                  onClick={() => searchPulses(pulseSearchText)}
+                  disabled={!pulseSearchText.trim()}
+                >
+                  查询
+                </Button>
+              </div>
+              {pulseSearchText && !pulseLoading && (
+                <div style={{ textAlign: 'center', padding: '8px 0' }}>
+                  <div style={{ color: '#999', marginBottom: 8 }}>未找到匹配脉象</div>
+                  <Button
+                    type="link"
+                    icon={<SearchOutlined />}
+                    loading={pulseAiQuerying}
+                    onClick={handlePulseAiQuery}
+                  >
+                    从 AI 查询
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
         </Form.Item>
+        <Form.Item name="pulse_id" hidden><Input /></Form.Item>
         <Form.Item name="pulse_name" hidden>
           <Input />
         </Form.Item>
@@ -920,16 +939,13 @@ export default function RecordForm() {
             background: '#f6f8fa',
             borderRadius: 8,
             border: '1px solid #e8e8e8',
-            fontSize: 14,
+            fontSize: 13,
             lineHeight: 1.8,
+            color: '#555',
           }}>
-            <div style={{ marginBottom: 4 }}>
-              <strong>{selectedPulse.name}</strong>
-              {selectedPulse.category && <Tag color="blue" style={{ marginLeft: 8 }}>{selectedPulse.category}</Tag>}
-            </div>
-            {selectedPulse.description && <div><span style={{ color: '#666' }}>特征：</span>{selectedPulse.description}</div>}
-            {selectedPulse.clinical_meaning && <div><span style={{ color: '#666' }}>临床意义：</span>{selectedPulse.clinical_meaning}</div>}
-            {selectedPulse.common_conditions && <div><span style={{ color: '#666' }}>常见病症：</span>{selectedPulse.common_conditions}</div>}
+            {selectedPulse.description && <div><span style={{ color: '#888' }}>特征：</span>{selectedPulse.description}</div>}
+            {selectedPulse.clinical_meaning && <div><span style={{ color: '#888' }}>临床意义：</span>{selectedPulse.clinical_meaning}</div>}
+            {selectedPulse.common_conditions && <div><span style={{ color: '#888' }}>常见病症：</span>{selectedPulse.common_conditions}</div>}
           </div>
         )}
 
@@ -1255,7 +1271,7 @@ export default function RecordForm() {
                     }
                   >
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px', lineHeight: '26px' }}>
-                      {(item.items || []).map((herb) => (
+                      {(item.items || []).filter((h) => !h.category || h.category === 'herb').map((herb) => (
                         <span key={herb.id} style={{ whiteSpace: 'nowrap' }}>
                           <span>{herb.herb_name}</span>
                           <span style={{ color: '#1677ff', marginLeft: 4 }}>{herb.dosage}g</span>
@@ -1263,6 +1279,19 @@ export default function RecordForm() {
                         </span>
                       ))}
                     </div>
+                    {(item.items || []).some((h) => h.category === 'patent') && (
+                      <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px dashed #e8e8e8' }}>
+                        <span style={{ fontSize: 12, color: '#888', marginRight: 8 }}>中成药：</span>
+                        {(item.items || []).filter((h) => h.category === 'patent').map((patent) => (
+                          <span key={patent.id} style={{ whiteSpace: 'nowrap', marginRight: 12 }}>
+                            <span style={{ color: '#722ed1' }}>[成药]</span>
+                            <span style={{ marginLeft: 2 }}>{patent.herb_name}</span>
+                            <span style={{ color: '#1677ff', marginLeft: 4 }}>{patent.dosage}盒</span>
+                            {patent.notes && <span style={{ color: '#999', marginLeft: 2 }}>({patent.notes})</span>}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     {item.notes && (
                       <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed #f0f0f0', color: '#666', fontSize: 13 }}>
                         <div style={{ marginBottom: 2 }}>医嘱：</div>

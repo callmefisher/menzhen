@@ -246,3 +246,99 @@ func TestInventoryDrugService_StockIn_NotFound(t *testing.T) {
 	_, err := svc.StockIn(tenantID, 99999, req)
 	assert.ErrorIs(t, err, service.ErrInventoryDrugNotFound)
 }
+
+func TestInventoryDrugService_Create_WithShelfNo(t *testing.T) {
+	svc, tenantID, _ := setupInventoryDrugService(t)
+
+	req := &service.CreateInventoryDrugRequest{
+		Name:     "白术",
+		Category: "herb",
+		Stock:    300,
+		ShelfNo:  "A3",
+	}
+	drug, err := svc.Create(tenantID, req)
+	assert.NoError(t, err)
+	assert.Equal(t, "A3", drug.ShelfNo)
+}
+
+func TestInventoryDrugService_Create_DefaultShelfNo(t *testing.T) {
+	svc, tenantID, _ := setupInventoryDrugService(t)
+
+	req := &service.CreateInventoryDrugRequest{
+		Name:     "陈皮",
+		Category: "herb",
+		Stock:    200,
+	}
+	drug, err := svc.Create(tenantID, req)
+	assert.NoError(t, err)
+	// Default shelf_no should be H1 (from GORM default)
+	assert.Equal(t, "H1", drug.ShelfNo)
+}
+
+func TestInventoryDrugService_Update_ShelfNo(t *testing.T) {
+	svc, tenantID, _ := setupInventoryDrugService(t)
+	seeded := seedInventoryDrugs(t, svc, tenantID)
+
+	newShelf := "B2"
+	req := &service.UpdateInventoryDrugRequest{
+		ShelfNo: &newShelf,
+	}
+
+	oldDrug, newDrug, err := svc.Update(tenantID, seeded[0].ID, req)
+	assert.NoError(t, err)
+	assert.Equal(t, "H1", oldDrug.ShelfNo)
+	assert.Equal(t, "B2", newDrug.ShelfNo)
+}
+
+func TestInventoryDrugService_BatchStockIn_WithShelfNo(t *testing.T) {
+	svc, tenantID, _ := setupInventoryDrugService(t)
+
+	req := &service.BatchStockInRequest{
+		Items: []service.StockInItem{
+			{Name: "新药C", Quantity: 100, ShelfNo: "C1"},
+		},
+	}
+
+	result, err := svc.BatchStockIn(tenantID, req)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, result.Created)
+
+	drugs, _, err := svc.List(tenantID, "新药C", "", 1, 10)
+	assert.NoError(t, err)
+	assert.Len(t, drugs, 1)
+	assert.Equal(t, "C1", drugs[0].ShelfNo)
+}
+
+func TestInventoryDrugService_BatchStockIn_UpdateShelfNo(t *testing.T) {
+	svc, tenantID, _ := setupInventoryDrugService(t)
+	seedInventoryDrugs(t, svc, tenantID)
+
+	req := &service.BatchStockInRequest{
+		Items: []service.StockInItem{
+			{Name: "黄芪饮片", Quantity: 10, ShelfNo: "D5"},
+		},
+	}
+
+	result, err := svc.BatchStockIn(tenantID, req)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, result.Updated)
+
+	drugs, _, err := svc.List(tenantID, "黄芪饮片", "", 1, 10)
+	assert.NoError(t, err)
+	assert.Equal(t, "D5", drugs[0].ShelfNo)
+}
+
+func TestInventoryDrugService_StockIn_WithShelfNo(t *testing.T) {
+	svc, tenantID, _ := setupInventoryDrugService(t)
+	seeded := seedInventoryDrugs(t, svc, tenantID)
+
+	shelf := "E1"
+	req := &service.StockInRequest{
+		Quantity: 10,
+		ShelfNo:  &shelf,
+	}
+
+	res, err := svc.StockIn(tenantID, seeded[0].ID, req)
+	assert.NoError(t, err)
+	assert.Equal(t, "E1", res.NewDrug.ShelfNo)
+}

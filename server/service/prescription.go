@@ -18,6 +18,7 @@ type PrescriptionItemRequest struct {
 	Dosage    string `json:"dosage"`
 	SortOrder int    `json:"sort_order"`
 	Notes     string `json:"notes"`
+	Category  string `json:"category"`
 }
 
 // CreatePrescriptionRequest is the input for creating a new prescription.
@@ -79,12 +80,17 @@ func (s *PrescriptionService) Create(tenantID, createdBy uint64, req *CreatePres
 
 		items := make([]model.PrescriptionItem, 0, len(req.Items))
 		for _, item := range req.Items {
+			cat := item.Category
+			if cat == "" {
+				cat = "herb"
+			}
 			items = append(items, model.PrescriptionItem{
 				PrescriptionID: prescription.ID,
 				HerbName:       item.HerbName,
 				Dosage:         item.Dosage,
 				SortOrder:      item.SortOrder,
 				Notes:          item.Notes,
+				Category:       cat,
 			})
 		}
 		if err := tx.Create(&items).Error; err != nil {
@@ -178,12 +184,17 @@ func (s *PrescriptionService) Update(tenantID, id uint64, req *UpdatePrescriptio
 			if len(req.Items) > 0 {
 				items := make([]model.PrescriptionItem, 0, len(req.Items))
 				for _, item := range req.Items {
+					cat := item.Category
+					if cat == "" {
+						cat = "herb"
+					}
 					items = append(items, model.PrescriptionItem{
 						PrescriptionID: id,
 						HerbName:       item.HerbName,
 						Dosage:         item.Dosage,
 						SortOrder:      item.SortOrder,
 						Notes:          item.Notes,
+						Category:       cat,
 					})
 				}
 				if err := tx.Create(&items).Error; err != nil {

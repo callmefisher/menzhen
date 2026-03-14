@@ -320,18 +320,62 @@ func (s *RecordService) UpdateRecord(tenantID uint64, id uint64, req *UpdateReco
 	return &oldRecord, &record, nil
 }
 
-// DeleteRecord soft-deletes a medical record. It returns the record data before
-// deletion (for oplog old_data).
+// DeleteRecord soft-deletes a medical record and all associated data
+// (attachments, prescriptions, prescription items, AI analyses).
+// It returns the record data before deletion (for oplog old_data).
 func (s *RecordService) DeleteRecord(tenantID uint64, id uint64) (*model.MedicalRecord, error) {
 	var record model.MedicalRecord
-	if err := s.DB.Where("tenant_id = ?", tenantID).Preload("Attachments").First(&record, id).Error; err != nil {
+	if err := s.DB.Where("tenant_id = ?", tenantID).
+		Preload("Attachments").
+		Preload("Prescriptions.Items").
+		First(&record, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrRecordNotFound
 		}
 		return nil, err
 	}
 
-	if err := s.DB.Delete(&record).Error; err != nil {
+	err := s.DB.Transaction(func(tx *gorm.DB) error {
+		// 1. Hard-delete prescription items (no soft delete) for all prescriptions of this record
+		var prescriptionIDs []uint64
+		for _, p := range record.Prescriptions {
+			prescriptionIDs = append(prescriptionIDs, p.ID)
+		}
+		if len(prescriptionIDs) > 0 {
+			if err := tx.Where("prescription_id IN ?", prescriptionIDs).
+				Delete(&model.PrescriptionItem{}).Error; err != nil {
+				return err
+			}
+		}
+
+		// 2. Soft-delete prescriptions
+		if len(record.Prescriptions) > 0 {
+			if err := tx.Where("record_id = ? AND tenant_id = ?", id, tenantID).
+				Delete(&model.Prescription{}).Error; err != nil {
+				return err
+			}
+		}
+
+		// 3. Hard-delete attachments (no soft delete)
+		if err := tx.Where("record_id = ?", id).
+			Delete(&model.RecordAttachment{}).Error; err != nil {
+			return err
+		}
+
+		// 4. Soft-delete AI analysis
+		if err := tx.Where("record_id = ? AND tenant_id = ?", id, tenantID).
+			Delete(&model.AIAnalysis{}).Error; err != nil {
+			return err
+		}
+
+		// 5. Soft-delete the record itself
+		if err := tx.Delete(&record).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 

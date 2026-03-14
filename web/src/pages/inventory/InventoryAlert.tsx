@@ -124,9 +124,10 @@ export default function InventoryAlert() {
     message.success('已忽略该告警');
   };
 
-  const handleManualScan = () => {
+  const handleManualScan = async () => {
     localStorage.removeItem('inventory-alert-muted');
-    runScan();
+    await runScan();
+    window.dispatchEvent(new Event('inventory-alert-changed'));
   };
 
   const columns: ColumnsType<AlertRow> = [
@@ -135,6 +136,13 @@ export default function InventoryAlert() {
       dataIndex: 'name',
       key: 'name',
       width: 120,
+    },
+    {
+      title: '货架号',
+      dataIndex: 'shelf_no',
+      key: 'shelf_no',
+      width: 80,
+      render: (val: string) => val || 'H1',
     },
     {
       title: '分类',
@@ -204,6 +212,7 @@ export default function InventoryAlert() {
             <Tag color={row.category === 'herb' ? 'green' : 'blue'} style={{ margin: 0 }}>
               {row.category === 'herb' ? '草' : '成'}
             </Tag>
+            <Tag style={{ margin: 0 }}>{row.shelf_no || 'H1'}</Tag>
           </div>
           <Button size="small" onClick={() => handleDismiss(row.id)}>忽略</Button>
         </div>

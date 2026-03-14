@@ -83,7 +83,9 @@ export default function PrescriptionPrint({
     win.close();
   };
 
-  const herbs = prescription.items || [];
+  const allItems = prescription.items || [];
+  const herbs = allItems.filter((i) => !i.category || i.category === 'herb');
+  const patents = allItems.filter((i) => i.category === 'patent');
   const HERBS_PER_COLUMN = 10;
   const herbColumns: typeof herbs[] = [];
   for (let i = 0; i < herbs.length; i += HERBS_PER_COLUMN) {
@@ -131,21 +133,40 @@ export default function PrescriptionPrint({
 
             <div className="rp">Rp.</div>
 
-            <div className="herb-columns">
-              {herbColumns.map((column, colIdx) => (
-                <div className="herb-column" key={colIdx}>
-                  <ul className="herb-list">
-                    {column.map((item) => (
-                      <li key={item.id}>
-                        <span className="herb-name">{item.herb_name}</span>
-                        <span className="herb-dosage">{item.dosage}克</span>
-                        <span className="herb-notes">{item.notes || ''}</span>
-                      </li>
-                    ))}
-                  </ul>
+            {herbs.length > 0 && (
+              <>
+                <div className="herb-columns">
+                  {herbColumns.map((column, colIdx) => (
+                    <div className="herb-column" key={colIdx}>
+                      <ul className="herb-list">
+                        {column.map((item) => (
+                          <li key={item.id}>
+                            <span className="herb-name">{item.herb_name}</span>
+                            <span className="herb-dosage">{item.dosage}克</span>
+                            <span className="herb-notes">{item.notes || ''}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            )}
+
+            {patents.length > 0 && (
+              <div style={{ marginTop: herbs.length > 0 ? 12 : 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 'bold', marginBottom: 4 }}>中成药：</div>
+                <ul className="herb-list">
+                  {patents.map((item) => (
+                    <li key={item.id}>
+                      <span className="herb-name">{item.herb_name}</span>
+                      <span className="herb-dosage">{item.dosage}盒</span>
+                      <span className="herb-notes">{item.notes || ''}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             <div className="divider" />
 

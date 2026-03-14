@@ -275,3 +275,98 @@ func TestPrescription_Delete_CrossTenant(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, created.ID, got.ID)
 }
+
+// ---------- Category (herb / patent) ----------
+
+func TestPrescription_Create_WithCategory(t *testing.T) {
+	svc, tenantID, userID, recordID := setupPrescriptionTest(t)
+
+	req := &service.CreatePrescriptionRequest{
+		RecordID:    recordID,
+		FormulaName: "复合处方",
+		TotalDoses:  7,
+		Items: []service.PrescriptionItemRequest{
+			{HerbName: "黄芪", Dosage: "15g", SortOrder: 1, Category: "herb"},
+			{HerbName: "当归", Dosage: "10g", SortOrder: 2, Category: "herb"},
+			{HerbName: "逍遥丸", Dosage: "2", SortOrder: 3, Category: "patent"},
+		},
+	}
+
+	p, err := svc.Create(tenantID, userID, req)
+	assert.NoError(t, err)
+	assert.Len(t, p.Items, 3)
+
+	// Verify categories
+	herbCount := 0
+	patentCount := 0
+	for _, item := range p.Items {
+		if item.Category == "herb" {
+			herbCount++
+		} else if item.Category == "patent" {
+			patentCount++
+		}
+	}
+	assert.Equal(t, 2, herbCount)
+	assert.Equal(t, 1, patentCount)
+}
+
+func TestPrescription_Create_DefaultCategory(t *testing.T) {
+	svc, tenantID, userID, recordID := setupPrescriptionTest(t)
+
+	req := &service.CreatePrescriptionRequest{
+		RecordID:   recordID,
+		TotalDoses: 7,
+		Items: []service.PrescriptionItemRequest{
+			{HerbName: "甘草", Dosage: "6g", SortOrder: 1},
+		},
+	}
+
+	p, err := svc.Create(tenantID, userID, req)
+	assert.NoError(t, err)
+	assert.Equal(t, "herb", p.Items[0].Category)
+}
+
+func TestPrescription_Update_WithCategory(t *testing.T) {
+	svc, tenantID, userID, recordID := setupPrescriptionTest(t)
+
+	created, err := svc.Create(tenantID, userID, baseCreatePrescriptionReq(recordID))
+	assert.NoError(t, err)
+
+	_, updated, err := svc.Update(tenantID, created.ID, &service.UpdatePrescriptionRequest{
+		Items: []service.PrescriptionItemRequest{
+			{HerbName: "柴胡", Dosage: "12g", SortOrder: 1, Category: "herb"},
+			{HerbName: "六味地黄丸", Dosage: "3", SortOrder: 2, Category: "patent"},
+		},
+	})
+
+	assert.NoError(t, err)
+	assert.Len(t, updated.Items, 2)
+	assert.Equal(t, "herb", updated.Items[0].Category)
+	assert.Equal(t, "patent", updated.Items[1].Category)
+}
+
+func TestPrescription_ListByRecord_WithCategory(t *testing.T) {
+	svc, tenantID, userID, recordID := setupPrescriptionTest(t)
+
+	req := &service.CreatePrescriptionRequest{
+		RecordID:    recordID,
+		FormulaName: "混合处方",
+		TotalDoses:  7,
+		Items: []service.PrescriptionItemRequest{
+			{HerbName: "黄芪", Dosage: "30", SortOrder: 1, Category: "herb"},
+			{HerbName: "感冒清热颗粒", Dosage: "2", SortOrder: 2, Category: "patent"},
+		},
+	}
+	_, err := svc.Create(tenantID, userID, req)
+	assert.NoError(t, err)
+
+	list, err := svc.ListByRecord(tenantID, recordID)
+	assert.NoError(t, err)
+	assert.Len(t, list, 1)
+	assert.Len(t, list[0].Items, 2)
+
+	// Verify categories are preserved through ListByRecord
+	assert.Equal(t, "herb", list[0].Items[0].Category)
+	assert.Equal(t, "patent", list[0].Items[1].Category)
+	assert.Equal(t, "感冒清热颗粒", list[0].Items[1].HerbName)
+}

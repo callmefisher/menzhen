@@ -57,6 +57,7 @@ interface ParsedBatchItem {
   quantity: number;
   price: number;
   sellingPrice: number;
+  shelfNo: string;
 }
 
 function parseBatchText(text: string): ParsedBatchItem[] {
@@ -69,12 +70,14 @@ function parseBatchText(text: string): ParsedBatchItem[] {
       const quantity = parseFloat(parts[1]);
       const price = parts.length >= 3 ? parseFloat(parts[2]) : 0;
       const sellingPrice = parts.length >= 4 ? parseFloat(parts[3]) : 0;
+      const shelfNo = parts.length >= 5 ? parts[4] : '';
       if (name && !isNaN(quantity) && quantity > 0) {
         items.push({
           name,
           quantity,
           price: isNaN(price) ? 0 : price,
           sellingPrice: isNaN(sellingPrice) ? 0 : sellingPrice,
+          shelfNo,
         });
       }
     }
@@ -216,6 +219,7 @@ export default function DrugList() {
       selling_price: record.selling_price,
       alert_threshold: record.alert_threshold,
       remark: record.remark,
+      shelf_no: record.shelf_no,
     });
     setModalOpen(true);
   };
@@ -244,6 +248,7 @@ export default function DrugList() {
         selling_price: values.selling_price,
         alert_threshold: values.alert_threshold ?? null,
         remark: values.remark || '',
+        shelf_no: values.shelf_no || '',
       };
       if (editingDrug) {
         await updateInventoryDrug(editingDrug.id, payload);
@@ -295,6 +300,7 @@ export default function DrugList() {
           purchase_price: values.purchase_price || 0,
           selling_price: values.selling_price || 0,
           alert_threshold: values.alert_threshold ?? undefined,
+          shelf_no: values.shelf_no || undefined,
         });
         message.success('入库成功');
       } else if (stockInTab === 'batch') {
@@ -309,6 +315,7 @@ export default function DrugList() {
           quantity: i.quantity,
           purchase_price: i.price,
           selling_price: i.sellingPrice,
+          shelf_no: i.shelfNo || undefined,
         }));
         const res = await batchStockIn({ items: batchItems });
         const body = res as any;
@@ -352,6 +359,13 @@ export default function DrugList() {
       dataIndex: 'name',
       key: 'name',
       width: 120,
+    },
+    {
+      title: '货架号',
+      dataIndex: 'shelf_no',
+      key: 'shelf_no',
+      width: 80,
+      render: (val: string) => val || 'H1',
     },
     {
       title: '库存',
@@ -487,6 +501,7 @@ export default function DrugList() {
             <Tag color={drug.category === 'herb' ? 'green' : 'blue'} style={{ margin: 0, flexShrink: 0 }}>
               {drug.category === 'herb' ? '草' : '成'}
             </Tag>
+            <Tag style={{ margin: 0, flexShrink: 0 }}>{drug.shelf_no || 'H1'}</Tag>
           </div>
           <Tag
             color={cfg.color}
@@ -755,7 +770,7 @@ export default function DrugList() {
             name="name"
             rules={[{ required: true, message: '请输入药物名称' }]}
           >
-            <Input placeholder="请输入药物名称" />
+            <Input placeholder="请输入药物名称" autoComplete="off" />
           </Form.Item>
 
           <Form.Item
@@ -830,6 +845,10 @@ export default function DrugList() {
           <Form.Item label="备注" name="remark">
             <Input.TextArea rows={3} placeholder="备注（可选）" />
           </Form.Item>
+
+          <Form.Item label="货架号" name="shelf_no">
+            <Input placeholder="默认 H1" />
+          </Form.Item>
         </Form>
       </Modal>
 
@@ -863,6 +882,7 @@ export default function DrugList() {
                     <Input
                       placeholder="请输入药材名称"
                       disabled={!!stockInDrugTarget}
+                      autoComplete="off"
                     />
                   </Form.Item>
                   {(() => {
@@ -891,6 +911,13 @@ export default function DrugList() {
                         >
                           <InputNumber min={0} precision={2} addonAfter={qtyUnit} style={{ width: '100%' }} placeholder="留空不修改" />
                         </Form.Item>
+                        <Form.Item
+                          label="货架号"
+                          name="shelf_no"
+                          tooltip="留空不修改"
+                        >
+                          <Input placeholder="留空不修改" />
+                        </Form.Item>
                       </>
                     );
                   })()}
@@ -915,13 +942,13 @@ export default function DrugList() {
               children: (
                 <div>
                   <div style={{ color: '#666', marginBottom: 8, fontSize: 13 }}>
-                    每行一味药，格式：药名 数量(g) 进货价(元/500克) 出售价(元/500克)
+                    每行一味药，格式：药名 数量(g) 进货价(元/500克) 出售价(元/500克) [货架号]
                   </div>
                   <Input.TextArea
                     rows={8}
                     value={batchText}
                     onChange={(e) => setBatchText(e.target.value)}
-                    placeholder={'当归 500 60 80\n黄芪 1000 40 60\n白术 500 50 70\n陈皮 300 30 45'}
+                    placeholder={'当归 500 60 80 A-01\n黄芪 1000 40 60 A-02\n白术 500 50 70 B-01\n陈皮 300 30 45'}
                     style={{ fontFamily: 'monospace' }}
                   />
                   {parsedBatch.length > 0 && (
