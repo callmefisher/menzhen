@@ -107,8 +107,8 @@ def main():
 
     elif cleanup_type == "minio":
         retain = int(os.environ.get("QINIU_RETAIN_MINIO", "5"))
-        minio_prefix = f"{key_prefix}minio/"
-        cleanup(bucket_mgr, bucket_name, minio_prefix, ".tar.gz", retain, "MinIO")
+        # key_prefix is already set to "xxx/minio/" by backup-minio.sh
+        cleanup(bucket_mgr, bucket_name, key_prefix, ".tar.gz", retain, "MinIO")
 
 
 if __name__ == "__main__":

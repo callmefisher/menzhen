@@ -51,6 +51,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	clinicalExpHandler := handler.NewClinicalExperienceHandler(db)
 	inventoryDrugHandler := handler.NewInventoryDrugHandler(db)
 	solarTermHandler := handler.NewSolarTermHandler(db)
+	hexagramHandler := handler.NewHexagramHandler(db)
 
 	// ---------- Route groups ----------
 
@@ -211,6 +212,17 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			solarTerms.GET("", solarTermHandler.List)
 			solarTerms.PUT("/:id", middleware.RequirePermission(db, "role:manage"), solarTermHandler.Update)
 			solarTerms.DELETE("/:id/content", middleware.RequirePermission(db, "role:manage"), solarTermHandler.DeleteContent)
+		}
+
+		// Hexagram routes (global data, authenticated).
+		hexagrams := authenticated.Group("/hexagrams")
+		{
+			hexagrams.GET("", hexagramHandler.List)
+			hexagrams.GET("/trigrams", hexagramHandler.Trigrams)
+			hexagrams.GET("/:id", hexagramHandler.Detail)
+			hexagrams.POST("", middleware.RequirePermission(db, "role:manage"), hexagramHandler.Create)
+			hexagrams.PUT("/:id", middleware.RequirePermission(db, "role:manage"), hexagramHandler.Update)
+			hexagrams.DELETE("/:id", middleware.RequirePermission(db, "role:manage"), hexagramHandler.Delete)
 		}
 
 		// Prescription routes (tenant-scoped).

@@ -1,12 +1,18 @@
 package database
 
 import (
+	_ "embed"
+	"encoding/json"
 	"log"
 
 	"github.com/callmefisher/menzhen/server/model"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
+
+//go:embed hexagram_seed.json
+var hexagramSeedJSON []byte
 
 // Seed populates the database with initial data (permissions, default tenant,
 // admin role, admin user). Each section is idempotent — it skips if data
@@ -17,6 +23,7 @@ func Seed(db *gorm.DB) {
 	role := seedAdminRole(db, tenant.ID)
 	seedAdminUser(db, tenant.ID, role.ID)
 	seedSolarTerms(db)
+	seedHexagrams(db)
 	log.Println("Seed data check completed")
 }
 
@@ -189,4 +196,41 @@ func seedSolarTerms(db *gorm.DB) {
 		}
 	}
 	log.Println("Solar terms upsert completed")
+}
+
+// seedHexagrams upserts all 64 I Ching hexagrams from the embedded JSON file.
+func seedHexagrams(db *gorm.DB) {
+	var seeds []struct {
+		Number       int             `json:"number"`
+		Name         string          `json:"name"`
+		Symbol       string          `json:"symbol"`
+		UpperTrigram string          `json:"upper_trigram"`
+		LowerTrigram string          `json:"lower_trigram"`
+		Judgment     string          `json:"judgment"`
+		YaoTexts     json.RawMessage `json:"yao_texts"`
+	}
+	if err := json.Unmarshal(hexagramSeedJSON, &seeds); err != nil {
+		log.Printf("Warning: failed to parse hexagram seed data: %v", err)
+		return
+	}
+
+	for _, s := range seeds {
+		var existing model.Hexagram
+		result := db.Where("name = ?", s.Name).First(&existing)
+		if result.Error != nil {
+			h := model.Hexagram{
+				Number:       s.Number,
+				Name:         s.Name,
+				Symbol:       s.Symbol,
+				UpperTrigram: s.UpperTrigram,
+				LowerTrigram: s.LowerTrigram,
+				Judgment:     s.Judgment,
+				YaoTexts:     datatypes.JSON(s.YaoTexts),
+			}
+			if err := db.Create(&h).Error; err != nil {
+				log.Printf("Warning: failed to create hexagram %s: %v", s.Name, err)
+			}
+		}
+	}
+	log.Println("Hexagram seed upsert completed")
 }

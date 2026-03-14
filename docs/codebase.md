@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-03-14（新增：节气养生功能 solar_terms 表+API+页面）
+> 最后更新：2026-03-14（新增：易理卦象功能 hexagrams 表+API+页面）
 
 ---
 
@@ -32,7 +32,8 @@ menzhen/
 │   │   └── config.go                # Config 结构体 + Load()，全部读取环境变量
 │   ├── database/
 │   │   ├── database.go              # InitDB：连接 MySQL + AutoMigrate 全部 20 个模型
-│   │   └── seed.go                  # Seed：幂等写入 permissions/tenant/admin role/admin user
+│   │   ├── seed.go                  # Seed：幂等写入 permissions/tenant/admin role/admin user
+│   │   └── hexagram_seed.json       # 64卦种子数据（卦名/卦辞/爻辞/传文/中医应用）
 │   ├── handler/
 │   │   ├── response.go              # 统一 Success/Error 响应
 │   │   ├── auth.go                  # Login/Register/Logout/Me/ChangePassword
@@ -47,6 +48,7 @@ menzhen/
 │   │   ├── wuyun_liuqi.go          # Get/QueryStream/Update/Delete（五运六气，SSE流式查询）
 │   │   ├── clinical_experience.go  # List/Detail/Create/Update/Delete/Categories（临床经验集）
 │   │   ├── inventory_drug.go      # List/Create/Update/Delete/StockIn/BatchStockIn（库存药物，租户隔离）
+│   │   ├── hexagram.go              # List/Detail/Create/Update/Delete/Trigrams（卦象管理）
 │   │   ├── ai_analysis.go           # Analyze（AI 辩证论治，含缓存）+ SaveCached + GetCached
 │   │   ├── oplog.go                 # ListOpLogs/DeleteOpLog/BatchDeleteOpLogs
 │   │   ├── user.go                  # List/Update/Delete/AssignRoles
@@ -73,6 +75,7 @@ menzhen/
 │   │   ├── wuyun_liuqi.go          # 五运六气 GetByYear/SaveFromAI/Update/Delete
 │   │   ├── clinical_experience.go  # 临床经验 Search/ListCategories/GetByID/Create/Update/DeleteByID
 │   │   ├── inventory_drug.go      # 库存药物 List/Create/Update/Delete/StockIn/BatchStockIn（租户隔离）
+│   │   ├── hexagram.go              # 卦象 Search/GetByID/Create/Update/DeleteByID/ListTrigrams
 │   │   ├── deepseek.go              # DeepSeek API 客户端（chat/chatLong/chatStream/QueryHerb/QueryFormula/QueryPulse/AnalyzeDiagnosis/AnalyzeTongue/QueryWuyunLiuqiStream）
 │   │   ├── deepseek_test.go         # DeepSeek 测试
 │   │   ├── oplog.go                 # 操作日志 CRUD
@@ -100,6 +103,7 @@ menzhen/
 │       │   ├── inventory.ts         # 库存药物 CRUD + 入库（listInventoryDrugs/create/update/delete/stockIn/batchStockIn）
 │       │   ├── wuyunLiuqi.ts        # 五运六气缓存获取/更新/删除
 │       │   ├── clinicalExperience.ts # 临床经验集 CRUD + 分类列表
+│       │   ├── yijing.ts            # 卦象 CRUD + 八卦分类列表
 │       │   ├── meridian.ts          # 经络资源获取/更新（视频+出处）
 │       │   ├── upload.ts            # 文件上传
 │       │   ├── oplog.ts             # 操作日志查询/删除
@@ -157,6 +161,9 @@ menzhen/
 │       │   │   └── NotesPanel.tsx   # 笔记侧边栏（移动端全屏宽度自适应 + useIsMobile 响应式）
 │       │   ├── solar-terms/         # 节气养生
 │       │   │   └── SolarTerms.tsx   # 节气页面（24节气列表+养生内容编辑）
+│       │   ├── yijing/              # 易理卦象
+│       │   │   ├── YijingList.tsx   # 卦象列表（搜索+分页+八卦分类筛选）
+│       │   │   └── HexagramDrawer.tsx # 卦象详情抽屉（卦辞/爻辞/传文/中医应用）
 │       │   ├── clinical-experience/ # 临床经验集
 │       │   │   └── ClinicalExperienceList.tsx # 临床经验列表（分页+搜索+分类筛选，管理员可新增/编辑/删除，AutoComplete分类选择）
 │       │   ├── inventory/             # 库存管理
@@ -313,6 +320,23 @@ menzhen/
 | `content` | `text` | 养生内容 |
 | `created_at` | `time.Time` | 创建时间 |
 | `updated_at` | `time.Time` | 更新时间 |
+
+#### `hexagrams` — 卦象
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | uint64 | PK |
+| number | int | 卦序（1-64），唯一 |
+| name | varchar(20) | 卦名，唯一 |
+| symbol | varchar(20) | 卦象符号 |
+| upper_trigram | varchar(10) | 上卦 |
+| lower_trigram | varchar(10) | 下卦 |
+| judgment | text | 卦辞 |
+| yao_texts | JSON | 六爻爻辞 |
+| commentary | text | 传文 |
+| tcm_application | text | 中医应用阐述 |
+| related_hexagrams | JSON | 关联卦（互/错/综） |
+| description | text | 描述/注解 |
 
 #### `role_permissions` — 角色-权限关联表
 
@@ -594,6 +618,16 @@ menzhen/
 | GET | `/api/v1/solar-terms` | - | 获取全部24节气 |
 | PUT | `/api/v1/solar-terms/:id` | `role:manage` | 更新节气养生内容 |
 | DELETE | `/api/v1/solar-terms/:id/content` | `role:manage` | 清空节气养生内容 |
+
+### 卦象 Hexagram
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| GET | /api/v1/hexagrams | 认证 | 列表（name/trigram搜索+分页） |
+| GET | /api/v1/hexagrams/trigrams | 认证 | 八卦分类 |
+| GET | /api/v1/hexagrams/:id | 认证 | 详情 |
+| POST | /api/v1/hexagrams | role:manage | 创建 |
+| PUT | /api/v1/hexagrams/:id | role:manage | 更新 |
+| DELETE | /api/v1/hexagrams/:id | role:manage | 删除 |
 
 #### 处方管理（租户隔离）
 

@@ -23,6 +23,7 @@ import {
   ShopOutlined,
   AlertOutlined,
   CalendarOutlined,
+  FileTextOutlined,
 } from '@ant-design/icons';
 import type { MenuProps as AntMenuProps } from 'antd';
 import { useAuth } from '../store/auth';
@@ -145,6 +146,11 @@ export default function AppLayout() {
         icon: <CalendarOutlined />,
         label: '节气',
       },
+      {
+        key: '/yijing',
+        icon: <FileTextOutlined />,
+        label: '易理',
+      },
     ];
     items.push({
       key: '/tcm',
@@ -262,6 +268,7 @@ export default function AppLayout() {
     if (path.startsWith('/wuyun')) return ['/wuyun'];
     if (path.startsWith('/clinical-experience')) return ['/clinical-experience'];
     if (path.startsWith('/solar-terms')) return ['/solar-terms'];
+    if (path.startsWith('/yijing')) return ['/yijing'];
     if (path.startsWith('/inventory/drugs')) return ['/inventory/drugs'];
     if (path.startsWith('/inventory/alerts')) return ['/inventory/alerts'];
     if (path.startsWith('/records')) return ['/records'];
@@ -272,7 +279,7 @@ export default function AppLayout() {
     const path = location.pathname;
     if (path.startsWith('/settings')) return ['/settings'];
     if (path.startsWith('/inventory')) return ['/inventory'];
-    if (path.startsWith('/herbs') || path.startsWith('/formulas') || path.startsWith('/meridians') || path.startsWith('/pulses') || path.startsWith('/wuyun') || path.startsWith('/clinical-experience') || path.startsWith('/solar-terms')) return ['/tcm'];
+    if (path.startsWith('/herbs') || path.startsWith('/formulas') || path.startsWith('/meridians') || path.startsWith('/pulses') || path.startsWith('/wuyun') || path.startsWith('/clinical-experience') || path.startsWith('/solar-terms') || path.startsWith('/yijing')) return ['/tcm'];
     return [];
   }, [location.pathname]);
 
