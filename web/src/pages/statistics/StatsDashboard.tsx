@@ -23,8 +23,10 @@ function getDateRange(range: QuickRange): [Dayjs, Dayjs] {
       return [now.startOf('week'), now.endOf('day')];
     case 'month':
       return [now.startOf('month'), now.endOf('day')];
-    case 'quarter':
-      return [now.startOf('quarter'), now.endOf('day')];
+    case 'quarter': {
+      const quarterMonth = Math.floor(now.month() / 3) * 3;
+      return [now.month(quarterMonth).startOf('month'), now.endOf('day')];
+    }
     case 'year':
       return [now.startOf('year'), now.endOf('day')];
     default:
