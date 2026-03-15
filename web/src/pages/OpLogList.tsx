@@ -8,6 +8,7 @@ import {
   Card,
   Tag,
   Popconfirm,
+  Checkbox,
   message,
   Pagination,
 } from 'antd';
@@ -15,6 +16,8 @@ import {
   SearchOutlined,
   DeleteOutlined,
   ArrowRightOutlined,
+  CheckSquareOutlined,
+  CloseOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { Dayjs } from 'dayjs';
@@ -41,6 +44,7 @@ const ACTION_MAP: Record<string, { label: string; color: string }> = {
   delete: { label: '删除', color: 'red' },
   stock_in: { label: '入库', color: 'cyan' },
   batch_stock_in: { label: '批量入库', color: 'cyan' },
+  deduct_stock: { label: '扣减库存', color: 'orange' },
 };
 
 const RESOURCE_TYPE_MAP: Record<string, string> = {
@@ -51,10 +55,12 @@ const RESOURCE_TYPE_MAP: Record<string, string> = {
   prescription: '处方',
   user: '用户',
   inventory_drug: '库存药物',
+  follow_up: '回访',
+  billing: '收费',
 };
 
 // Resource types that are associated with a patient
-const PATIENT_RELATED = new Set(['record', 'medical_record', 'prescription', 'attachment']);
+const PATIENT_RELATED = new Set(['record', 'medical_record', 'prescription', 'attachment', 'follow_up', 'billing']);
 
 /** Extract a display name from oplog record data (patient name, drug name, etc.) */
 function getResourceDisplayName(record: OpLogItem): string | undefined {
@@ -90,6 +96,12 @@ const FIELD_LABEL_MAP: Record<string, string> = {
   // 库存
   stock: '库存', purchase_price: '进货价', selling_price: '出售价',
   category: '类别', alert_threshold: '预警阈值', remark: '备注',
+  // 回访
+  is_recovered: '是否康复', planned_date: '计划回访日期', actual_date: '实际回访日期',
+  method: '回访方式', content: '回访内容',
+  // 收费
+  consultation_fee: '诊金', drug_cost_total: '药费合计',
+  total_amount: '总金额', actual_paid: '实付金额', stock_deducted: '已扣库存',
   // 系统
   created_by: '创建人ID',
   // 处方明细
@@ -131,10 +143,23 @@ function formatItems(items: any[]): string {
     .join('、');
 }
 
+// Value translations for specific fields
+const VALUE_LABEL_MAP: Record<string, Record<string, string>> = {
+  status: { pending: '待回访', completed: '已完成', cancelled: '已取消', active: '启用', disabled: '禁用' },
+  method: { phone: '电话', visit: '上门', online: '线上' },
+  gender: { male: '男', female: '女' },
+};
+
 function formatValue(val: unknown, key?: string): string {
   if (val === null || val === undefined || val === '') return '(空)';
   if (key === 'items' && Array.isArray(val)) return formatItems(val);
+  if (typeof val === 'boolean') return val ? '是' : '否';
   if (typeof val === 'object') return JSON.stringify(val);
+  // Translate known enum values
+  if (key && VALUE_LABEL_MAP[key]) {
+    const mapped = VALUE_LABEL_MAP[key][String(val)];
+    if (mapped) return mapped;
+  }
   return String(val);
 }
 
@@ -185,6 +210,22 @@ function computeDiff(action: string, oldData: any, newData: any, resourceType?: 
     return fields;
   }
 
+  // deduct_stock / stock_in / batch_stock_in: old_data is null, treat like create
+  if (!oldData && newData && action !== 'create') {
+    for (const key of Object.keys(newData)) {
+      if (SKIP_FIELDS.has(key)) continue;
+      const val = newData[key];
+      if (val === null || val === undefined || val === '' || val === 0) continue;
+      fields.push({
+        key,
+        label: getFieldLabel(key, resourceType),
+        newVal: displayValue(key, val),
+        type: 'added',
+      });
+    }
+    return fields;
+  }
+
   // update: only show changed fields
   if (oldData && newData) {
     const allKeys = new Set([...Object.keys(oldData), ...Object.keys(newData)]);
@@ -208,8 +249,126 @@ function computeDiff(action: string, oldData: any, newData: any, resourceType?: 
   return fields;
 }
 
+/** Special view for deduct_stock action showing drug deductions clearly */
+function DeductStockView({ record, isMobile }: { record: OpLogItem; isMobile: boolean }) {
+  const data = record.new_data;
+  if (!data) return <div style={{ color: '#999', padding: 8 }}>无变更数据</div>;
+
+  const patientName = data.patient?.name;
+  const formulaName = data.formula_name;
+  const totalDoses = data.total_doses;
+  const items: any[] = data.items || [];
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {/* Summary */}
+      <div style={{
+        display: 'flex', flexWrap: 'wrap', gap: isMobile ? 6 : 12,
+        padding: '6px 10px', background: '#fff7e6', borderRadius: 4, fontSize: 13,
+      }}>
+        {patientName && <span><b>患者：</b>{patientName}</span>}
+        {formulaName && <span><b>方剂：</b>{formulaName}</span>}
+        {totalDoses > 0 && <span><b>剂数：</b>{totalDoses}</span>}
+        {data.drug_cost_total != null && <span><b>药费：</b>¥{Number(data.drug_cost_total).toFixed(2)}</span>}
+        {data.total_amount != null && <span><b>总额：</b>¥{Number(data.total_amount).toFixed(2)}</span>}
+      </div>
+      {/* Drug items */}
+      {items.length > 0 && (
+        <div style={{ border: '1px solid #f0f0f0', borderRadius: 4, overflow: 'hidden' }}>
+          <div style={{
+            display: 'flex', padding: '6px 10px', background: '#fafafa',
+            fontWeight: 600, fontSize: 12, color: '#666',
+          }}>
+            <span style={{ flex: 2 }}>药材</span>
+            <span style={{ flex: 1 }}>用量</span>
+            <span style={{ flex: 1 }}>类别</span>
+          </div>
+          {items
+            .sort((a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0))
+            .map((item: any, idx: number) => (
+              <div key={idx} style={{
+                display: 'flex', padding: '5px 10px', fontSize: 13,
+                borderTop: '1px solid #f0f0f0',
+                background: idx % 2 === 0 ? '#fff' : '#fafafa',
+              }}>
+                <span style={{ flex: 2, fontWeight: 500 }}>{item.herb_name || '-'}</span>
+                <span style={{ flex: 1, color: '#d4380d' }}>{item.dosage || '-'}</span>
+                <span style={{ flex: 1, color: '#888' }}>
+                  {item.category === 'patent' ? '成药' : '中药'}
+                </span>
+              </div>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Special view for batch_stock_in action showing imported items */
+function BatchStockInView({ record, isMobile }: { record: OpLogItem; isMobile: boolean }) {
+  const data = record.new_data;
+  if (!data) return <div style={{ color: '#999', padding: 8 }}>无变更数据</div>;
+
+  const items: any[] = data.items || [];
+  const created = data.created ?? 0;
+  const updated = data.updated ?? 0;
+  const total = data.total ?? 0;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {/* Summary */}
+      <div style={{
+        display: 'flex', flexWrap: 'wrap', gap: isMobile ? 6 : 12,
+        padding: '6px 10px', background: '#e6f7ff', borderRadius: 4, fontSize: 13,
+      }}>
+        <span><b>总计：</b>{total} 项</span>
+        {created > 0 && <span><b>新增：</b>{created}</span>}
+        {updated > 0 && <span><b>追加：</b>{updated}</span>}
+        {data.alert_threshold != null && <span><b>预警阈值：</b>{data.alert_threshold}</span>}
+      </div>
+      {/* Drug items */}
+      {items.length > 0 && (
+        <div style={{ border: '1px solid #f0f0f0', borderRadius: 4, overflow: 'hidden' }}>
+          <div style={{
+            display: 'flex', padding: '6px 10px', background: '#fafafa',
+            fontWeight: 600, fontSize: 12, color: '#666',
+          }}>
+            <span style={{ flex: 2 }}>药材</span>
+            <span style={{ flex: 1, textAlign: 'right' }}>数量</span>
+            <span style={{ flex: 1, textAlign: 'right' }}>进价</span>
+            <span style={{ flex: 1, textAlign: 'right' }}>售价</span>
+            {!isMobile && <span style={{ flex: 1, textAlign: 'center' }}>货架</span>}
+          </div>
+          {items.map((item: any, idx: number) => (
+            <div key={idx} style={{
+              display: 'flex', padding: '5px 10px', fontSize: 13,
+              borderTop: '1px solid #f0f0f0',
+              background: idx % 2 === 0 ? '#fff' : '#fafafa',
+            }}>
+              <span style={{ flex: 2, fontWeight: 500 }}>{item.name || '-'}</span>
+              <span style={{ flex: 1, textAlign: 'right', color: '#1890ff' }}>{item.quantity || '-'}</span>
+              <span style={{ flex: 1, textAlign: 'right' }}>{item.purchase_price ? `¥${Number(item.purchase_price).toFixed(2)}` : '-'}</span>
+              <span style={{ flex: 1, textAlign: 'right' }}>{item.selling_price ? `¥${Number(item.selling_price).toFixed(2)}` : '-'}</span>
+              {!isMobile && <span style={{ flex: 1, textAlign: 'center', color: '#888' }}>{item.shelf_no || '-'}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // --- Diff rendering ---
 function DiffView({ record, isMobile }: { record: OpLogItem; isMobile: boolean }) {
+  // Special rendering for deduct_stock
+  if (record.action === 'deduct_stock') {
+    return <DeductStockView record={record} isMobile={isMobile} />;
+  }
+  // Special rendering for batch_stock_in
+  if (record.action === 'batch_stock_in') {
+    return <BatchStockInView record={record} isMobile={isMobile} />;
+  }
+
   const fields = computeDiff(record.action, record.old_data, record.new_data, record.resource_type);
 
   if (fields.length === 0) {
@@ -277,6 +436,8 @@ export default function OpLogList() {
 
   // Expanded rows for mobile card view
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
+  // Mobile batch selection mode
+  const [mobileSelecting, setMobileSelecting] = useState(false);
 
   // Search form local state
   const [searchName, setSearchName] = useState('');
@@ -432,20 +593,52 @@ export default function OpLogList() {
     const resourceLabel = RESOURCE_TYPE_MAP[record.resource_type] || record.resource_type;
     const displayName = getResourceDisplayName(record);
     const expanded = expandedIds.has(record.id);
-    const diffFields = computeDiff(record.action, record.old_data, record.new_data, record.resource_type);
-    const hasDetail = diffFields.length > 0;
+    const hasDetail = (record.action === 'deduct_stock' || record.action === 'batch_stock_in')
+      ? !!(record.new_data)
+      : computeDiff(record.action, record.old_data, record.new_data, record.resource_type).length > 0;
+
+    const isSelected = selectedRowKeys.includes(record.id);
 
     return (
       <Card
         key={record.id}
         size="small"
-        style={{ marginBottom: 8, cursor: hasDetail ? 'pointer' : undefined }}
+        style={{
+          marginBottom: 8,
+          cursor: mobileSelecting ? 'pointer' : hasDetail ? 'pointer' : undefined,
+          border: isSelected && mobileSelecting ? '1px solid #1677ff' : undefined,
+          background: isSelected && mobileSelecting ? '#e6f4ff' : undefined,
+        }}
         styles={{ body: { padding: '10px 12px' } }}
-        onClick={() => hasDetail && toggleExpand(record.id)}
+        onClick={() => {
+          if (mobileSelecting) {
+            setSelectedRowKeys(prev =>
+              prev.includes(record.id)
+                ? prev.filter(k => k !== record.id)
+                : [...prev, record.id]
+            );
+          } else if (hasDetail) {
+            toggleExpand(record.id);
+          }
+        }}
       >
         {/* Row 1: action tag + resource type + patient name + time */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+            {mobileSelecting && (
+              <Checkbox
+                checked={isSelected}
+                onClick={e => e.stopPropagation()}
+                onChange={() => {
+                  setSelectedRowKeys(prev =>
+                    prev.includes(record.id)
+                      ? prev.filter(k => k !== record.id)
+                      : [...prev, record.id]
+                  );
+                }}
+                style={{ flexShrink: 0 }}
+              />
+            )}
             {actionCfg && (
               <Tag color={actionCfg.color} style={{ margin: 0, flexShrink: 0 }}>{actionCfg.label}</Tag>
             )}
@@ -506,6 +699,17 @@ export default function OpLogList() {
             <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>
               搜索
             </Button>
+            {canDelete && (
+              <Button
+                icon={mobileSelecting ? <CloseOutlined /> : <CheckSquareOutlined />}
+                onClick={() => {
+                  setMobileSelecting(prev => !prev);
+                  if (mobileSelecting) setSelectedRowKeys([]);
+                }}
+              >
+                {mobileSelecting ? '取消' : '选择'}
+              </Button>
+            )}
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <RangePicker
@@ -590,7 +794,7 @@ export default function OpLogList() {
             data.map(renderMobileCard)
           )}
           {total > 0 && (
-            <div style={{ textAlign: 'center', paddingTop: 12 }}>
+            <div style={{ textAlign: 'center', paddingTop: mobileSelecting ? 60 : 12 }}>
               <Pagination
                 current={params.page}
                 pageSize={params.size}
@@ -603,6 +807,49 @@ export default function OpLogList() {
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
               />
+            </div>
+          )}
+          {/* Floating batch action bar */}
+          {mobileSelecting && (
+            <div style={{
+              position: 'fixed',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              background: '#fff',
+              borderTop: '1px solid #f0f0f0',
+              padding: '10px 16px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              zIndex: 100,
+              boxShadow: '0 -2px 8px rgba(0,0,0,0.08)',
+            }}>
+              <Checkbox
+                checked={data.length > 0 && selectedRowKeys.length === data.length}
+                indeterminate={selectedRowKeys.length > 0 && selectedRowKeys.length < data.length}
+                onChange={(e) => {
+                  setSelectedRowKeys(e.target.checked ? data.map(d => d.id) : []);
+                }}
+              >
+                全选
+              </Checkbox>
+              <Popconfirm
+                title={`确定删除选中的 ${selectedRowKeys.length} 条日志？`}
+                onConfirm={handleBatchDelete}
+                okText="删除"
+                cancelText="取消"
+                disabled={selectedRowKeys.length === 0}
+              >
+                <Button
+                  danger
+                  type="primary"
+                  icon={<DeleteOutlined />}
+                  disabled={selectedRowKeys.length === 0}
+                >
+                  删除 ({selectedRowKeys.length})
+                </Button>
+              </Popconfirm>
             </div>
           )}
         </>
@@ -624,6 +871,10 @@ export default function OpLogList() {
             expandedRowRender: (record) => (
               <DiffView record={record} isMobile={false} />
             ),
+            rowExpandable: (record) =>
+              (record.action === 'deduct_stock' || record.action === 'batch_stock_in')
+                ? !!(record.new_data)
+                : computeDiff(record.action, record.old_data, record.new_data, record.resource_type).length > 0,
           }}
           pagination={{
             current: params.page,

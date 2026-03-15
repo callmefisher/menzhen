@@ -5,8 +5,8 @@ import "time"
 // Patient represents a patient record. Uses BaseModel for soft delete support.
 type Patient struct {
 	BaseModel
-	TenantID    uint64  `gorm:"column:tenant_id;not null;index" json:"tenant_id"`
-	Name        string  `gorm:"column:name;type:varchar(50);not null" json:"name"`
+	TenantID    uint64  `gorm:"column:tenant_id;not null;index;index:idx_tenant_name" json:"tenant_id"`
+	Name        string  `gorm:"column:name;type:varchar(50);not null;index:idx_tenant_name" json:"name"`
 	Gender      int8    `gorm:"column:gender;type:tinyint;not null;comment:1=male 2=female" json:"gender"`
 	Age         int        `gorm:"column:age;type:int" json:"age"`
 	Birthday    *time.Time `gorm:"column:birthday;type:date" json:"birthday"`

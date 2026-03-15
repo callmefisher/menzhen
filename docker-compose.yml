@@ -17,11 +17,14 @@ services:
     image: menzhen-api:latest
     build: ./server
     env_file: .env
+    volumes:
+      - ./.env:/app/.env
     depends_on:
       mysql:
         condition: service_healthy
       minio:
         condition: service_started
+    restart: unless-stopped
 
   mysql:
     image: mysql:8.0
@@ -61,6 +64,7 @@ services:
       TZ: Asia/Shanghai
     volumes:
       - ./backups:/backups
+      - ./.env:/app/.env
     depends_on:
       mysql:
         condition: service_healthy

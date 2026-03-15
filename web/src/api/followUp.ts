@@ -4,12 +4,13 @@ export interface FollowUp {
   id: number;
   tenant_id: number;
   patient_id: number;
-  record_id: number | null;
+  record_id: number;
   planned_date: string;
   actual_date: string | null;
   status: 'pending' | 'completed' | 'overdue';
   method: string;
   content: string;
+  is_recovered: boolean;
   created_by: number;
   created_at: string;
   updated_at: string;
@@ -20,7 +21,8 @@ export interface FollowUpListItem {
   tenant_id: number;
   patient_id: number;
   patient_name: string;
-  record_id: number | null;
+  patient_phone: string;
+  record_id: number;
   record_diagnosis: string;
   record_visit_date: string | null;
   planned_date: string;
@@ -28,6 +30,7 @@ export interface FollowUpListItem {
   status: 'pending' | 'completed' | 'overdue';
   method: string;
   content: string;
+  is_recovered: boolean;
   created_by: number;
   created_by_name: string;
   created_at: string;
@@ -46,19 +49,21 @@ export interface FollowUpListParams {
 
 export interface CreateFollowUpReq {
   patient_id: number;
-  record_id?: number | null;
+  record_id: number;
   planned_date: string;
   method: string;
   content?: string;
+  is_recovered?: boolean;
 }
 
 export interface UpdateFollowUpReq {
   patient_id?: number;
-  record_id?: number | null;
+  record_id?: number;
   planned_date?: string;
   actual_date?: string | null;
   method?: string;
   content?: string;
+  is_recovered?: boolean;
 }
 
 export interface FollowUpStats {

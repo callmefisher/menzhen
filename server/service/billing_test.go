@@ -336,3 +336,52 @@ func TestCreateRecordBilling(t *testing.T) {
 	assert.Equal(t, billing.ID, billing2.ID) // Same billing record.
 	assert.InDelta(t, 150, billing2.ConsultationFee, 0.01)
 }
+
+func TestGetBillingDetail_LargeInventory(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+
+	tenant := testutil.SeedTestTenant(t, db, "clinic-large-inv", "largeinv")
+	user, _ := testutil.SeedTestUser(t, db, tenant.ID, "doc", "pass", nil)
+	patient := testutil.SeedTestPatient(t, db, tenant.ID, user.ID, "大库存患者")
+
+	// Create 200 inventory drugs (simulates large inventory).
+	for i := 0; i < 200; i++ {
+		db.Create(&model.InventoryDrug{
+			TenantID:      tenant.ID,
+			Name:          "药品" + time.Now().Format("150405") + "_" + string(rune('A'+i%26)) + string(rune('0'+i/26)),
+			Category:      "herb",
+			Stock:         1000,
+			PurchasePrice: 10,
+			SellingPrice:  50,
+		})
+	}
+
+	// Create one specific drug that the prescription will use.
+	db.Create(&model.InventoryDrug{
+		TenantID: tenant.ID, Name: "黄芪", Category: "herb",
+		Stock: 500, PurchasePrice: 20, SellingPrice: 60,
+	})
+
+	record := model.MedicalRecord{
+		TenantID: tenant.ID, PatientID: patient.ID, CreatedBy: user.ID,
+		VisitDate: time.Now(), Diagnosis: "气虚",
+	}
+	require.NoError(t, db.Create(&record).Error)
+	prescription := model.Prescription{
+		RecordID: record.ID, TenantID: tenant.ID, TotalDoses: 7, CreatedBy: user.ID,
+	}
+	require.NoError(t, db.Create(&prescription).Error)
+	db.Create(&model.PrescriptionItem{
+		PrescriptionID: prescription.ID, HerbName: "黄芪", Dosage: "30g",
+	})
+
+	svc := NewBillingService(db)
+	detail, err := svc.GetBillingDetail(tenant.ID, prescription.ID)
+	require.NoError(t, err)
+
+	assert.Len(t, detail.Items, 1)
+	assert.Equal(t, "黄芪", detail.Items[0].HerbName)
+	assert.True(t, detail.Items[0].InStock)
+	// Price: 60/500 * 30 * 7 = 25.2
+	assert.InDelta(t, 25.2, detail.Items[0].ItemCost, 0.01)
+}

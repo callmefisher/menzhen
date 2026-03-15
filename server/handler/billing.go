@@ -6,10 +6,61 @@ import (
 	"strconv"
 
 	"github.com/callmefisher/menzhen/server/middleware"
+	"github.com/callmefisher/menzhen/server/model"
 	"github.com/callmefisher/menzhen/server/service"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+// billingForOpLog wraps a billing with patient name and prescription items for oplog audit trail.
+func billingForOpLog(db *gorm.DB, billing *model.Billing) interface{} {
+	type patientInfo struct {
+		Name string `json:"name"`
+	}
+	type itemInfo struct {
+		HerbName  string `json:"herb_name"`
+		Dosage    string `json:"dosage"`
+		Category  string `json:"category,omitempty"`
+		SortOrder int    `json:"sort_order"`
+	}
+	type data struct {
+		*model.Billing
+		Patient     *patientInfo `json:"patient,omitempty"`
+		FormulaName string       `json:"formula_name,omitempty"`
+		TotalDoses  int          `json:"total_doses,omitempty"`
+		Items       []itemInfo   `json:"items,omitempty"`
+	}
+	d := &data{Billing: billing}
+	// Load patient name via record.
+	if billing.RecordID > 0 {
+		var name string
+		db.Table("patients").
+			Select("patients.name").
+			Joins("JOIN medical_records ON medical_records.patient_id = patients.id").
+			Where("medical_records.id = ?", billing.RecordID).
+			Scan(&name)
+		if name != "" {
+			d.Patient = &patientInfo{Name: name}
+		}
+	}
+	// Load prescription items for audit detail.
+	if billing.PrescriptionID > 0 {
+		var prescription model.Prescription
+		if db.Preload("Items").First(&prescription, billing.PrescriptionID).Error == nil {
+			d.FormulaName = prescription.FormulaName
+			d.TotalDoses = prescription.TotalDoses
+			for _, item := range prescription.Items {
+				d.Items = append(d.Items, itemInfo{
+					HerbName:  item.HerbName,
+					Dosage:    item.Dosage,
+					Category:  item.Category,
+					SortOrder: item.SortOrder,
+				})
+			}
+		}
+	}
+	return d
+}
 
 // BillingHandler handles billing endpoints.
 type BillingHandler struct {
@@ -71,7 +122,7 @@ func (h *BillingHandler) Create(c *gin.Context) {
 		return
 	}
 
-	middleware.LogOperation(h.db, c, "create", "billing", billing.ID, nil, billing)
+	middleware.LogOperation(h.db, c, "create", "billing", billing.ID, nil, billingForOpLog(h.db, billing))
 	c.JSON(http.StatusCreated, gin.H{"code": 0, "message": "success", "data": billing})
 }
 
@@ -110,7 +161,7 @@ func (h *BillingHandler) DeductStock(c *gin.Context) {
 		return
 	}
 
-	middleware.LogOperation(h.db, c, "deduct_stock", "billing", billing.ID, nil, billing)
+	middleware.LogOperation(h.db, c, "deduct_stock", "billing", billing.ID, nil, billingForOpLog(h.db, billing))
 	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success", "data": billing})
 }
 
@@ -156,7 +207,7 @@ func (h *BillingHandler) CreateRecordBilling(c *gin.Context) {
 		return
 	}
 
-	middleware.LogOperation(h.db, c, "create", "billing", billing.ID, nil, billing)
+	middleware.LogOperation(h.db, c, "create", "billing", billing.ID, nil, billingForOpLog(h.db, billing))
 	c.JSON(http.StatusCreated, gin.H{"code": 0, "message": "success", "data": billing})
 }
 

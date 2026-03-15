@@ -12,7 +12,7 @@ export default function PatientChart({ data }: Props) {
     legend: { data: ['新增患者', '复诊患者'], top: 0 },
     xAxis: {
       type: 'category' as const,
-      data: data.map((d) => d.date.slice(5)),
+      data: data.map((d) => d.date),
     },
     yAxis: { type: 'value' as const, name: '人次' },
     series: [

@@ -139,6 +139,9 @@ func (s *RecordService) CreateRecord(tenantID, createdBy uint64, req *CreateReco
 		return nil, err
 	}
 
+	// Attach patient info for oplog display.
+	record.Patient = patient
+
 	return &record, nil
 }
 
@@ -331,6 +334,7 @@ func (s *RecordService) DeleteRecord(tenantID uint64, id uint64) (*model.Medical
 	if err := s.DB.Where("tenant_id = ?", tenantID).
 		Preload("Attachments").
 		Preload("Prescriptions.Items").
+		Preload("Patient").
 		First(&record, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrRecordNotFound

@@ -130,6 +130,7 @@ DeepSeek AI 相关（可选）：
 ### 备份策略
 - **MySQL**：每 2 小时自动备份（可通过 `BACKUP_INTERVAL_MYSQL` 配置），`YYYYMMDD_HHMMSS.sql` 存放于 `backups/`
 - **MinIO**：每 12 小时自动备份（可通过 `BACKUP_INTERVAL_MINIO` 配置），`minio_YYYYMMDD_HHMMSS.tar.gz` 存放于 `backups/minio/`
+- **配置热加载**：backup 容器挂载 `.env` 文件，每次备份执行前重新 `source /app/.env`，备份间隔和七牛云配置修改后自动生效，无需重启容器
 - **本地清理**：本地和云端保留策略一致，默认各保留最新 5 个（`QINIU_RETAIN_MYSQL`/`QINIU_RETAIN_MINIO`）
 - **七牛云清理**：上传后自动清理云端旧备份，保留数与本地一致
 - 启动时检测：若最近备份超过配置间隔则立即触发
@@ -181,23 +182,4 @@ DeepSeek AI 相关（可选）：
 ## 详细文档
 
 - [运维操作手册](docs/operations-guide.md)
-- [设计方案](docs/plans/2026-02-24-medical-record-system-design.md)
-- [实施计划](docs/plans/2026-02-24-medical-record-system-plan.md)
-- [经络3D可视化设计](docs/plans/2026-02-27-meridian-3d-design.md)
-- [经络3D优化记录](docs/plans/2026-02-28-meridian-optimization.md)
-- [脉象功能设计](docs/plans/2026-03-02-pulse-types-design.md)
-- [经络详情增强设计](docs/plans/2026-03-03-meridian-detail-design.md)
-- [临床经验集设计](docs/plans/2026-03-04-clinical-experience-design.md)
-- [诊疗记录增强设计（主诉/脉象/舌象）](docs/plans/2026-03-12-record-enhancement-design.md)
-- [库存管理功能设计](docs/plans/2026-03-13-inventory-management-design.md)
-- [库存管理实施计划](docs/plans/2026-03-13-inventory-management-plan.md)
-- [节气功能设计](docs/plans/2026-03-14-solar-terms-design.md)
-- [节气功能实施计划](docs/plans/2026-03-14-solar-terms-plan.md)
-- [易理卦象功能设计](docs/plans/2026-03-14-yijing-hexagram-design.md)
-- [诊所运营角色设计](docs/plans/2026-03-14-tenant-operations-design.md)
-- [诊所运营角色实施计划](docs/plans/2026-03-14-tenant-operations-plan.md)
-- [统计仪表盘设计](docs/plans/2026-03-15-statistics-dashboard-design.md)
-- [统计仪表盘实施计划](docs/plans/2026-03-15-statistics-dashboard-plan.md)
-- [回访功能设计](docs/plans/2026-03-15-follow-up-design.md)
-- [回访功能实施计划](docs/plans/2026-03-15-follow-up-plan.md)
 - [Codebase 全局上下文](docs/codebase.md)

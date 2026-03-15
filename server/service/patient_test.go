@@ -2,10 +2,13 @@ package service_test
 
 import (
 	"testing"
+	"time"
 
+	"github.com/callmefisher/menzhen/server/model"
 	"github.com/callmefisher/menzhen/server/service"
 	"github.com/callmefisher/menzhen/server/testutil"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCreatePatient_Success(t *testing.T) {
@@ -115,6 +118,33 @@ func TestGetPatient_CrossTenant(t *testing.T) {
 
 	assert.Nil(t, patient)
 	assert.ErrorIs(t, err, service.ErrPatientNotFound)
+}
+
+func TestGetPatient_PreloadLimit(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	tenant := testutil.SeedTestTenant(t, db, "诊所Limit", "clinic-limit")
+	user, _ := testutil.SeedTestUser(t, db, tenant.ID, "doctor", "pass123", nil)
+	patient := testutil.SeedTestPatient(t, db, tenant.ID, user.ID, "多记录患者")
+
+	// Create 110 medical records for this patient (exceeds 100 limit).
+	for i := 0; i < 110; i++ {
+		day := time.Date(2025, 1, 1, 0, 0, 0, 0, time.Local).AddDate(0, 0, i)
+		r := model.MedicalRecord{
+			TenantID:  tenant.ID,
+			PatientID: patient.ID,
+			CreatedBy: user.ID,
+			VisitDate: day,
+			Diagnosis: "诊断",
+		}
+		require.NoError(t, db.Create(&r).Error)
+	}
+
+	svc := service.NewPatientService(db)
+	result, err := svc.GetPatient(tenant.ID, patient.ID)
+	require.NoError(t, err)
+
+	// Should be capped at 100 records.
+	assert.LessOrEqual(t, len(result.MedicalRecords), 100)
 }
 
 func TestListPatients_Pagination(t *testing.T) {

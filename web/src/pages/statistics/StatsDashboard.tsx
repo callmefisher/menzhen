@@ -1,9 +1,13 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Radio, DatePicker, Spin, Empty } from 'antd';
 import dayjs from 'dayjs';
+import 'dayjs/locale/zh-cn';
 import type { Dayjs } from 'dayjs';
+
+dayjs.locale('zh-cn');
+
 import { getDashboard } from '../../api/statistics';
-import type { DashboardData } from '../../api/statistics';
+import type { DashboardData, DailyTrendItem } from '../../api/statistics';
 import useIsMobile from '../../hooks/useIsMobile';
 import SummaryCards from './components/SummaryCards';
 import RevenueTrendChart from './components/RevenueTrendChart';
@@ -12,7 +16,7 @@ import PatientChart from './components/PatientChart';
 
 const { RangePicker } = DatePicker;
 
-type QuickRange = 'today' | 'week' | 'month' | 'quarter' | 'year' | 'custom';
+export type QuickRange = 'today' | 'week' | 'month' | 'quarter' | 'year' | 'custom';
 
 function getDateRange(range: QuickRange): [Dayjs, Dayjs] {
   const now = dayjs();
@@ -32,6 +36,44 @@ function getDateRange(range: QuickRange): [Dayjs, Dayjs] {
     default:
       return [now.startOf('month'), now.endOf('day')];
   }
+}
+
+/**
+ * Aggregate daily trend data for chart display based on the selected time range.
+ * today/week/month → daily labels (MM-DD)
+ * quarter → weekly labels (MM/DD)
+ * year → monthly labels (N月)
+ */
+export function aggregateForCharts(data: DailyTrendItem[], range: QuickRange): DailyTrendItem[] {
+  if (range === 'today' || range === 'week' || range === 'month' || range === 'custom') {
+    return data.map((d) => ({ ...d, date: d.date.slice(5) }));
+  }
+
+  const groups = new Map<string, DailyTrendItem>();
+
+  for (const item of data) {
+    let key: string;
+    if (range === 'quarter') {
+      const weekStart = dayjs(item.date).startOf('week');
+      key = weekStart.format('MM/DD');
+    } else {
+      key = `${parseInt(item.date.slice(5, 7))}月`;
+    }
+
+    const existing = groups.get(key);
+    if (existing) {
+      existing.revenue += item.revenue;
+      existing.consultation_fee += item.consultation_fee;
+      existing.drug_fee += item.drug_fee;
+      existing.record_count += item.record_count;
+      existing.new_patient_count += item.new_patient_count;
+      existing.returning_patient_count += item.returning_patient_count;
+    } else {
+      groups.set(key, { ...item, date: key });
+    }
+  }
+
+  return Array.from(groups.values());
 }
 
 export default function StatsDashboard() {
@@ -75,6 +117,11 @@ export default function StatsDashboard() {
     }
   };
 
+  const chartData = useMemo(
+    () => (data ? aggregateForCharts(data.daily_trend, quickRange) : []),
+    [data, quickRange],
+  );
+
   return (
     <div style={{ padding: isMobile ? 12 : 24 }}>
       <div
@@ -112,7 +159,7 @@ export default function StatsDashboard() {
         {data ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <SummaryCards summary={data.summary} />
-            <RevenueTrendChart data={data.daily_trend} />
+            <RevenueTrendChart data={chartData} />
             <div
               style={{
                 display: isMobile ? 'flex' : 'grid',
@@ -121,8 +168,8 @@ export default function StatsDashboard() {
                 gap: 16,
               }}
             >
-              <RevenueBreakdownChart data={data.daily_trend} />
-              <PatientChart data={data.daily_trend} />
+              <RevenueBreakdownChart data={chartData} />
+              <PatientChart data={chartData} />
             </div>
           </div>
         ) : (

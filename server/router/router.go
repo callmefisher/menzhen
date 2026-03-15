@@ -55,6 +55,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	solarTermHandler := handler.NewSolarTermHandler(db)
 	hexagramHandler := handler.NewHexagramHandler(db)
 	followUpHandler := handler.NewFollowUpHandler(db)
+	configHandler := handler.NewConfigHandler(db)
 
 	// ---------- Route groups ----------
 
@@ -297,6 +298,14 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			followUps.GET("/:id", middleware.RequirePermission(db, "followup:read"), followUpHandler.Detail)
 			followUps.PUT("/:id", middleware.RequirePermission(db, "followup:update"), followUpHandler.Update)
 			followUps.DELETE("/:id", middleware.RequirePermission(db, "followup:delete"), followUpHandler.Delete)
+		}
+
+		// System config routes (super admin only).
+		configRoutes := authenticated.Group("/config")
+		{
+			configRoutes.GET("", middleware.RequirePermission(db, "user:manage"), configHandler.Get)
+			configRoutes.PUT("", middleware.RequirePermission(db, "user:manage"), configHandler.Update)
+			configRoutes.POST("/restart", middleware.RequirePermission(db, "user:manage"), configHandler.Restart)
 		}
 
 		// Statistics routes (tenant-scoped).

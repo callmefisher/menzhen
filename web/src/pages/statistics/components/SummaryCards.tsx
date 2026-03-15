@@ -47,31 +47,42 @@ export default function SummaryCards({ summary }: SummaryCardsProps) {
       change: summary.patients_change_percent,
       gradient: 'linear-gradient(135deg, #722ed1, #b37feb)',
     },
+    {
+      title: '治愈率',
+      value: summary.cure_rate !== null && summary.cure_rate !== undefined ? `${summary.cure_rate.toFixed(1)}%` : '--',
+      change: summary.cure_rate_change_percent,
+      gradient: 'linear-gradient(135deg, #fa8c16, #ffc069)',
+    },
   ];
 
   if (isMobile) {
+    const fullWidthCard = (card: CardConfig) => (
+      <div
+        key={card.title}
+        style={{
+          background: card.gradient,
+          borderRadius: 8,
+          padding: '16px 20px',
+          color: '#fff',
+          marginBottom: 8,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 13, opacity: 0.85 }}>{card.title}</div>
+          <div style={{ fontSize: 28, fontWeight: 700 }}>{card.value}</div>
+        </div>
+        <ChangeTag value={card.change} />
+      </div>
+    );
+
     return (
       <div>
-        <div
-          style={{
-            background: cards[0].gradient,
-            borderRadius: 8,
-            padding: '16px 20px',
-            color: '#fff',
-            marginBottom: 8,
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
-        >
-          <div>
-            <div style={{ fontSize: 13, opacity: 0.85 }}>{cards[0].title}</div>
-            <div style={{ fontSize: 28, fontWeight: 700 }}>{cards[0].value}</div>
-          </div>
-          <ChangeTag value={cards[0].change} />
-        </div>
-        <Row gutter={8}>
-          {cards.slice(1).map((card) => (
+        {fullWidthCard(cards[0])}
+        <Row gutter={8} style={{ marginBottom: 8 }}>
+          {cards.slice(1, 3).map((card) => (
             <Col span={12} key={card.title}>
               <div
                 style={{
@@ -89,6 +100,7 @@ export default function SummaryCards({ summary }: SummaryCardsProps) {
             </Col>
           ))}
         </Row>
+        {fullWidthCard(cards[3])}
       </div>
     );
   }
@@ -96,7 +108,7 @@ export default function SummaryCards({ summary }: SummaryCardsProps) {
   return (
     <Row gutter={16}>
       {cards.map((card) => (
-        <Col span={8} key={card.title}>
+        <Col span={6} key={card.title}>
           <div
             style={{
               background: card.gradient,

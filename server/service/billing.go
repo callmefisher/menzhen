@@ -67,10 +67,16 @@ func (s *BillingService) GetBillingDetail(tenantID, prescriptionID uint64) (*Bil
 		return nil, err
 	}
 
-	// Load all inventory drugs for this tenant (for price lookup).
+	// Load only inventory drugs matching prescription items (not full table).
+	herbNames := make([]string, 0, len(prescription.Items))
+	for _, pi := range prescription.Items {
+		herbNames = append(herbNames, pi.HerbName)
+	}
 	var drugs []model.InventoryDrug
-	if err := s.DB.Where("tenant_id = ?", tenantID).Find(&drugs).Error; err != nil {
-		return nil, err
+	if len(herbNames) > 0 {
+		if err := s.DB.Where("tenant_id = ? AND name IN ?", tenantID, herbNames).Find(&drugs).Error; err != nil {
+			return nil, err
+		}
 	}
 	drugMap := make(map[string]*model.InventoryDrug)
 	for i := range drugs {
@@ -243,7 +249,8 @@ func (s *BillingService) DeductStockAndBill(tenantID, userID, prescriptionID uin
 			return ErrStockAlreadyDeducted
 		}
 
-		// Deduct stock for each item.
+		// Deduct stock for each item and build drug map for cost calculation.
+		drugMap := make(map[string]*model.InventoryDrug)
 		for _, pi := range prescription.Items {
 			dosageVal := parseDosageValue(pi.Dosage)
 			if dosageVal <= 0 {
@@ -278,17 +285,10 @@ func (s *BillingService) DeductStockAndBill(tenantID, userID, prescriptionID uin
 			if err := tx.Model(&drug).Update("stock", gorm.Expr("stock - ?", deductQty)).Error; err != nil {
 				return err
 			}
+			drugMap[drug.Name] = &drug
 		}
 
-		// Compute drug cost from inventory prices.
-		var drugs []model.InventoryDrug
-		if err := tx.Where("tenant_id = ?", tenantID).Find(&drugs).Error; err != nil {
-			return err
-		}
-		drugMap := make(map[string]*model.InventoryDrug)
-		for i := range drugs {
-			drugMap[drugs[i].Name] = &drugs[i]
-		}
+		// Compute drug cost from locked drug data (no extra query needed).
 		var drugCostTotal float64
 		for _, pi := range prescription.Items {
 			dosageVal := parseDosageValue(pi.Dosage)

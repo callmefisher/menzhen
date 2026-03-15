@@ -12,7 +12,7 @@ export default function RevenueTrendChart({ data }: Props) {
     legend: { data: ['每日收入', '诊疗量'], top: 0 },
     xAxis: {
       type: 'category' as const,
-      data: data.map((d) => d.date.slice(5)),
+      data: data.map((d) => d.date),
     },
     yAxis: [
       { type: 'value' as const, name: '收入(¥)', position: 'left' as const },

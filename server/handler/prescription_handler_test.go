@@ -47,14 +47,15 @@ func TestPrescriptionHandler_Create_Success(t *testing.T) {
 	assert.Equal(t, "桂枝汤", data["formula_name"])
 }
 
-func TestPrescriptionHandler_Create_MissingItems(t *testing.T) {
+func TestPrescriptionHandler_Create_MissingRecordID(t *testing.T) {
 	env := setupTestEnv(t)
-	_, recordID := createTestRecord(t, env, "缺项患者")
 
-	// No items field — should fail validation (binding:"required,min=1")
+	// No record_id — should fail validation (binding:"required")
 	w := env.doRequest("POST", "/api/v1/prescriptions", map[string]interface{}{
-		"record_id":    recordID,
 		"formula_name": "test",
+		"items": []map[string]interface{}{
+			{"herb_name": "黄芪", "dosage": "15g"},
+		},
 	})
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)

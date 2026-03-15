@@ -6,6 +6,9 @@ set -e
 # Retention: keep latest N files (QINIU_RETAIN_MYSQL, default 5)
 # After backup: upload to Qiniu cloud storage
 
+# Re-read .env so config changes take effect without container restart
+[ -f /app/.env ] && set -a && . /app/.env && set +a
+
 BACKUP_DIR="${BACKUP_DIR:-/backups}"
 DB_HOST="${DB_HOST:-mysql}"
 DB_PORT="${DB_PORT:-3306}"

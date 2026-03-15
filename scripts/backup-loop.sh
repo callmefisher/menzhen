@@ -5,14 +5,17 @@
 # This ensures backups trigger promptly after system wake from sleep,
 # since sleep(1) uses monotonic clock which pauses during hibernation.
 
+# Re-read .env on each iteration so config changes take effect without restart
+reload_env() {
+    [ -f /app/.env ] && set -a && . /app/.env && set +a
+}
+
+reload_env
+
 BACKUP_DIR="${BACKUP_DIR:-/backups}"
-MYSQL_INTERVAL="${BACKUP_INTERVAL_MYSQL:-7200}"
-MINIO_INTERVAL="${BACKUP_INTERVAL_MINIO:-43200}"
 POLL_INTERVAL=60
 
 echo "[$(date)] Backup daemon started"
-echo "  MySQL interval: ${MYSQL_INTERVAL}s ($(( MYSQL_INTERVAL / 3600 ))h$(( (MYSQL_INTERVAL % 3600) / 60 ))m)"
-echo "  MinIO interval: ${MINIO_INTERVAL}s ($(( MINIO_INTERVAL / 3600 ))h$(( (MINIO_INTERVAL % 3600) / 60 ))m)"
 echo "  Poll interval: ${POLL_INTERVAL}s"
 
 # Get age (in seconds) of the most recent backup file
@@ -30,6 +33,8 @@ get_backup_age() {
 # --- MySQL backup loop ---
 mysql_loop() {
     while true; do
+        reload_env
+        MYSQL_INTERVAL="${BACKUP_INTERVAL_MYSQL:-7200}"
         age=$(get_backup_age "${BACKUP_DIR}" "*.sql")
         if [ -z "${age}" ]; then
             echo "[$(date)] MySQL: no backup found, triggering immediate..."
@@ -46,6 +51,8 @@ mysql_loop() {
 minio_loop() {
     MINIO_BACKUP_DIR="${BACKUP_DIR}/minio"
     while true; do
+        reload_env
+        MINIO_INTERVAL="${BACKUP_INTERVAL_MINIO:-43200}"
         age=$(get_backup_age "${MINIO_BACKUP_DIR}" "minio_*.tar.gz")
         if [ -z "${age}" ]; then
             echo "[$(date)] MinIO: no backup found, triggering immediate..."
