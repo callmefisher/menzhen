@@ -3,6 +3,7 @@ import request from '../utils/request';
 export interface RecordListParams {
   name?: string;
   date?: string;
+  patient_id?: number;
   page?: number;
   size?: number;
 }

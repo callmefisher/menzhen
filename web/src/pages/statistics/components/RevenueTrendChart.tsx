@@ -9,7 +9,7 @@ interface Props {
 export default function RevenueTrendChart({ data }: Props) {
   const option = {
     tooltip: { trigger: 'axis' as const },
-    legend: { data: ['每日收入', '诊疗量'] },
+    legend: { data: ['每日收入', '诊疗量'], top: 0 },
     xAxis: {
       type: 'category' as const,
       data: data.map((d) => d.date.slice(5)),
@@ -36,7 +36,7 @@ export default function RevenueTrendChart({ data }: Props) {
         smooth: true,
       },
     ],
-    grid: { left: 60, right: 60, bottom: 30 },
+    grid: { left: 60, right: 60, bottom: 30, top: 40 },
   };
 
   return (

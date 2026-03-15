@@ -9,7 +9,7 @@ interface Props {
 export default function PatientChart({ data }: Props) {
   const option = {
     tooltip: { trigger: 'axis' as const },
-    legend: { data: ['新增患者', '复诊患者'] },
+    legend: { data: ['新增患者', '复诊患者'], top: 0 },
     xAxis: {
       type: 'category' as const,
       data: data.map((d) => d.date.slice(5)),
@@ -31,7 +31,7 @@ export default function PatientChart({ data }: Props) {
         barMaxWidth: 30,
       },
     ],
-    grid: { left: 50, right: 20, bottom: 30 },
+    grid: { left: 50, right: 20, bottom: 30, top: 40 },
   };
 
   return (

@@ -103,13 +103,18 @@ export default function AppLayout() {
       try {
         const res = await getFollowUpStats();
         const data = (res as any).data;
-        setFollowUpCount((data?.pending_count || 0) + (data?.overdue_count || 0));
+        setFollowUpCount(data?.overdue_count || 0);
       } catch { /* ignore */ }
     };
 
     checkFollowUps();
     const interval = setInterval(checkFollowUps, 5 * 60 * 1000);
-    return () => clearInterval(interval);
+    const onFollowUpChanged = () => checkFollowUps();
+    window.addEventListener('followup-data-changed', onFollowUpChanged);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('followup-data-changed', onFollowUpChanged);
+    };
   }, [hasPermission]);
 
   const menuItems = useMemo(() => {
@@ -179,7 +184,7 @@ export default function AppLayout() {
       children: tcmChildren,
     });
 
-    const showOps = hasPermission('inventory:read') || hasPermission('followup:read') || hasPermission('tenant:manage');
+    const showOps = hasPermission('inventory:read') || hasPermission('followup:read') || hasPermission('statistics:read');
     if (showOps) {
       const totalBadge = alertCount + followUpCount;
       items.push({
@@ -227,7 +232,7 @@ export default function AppLayout() {
                 </span>
               : '回访',
           }] : []),
-          ...(hasPermission('tenant:manage') ? [{
+          ...(hasPermission('statistics:read') ? [{
             key: '/statistics',
             icon: <BarChartOutlined />,
             label: '统计概览',

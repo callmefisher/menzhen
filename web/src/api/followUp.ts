@@ -35,6 +35,7 @@ export interface FollowUpListItem {
 }
 
 export interface FollowUpListParams {
+  patient_id?: number;
   patient_name?: string;
   status?: string;
   planned_date_from?: string;

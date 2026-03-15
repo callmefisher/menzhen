@@ -11,6 +11,9 @@
 # Backups (local only)
 backups/
 
+# Build artifacts
+server/menzhen-api
+
 # Coverage reports
 web/coverage/
 server/coverage.out

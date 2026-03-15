@@ -17,9 +17,8 @@ import {
   Tag,
   Drawer,
   Tooltip,
-  Dropdown,
 } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, RobotOutlined, ReloadOutlined, MoreOutlined, MedicineBoxOutlined, InboxOutlined, SearchOutlined, DownOutlined, RightOutlined, DollarOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, RobotOutlined, ReloadOutlined, MedicineBoxOutlined, InboxOutlined, SearchOutlined, DownOutlined, RightOutlined, DollarOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import Markdown from 'react-markdown';
@@ -1237,6 +1236,41 @@ export default function RecordForm() {
 
             {prescriptions.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {/* 仅诊疗费卡片（record-level billing） */}
+                {billingMap[0] && (() => {
+                  const b = billingMap[0];
+                  return (
+                    <Card
+                      size="small"
+                      style={{ borderRadius: 8, borderColor: '#ffe58f', background: '#fffbe6' }}
+                      title={
+                        <Space size={8}>
+                          <DollarOutlined style={{ color: '#faad14' }} />
+                          <span style={{ fontWeight: 500 }}>仅诊疗费</span>
+                        </Space>
+                      }
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                        <div style={{ display: 'flex', gap: 16, fontSize: 13, color: '#888', flexWrap: 'wrap' }}>
+                          <span>诊疗费 <span style={{ color: '#333' }}>¥{b.consultation_fee.toFixed(2)}</span></span>
+                          <span>实收 <span style={{ color: '#389e0d', fontWeight: 600 }}>¥{b.actual_paid.toFixed(2)}</span></span>
+                        </div>
+                        <Button
+                          type="link"
+                          size="small"
+                          icon={<EditOutlined />}
+                          onClick={() => {
+                            setBillingPrescriptionId(0);
+                            setBillingDrawerOpen(true);
+                          }}
+                          style={{ color: '#faad14', padding: 0 }}
+                        >
+                          修改
+                        </Button>
+                      </div>
+                    </Card>
+                  );
+                })()}
                 {prescriptions.map((item) => (
                   <Card
                     key={item.id}
@@ -1244,75 +1278,18 @@ export default function RecordForm() {
                     style={{ borderRadius: 8 }}
                     title={
                       <Space size={8}>
-                        <MedicineBoxOutlined style={{ color: '#1677ff' }} />
-                        <span style={{ fontWeight: 500 }}>{item.formula_name || '自定义处方'}</span>
-                        <Tag color="blue" style={{ marginLeft: 4 }}>{item.total_doses} 付</Tag>
-                      </Space>
-                    }
-                    extra={
-                      <Space size={4}>
-                        <Button
-                          type="primary"
-                          size="small"
-                          icon={<DollarOutlined />}
-                          onClick={() => {
-                            setBillingPrescriptionId(item.id);
-                            setBillingDrawerOpen(true);
-                          }}
-                          style={{
-                            background: 'linear-gradient(135deg, #faad14 0%, #d48806 100%)',
-                            borderColor: '#d48806',
-                            fontWeight: 600,
-                            boxShadow: '0 2px 4px rgba(250, 173, 20, 0.3)',
-                          }}
-                        >
-                          收费
-                        </Button>
-                        <PrescriptionPrint
-                          key="print"
-                          prescription={item}
-                          patientName={recordPatient?.name}
-                          patientAge={recordPatient?.age}
-                          chiefComplaint={form.getFieldValue('chief_complaint')}
-                          treatment={form.getFieldValue('treatment')}
-                        />
-                        {hasPermission('prescription:create') && (
-                          <Dropdown
-                            menu={{
-                              items: [
-                                {
-                                  key: 'edit',
-                                  icon: <EditOutlined />,
-                                  label: '编辑',
-                                  onClick: () => handleOpenPrescriptionModal(item),
-                                },
-                                { type: 'divider' },
-                                {
-                                  key: 'delete',
-                                  icon: <DeleteOutlined />,
-                                  label: '删除',
-                                  danger: true,
-                                  onClick: () => {
-                                    Modal.confirm({
-                                      title: '确定删除此处方？',
-                                      content: '删除后不可恢复',
-                                      okText: '删除',
-                                      okButtonProps: { danger: true },
-                                      cancelText: '取消',
-                                      onOk: () => handleDeletePrescription(item.id),
-                                    });
-                                  },
-                                },
-                              ],
-                            }}
-                            trigger={['click']}
-                          >
-                            <Button type="text" size="small" icon={<MoreOutlined />} />
-                          </Dropdown>
-                        )}
+                        <MedicineBoxOutlined style={{ color: (item.items || []).length === 0 ? '#faad14' : '#1677ff' }} />
+                        <span style={{ fontWeight: 500 }}>{(item.items || []).length === 0 ? '仅诊疗费' : (item.formula_name || '自定义处方')}</span>
+                        {(item.items || []).length > 0 && <Tag color="blue" style={{ marginLeft: 4 }}>{item.total_doses} 付</Tag>}
                       </Space>
                     }
                   >
+                    {(item.items || []).length === 0 ? (
+                      <div style={{ color: '#999', textAlign: 'center', padding: '8px 0' }}>
+                        仅收取诊疗费（无药品）
+                      </div>
+                    ) : (
+                    <>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px', lineHeight: '26px' }}>
                       {(item.items || []).filter((h) => !h.category || h.category === 'herb').map((herb) => (
                         <span key={herb.id} style={{ whiteSpace: 'nowrap' }}>
@@ -1335,6 +1312,8 @@ export default function RecordForm() {
                         ))}
                       </div>
                     )}
+                    </>
+                    )}
                     {item.notes && (
                       <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed #f0f0f0', color: '#666', fontSize: 13 }}>
                         <div style={{ marginBottom: 2 }}>医嘱：</div>
@@ -1348,16 +1327,68 @@ export default function RecordForm() {
                         开方医师：{item.creator.real_name}
                       </div>
                     )}
-                    {billingMap[item.id] && (
-                      <div style={{
-                        marginTop: 8, paddingTop: 8, borderTop: '1px dashed #e8e8e8',
-                        display: 'flex', gap: 16, fontSize: 12, color: '#666', flexWrap: 'wrap',
-                      }}>
-                        <span>诊疗费：¥{billingMap[item.id].consultation_fee.toFixed(2)}</span>
-                        <span>实收：<span style={{ color: '#52c41a', fontWeight: 500 }}>¥{billingMap[item.id].actual_paid.toFixed(2)}</span></span>
-                        {billingMap[item.id].stock_deducted && <Tag color="green" style={{ fontSize: 11 }}>已扣库存</Tag>}
-                      </div>
-                    )}
+                    {billingMap[item.id] && (() => {
+                      const b = billingMap[item.id];
+                      return (
+                        <div style={{
+                          marginTop: 8, paddingTop: 8, borderTop: '1px dashed #e8e8e8',
+                          display: 'flex', gap: 16, fontSize: 12, color: '#888', flexWrap: 'wrap', alignItems: 'center',
+                        }}>
+                          <span>诊疗费 <span style={{ color: '#333' }}>¥{b.consultation_fee.toFixed(2)}</span></span>
+                          {b.drug_cost_total > 0 && <span>药费 <span style={{ color: '#333' }}>¥{b.drug_cost_total.toFixed(2)}</span></span>}
+                          <span>应收 <span style={{ color: '#cf1322', fontWeight: 600 }}>¥{b.total_amount.toFixed(2)}</span></span>
+                          <span>实收 <span style={{ color: '#389e0d', fontWeight: 600 }}>¥{b.actual_paid.toFixed(2)}</span></span>
+                          {b.stock_deducted && <Tag color="green" style={{ fontSize: 11 }}>已扣库存</Tag>}
+                        </div>
+                      );
+                    })()}
+                    {/* 操作栏 */}
+                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #f0f0f0', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                      <Button
+                        type="link"
+                        size="small"
+                        icon={<DollarOutlined />}
+                        onClick={() => {
+                          setBillingPrescriptionId(item.id);
+                          setBillingDrawerOpen(true);
+                        }}
+                        style={{ color: '#faad14', padding: 0 }}
+                      >
+                        收费
+                      </Button>
+                      <PrescriptionPrint
+                        key="print"
+                        prescription={item}
+                        patientName={recordPatient?.name}
+                        patientAge={recordPatient?.age}
+                        chiefComplaint={form.getFieldValue('chief_complaint')}
+                        treatment={form.getFieldValue('treatment')}
+                      />
+                      {hasPermission('prescription:create') && (
+                        <>
+                          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleOpenPrescriptionModal(item)} style={{ padding: 0 }}>编辑</Button>
+                          <Button
+                            type="link"
+                            size="small"
+                            icon={<DeleteOutlined />}
+                            danger
+                            style={{ padding: 0 }}
+                            onClick={() => {
+                              Modal.confirm({
+                                title: '确定删除此处方？',
+                                content: '删除后不可恢复',
+                                okText: '删除',
+                                okButtonProps: { danger: true },
+                                cancelText: '取消',
+                                onOk: () => handleDeletePrescription(item.id),
+                              });
+                            }}
+                          >
+                            删除
+                          </Button>
+                        </>
+                      )}
+                    </div>
                   </Card>
                 ))}
               </div>
@@ -1390,6 +1421,18 @@ export default function RecordForm() {
                     仅收诊疗费
                   </Button>
                 </div>
+                {billingMap[0] && (() => {
+                  const b = billingMap[0];
+                  return (
+                    <div style={{
+                      marginTop: 16, paddingTop: 12, borderTop: '1px dashed #e8e8e8',
+                      display: 'flex', gap: 16, fontSize: 13, color: '#888', justifyContent: 'center', flexWrap: 'wrap',
+                    }}>
+                      <span>诊疗费 <span style={{ color: '#333' }}>¥{b.consultation_fee.toFixed(2)}</span></span>
+                      <span>实收 <span style={{ color: '#389e0d', fontWeight: 600 }}>¥{b.actual_paid.toFixed(2)}</span></span>
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </div>

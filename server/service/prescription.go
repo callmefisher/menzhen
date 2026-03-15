@@ -27,7 +27,7 @@ type CreatePrescriptionRequest struct {
 	FormulaName string                    `json:"formula_name"`
 	TotalDoses  int                       `json:"total_doses"`
 	Notes       string                    `json:"notes"`
-	Items       []PrescriptionItemRequest `json:"items" binding:"required,min=1"`
+	Items       []PrescriptionItemRequest `json:"items"`
 }
 
 // UpdatePrescriptionRequest is the input for updating a prescription.
@@ -78,25 +78,27 @@ func (s *PrescriptionService) Create(tenantID, createdBy uint64, req *CreatePres
 			return err
 		}
 
-		items := make([]model.PrescriptionItem, 0, len(req.Items))
-		for _, item := range req.Items {
-			cat := item.Category
-			if cat == "" {
-				cat = "herb"
+		if len(req.Items) > 0 {
+			items := make([]model.PrescriptionItem, 0, len(req.Items))
+			for _, item := range req.Items {
+				cat := item.Category
+				if cat == "" {
+					cat = "herb"
+				}
+				items = append(items, model.PrescriptionItem{
+					PrescriptionID: prescription.ID,
+					HerbName:       item.HerbName,
+					Dosage:         item.Dosage,
+					SortOrder:      item.SortOrder,
+					Notes:          item.Notes,
+					Category:       cat,
+				})
 			}
-			items = append(items, model.PrescriptionItem{
-				PrescriptionID: prescription.ID,
-				HerbName:       item.HerbName,
-				Dosage:         item.Dosage,
-				SortOrder:      item.SortOrder,
-				Notes:          item.Notes,
-				Category:       cat,
-			})
+			if err := tx.Create(&items).Error; err != nil {
+				return err
+			}
+			prescription.Items = items
 		}
-		if err := tx.Create(&items).Error; err != nil {
-			return err
-		}
-		prescription.Items = items
 		return nil
 	})
 

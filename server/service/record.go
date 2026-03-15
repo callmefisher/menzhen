@@ -164,7 +164,7 @@ func (s *RecordService) GetRecord(tenantID uint64, id uint64) (*model.MedicalRec
 
 // ListRecords returns a paginated list of medical records for the given tenant.
 // Supports filtering by patient name and visit date.
-func (s *RecordService) ListRecords(tenantID uint64, name, date string, page, size int) ([]RecordListItem, int64, error) {
+func (s *RecordService) ListRecords(tenantID uint64, name, date string, patientID uint64, page, size int) ([]RecordListItem, int64, error) {
 	var items []RecordListItem
 	var total int64
 
@@ -173,6 +173,9 @@ func (s *RecordService) ListRecords(tenantID uint64, name, date string, page, si
 		Joins("JOIN patients ON patients.id = medical_records.patient_id").
 		Where("medical_records.tenant_id = ? AND medical_records.deleted_at IS NULL", tenantID)
 
+	if patientID > 0 {
+		query = query.Where("medical_records.patient_id = ?", patientID)
+	}
 	if name != "" {
 		query = query.Where("patients.name LIKE ?", "%"+name+"%")
 	}

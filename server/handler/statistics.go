@@ -62,3 +62,15 @@ func (h *StatisticsHandler) GetDashboard(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success", "data": result})
 }
+
+// RebuildStats recomputes all daily_stats rows for the current tenant.
+func (h *StatisticsHandler) RebuildStats(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+
+	if err := h.svc.RebuildAllDailyStats(tenantID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "failed to rebuild statistics"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "statistics rebuilt successfully"})
+}

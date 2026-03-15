@@ -54,25 +54,24 @@ export default function PrescriptionPrint({
           <title>处方笺</title>
           <style>
             @page { margin: 20mm; }
-            body { font-family: "SimSun", "宋体", serif; color: #000; }
+            body { font-family: "SimSun", "宋体", serif; color: #333; }
             .prescription-print { max-width: 800px; margin: 0 auto; }
-            .prescription-print h2 { text-align: center; margin-bottom: 4px; }
-            .prescription-print .subtitle { text-align: center; font-size: 12px; color: #666; margin-bottom: 16px; }
-            .prescription-print .info-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; }
-            .prescription-print .divider { border-top: 1px solid #000; margin: 12px 0; }
+            .prescription-print h2 { text-align: center; margin-bottom: 4px; color: #000; }
+            .prescription-print .subtitle { text-align: center; font-size: 12px; color: #999; margin-bottom: 16px; }
+            .prescription-print .info-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; padding-bottom: 10px; border-bottom: 1px solid #ddd; }
             .prescription-print .clinical-info { font-size: 14px; margin-bottom: 4px; }
             .prescription-print .clinical-info .label { font-weight: bold; }
             .prescription-print .rp { font-size: 18px; font-weight: bold; margin: 8px 0; }
             .prescription-print .herb-columns { display: flex; gap: 24px; }
             .prescription-print .herb-column { flex: 1; }
             .prescription-print .herb-list { list-style: none; padding: 0; margin: 0; }
-            .prescription-print .herb-list li { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px dashed #ccc; font-size: 14px; }
+            .prescription-print .herb-list li { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px dashed #ddd; font-size: 14px; }
             .prescription-print .herb-name { flex: 1; }
             .prescription-print .herb-dosage { width: 60px; text-align: right; }
-            .prescription-print .herb-notes { width: 80px; text-align: right; color: #666; }
-            .prescription-print .footer { margin-top: 16px; font-size: 14px; }
+            .prescription-print .herb-notes { width: 80px; text-align: right; color: #888; }
+            .prescription-print .footer { margin-top: 16px; padding-top: 12px; border-top: 1px solid #ddd; font-size: 14px; }
             .prescription-print .footer .row { display: flex; justify-content: space-between; margin-bottom: 6px; }
-            .prescription-print .signature { margin-top: 32px; text-align: right; font-size: 14px; }
+            .prescription-print .signature { margin-top: 32px; text-align: right; font-size: 14px; color: #666; }
           </style>
         </head>
         <body>${printContent}</body>
@@ -123,8 +122,6 @@ export default function PrescriptionPrint({
               </div>
             )}
 
-            <div className="divider" />
-
             {prescription.formula_name && (
               <div style={{ fontSize: 14, marginBottom: 4 }}>
                 方剂：{prescription.formula_name}
@@ -172,8 +169,6 @@ export default function PrescriptionPrint({
                 </ul>
               </div>
             )}
-
-            <div className="divider" />
 
             <div className="footer">
               {prescription.notes && (

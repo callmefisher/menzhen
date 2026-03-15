@@ -48,19 +48,17 @@ const BillingPrint = forwardRef<BillingPrintHandle, BillingPrintProps>(
               <title>收费单</title>
               <style>
                 @page { margin: 20mm; }
-                body { font-family: "SimSun", "宋体", serif; color: #000; }
+                body { font-family: "SimSun", "宋体", serif; color: #333; }
                 .billing-print { max-width: 800px; margin: 0 auto; }
-                .billing-print h2 { text-align: center; margin-bottom: 4px; }
-                .billing-print .subtitle { text-align: center; font-size: 12px; color: #666; margin-bottom: 16px; }
-                .billing-print .info-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; }
-                .billing-print .divider { border-top: 1px solid #000; margin: 12px 0; }
-                .billing-print table { width: 100%; border-collapse: collapse; font-size: 13px; }
-                .billing-print th, .billing-print td { border: 1px solid #999; padding: 4px 8px; text-align: center; vertical-align: middle; }
-                .billing-print th { background: #f0f0f0; font-weight: bold; }
-                .billing-print .text-right { text-align: right; }
-                .billing-print .summary { font-size: 14px; margin-top: 12px; }
+                .billing-print h2 { text-align: center; margin-bottom: 4px; color: #000; }
+                .billing-print .subtitle { text-align: center; font-size: 12px; color: #999; margin-bottom: 16px; }
+                .billing-print .info-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; padding-bottom: 10px; border-bottom: 1px solid #ddd; }
+                .billing-print table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 4px; }
+                .billing-print th, .billing-print td { border-bottom: 1px solid #e8e8e8; padding: 6px 8px; text-align: center; vertical-align: middle; }
+                .billing-print th { font-weight: bold; border-bottom: 2px solid #ccc; color: #555; }
+                .billing-print .summary { font-size: 14px; margin-top: 20px; padding-top: 12px; border-top: 1px solid #ddd; }
                 .billing-print .summary .row { display: flex; justify-content: space-between; margin-bottom: 6px; }
-                .billing-print .signature { margin-top: 32px; text-align: right; font-size: 14px; }
+                .billing-print .signature { margin-top: 32px; text-align: right; font-size: 14px; color: #666; }
               </style>
             </head>
             <body>${printContent}</body>
@@ -89,10 +87,8 @@ const BillingPrint = forwardRef<BillingPrintHandle, BillingPrintProps>(
             </div>
 
             {detail.formula_name && (
-              <div style={{ fontSize: 14, marginBottom: 4 }}>方剂：{detail.formula_name}</div>
+              <div style={{ fontSize: 14, marginBottom: 12 }}>方剂：{detail.formula_name}</div>
             )}
-
-            <div className="divider" />
 
             {herbs.length > 0 && (
               <>
@@ -151,8 +147,6 @@ const BillingPrint = forwardRef<BillingPrintHandle, BillingPrintProps>(
                 </table>
               </div>
             )}
-
-            <div className="divider" />
 
             <div className="summary">
               <div className="row">

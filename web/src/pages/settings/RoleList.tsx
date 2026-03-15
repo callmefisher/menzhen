@@ -78,8 +78,12 @@ const PERMISSION_GROUPS: { label: string; codes: string[] }[] = [
     codes: ['billing:create', 'billing:read'],
   },
   {
+    label: '回访管理',
+    codes: ['followup:create', 'followup:read', 'followup:update', 'followup:delete'],
+  },
+  {
     label: '诊所运营',
-    codes: ['tenant:user:manage', 'tenant:role:manage'],
+    codes: ['tenant:user:manage', 'tenant:role:manage', 'statistics:read'],
   },
 ];
 
