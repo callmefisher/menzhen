@@ -47,28 +47,43 @@ type DailyStats struct {
     StatDate              time.Time `gorm:"uniqueIndex:idx_tenant_date;type:date;not null"`
     Revenue               float64   `gorm:"type:decimal(12,2);default:0"`       // 实收总额（actual_paid 合计）
     ConsultationFee       float64   `gorm:"type:decimal(12,2);default:0"`       // 诊金合计
-    DrugFee               float64   `gorm:"type:decimal(12,2);default:0"`       // 药费合计（revenue - consultation_fee）
+    DrugFee               float64   `gorm:"type:decimal(12,2);default:0"`       // 药费合计（实收 - 诊金，可能为负表示折扣）
     RecordCount           int       `gorm:"default:0"`                          // 诊疗记录数
-    NewPatientCount       int       `gorm:"default:0"`                          // 新增患者数
+    NewPatientCount       int       `gorm:"default:0"`                          // 新增患者数（当天首次就诊）
     ReturningPatientCount int       `gorm:"default:0"`                          // 复诊患者数
 }
 ```
 
 **索引**：`UNIQUE(tenant_id, stat_date)` 复合索引
 
+**注意**：新增模型需在 `database/database.go` 的 `AutoMigrate` 列表中添加 `&model.DailyStats{}`
+
 ### 汇总表更新机制
 
-**写时聚合**：每次 billing 创建/更新时，调用 `RefreshDailyStats(tenantID, date)` 重新聚合当天数据。
+**聚合日期基准**：以 `medical_records.visit_date`（就诊日期）为准，不用 `billing.created_at`。因为收费可能延后，但收入应归属就诊当天。
+
+**写时聚合**：每次 billing 创建/更新/删除时，调用 `RefreshDailyStats(tenantID, date)` 重新聚合当天数据。
 
 ```go
 // service/statistics.go
 func RefreshDailyStats(tenantID uint64, date time.Time) error {
-    // 1. 查当天 billings 汇总: SUM(actual_paid), SUM(consultation_fee), COUNT
-    // 2. 查当天 medical_records 数
-    // 3. 查当天患者中，created_at == visit_date 为新患者，否则为复诊
+    // 1. 查 visit_date = date 的 medical_records，关联 billings
+    //    SUM(actual_paid), SUM(consultation_fee)
+    //    drug_fee = actual_paid - consultation_fee（派生值，可能为负表示折扣）
+    // 2. COUNT medical_records 得 record_count
+    // 3. 新患者判定：当天就诊的 patient 中，该 patient 在整个系统中
+    //    最早的 visit_date == 当天 → 新患者；否则 → 复诊
+    //    SQL: LEFT JOIN (SELECT patient_id, MIN(visit_date) as first_visit FROM medical_records GROUP BY patient_id)
     // 4. UPSERT daily_stats 记录
 }
 ```
+
+**调用时机**：
+- `CreateBilling` service 方法完成后
+- `DeductStockAndBill` service 方法完成后
+- billing 软删除后（如有此场景）
+
+**时区约定**：服务器时区与诊所运营时区一致（Docker 部署时通过 TZ 环境变量设置），`visit_date` 为 DATE 类型无时区问题。
 
 **重建命令**：提供 `RebuildAllDailyStats(tenantID)` 用于数据修复/初始化。
 
@@ -103,7 +118,8 @@ GET /api/v1/statistics/dashboard?start_date=2026-03-01&end_date=2026-03-15
         "consultation_fee": 500.00,
         "drug_fee": 1180.00,
         "record_count": 6,
-        "patient_count": 4
+        "new_patient_count": 2,
+        "returning_patient_count": 4
       }
     ],
     "revenue_breakdown": {
@@ -118,14 +134,19 @@ GET /api/v1/statistics/dashboard?start_date=2026-03-01&end_date=2026-03-15
 }
 ```
 
-**环比计算**：取同等长度的上一时段对比。如选 3/1-3/15，则对比 2/14-2/28。
+**环比计算**：取同等长度的上一时段对比。如选 3/1-3/15（15天），则对比 2/14-2/28。
+- `total_patients` = `SUM(new_patient_count + returning_patient_count)`（即患者就诊人次，非去重）
+- `avg_revenue_per_record`：当 `total_records == 0` 时返回 `0`
+- `*_change_percent`：当上一时段基数为 0 时返回 `null`（前端显示"--"）
 
 ### 后端文件
 
 ```
 server/
 ├── model/daily_stats.go         # DailyStats 模型
+├── database/database.go         # AutoMigrate 添加 &model.DailyStats{}
 ├── service/statistics.go        # 聚合查询 + RefreshDailyStats + RebuildAllDailyStats
+├── service/billing.go           # CreateBilling/DeductStockAndBill 末尾调用 RefreshDailyStats
 ├── handler/statistics.go        # GetDashboard handler
 └── router/router.go             # 新增 statistics 路由组
 ```
@@ -152,9 +173,11 @@ server/
 
 ### 移动端布局（方案 A — 纵向堆叠）
 
+移动端保留全部时间快捷按钮，使用横向滚动容纳。
+
 ```
 ┌──────────────────────┐
-│ [今日][本周][本月][自定义]│
+│ [今日][本周][本月][本季][本年][自定义]│
 ├──────────────────────┤
 │ 渐变蓝 · 总收入        │
 │ ¥48,600   ↑ 12.5%    │
@@ -194,7 +217,7 @@ web/src/
 |------|-------------|--------|
 | 收入+诊疗趋势 | 双轴：bar (record_count) + line (revenue) | `daily_trend[]` |
 | 收入构成 | 堆叠 bar：consultation_fee + drug_fee | `daily_trend[]` |
-| 患者统计 | bar：new_patients + returning_patients | `patient_breakdown` |
+| 患者统计 | 分组 bar：new_patient_count + returning_patient_count | `daily_trend[]` |
 
 ### 时间选择器
 
