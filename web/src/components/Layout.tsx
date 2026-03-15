@@ -24,6 +24,7 @@ import {
   AlertOutlined,
   CalendarOutlined,
   FileTextOutlined,
+  BarChartOutlined,
 } from '@ant-design/icons';
 import type { MenuProps as AntMenuProps } from 'antd';
 import { useAuth } from '../store/auth';
@@ -159,7 +160,7 @@ export default function AppLayout() {
       children: tcmChildren,
     });
 
-    if (hasPermission('inventory:read')) {
+    if (hasPermission('inventory:read') || hasPermission('tenant:manage')) {
       items.push({
         key: '/inventory',
         icon: <ShopOutlined />,
@@ -181,28 +182,35 @@ export default function AppLayout() {
             </span>
           : '运营',
         children: [
-          {
-            key: '/inventory/drugs',
-            icon: <MedicineBoxOutlined />,
-            label: '库存药物',
-          },
-          {
-            key: '/inventory/alerts',
-            icon: <AlertOutlined />,
-            label: alertCount > 0
-              ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  库存预警
-                  <span style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: '50%',
-                    background: '#ff4d4f',
-                    boxShadow: '0 0 4px #ff4d4f',
-                    flexShrink: 0,
-                  }} />
-                </span>
-              : '库存预警',
-          },
+          ...(hasPermission('inventory:read') ? [
+            {
+              key: '/inventory/drugs',
+              icon: <MedicineBoxOutlined />,
+              label: '库存药物',
+            },
+            {
+              key: '/inventory/alerts',
+              icon: <AlertOutlined />,
+              label: alertCount > 0
+                ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    库存预警
+                    <span style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: '50%',
+                      background: '#ff4d4f',
+                      boxShadow: '0 0 4px #ff4d4f',
+                      flexShrink: 0,
+                    }} />
+                  </span>
+                : '库存预警',
+            },
+          ] : []),
+          ...(hasPermission('tenant:manage') ? [{
+            key: '/statistics',
+            icon: <BarChartOutlined />,
+            label: '统计概览',
+          }] : []),
         ],
       });
     }
@@ -271,6 +279,7 @@ export default function AppLayout() {
     if (path.startsWith('/yijing')) return ['/yijing'];
     if (path.startsWith('/inventory/drugs')) return ['/inventory/drugs'];
     if (path.startsWith('/inventory/alerts')) return ['/inventory/alerts'];
+    if (path.startsWith('/statistics')) return ['/statistics'];
     if (path.startsWith('/records')) return ['/records'];
     return ['/records'];
   }, [location.pathname]);
@@ -278,7 +287,7 @@ export default function AppLayout() {
   const openKeys = useMemo(() => {
     const path = location.pathname;
     if (path.startsWith('/settings')) return ['/settings'];
-    if (path.startsWith('/inventory')) return ['/inventory'];
+    if (path.startsWith('/inventory') || path.startsWith('/statistics')) return ['/inventory'];
     if (path.startsWith('/herbs') || path.startsWith('/formulas') || path.startsWith('/meridians') || path.startsWith('/pulses') || path.startsWith('/wuyun') || path.startsWith('/clinical-experience') || path.startsWith('/solar-terms') || path.startsWith('/yijing')) return ['/tcm'];
     return [];
   }, [location.pathname]);
