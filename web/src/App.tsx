@@ -23,6 +23,7 @@ import DrugList from './pages/inventory/DrugList';
 import SolarTerms from './pages/solar-terms/SolarTerms';
 import YijingList from './pages/yijing/YijingList';
 import InventoryAlert from './pages/inventory/InventoryAlert';
+import FollowUpList from './pages/followup/FollowUpList';
 import StatsDashboard from './pages/statistics/StatsDashboard';
 import type { ReactNode } from 'react';
 
@@ -83,6 +84,7 @@ function AppRoutes() {
         <Route path="yijing" element={<YijingList />} />
         <Route path="inventory/drugs" element={<DrugList />} />
         <Route path="inventory/alerts" element={<InventoryAlert />} />
+        <Route path="follow-ups" element={<FollowUpList />} />
         <Route path="statistics" element={<StatsDashboard />} />
         <Route path="oplogs" element={<OpLogList />} />
         <Route path="settings/users" element={<UserList />} />
