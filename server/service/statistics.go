@@ -1,6 +1,7 @@
 package service
 
 import (
+	"math"
 	"time"
 
 	"github.com/callmefisher/menzhen/server/model"
@@ -8,6 +9,45 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+// Response structures for GetDashboard.
+
+type DashboardSummary struct {
+	TotalRevenue          float64  `json:"total_revenue"`
+	TotalRecords          int      `json:"total_records"`
+	TotalPatients         int      `json:"total_patients"`
+	AvgRevenuePerRecord   float64  `json:"avg_revenue_per_record"`
+	RevenueChangePercent  *float64 `json:"revenue_change_percent"`
+	RecordsChangePercent  *float64 `json:"records_change_percent"`
+	PatientsChangePercent *float64 `json:"patients_change_percent"`
+}
+
+type DailyTrendItem struct {
+	Date                  string  `json:"date"`
+	Revenue               float64 `json:"revenue"`
+	ConsultationFee       float64 `json:"consultation_fee"`
+	DrugFee               float64 `json:"drug_fee"`
+	RecordCount           int     `json:"record_count"`
+	NewPatientCount       int     `json:"new_patient_count"`
+	ReturningPatientCount int     `json:"returning_patient_count"`
+}
+
+type RevenueBreakdown struct {
+	ConsultationFeeTotal float64 `json:"consultation_fee_total"`
+	DrugFeeTotal         float64 `json:"drug_fee_total"`
+}
+
+type PatientBreakdown struct {
+	NewPatients       int `json:"new_patients"`
+	ReturningPatients int `json:"returning_patients"`
+}
+
+type DashboardResult struct {
+	Summary          DashboardSummary `json:"summary"`
+	DailyTrend       []DailyTrendItem `json:"daily_trend"`
+	RevenueBreakdown RevenueBreakdown `json:"revenue_breakdown"`
+	PatientBreakdown PatientBreakdown `json:"patient_breakdown"`
+}
 
 // StatisticsService aggregates billing and visit data into daily_stats.
 type StatisticsService struct {
@@ -112,4 +152,92 @@ func (s *StatisticsService) RebuildAllDailyStats(tenantID uint64) error {
 		}
 	}
 	return nil
+}
+
+// GetDashboard aggregates daily_stats rows for the given date range and returns
+// summary metrics, daily trend, revenue breakdown, and patient breakdown.
+// It also computes period-over-period change percentages against the equal-length
+// preceding period.
+func (s *StatisticsService) GetDashboard(tenantID uint64, startDate, endDate time.Time) (*DashboardResult, error) {
+	var stats []model.DailyStats
+	s.DB.Where("tenant_id = ? AND stat_date >= ? AND stat_date <= ?", tenantID, startDate, endDate).
+		Order("stat_date ASC").
+		Find(&stats)
+
+	var totalRevenue, totalConsultation, totalDrug float64
+	var totalRecords, totalNew, totalReturning int
+	dailyTrend := make([]DailyTrendItem, 0, len(stats))
+
+	for _, st := range stats {
+		totalRevenue += st.Revenue
+		totalConsultation += st.ConsultationFee
+		totalDrug += st.DrugFee
+		totalRecords += st.RecordCount
+		totalNew += st.NewPatientCount
+		totalReturning += st.ReturningPatientCount
+
+		dailyTrend = append(dailyTrend, DailyTrendItem{
+			Date:                  st.StatDate.Format("2006-01-02"),
+			Revenue:               st.Revenue,
+			ConsultationFee:       st.ConsultationFee,
+			DrugFee:               st.DrugFee,
+			RecordCount:           st.RecordCount,
+			NewPatientCount:       st.NewPatientCount,
+			ReturningPatientCount: st.ReturningPatientCount,
+		})
+	}
+
+	totalPatients := totalNew + totalReturning
+	var avgRevenue float64
+	if totalRecords > 0 {
+		avgRevenue = math.Round(totalRevenue/float64(totalRecords)*100) / 100
+	}
+
+	// 环比: previous period of equal duration.
+	duration := endDate.Sub(startDate)
+	prevEnd := startDate.AddDate(0, 0, -1)
+	prevStart := prevEnd.Add(-duration)
+
+	var prevStats []model.DailyStats
+	s.DB.Where("tenant_id = ? AND stat_date >= ? AND stat_date <= ?", tenantID, prevStart, prevEnd).
+		Find(&prevStats)
+
+	var prevRevenue float64
+	var prevRecords, prevPatients int
+	for _, ps := range prevStats {
+		prevRevenue += ps.Revenue
+		prevRecords += ps.RecordCount
+		prevPatients += ps.NewPatientCount + ps.ReturningPatientCount
+	}
+
+	calcChange := func(current, previous float64) *float64 {
+		if previous == 0 {
+			return nil
+		}
+		change := (current - previous) / previous * 100
+		return &change
+	}
+
+	summary := DashboardSummary{
+		TotalRevenue:          totalRevenue,
+		TotalRecords:          totalRecords,
+		TotalPatients:         totalPatients,
+		AvgRevenuePerRecord:   avgRevenue,
+		RevenueChangePercent:  calcChange(totalRevenue, prevRevenue),
+		RecordsChangePercent:  calcChange(float64(totalRecords), float64(prevRecords)),
+		PatientsChangePercent: calcChange(float64(totalPatients), float64(prevPatients)),
+	}
+
+	return &DashboardResult{
+		Summary:    summary,
+		DailyTrend: dailyTrend,
+		RevenueBreakdown: RevenueBreakdown{
+			ConsultationFeeTotal: totalConsultation,
+			DrugFeeTotal:         totalDrug,
+		},
+		PatientBreakdown: PatientBreakdown{
+			NewPatients:       totalNew,
+			ReturningPatients: totalReturning,
+		},
+	}, nil
 }

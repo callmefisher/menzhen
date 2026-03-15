@@ -201,3 +201,69 @@ func TestRebuildAllDailyStats(t *testing.T) {
 	assert.Equal(t, 1, sd2.ReturningPatientCount)
 	assert.InDelta(t, 150, sd2.Revenue, 0.01)
 }
+
+func TestGetDashboard_Basic(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	svc := NewStatisticsService(db)
+	tenantID := uint64(1)
+	for i := 1; i <= 5; i++ {
+		db.Create(&model.DailyStats{
+			TenantID: tenantID, StatDate: time.Date(2026, 3, i, 0, 0, 0, 0, time.Local),
+			Revenue: float64(i * 100), ConsultationFee: float64(i * 20), DrugFee: float64(i*100 - i*20),
+			RecordCount: i, NewPatientCount: 1, ReturningPatientCount: i - 1,
+		})
+	}
+	start := time.Date(2026, 3, 1, 0, 0, 0, 0, time.Local)
+	end := time.Date(2026, 3, 5, 0, 0, 0, 0, time.Local)
+	result, err := svc.GetDashboard(tenantID, start, end)
+	require.NoError(t, err)
+	assert.Equal(t, 1500.0, result.Summary.TotalRevenue)
+	assert.Equal(t, 15, result.Summary.TotalRecords)
+	assert.Equal(t, 15, result.Summary.TotalPatients)
+	assert.Equal(t, 100.0, result.Summary.AvgRevenuePerRecord)
+	assert.Len(t, result.DailyTrend, 5)
+	assert.Equal(t, 300.0, result.RevenueBreakdown.ConsultationFeeTotal)
+	assert.Equal(t, 1200.0, result.RevenueBreakdown.DrugFeeTotal)
+	assert.Equal(t, 5, result.PatientBreakdown.NewPatients)
+	assert.Equal(t, 10, result.PatientBreakdown.ReturningPatients)
+}
+
+func TestGetDashboard_Empty(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	svc := NewStatisticsService(db)
+	start := time.Date(2026, 3, 1, 0, 0, 0, 0, time.Local)
+	end := time.Date(2026, 3, 5, 0, 0, 0, 0, time.Local)
+	result, err := svc.GetDashboard(1, start, end)
+	require.NoError(t, err)
+	assert.Equal(t, 0.0, result.Summary.TotalRevenue)
+	assert.Equal(t, 0.0, result.Summary.AvgRevenuePerRecord)
+	assert.Nil(t, result.Summary.RevenueChangePercent)
+	assert.Len(t, result.DailyTrend, 0)
+}
+
+func TestGetDashboard_ChangePercent(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	svc := NewStatisticsService(db)
+	tenantID := uint64(1)
+	// Previous period (3/1-3/5): revenue = 500
+	for i := 1; i <= 5; i++ {
+		db.Create(&model.DailyStats{
+			TenantID: tenantID, StatDate: time.Date(2026, 3, i, 0, 0, 0, 0, time.Local),
+			Revenue: 100, RecordCount: 2, NewPatientCount: 1, ReturningPatientCount: 1,
+		})
+	}
+	// Current period (3/6-3/10): revenue = 750
+	for i := 6; i <= 10; i++ {
+		db.Create(&model.DailyStats{
+			TenantID: tenantID, StatDate: time.Date(2026, 3, i, 0, 0, 0, 0, time.Local),
+			Revenue: 150, RecordCount: 3, NewPatientCount: 2, ReturningPatientCount: 1,
+		})
+	}
+	start := time.Date(2026, 3, 6, 0, 0, 0, 0, time.Local)
+	end := time.Date(2026, 3, 10, 0, 0, 0, 0, time.Local)
+	result, err := svc.GetDashboard(tenantID, start, end)
+	require.NoError(t, err)
+	assert.Equal(t, 750.0, result.Summary.TotalRevenue)
+	require.NotNil(t, result.Summary.RevenueChangePercent)
+	assert.Equal(t, 50.0, *result.Summary.RevenueChangePercent)
+}
