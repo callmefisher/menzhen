@@ -98,7 +98,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	token, err := middleware.GenerateToken(user.ID, user.TenantID, user.Username, h.jwtSecret)
+	token, err := middleware.GenerateToken(user.ID, user.TenantID, user.Username, user.TokenVersion, h.jwtSecret)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -297,5 +297,65 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"message": "密码修改成功",
+	})
+}
+
+// RefreshToken handles POST /api/v1/auth/refresh.
+// It issues a new JWT with the latest tenant_id and token_version from DB.
+func (h *AuthHandler) RefreshToken(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if userID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": "unauthorized",
+		})
+		return
+	}
+
+	user, permissions, err := h.authService.GetCurrentUser(userID)
+	if err != nil {
+		if errors.Is(err, service.ErrUserNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"code":    404,
+				"message": "user not found",
+			})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "failed to get user info",
+		})
+		return
+	}
+
+	token, err := middleware.GenerateToken(user.ID, user.TenantID, user.Username, user.TokenVersion, h.jwtSecret)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "failed to generate token",
+		})
+		return
+	}
+
+	var tenantName string
+	var tenant model.Tenant
+	if err := h.db.First(&tenant, user.TenantID).Error; err == nil {
+		tenantName = tenant.Name
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data": LoginResponse{
+			Token: token,
+			User: UserBriefDTO{
+				ID:         user.ID,
+				Username:   user.Username,
+				RealName:   user.RealName,
+				TenantID:   user.TenantID,
+				TenantName: tenantName,
+			},
+			Permissions: permissions,
+		},
 	})
 }

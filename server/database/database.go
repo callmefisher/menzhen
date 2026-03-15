@@ -21,7 +21,9 @@ func InitDB(cfg *config.Config) *gorm.DB {
 		cfg.DBName,
 	)
 
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
+		DisableForeignKeyConstraintWhenMigrating: true,
+	})
 	if err != nil {
 		log.Panicf("failed to connect to database: %v", err)
 	}
@@ -53,6 +55,8 @@ func InitDB(cfg *config.Config) *gorm.DB {
 		&model.SolarTerm{},
 		&model.Hexagram{},
 		&model.Billing{},
+		&model.DailyStats{},
+		&model.FollowUp{},
 	)
 	if err != nil {
 		log.Panicf("failed to auto-migrate database: %v", err)

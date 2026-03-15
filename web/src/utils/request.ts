@@ -35,9 +35,11 @@ request.interceptors.request.use((config) => {
 });
 
 // Response interceptor: unified error handling
+let isRefreshing = false;
+
 request.interceptors.response.use(
   (response) => response.data,
-  (error) => {
+  async (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
       sessionStorage.removeItem('token');
@@ -46,6 +48,31 @@ request.interceptors.response.use(
         window.location.href = '/login';
         return Promise.reject(error);
       }
+    }
+
+    // 409 token_refresh_required: auto-refresh token and reload
+    if (error.response?.status === 409 && error.response?.data?.message === 'token_refresh_required') {
+      if (!isRefreshing) {
+        isRefreshing = true;
+        try {
+          const { refreshToken } = await import('../api/auth');
+          const res = await refreshToken() as { data: { token: string } };
+          const newToken = res.data.token;
+          if (localStorage.getItem('token')) {
+            localStorage.setItem('token', newToken);
+          } else {
+            sessionStorage.setItem('token', newToken);
+          }
+          window.location.reload();
+        } catch {
+          localStorage.removeItem('token');
+          sessionStorage.removeItem('token');
+          window.location.href = '/login';
+        } finally {
+          isRefreshing = false;
+        }
+      }
+      return Promise.reject(error);
     }
 
     const data = error.response?.data;

@@ -55,6 +55,10 @@ func seedPermissions(db *gorm.DB) {
 		{Code: "billing:read", Name: "查看收费", Description: "查看收费记录"},
 		{Code: "tenant:user:manage", Name: "诊所用户管理", Description: "管理本诊所用户"},
 		{Code: "tenant:role:manage", Name: "诊所角色管理", Description: "管理本诊所角色"},
+		{Code: "followup:create", Name: "新增回访", Description: "创建回访记录"},
+		{Code: "followup:read", Name: "查看回访", Description: "查看回访列表和详情"},
+		{Code: "followup:update", Name: "编辑回访", Description: "修改回访记录"},
+		{Code: "followup:delete", Name: "删除回访", Description: "删除回访记录"},
 	}
 
 	for _, p := range permissions {

@@ -40,8 +40,9 @@ func setupBillingHandlerTest(t *testing.T) (*testEnv, uint64) {
 	}
 
 	drugs := []model.InventoryDrug{
-		{TenantID: env.TenantID, Name: "桂枝", Category: "herb", Stock: 500, SellingPrice: 0.8},
-		{TenantID: env.TenantID, Name: "白芍", Category: "herb", Stock: 500, SellingPrice: 1.0},
+		// Herb prices in 元/500g. Per gram: 80/500=0.16, 100/500=0.2
+		{TenantID: env.TenantID, Name: "桂枝", Category: "herb", Stock: 500, SellingPrice: 80},
+		{TenantID: env.TenantID, Name: "白芍", Category: "herb", Stock: 500, SellingPrice: 100},
 	}
 	for _, drug := range drugs {
 		require.NoError(t, env.DB.Create(&drug).Error)
@@ -64,10 +65,10 @@ func TestBillingGetDetail(t *testing.T) {
 	items := data["items"].([]interface{})
 	assert.Len(t, items, 2)
 
-	// 桂枝: 9 × 0.8 × 5 = 36
-	// 白芍: 9 × 1.0 × 5 = 45
-	assert.InDelta(t, 81, data["drug_cost_total"], 0.01)
-	assert.InDelta(t, 181, data["total_amount"], 0.01) // 81 + 100
+	// 桂枝: 9 × (80/500) × 5 = 9 × 0.16 × 5 = 7.2
+	// 白芍: 9 × (100/500) × 5 = 9 × 0.2 × 5 = 9.0
+	assert.InDelta(t, 16.2, data["drug_cost_total"], 0.01)
+	assert.InDelta(t, 116.2, data["total_amount"], 0.01) // 16.2 + 100
 }
 
 func TestBillingGetDetail_NotFound(t *testing.T) {

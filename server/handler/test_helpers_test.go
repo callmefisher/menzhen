@@ -37,6 +37,7 @@ func setupTestRouter(db *gorm.DB) *gin.Engine {
 	hexagramHandler := NewHexagramHandler(db)
 	billingHandler := NewBillingHandler(db)
 	tenantAdminHandler := NewTenantAdminHandler(db)
+	statisticsHandler := NewStatisticsHandler(db)
 
 	deepSeekService := service.NewDeepSeekService(cfg)
 	herbHandler := NewHerbHandler(db, deepSeekService)
@@ -160,6 +161,9 @@ func setupTestRouter(db *gorm.DB) *gin.Engine {
 	tenantAdmin.GET("/permissions",
 		middleware.RequirePermission(db, "tenant:role:manage", "role:manage"),
 		tenantAdminHandler.ListTenantPermissions)
+
+	statistics := authed.Group("/statistics")
+	statistics.GET("/dashboard", statisticsHandler.GetDashboard)
 
 	return r
 }

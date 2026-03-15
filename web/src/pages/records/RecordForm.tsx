@@ -215,7 +215,8 @@ export default function RecordForm() {
     if (!id) return;
     try {
       const res = await listRecordBillings(Number(id));
-      const list = (res.data.data || []) as BillingRecord[];
+      const body = res as unknown as { data: BillingRecord[] };
+      const list = (body.data || []) as BillingRecord[];
       const map: Record<number, BillingRecord> = {};
       for (const b of list) {
         map[b.prescription_id] = b;
@@ -1251,12 +1252,18 @@ export default function RecordForm() {
                     extra={
                       <Space size={4}>
                         <Button
-                          type="text"
+                          type="primary"
                           size="small"
                           icon={<DollarOutlined />}
                           onClick={() => {
                             setBillingPrescriptionId(item.id);
                             setBillingDrawerOpen(true);
+                          }}
+                          style={{
+                            background: 'linear-gradient(135deg, #faad14 0%, #d48806 100%)',
+                            borderColor: '#d48806',
+                            fontWeight: 600,
+                            boxShadow: '0 2px 4px rgba(250, 173, 20, 0.3)',
                           }}
                         >
                           收费
@@ -1365,6 +1372,24 @@ export default function RecordForm() {
               }}>
                 <InboxOutlined style={{ fontSize: 32, color: '#bfbfbf', display: 'block', marginBottom: 8 }} />
                 暂无处方，点击上方「开方」添加
+                <div style={{ marginTop: 16 }}>
+                  <Button
+                    type="primary"
+                    icon={<DollarOutlined />}
+                    onClick={() => {
+                      setBillingPrescriptionId(0);
+                      setBillingDrawerOpen(true);
+                    }}
+                    style={{
+                      background: 'linear-gradient(135deg, #faad14 0%, #d48806 100%)',
+                      borderColor: '#d48806',
+                      fontWeight: 600,
+                      boxShadow: '0 2px 6px rgba(250, 173, 20, 0.4)',
+                    }}
+                  >
+                    仅收诊疗费
+                  </Button>
+                </div>
               </div>
             )}
           </div>
@@ -1388,7 +1413,8 @@ export default function RecordForm() {
       {/* 收费抽屉 */}
       <BillingDrawer
         open={billingDrawerOpen}
-        prescriptionId={billingPrescriptionId}
+        prescriptionId={billingPrescriptionId || undefined}
+        recordId={Number(id)}
         patientName={recordPatient?.name}
         patientAge={recordPatient?.age}
         doctorName={user?.real_name || user?.username}

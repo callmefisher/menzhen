@@ -150,6 +150,11 @@ export default function PrescriptionPrint({
                     </div>
                   ))}
                 </div>
+                {prescription.total_doses > 0 && (
+                  <div style={{ textAlign: 'right', fontSize: 14, marginTop: 8 }}>
+                    共 {prescription.total_doses} 付
+                  </div>
+                )}
               </>
             )}
 
@@ -171,9 +176,6 @@ export default function PrescriptionPrint({
             <div className="divider" />
 
             <div className="footer">
-              <div className="row">
-                <span>共 {prescription.total_doses} 付</span>
-              </div>
               {prescription.notes && (
                 <div style={{ marginTop: 4 }}>
                   <span>医嘱：</span>

@@ -30,7 +30,7 @@ func TestTenantAdminService_ListUsers(t *testing.T) {
 	testutil.SeedTestUser(t, db, t1.ID, "user2a", "pass", role1)
 	testutil.SeedTestUser(t, db, t2.ID, "user1b", "pass", role2)
 
-	users1, total1, err := svc.ListUsers(t1.ID, 1, 10)
+	users1, total1, err := svc.ListUsers(t1.ID, 1, 10, 0)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), total1)
 	assert.Len(t, users1, 2)
@@ -38,7 +38,7 @@ func TestTenantAdminService_ListUsers(t *testing.T) {
 		assert.Equal(t, t1.ID, u.TenantID)
 	}
 
-	users2, total2, err := svc.ListUsers(t2.ID, 1, 10)
+	users2, total2, err := svc.ListUsers(t2.ID, 1, 10, 0)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), total2)
 	assert.Len(t, users2, 1)

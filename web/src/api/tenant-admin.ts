@@ -28,6 +28,10 @@ export function updateTenantRole(id: number, data: { name?: string; description?
   return request.put(`/tenant/roles/${id}`, data);
 }
 
+export function deleteTenantRole(id: number) {
+  return request.delete(`/tenant/roles/${id}`);
+}
+
 export function listTenantPermissions() {
   return request.get('/tenant/permissions');
 }

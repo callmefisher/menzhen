@@ -24,12 +24,15 @@ import {
   AlertOutlined,
   CalendarOutlined,
   FileTextOutlined,
+  BarChartOutlined,
 } from '@ant-design/icons';
 import type { MenuProps as AntMenuProps } from 'antd';
 import { useAuth } from '../store/auth';
 import { changePassword } from '../api/auth';
 import { listInventoryDrugs } from '../api/inventory';
 import type { InventoryDrug } from '../api/inventory';
+import { getFollowUpStats } from '../api/followUp';
+import { PhoneOutlined } from '@ant-design/icons';
 import useIsMobile from '../hooks/useIsMobile';
 
 const { Header, Sider, Content } = AntLayout;
@@ -51,6 +54,7 @@ export default function AppLayout() {
   } = theme.useToken();
 
   const [alertCount, setAlertCount] = useState(0);
+  const [followUpCount, setFollowUpCount] = useState(0);
 
   useEffect(() => {
     if (!hasPermission('inventory:read')) return;
@@ -90,6 +94,22 @@ export default function AppLayout() {
       window.removeEventListener('inventory-alert-changed', onAlertChanged);
       window.removeEventListener('inventory-data-changed', onDataChanged);
     };
+  }, [hasPermission]);
+
+  useEffect(() => {
+    if (!hasPermission('followup:read')) return;
+
+    const checkFollowUps = async () => {
+      try {
+        const res = await getFollowUpStats();
+        const data = (res as any).data;
+        setFollowUpCount((data?.pending_count || 0) + (data?.overdue_count || 0));
+      } catch { /* ignore */ }
+    };
+
+    checkFollowUps();
+    const interval = setInterval(checkFollowUps, 5 * 60 * 1000);
+    return () => clearInterval(interval);
   }, [hasPermission]);
 
   const menuItems = useMemo(() => {
@@ -159,50 +179,59 @@ export default function AppLayout() {
       children: tcmChildren,
     });
 
-    if (hasPermission('inventory:read')) {
+    const showOps = hasPermission('inventory:read') || hasPermission('followup:read') || hasPermission('tenant:manage');
+    if (showOps) {
+      const totalBadge = alertCount + followUpCount;
       items.push({
-        key: '/inventory',
+        key: '/ops',
         icon: <ShopOutlined />,
-        label: alertCount > 0
+        label: totalBadge > 0
           ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               运营
               <span style={{
-                background: '#ff4d4f',
-                color: '#fff',
-                fontSize: 11,
-                lineHeight: '16px',
-                minWidth: 16,
-                height: 16,
-                borderRadius: 8,
-                padding: '0 4px',
-                textAlign: 'center',
-                fontWeight: 500,
-              }}>{alertCount}</span>
+                background: '#ff4d4f', color: '#fff', fontSize: 11,
+                lineHeight: '16px', minWidth: 16, height: 16,
+                borderRadius: 8, padding: '0 4px', textAlign: 'center', fontWeight: 500,
+              }}>{totalBadge}</span>
             </span>
           : '运营',
         children: [
-          {
-            key: '/inventory/drugs',
-            icon: <MedicineBoxOutlined />,
-            label: '库存药物',
-          },
-          {
-            key: '/inventory/alerts',
-            icon: <AlertOutlined />,
-            label: alertCount > 0
+          ...(hasPermission('inventory:read') ? [
+            {
+              key: '/inventory/drugs',
+              icon: <MedicineBoxOutlined />,
+              label: '库存药物',
+            },
+            {
+              key: '/inventory/alerts',
+              icon: <AlertOutlined />,
+              label: alertCount > 0
+                ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    库存预警
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#ff4d4f', boxShadow: '0 0 4px #ff4d4f', flexShrink: 0 }} />
+                  </span>
+                : '库存预警',
+            },
+          ] : []),
+          ...(hasPermission('followup:read') ? [{
+            key: '/follow-ups',
+            icon: <PhoneOutlined />,
+            label: followUpCount > 0
               ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  库存预警
+                  回访
                   <span style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: '50%',
-                    background: '#ff4d4f',
-                    boxShadow: '0 0 4px #ff4d4f',
-                    flexShrink: 0,
-                  }} />
+                    background: '#ff4d4f', color: '#fff', fontSize: 11,
+                    lineHeight: '16px', minWidth: 16, height: 16,
+                    borderRadius: 8, padding: '0 4px', textAlign: 'center', fontWeight: 500,
+                  }}>{followUpCount}</span>
                 </span>
-              : '库存预警',
-          },
+              : '回访',
+          }] : []),
+          ...(hasPermission('tenant:manage') ? [{
+            key: '/statistics',
+            icon: <BarChartOutlined />,
+            label: '统计概览',
+          }] : []),
         ],
       });
     }
@@ -251,7 +280,7 @@ export default function AppLayout() {
     }
 
     return items;
-  }, [hasPermission, alertCount]);
+  }, [hasPermission, alertCount, followUpCount]);
 
   // Determine selected keys from current path
   const selectedKeys = useMemo(() => {
@@ -271,6 +300,8 @@ export default function AppLayout() {
     if (path.startsWith('/yijing')) return ['/yijing'];
     if (path.startsWith('/inventory/drugs')) return ['/inventory/drugs'];
     if (path.startsWith('/inventory/alerts')) return ['/inventory/alerts'];
+    if (path.startsWith('/follow-ups')) return ['/follow-ups'];
+    if (path.startsWith('/statistics')) return ['/statistics'];
     if (path.startsWith('/records')) return ['/records'];
     return ['/records'];
   }, [location.pathname]);
@@ -278,7 +309,7 @@ export default function AppLayout() {
   const openKeys = useMemo(() => {
     const path = location.pathname;
     if (path.startsWith('/settings')) return ['/settings'];
-    if (path.startsWith('/inventory')) return ['/inventory'];
+    if (path.startsWith('/inventory') || path.startsWith('/follow-ups') || path.startsWith('/statistics')) return ['/ops'];
     if (path.startsWith('/herbs') || path.startsWith('/formulas') || path.startsWith('/meridians') || path.startsWith('/pulses') || path.startsWith('/wuyun') || path.startsWith('/clinical-experience') || path.startsWith('/solar-terms') || path.startsWith('/yijing')) return ['/tcm'];
     return [];
   }, [location.pathname]);

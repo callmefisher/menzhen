@@ -12,6 +12,7 @@ type User struct {
 	Phone        string    `gorm:"column:phone;type:varchar(20)" json:"phone"`
 	Notes        string    `gorm:"column:notes;type:text" json:"notes"`
 	Status       int8      `gorm:"column:status;type:tinyint;default:1;not null;comment:1=enabled 0=disabled" json:"status"`
+	TokenVersion int64     `gorm:"column:token_version;default:0" json:"token_version"`
 	CreatedAt    time.Time `json:"created_at"`
 
 	// Associations

@@ -4,9 +4,11 @@ import BillingDrawer from '../BillingDrawer';
 
 const billingApi = vi.hoisted(() => ({
   getPrescriptionBilling: vi.fn(),
-  createPrescriptionBilling: vi.fn().mockResolvedValue({ data: {} }),
-  deductStockAndBill: vi.fn().mockResolvedValue({ data: {} }),
-  listRecordBillings: vi.fn().mockResolvedValue({ data: { data: [] } }),
+  createPrescriptionBilling: vi.fn().mockResolvedValue({ code: 0, data: {} }),
+  deductStockAndBill: vi.fn().mockResolvedValue({ code: 0, data: {} }),
+  listRecordBillings: vi.fn().mockResolvedValue({ code: 0, data: [] }),
+  getRecordBillingDetail: vi.fn(),
+  createRecordBilling: vi.fn().mockResolvedValue({ code: 0, data: {} }),
 }));
 
 vi.mock('../../api/billing', () => billingApi);
@@ -28,14 +30,14 @@ const makeMockDetail = (overrides = {}) => ({
       dosage_val: 9,
       unit: '克',
       doses: 5,
-      unit_price: 0.8,
-      item_cost: 36,
+      unit_price: 0.16,
+      item_cost: 7.2,
       in_stock: true,
     },
   ],
-  drug_cost_total: 36,
+  drug_cost_total: 7.2,
   consultation_fee: 100,
-  total_amount: 136,
+  total_amount: 107.2,
   actual_paid: 0,
   stock_deducted: false,
   billing_id: 0,
@@ -50,7 +52,8 @@ describe('BillingDrawer', () => {
 
   it('renders drawer with billing detail when open', async () => {
     billingApi.getPrescriptionBilling.mockResolvedValue({
-      data: { data: makeMockDetail() },
+      code: 0,
+      data: makeMockDetail(),
     });
 
     render(
@@ -65,7 +68,7 @@ describe('BillingDrawer', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('桂枝汤')).toBeInTheDocument();
+      expect(screen.getAllByText(/桂枝汤/).length).toBeGreaterThan(0);
     });
 
     expect(screen.getByText('5 付')).toBeInTheDocument();
@@ -74,7 +77,8 @@ describe('BillingDrawer', () => {
 
   it('calls getPrescriptionBilling on open', async () => {
     billingApi.getPrescriptionBilling.mockResolvedValue({
-      data: { data: makeMockDetail() },
+      code: 0,
+      data: makeMockDetail(),
     });
 
     render(
@@ -92,7 +96,8 @@ describe('BillingDrawer', () => {
 
   it('shows deduct stock button when not yet deducted', async () => {
     billingApi.getPrescriptionBilling.mockResolvedValue({
-      data: { data: makeMockDetail() },
+      code: 0,
+      data: makeMockDetail(),
     });
 
     render(
@@ -113,7 +118,8 @@ describe('BillingDrawer', () => {
 
   it('shows stock deducted tag when already deducted', async () => {
     billingApi.getPrescriptionBilling.mockResolvedValue({
-      data: { data: makeMockDetail({ stock_deducted: true }) },
+      code: 0,
+      data: makeMockDetail({ stock_deducted: true }),
     });
 
     render(
@@ -124,12 +130,10 @@ describe('BillingDrawer', () => {
       />
     );
 
-    // Wait for detail to load
     await waitFor(() => {
-      expect(screen.getByText('桂枝汤')).toBeInTheDocument();
+      expect(screen.getAllByText(/桂枝汤/).length).toBeGreaterThan(0);
     });
 
-    // The green tag within the detail area should indicate stock was deducted
     const tags = screen.getAllByText('库存已扣除');
     expect(tags.length).toBeGreaterThan(0);
   });
@@ -144,5 +148,39 @@ describe('BillingDrawer', () => {
     );
 
     expect(billingApi.getPrescriptionBilling).not.toHaveBeenCalled();
+  });
+
+  it('uses record-level billing when no prescriptionId', async () => {
+    billingApi.getRecordBillingDetail.mockResolvedValue({
+      code: 0,
+      data: {
+        prescription_id: 0,
+        record_id: 10,
+        formula_name: '',
+        total_doses: 0,
+        items: [],
+        drug_cost_total: 0,
+        consultation_fee: 100,
+        total_amount: 100,
+        actual_paid: 0,
+        stock_deducted: false,
+        billing_id: 0,
+        created_by: 0,
+      },
+    });
+
+    render(
+      <BillingDrawer
+        open={true}
+        recordId={10}
+        onClose={() => {}}
+      />
+    );
+
+    await waitFor(() => {
+      expect(billingApi.getRecordBillingDetail).toHaveBeenCalledWith(10);
+    });
+
+    expect(screen.getByText('仅收取诊疗费（无药品）')).toBeInTheDocument();
   });
 });

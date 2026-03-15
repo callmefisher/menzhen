@@ -36,10 +36,16 @@
 - **处方联动** — 开方时自动显示对应药物的库存数量提示
 - **处方收费** — 药品价格从库存实时计算，支持诊疗费编辑、扣除库存（事务保证）、打印收费单，已扣库存防重复扣除
 
+### 回访管理
+
+- **回访计划** — 创建回访计划（关联患者/诊疗记录），支持电话/微信/到诊等多种回访方式
+- **状态追踪** — 待回访/已完成/逾期三态管理，逾期自动标记
+- **统计面板** — 回访统计卡片（待回访/今日/逾期），桌面端 Table + 移动端卡片列表
+
 ### 系统管理
 
 - **多租户** — 多诊所数据隔离，支持云端共享部署
-- **权限管理** — JWT 认证 + RBAC 细粒度权限控制（23 个权限码）
+- **权限管理** — JWT 认证（Token Version 机制，租户切换自动刷新）+ RBAC 细粒度权限控制（29 个权限码），管理员账户对其他用户隐藏
 - **自动备份** — 每 2 小时备份数据库、每 12 小时备份文件存储，本地清理旧备份，支持七牛云远程存储及自动清理
 - **移动端适配** — 响应式布局（768px 断点），侧边栏变 Drawer、表格变卡片列表、面板全屏自适应、Modal/Timeline/音视频宽度自适应、触摸区域优化（≥44px）
 
@@ -53,7 +59,7 @@
 | 后端 | Go + Gin + GORM |
 | 数据库 | MySQL 8.0 |
 | 文件存储 | MinIO（S3 兼容） |
-| 认证 | JWT（HS256, 24h）+ RBAC |
+| 认证 | JWT（HS256, 24h, Token Version 校验）+ RBAC |
 | AI | DeepSeek API（SSE 流式 + 普通请求） |
 | 测试 | Go test（后端）+ Vitest + Testing Library（前端） |
 | 部署 | Docker Compose（6 服务）+ Nginx 反向代理 |
@@ -137,7 +143,7 @@ menzhen/
 │   ├── config/          # 配置加载（环境变量）
 │   ├── database/        # DB 连接、迁移、种子数据
 │   ├── handler/         # HTTP 处理器（auth/patient/record/herb/formula/pulse/prescription/meridian/wuyun/clinical-experience/inventory/ai/oplog/user/role/tenant）
-│   ├── middleware/       # JWT 认证、RBAC、租户隔离、操作审计
+│   ├── middleware/       # JWT 认证（Token Version）、RBAC、租户隔离、操作审计
 │   ├── model/           # GORM 数据模型（20 个表）
 │   ├── router/          # 路由注册
 │   ├── service/         # 业务逻辑 + DeepSeek AI 客户端
@@ -157,6 +163,8 @@ menzhen/
 │       │   ├── wuyun/       # 五运六气（SSE 流式）
 │       │   ├── clinical-experience/ # 临床经验集
 │       │   ├── inventory/   # 库存管理（药物 CRUD + 入库 + 预警）
+│       │   ├── followup/    # 回访管理（计划/追踪/统计）
+│       │   ├── statistics/  # 统计仪表盘（ECharts 可视化）
 │       │   └── settings/    # 用户/角色/租户管理
 │       ├── store/       # 认证状态管理
 │       ├── test/        # 测试配置（polyfill）
@@ -197,7 +205,7 @@ menzhen/
 - **部署**：`./deploy.sh`（自动生成随机密码、构建镜像、启动服务）
 - **备份恢复**：`./deploy.sh --restore /path/to/backup`
 - **自动备份**：MySQL 每 2 小时、MinIO 每 12 小时，本地清理旧备份，上传七牛云并自动清理云端旧备份（各保留最新 5 个）
-- **种子数据**：启动时幂等写入 21 个权限 + 默认租户 + 管理员角色/用户
+- **种子数据**：启动时幂等写入 29 个权限 + 默认租户 + 管理员角色/用户
 - **详细运维文档**：[docs/operations-guide.md](docs/operations-guide.md)
 
 ## 文档索引
@@ -216,6 +224,7 @@ menzhen/
 | [库存管理功能设计](docs/plans/2026-03-13-inventory-management-design.md) | 药物库存 + 入库 + 预警 |
 | [库存管理实施计划](docs/plans/2026-03-13-inventory-management-plan.md) | 库存功能分步实施 |
 | [移动端 UI 优化设计](docs/plans/2026-03-13-tcm-mobile-ui-design.md) | 全站移动端适配方案 |
+| [回访功能设计](docs/plans/2026-03-15-follow-up-design.md) | 回访计划/追踪/统计 |
 
 ## 许可证
 

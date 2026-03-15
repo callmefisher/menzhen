@@ -114,6 +114,52 @@ func (h *BillingHandler) DeductStock(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success", "data": billing})
 }
 
+// GetRecordBillingDetail handles GET /api/v1/records/:id/billing-detail.
+func (h *BillingHandler) GetRecordBillingDetail(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+	recordID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "invalid record id"})
+		return
+	}
+
+	svc := service.NewBillingService(h.db)
+	detail, err := svc.GetRecordBillingDetail(tenantID, recordID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "failed to get billing detail"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success", "data": detail})
+}
+
+// CreateRecordBilling handles POST /api/v1/records/:id/billing.
+func (h *BillingHandler) CreateRecordBilling(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+	userID := middleware.GetUserID(c)
+	recordID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "invalid record id"})
+		return
+	}
+
+	var req service.CreateBillingRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "invalid request: " + err.Error()})
+		return
+	}
+
+	svc := service.NewBillingService(h.db)
+	billing, err := svc.CreateRecordBilling(tenantID, userID, recordID, &req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "failed to create billing"})
+		return
+	}
+
+	middleware.LogOperation(h.db, c, "create", "billing", billing.ID, nil, billing)
+	c.JSON(http.StatusCreated, gin.H{"code": 0, "message": "success", "data": billing})
+}
+
 // ListByRecord handles GET /api/v1/records/:id/billings.
 func (h *BillingHandler) ListByRecord(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)

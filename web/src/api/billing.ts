@@ -60,3 +60,11 @@ export function deductStockAndBill(prescriptionId: number, data: CreateBillingRe
 export function listRecordBillings(recordId: number) {
   return request.get(`/records/${recordId}/billings`);
 }
+
+export function getRecordBillingDetail(recordId: number) {
+  return request.get(`/records/${recordId}/billing-detail`);
+}
+
+export function createRecordBilling(recordId: number, data: CreateBillingReq) {
+  return request.post(`/records/${recordId}/billing`, data);
+}

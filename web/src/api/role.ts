@@ -15,3 +15,7 @@ export function updateRole(id: number, data: { name?: string; description?: stri
 export function listPermissions() {
   return request.get('/permissions');
 }
+
+export function deleteRole(id: number) {
+  return request.delete(`/roles/${id}`);
+}

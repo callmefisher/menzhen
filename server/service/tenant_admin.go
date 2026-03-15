@@ -51,11 +51,23 @@ func (s *TenantAdminService) DB() *gorm.DB {
 
 // ListUsers returns a paginated list of users for the given tenant.
 // Results preload Roles and are ordered by created_at DESC.
-func (s *TenantAdminService) ListUsers(tenantID uint64, page, size int) ([]model.User, int64, error) {
+// Users with user:manage permission are hidden (except currentUserID).
+func (s *TenantAdminService) ListUsers(tenantID uint64, page, size int, currentUserID uint64) ([]model.User, int64, error) {
+	adminUserIDs := getAdminUserIDs(s.db)
+	var excludeIDs []uint64
+	for _, id := range adminUserIDs {
+		if id != currentUserID {
+			excludeIDs = append(excludeIDs, id)
+		}
+	}
+
 	var users []model.User
 	var total int64
 
 	query := s.db.Model(&model.User{}).Where("tenant_id = ?", tenantID)
+	if len(excludeIDs) > 0 {
+		query = query.Where("id NOT IN ?", excludeIDs)
+	}
 
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -74,7 +86,11 @@ func (s *TenantAdminService) ListUsers(tenantID uint64, page, size int) ([]model
 
 // UpdateUser updates profile fields for a user that belongs to the given tenant.
 // Returns ErrUserNotFound if the user does not exist in this tenant (cross-tenant protection).
+// Returns ErrProtectedUser if the target user has user:manage permission.
 func (s *TenantAdminService) UpdateUser(tenantID, userID uint64, req *TenantUpdateUserRequest) (*model.User, error) {
+	if isAdminUser(s.db, userID) {
+		return nil, ErrProtectedUser
+	}
 	var user model.User
 	if err := s.db.Where("tenant_id = ? AND id = ?", tenantID, userID).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -113,7 +129,11 @@ func (s *TenantAdminService) UpdateUser(tenantID, userID uint64, req *TenantUpda
 
 // DisableUser sets a user's status to 0 (disabled).
 // Returns ErrUserNotFound if the user does not belong to this tenant.
+// Returns ErrProtectedUser if the target user has user:manage permission.
 func (s *TenantAdminService) DisableUser(tenantID, userID uint64) error {
+	if isAdminUser(s.db, userID) {
+		return ErrProtectedUser
+	}
 	var user model.User
 	if err := s.db.Where("tenant_id = ? AND id = ?", tenantID, userID).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -127,7 +147,11 @@ func (s *TenantAdminService) DisableUser(tenantID, userID uint64) error {
 
 // AssignRoles replaces the roles for a user within the same tenant.
 // Returns an error if the user or any of the roles do not belong to the tenant.
+// Returns ErrProtectedUser if the target user has user:manage permission.
 func (s *TenantAdminService) AssignRoles(tenantID, userID uint64, roleIDs []uint64) error {
+	if isAdminUser(s.db, userID) {
+		return ErrProtectedUser
+	}
 	// Verify user belongs to this tenant.
 	var user model.User
 	if err := s.db.Where("tenant_id = ? AND id = ?", tenantID, userID).First(&user).Error; err != nil {
@@ -251,4 +275,10 @@ func (s *TenantAdminService) ListTenantPermissions() ([]model.Permission, error)
 		return nil, err
 	}
 	return permissions, nil
+}
+
+// DeleteRole deletes a role if it belongs to the given tenant and is not assigned to any users.
+func (s *TenantAdminService) DeleteRole(tenantID, roleID uint64) error {
+	svc := NewRoleService(s.db)
+	return svc.DeleteRole(tenantID, roleID)
 }

@@ -19,11 +19,12 @@ import {
   DeleteOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { listRoles, createRole, updateRole, listPermissions } from '../../api/role';
+import { listRoles, createRole, updateRole, listPermissions, deleteRole } from '../../api/role';
 import {
   listTenantRoles,
   createTenantRole,
   updateTenantRole,
+  deleteTenantRole,
   listTenantPermissions,
 } from '../../api/tenant-admin';
 import { useAuth } from '../../store/auth';
@@ -206,14 +207,15 @@ export default function RoleList() {
   // --- Delete role ---
   const handleDelete = async (id: number) => {
     try {
-      // We don't have a deleteRole API in the spec, but we can use updateRole
-      // Actually, per the spec there's no delete endpoint defined. We'll show
-      // the button but use a message for now.
-      // For a real implementation, add deleteRole to the API.
-      message.info('角色删除功能暂未实现');
-      void id;
+      if (isGlobalAdmin) {
+        await deleteRole(id);
+      } else {
+        await deleteTenantRole(id);
+      }
+      message.success('删除成功');
+      fetchData();
     } catch {
-      // Error already handled
+      // Error already handled by request interceptor
     }
   };
 

@@ -18,7 +18,7 @@ func TestListUsers_WithPreloads(t *testing.T) {
 	testutil.SeedTestUser(t, db, tenant.ID, "doctor2", "pass123", role)
 
 	svc := service.NewUserService(db)
-	users, total, err := svc.ListUsers(1, 10)
+	users, total, err := svc.ListUsers(1, 10, 0)
 
 	assert.NoError(t, err)
 	assert.Equal(t, int64(2), total)
@@ -124,4 +124,74 @@ func TestAssignRoles_UserNotFound(t *testing.T) {
 	svc := service.NewUserService(db)
 	err := svc.AssignRoles(1, 99999, []uint64{1})
 	assert.ErrorIs(t, err, service.ErrUserNotFound)
+}
+
+// --- Admin user hiding tests ---
+
+func TestListUsers_HidesAdminFromOthers(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	tenant := testutil.SeedTestTenant(t, db, "诊所A", "hide-admin")
+
+	// Create user:manage permission and admin role
+	adminPerm := testutil.SeedTestPermission(t, db, "user:manage", "用户管理")
+	adminRole := testutil.SeedTestRole(t, db, tenant.ID, "管理员", adminPerm)
+	adminUser, _ := testutil.SeedTestUser(t, db, tenant.ID, "admin", "pass123", adminRole)
+
+	// Create a normal user
+	normalUser, _ := testutil.SeedTestUser(t, db, tenant.ID, "doctor", "pass123", nil)
+
+	svc := service.NewUserService(db)
+
+	// Normal user should NOT see admin
+	users, total, err := svc.ListUsers(1, 10, normalUser.ID)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	assert.Len(t, users, 1)
+	assert.Equal(t, normalUser.ID, users[0].ID)
+
+	// Admin should see themselves
+	users2, total2, err := svc.ListUsers(1, 10, adminUser.ID)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(2), total2)
+	assert.Len(t, users2, 2)
+}
+
+func TestUpdateUser_TenantChangeBumpsTokenVersion(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	tenant1 := testutil.SeedTestTenant(t, db, "诊所A", "tv-bump-a")
+	tenant2 := testutil.SeedTestTenant(t, db, "诊所B", "tv-bump-b")
+	user, _ := testutil.SeedTestUser(t, db, tenant1.ID, "moveme", "pass123", nil)
+
+	svc := service.NewUserService(db)
+
+	// Move user to tenant2 — should bump token_version
+	newTenantID := tenant2.ID
+	_, err := svc.UpdateUser(0, user.ID, &service.UpdateUserRequest{
+		TenantID: &newTenantID,
+	})
+	assert.NoError(t, err)
+
+	var reloaded model.User
+	db.First(&reloaded, user.ID)
+	assert.Equal(t, tenant2.ID, reloaded.TenantID)
+	assert.Equal(t, int64(1), reloaded.TokenVersion)
+}
+
+func TestUpdateUser_NonTenantChangeNoVersionBump(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	tenant := testutil.SeedTestTenant(t, db, "诊所", "tv-no-bump")
+	user, _ := testutil.SeedTestUser(t, db, tenant.ID, "stayput", "pass123", nil)
+
+	svc := service.NewUserService(db)
+
+	// Update name only — should NOT bump token_version
+	newName := "新名字"
+	_, err := svc.UpdateUser(0, user.ID, &service.UpdateUserRequest{
+		RealName: &newName,
+	})
+	assert.NoError(t, err)
+
+	var reloaded model.User
+	db.First(&reloaded, user.ID)
+	assert.Equal(t, int64(0), reloaded.TokenVersion)
 }

@@ -9,6 +9,7 @@ import (
 
 var (
 	ErrRoleNotFound = errors.New("role not found")
+	ErrRoleInUse    = errors.New("role is still assigned to users")
 )
 
 // CreateRoleRequest is the input for creating a new role.
@@ -131,4 +132,27 @@ func (s *RoleService) ListPermissions() ([]model.Permission, error) {
 		return nil, err
 	}
 	return permissions, nil
+}
+
+// DeleteRole deletes a role if it belongs to the given tenant and is not assigned to any users.
+func (s *RoleService) DeleteRole(tenantID, id uint64) error {
+	var role model.Role
+	if err := s.DB.Where("tenant_id = ?", tenantID).First(&role, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrRoleNotFound
+		}
+		return err
+	}
+
+	// Check if any users still have this role.
+	count := s.DB.Model(&role).Association("Users").Count()
+	if count > 0 {
+		return ErrRoleInUse
+	}
+
+	// Clear role-permission associations first, then delete the role.
+	if err := s.DB.Model(&role).Association("Permissions").Clear(); err != nil {
+		return err
+	}
+	return s.DB.Delete(&role).Error
 }

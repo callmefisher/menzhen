@@ -91,22 +91,33 @@ func (s *BillingService) GetBillingDetail(tenantID, prescriptionID uint64) (*Bil
 			unit = "盒"
 		}
 
+		// Herbs use total_doses; patents are per-item (no dose multiplier).
+		doses := prescription.TotalDoses
+		if category == "patent" {
+			doses = 1
+		}
+
 		item := BillingDetailItem{
 			HerbName:  pi.HerbName,
 			Category:  category,
 			Dosage:    pi.Dosage,
 			DosageVal: dosageVal,
 			Unit:      unit,
-			Doses:     prescription.TotalDoses,
+			Doses:     doses,
 			InStock:   false,
 		}
 
 		if drug, ok := drugMap[pi.HerbName]; ok {
 			item.InStock = true
-			item.UnitPrice = drug.SellingPrice
-			// herb: dosage_g × price(元/克) × total_doses
-			// patent: dosage_boxes × price(元/盒) × total_doses
-			item.ItemCost = dosageVal * drug.SellingPrice * float64(prescription.TotalDoses)
+			if category == "herb" {
+				// Inventory stores herb price as 元/500克, convert to 元/克.
+				item.UnitPrice = drug.SellingPrice / 500
+				item.ItemCost = dosageVal * item.UnitPrice * float64(doses)
+			} else {
+				// Patent medicine: price is 元/盒, no dose multiplier.
+				item.UnitPrice = drug.SellingPrice
+				item.ItemCost = dosageVal * drug.SellingPrice
+			}
 		}
 
 		drugCostTotal += item.ItemCost
@@ -189,6 +200,13 @@ func (s *BillingService) CreateBilling(tenantID, userID, prescriptionID uint64, 
 		}
 	}
 
+	// 同步刷新当天统计（汇总表查单天数据，很快）
+	statsSvc := NewStatisticsService(s.DB)
+	var record model.MedicalRecord
+	if err := s.DB.First(&record, billing.RecordID).Error; err == nil {
+		_ = statsSvc.RefreshDailyStats(tenantID, record.VisitDate)
+	}
+
 	return &billing, nil
 }
 
@@ -219,7 +237,15 @@ func (s *BillingService) DeductStockAndBill(tenantID, userID, prescriptionID uin
 			if dosageVal <= 0 {
 				continue
 			}
-			deductQty := dosageVal * float64(prescription.TotalDoses)
+			// Herbs: multiply by total_doses; patents: just the quantity.
+			category := pi.Category
+			if category == "" {
+				category = "herb"
+			}
+			deductQty := dosageVal
+			if category == "herb" {
+				deductQty = dosageVal * float64(prescription.TotalDoses)
+			}
 
 			// Lock the drug row for update.
 			var drug model.InventoryDrug
@@ -272,7 +298,93 @@ func (s *BillingService) DeductStockAndBill(tenantID, userID, prescriptionID uin
 	if err != nil {
 		return nil, err
 	}
+
+	statsSvc := NewStatisticsService(s.DB)
+	var record model.MedicalRecord
+	if err := s.DB.First(&record, result.RecordID).Error; err == nil {
+		_ = statsSvc.RefreshDailyStats(tenantID, record.VisitDate)
+	}
+
 	return result, nil
+}
+
+// GetRecordBillingDetail returns a billing detail for a record with no prescription (consultation fee only).
+func (s *BillingService) GetRecordBillingDetail(tenantID, recordID uint64) (*BillingDetail, error) {
+	// Verify record belongs to tenant.
+	var record model.MedicalRecord
+	if err := s.DB.Where("tenant_id = ?", tenantID).First(&record, recordID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("record not found")
+		}
+		return nil, err
+	}
+
+	consultationFee := float64(100)
+	var actualPaid float64
+	var billingID uint64
+	var createdBy uint64
+
+	var billing model.Billing
+	if err := s.DB.Where("record_id = ? AND tenant_id = ? AND prescription_id = 0", recordID, tenantID).First(&billing).Error; err == nil {
+		consultationFee = billing.ConsultationFee
+		actualPaid = billing.ActualPaid
+		billingID = billing.ID
+		createdBy = billing.CreatedBy
+	}
+
+	return &BillingDetail{
+		PrescriptionID:  0,
+		RecordID:        recordID,
+		Items:           []BillingDetailItem{},
+		DrugCostTotal:   0,
+		ConsultationFee: consultationFee,
+		TotalAmount:     consultationFee,
+		ActualPaid:      actualPaid,
+		BillingID:       billingID,
+		CreatedBy:       createdBy,
+	}, nil
+}
+
+// CreateRecordBilling creates or updates a record-level billing (consultation fee only, no prescription).
+func (s *BillingService) CreateRecordBilling(tenantID, userID, recordID uint64, req *CreateBillingRequest) (*model.Billing, error) {
+	// Verify record belongs to tenant.
+	var record model.MedicalRecord
+	if err := s.DB.Where("tenant_id = ?", tenantID).First(&record, recordID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("record not found")
+		}
+		return nil, err
+	}
+
+	var billing model.Billing
+	err := s.DB.Where("record_id = ? AND tenant_id = ? AND prescription_id = 0", recordID, tenantID).First(&billing).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		billing = model.Billing{
+			PrescriptionID:  0,
+			RecordID:        recordID,
+			TenantID:        tenantID,
+			ConsultationFee: req.ConsultationFee,
+			ActualPaid:      req.ActualPaid,
+			CreatedBy:       userID,
+		}
+		if err := s.DB.Create(&billing).Error; err != nil {
+			return nil, err
+		}
+	} else if err != nil {
+		return nil, err
+	} else {
+		billing.ConsultationFee = req.ConsultationFee
+		billing.ActualPaid = req.ActualPaid
+		if err := s.DB.Save(&billing).Error; err != nil {
+			return nil, err
+		}
+	}
+
+	// Refresh daily stats.
+	statsSvc := NewStatisticsService(s.DB)
+	_ = statsSvc.RefreshDailyStats(tenantID, record.VisitDate)
+
+	return &billing, nil
 }
 
 // ListBillingsByRecord returns all billings for a given record.
