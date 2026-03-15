@@ -54,6 +54,8 @@
 - Modal 在移动端宽度应设为 `calc(100vw - 32px)` 防止溢出
 - **每次新增功能必须同步编写单元测试**：后端用 `testutil.SetupTestDB` + testify（middleware/service/handler 三层），前端用 vitest + testing-library（API service + store + page 组件），测试必须基于实际业务逻辑、覆盖正常流程/边界/错误场景，且全量测试通过（`go test ./...` + `npm test`）后才算完成
 - 及时用中文报告进度和总结
+- GORM AutoMigrate 遇到已有 FK 约束阻塞 drop index 时，需启用 `DisableForeignKeyConstraintWhenMigrating: true` 或手动删除 FK
+- dayjs 使用 `.quarter()` 等扩展方法前必须先 `import quarterOfYear from 'dayjs/plugin/quarterOfYear'` 并 `dayjs.extend(quarterOfYear)`，否则 TS 编译报错
 
 ---
 
@@ -70,7 +72,7 @@
 | 后端 | Go + Gin + GORM |
 | 数据库 | MySQL 8.0 |
 | 文件存储 | MinIO |
-| 认证 | JWT + RBAC |
+| 认证 | JWT（Token Version 机制）+ RBAC |
 | AI | DeepSeek API（中药/方剂查询回退 + AI辅助辩证论治 + 五运六气流式分析） |
 | 测试 | Go test (后端) + Vitest + Testing Library (前端) |
 | 部署 | Docker Compose + Nginx |
@@ -80,11 +82,13 @@
 > 详见 [Codebase 全局上下文](docs/codebase.md)，包含文件级结构、逐字段数据模型、完整 API 路由清单。
 
 ### 关键架构要点
-- **租户隔离**：patients/records/prescriptions/ai_analyses 表含 `tenant_id`
+- **租户隔离**：patients/records/prescriptions/ai_analyses/follow_ups 表含 `tenant_id`
 - **全局数据**：herbs/formulas/pulses/meridian_resources/wuyun_liuqi/solar_terms 无租户隔离
 - **3D经络坐标分模型**：坐标数据按人体模型独立存储（`meridian-paths-{female|male}.ts` / `acupoint-positions-{female|male}.ts`），元数据（名称、功效等）共享，通过 `getMeridians(model)` / `getAcupoints(model)` 按模型组装
-- **权限码**：`patient:create/read/update/delete`, `record:create/read/update/delete`, `oplog:read`, `user:manage`, `role:manage`, `tenant:user:manage`, `tenant:role:manage`, `herb:read`, `formula:read`, `pulse:read`, `prescription:create`, `prescription:read`, `tenant:manage`, `inventory:create/read/update/delete`, `billing:create`, `billing:read`
+- **权限码**：`patient:create/read/update/delete`, `record:create/read/update/delete`, `oplog:read`, `user:manage`, `role:manage`, `tenant:user:manage`, `tenant:role:manage`, `herb:read`, `formula:read`, `pulse:read`, `prescription:create`, `prescription:read`, `tenant:manage`, `inventory:create/read/update/delete`, `billing:create`, `billing:read`, `followup:create/read/update/delete`
 - **诊所运营角色**：`tenant:user:manage` + `tenant:role:manage` 仅管理本诊所，API 端点 `/api/v1/tenant/*`，全局管理权限自动兼容
+- **Token Version**：用户 `token_version` 字段，租户切换时 +1，`TokenVersionMiddleware` 校验 JWT 版本不匹配返回 409，前端自动刷新 Token + 重载，`/auth/refresh` 绕过版本检查
+- **管理员隐藏**：`user:manage` 权限用户在用户列表中对其他人不可见，租户级管理操作对管理员返回 403（`ErrProtectedUser`）
 - **统计仪表盘**：`daily_stats` 每日汇总表，billing 写时聚合更新，`tenant:manage` 权限可查看，ECharts 可视化
 
 ## 开发环境
@@ -194,4 +198,6 @@ DeepSeek AI 相关（可选）：
 - [诊所运营角色实施计划](docs/plans/2026-03-14-tenant-operations-plan.md)
 - [统计仪表盘设计](docs/plans/2026-03-15-statistics-dashboard-design.md)
 - [统计仪表盘实施计划](docs/plans/2026-03-15-statistics-dashboard-plan.md)
+- [回访功能设计](docs/plans/2026-03-15-follow-up-design.md)
+- [回访功能实施计划](docs/plans/2026-03-15-follow-up-plan.md)
 - [Codebase 全局上下文](docs/codebase.md)
