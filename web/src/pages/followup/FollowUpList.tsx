@@ -1,13 +1,13 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Table, Button, Space, Input, Select, Modal, Form, DatePicker, message, Tag, Statistic, Row, Col, Popconfirm, Pagination } from 'antd';
+import { Card, Table, Button, Space, Input, Select, Modal, Form, DatePicker, message, Tag, Statistic, Row, Col, Popconfirm, Pagination, Switch } from 'antd';
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { useAuth } from '../../store/auth';
 import useIsMobile from '../../hooks/useIsMobile';
 import { listFollowUps, createFollowUp, updateFollowUp, deleteFollowUp, getFollowUpStats } from '../../api/followUp';
 import type { FollowUpListItem, FollowUpStats, CreateFollowUpReq, UpdateFollowUpReq } from '../../api/followUp';
-import { listPatients } from '../../api/patient';
+import { listPatients, getPatient } from '../../api/patient';
 import { listRecords } from '../../api/record';
 import dayjs from 'dayjs';
 
@@ -68,6 +68,26 @@ export default function FollowUpList() {
   useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => { fetchStats(); }, [fetchStats]);
 
+  // 电话为空的回访项，逐个查询患者电话并回填
+  useEffect(() => {
+    const emptyPhoneItems = data.filter((item) => !item.patient_phone && item.patient_id);
+    if (emptyPhoneItems.length === 0) return;
+    // 按 patient_id 去重
+    const uniquePatientIds = [...new Set(emptyPhoneItems.map((item) => item.patient_id))];
+    uniquePatientIds.forEach(async (pid) => {
+      try {
+        const res = await getPatient(pid);
+        const body = res as any;
+        const phone = body.data?.phone;
+        if (phone) {
+          setData((prev) => prev.map((item) =>
+            item.patient_id === pid && !item.patient_phone ? { ...item, patient_phone: phone } : item
+          ));
+        }
+      } catch { /* ignore */ }
+    });
+  }, [data.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Patient search for modal
   const searchPatients = async (name: string) => {
     if (!name || name.length < 1) return;
@@ -100,7 +120,7 @@ export default function FollowUpList() {
     setModalOpen(true);
   };
 
-  const handleEdit = (record: FollowUpListItem) => {
+  const handleEdit = async (record: FollowUpListItem) => {
     setEditing(record);
     const isOther = !['电话', '微信', '到诊'].includes(record.method);
     setIsOtherMethod(isOther);
@@ -111,15 +131,31 @@ export default function FollowUpList() {
     });
     form.setFieldsValue({
       patient_id: record.patient_id,
-      record_id: record.record_id,
       planned_date: record.planned_date ? dayjs(record.planned_date) : undefined,
       actual_date: record.actual_date ? dayjs(record.actual_date) : undefined,
       method: isOther ? '其他' : record.method,
       custom_method: isOther ? record.method : undefined,
       content: record.content,
+      is_recovered: record.is_recovered,
     });
-    handlePatientChange(record.patient_id);
+    // 先加载诊疗记录列表，再回填 record_id（避免被 handlePatientChange 清空）
+    await handlePatientChange(record.patient_id);
+    form.setFieldValue('record_id', record.record_id);
     setModalOpen(true);
+
+    // 电话为空时，重新查询患者电话并更新列表数据
+    if (!record.patient_phone && record.patient_id) {
+      try {
+        const res = await getPatient(record.patient_id);
+        const body = res as any;
+        const phone = body.data?.phone;
+        if (phone) {
+          setData((prev) => prev.map((item) =>
+            item.id === record.id ? { ...item, patient_phone: phone } : item
+          ));
+        }
+      } catch { /* ignore */ }
+    }
   };
 
   const handleDelete = async (id: number) => {
@@ -139,18 +175,19 @@ export default function FollowUpList() {
       if (editing) {
         const req: UpdateFollowUpReq = {
           patient_id: values.patient_id,
-          record_id: values.record_id ?? null,
+          record_id: values.record_id,
           planned_date: values.planned_date?.format('YYYY-MM-DD'),
           actual_date: values.actual_date?.format('YYYY-MM-DD') ?? null,
           method,
           content: values.content || '',
+          is_recovered: values.is_recovered ?? false,
         };
         await updateFollowUp(editing.id, req);
         message.success('更新成功');
       } else {
         const req: CreateFollowUpReq = {
           patient_id: values.patient_id,
-          record_id: values.record_id ?? undefined,
+          record_id: values.record_id,
           planned_date: values.planned_date.format('YYYY-MM-DD'),
           method,
           content: values.content || '',
@@ -174,6 +211,10 @@ export default function FollowUpList() {
           ? <span style={{ color: '#999' }}>{name}</span>
           : <a onClick={() => navigate(`/patients/${record.patient_id}`)}>{name}</a>
       ),
+    },
+    {
+      title: '联系电话', dataIndex: 'patient_phone', key: 'patient_phone', width: 120,
+      render: (phone: string) => phone || '—',
     },
     {
       title: '关联诊疗', key: 'record', width: 180,
@@ -210,7 +251,14 @@ export default function FollowUpList() {
         return <Tag color={cfg.color}>{cfg.label}</Tag>;
       },
     },
-    { title: '回访方式', dataIndex: 'method', key: 'method', width: 80 },
+    {
+      title: '康复', key: 'is_recovered', width: 80,
+      render: (_, record) => (
+        record.is_recovered
+          ? <Tag color="green">已康复</Tag>
+          : <Tag color="default">未康复</Tag>
+      ),
+    },
     {
       title: '操作', key: 'action', width: 120,
       render: (_, record) => (
@@ -231,14 +279,19 @@ export default function FollowUpList() {
   // Mobile card
   const renderMobileCard = (item: FollowUpListItem) => {
     const cfg = statusConfig[item.status] || statusConfig.pending;
+    const borderColor = item.status === 'overdue' ? '#ff4d4f' : item.is_recovered ? '#52c41a' : undefined;
     return (
-      <Card key={item.id} size="small" style={{ marginBottom: 8, borderLeft: item.status === 'overdue' ? '3px solid #ff4d4f' : undefined }}>
+      <Card key={item.id} size="small" style={{ marginBottom: 8, borderLeft: borderColor ? `3px solid ${borderColor}` : undefined }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
           <a onClick={() => navigate(`/patients/${item.patient_id}`)} style={{ fontWeight: 500 }}>{item.patient_name}</a>
-          <Tag color={cfg.color}>{cfg.label}</Tag>
+          <Space size={4}>
+            {item.is_recovered && <Tag color="green">已康复</Tag>}
+            <Tag color={cfg.color}>{cfg.label}</Tag>
+          </Space>
         </div>
         <div style={{ color: '#666', fontSize: 13 }}>
-          计划: {item.planned_date} | 方式: {item.method}
+          计划: {item.planned_date}
+          {item.patient_phone && <> | 电话: <a href={`tel:${item.patient_phone}`}>{item.patient_phone}</a></>}
           {item.actual_date && ` | 实际: ${item.actual_date}`}
         </div>
         {item.record_id && item.record_diagnosis && (
@@ -344,8 +397,8 @@ export default function FollowUpList() {
             {patients.map((p) => <Option key={p.id} value={p.id}>{p.name}</Option>)}
           </Select>
         </Form.Item>
-        <Form.Item name="record_id" label="关联诊疗记录">
-          <Select allowClear placeholder="选择诊疗记录（可选）">
+        <Form.Item name="record_id" label="关联诊疗记录" rules={[{ required: true, message: '请选择诊疗记录' }]}>
+          <Select placeholder="选择诊疗记录">
             {patientRecords.map((r) => (
               <Option key={r.id} value={r.id}>{r.diagnosis} ({r.visit_date})</Option>
             ))}
@@ -370,6 +423,11 @@ export default function FollowUpList() {
         {editing && (
           <Form.Item name="actual_date" label="实际回访日期">
             <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+        )}
+        {editing && (
+          <Form.Item name="is_recovered" label="是否康复" valuePropName="checked">
+            <Switch checkedChildren="已康复" unCheckedChildren="未康复" />
           </Form.Item>
         )}
         <Form.Item name="content" label="回访内容">

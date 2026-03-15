@@ -151,6 +151,7 @@ func (h *FollowUpHandler) Detail(c *gin.Context) {
 			"status":       status,
 			"method":       followUp.Method,
 			"content":      followUp.Content,
+			"is_recovered": followUp.IsRecovered,
 			"created_by":   followUp.CreatedBy,
 			"created_at":   followUp.CreatedAt,
 			"updated_at":   followUp.UpdatedAt,

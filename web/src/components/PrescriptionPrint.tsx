@@ -10,6 +10,8 @@ interface PrescriptionPrintProps {
   visitDate?: string;
   chiefComplaint?: string;
   treatment?: string;
+  /** Render as icon-only button (for card header placement). */
+  iconOnly?: boolean;
 }
 
 function getCurrentBeijingTime(): string {
@@ -35,6 +37,7 @@ export default function PrescriptionPrint({
   patientAge,
   chiefComplaint,
   treatment,
+  iconOnly,
 }: PrescriptionPrintProps) {
   const printRef = useRef<HTMLDivElement>(null);
 
@@ -95,9 +98,21 @@ export default function PrescriptionPrint({
 
   return (
     <>
-      <Button icon={<PrinterOutlined />} size="small" onClick={handlePrint}>
-        打印
-      </Button>
+      {iconOnly ? (
+        <Button
+          type="primary"
+          icon={<PrinterOutlined style={{ fontSize: 16 }} />}
+          onClick={handlePrint}
+          title="打印处方"
+          size="small"
+        >
+          打印
+        </Button>
+      ) : (
+        <Button icon={<PrinterOutlined />} size="small" onClick={handlePrint}>
+          打印
+        </Button>
+      )}
 
       <div style={{ display: 'none' }}>
         <div ref={printRef}>

@@ -1,7 +1,6 @@
 package service
 
 import (
-	"encoding/json"
 	"errors"
 	"time"
 
@@ -15,43 +14,23 @@ var (
 
 // CreateFollowUpRequest is the input for creating a new follow-up.
 type CreateFollowUpRequest struct {
-	PatientID   uint64  `json:"patient_id" binding:"required"`
-	RecordID    *uint64 `json:"record_id"`
-	PlannedDate string  `json:"planned_date" binding:"required"` // "2006-01-02"
-	Method      string  `json:"method" binding:"required"`
-	Content     string  `json:"content"`
-}
-
-// NullableUint64 distinguishes between "not provided", "null" (clear), and a value.
-// Use json.RawMessage to detect presence in JSON.
-type NullableUint64 struct {
-	Value   *uint64
-	Present bool // true if field was present in JSON (even if null)
-}
-
-func (n *NullableUint64) UnmarshalJSON(data []byte) error {
-	n.Present = true
-	if string(data) == "null" {
-		n.Value = nil
-		return nil
-	}
-	var v uint64
-	if err := json.Unmarshal(data, &v); err != nil {
-		return err
-	}
-	n.Value = &v
-	return nil
+	PatientID   uint64 `json:"patient_id" binding:"required"`
+	RecordID    uint64 `json:"record_id" binding:"required"`
+	PlannedDate string `json:"planned_date" binding:"required"` // "2006-01-02"
+	Method      string `json:"method" binding:"required"`
+	Content     string `json:"content"`
+	IsRecovered bool   `json:"is_recovered"`
 }
 
 // UpdateFollowUpRequest uses pointer fields to distinguish "not provided" from "zero value".
-// RecordID uses NullableUint64 to distinguish "not sent" vs "null" (clear association).
 type UpdateFollowUpRequest struct {
-	PatientID   *uint64        `json:"patient_id"`
-	RecordID    NullableUint64 `json:"record_id"`
-	PlannedDate *string        `json:"planned_date"`
-	ActualDate  *string        `json:"actual_date"`
-	Method      *string        `json:"method"`
-	Content     *string        `json:"content"`
+	PatientID   *uint64 `json:"patient_id"`
+	RecordID    *uint64 `json:"record_id"`
+	PlannedDate *string `json:"planned_date"`
+	ActualDate  *string `json:"actual_date"`
+	Method      *string `json:"method"`
+	Content     *string `json:"content"`
+	IsRecovered *bool   `json:"is_recovered"`
 }
 
 // FollowUpListItem is the denormalized response for list queries.
@@ -60,7 +39,8 @@ type FollowUpListItem struct {
 	TenantID        uint64    `json:"tenant_id"`
 	PatientID       uint64    `json:"patient_id"`
 	PatientName     string    `json:"patient_name"`
-	RecordID        *uint64   `json:"record_id"`
+	PatientPhone    string    `json:"patient_phone"`
+	RecordID        uint64    `json:"record_id"`
 	RecordDiagnosis string    `json:"record_diagnosis"`
 	RecordVisitDate *string   `json:"record_visit_date"`
 	PlannedDate     string    `json:"planned_date"`
@@ -68,6 +48,7 @@ type FollowUpListItem struct {
 	Status          string    `json:"status"`
 	Method          string    `json:"method"`
 	Content         string    `json:"content"`
+	IsRecovered     bool      `json:"is_recovered"`
 	CreatedBy       uint64    `json:"created_by"`
 	CreatedByName   string    `json:"created_by_name"`
 	CreatedAt       time.Time `json:"created_at"`
@@ -97,12 +78,13 @@ func (s *FollowUpService) List(tenantID uint64, patientID uint64, patientName, s
 	query := s.DB.Table("follow_ups AS f").
 		Select(`f.id, f.tenant_id, f.patient_id,
 			COALESCE(p.name, '已删除') AS patient_name,
+			COALESCE(p.phone, '') AS patient_phone,
 			f.record_id,
 			COALESCE(r.diagnosis, '') AS record_diagnosis,
 			DATE_FORMAT(r.visit_date, '%Y-%m-%d') AS record_visit_date,
 			DATE_FORMAT(f.planned_date, '%Y-%m-%d') AS planned_date,
 			DATE_FORMAT(f.actual_date, '%Y-%m-%d') AS actual_date,
-			f.status, f.method, f.content,
+			f.status, f.method, f.content, f.is_recovered,
 			f.created_by,
 			COALESCE(u.real_name, u.username, '') AS created_by_name,
 			f.created_at, f.updated_at`).
@@ -170,12 +152,15 @@ func (s *FollowUpService) Create(tenantID, createdBy uint64, req *CreateFollowUp
 		Status:      "pending",
 		Method:      req.Method,
 		Content:     req.Content,
+		IsRecovered: req.IsRecovered,
 		CreatedBy:   createdBy,
 	}
 
 	if err := s.DB.Create(&followUp).Error; err != nil {
 		return nil, err
 	}
+	// Load patient info for oplog display.
+	s.DB.First(&followUp.Patient, followUp.PatientID)
 	return &followUp, nil
 }
 
@@ -207,8 +192,8 @@ func (s *FollowUpService) Update(tenantID, id uint64, req *UpdateFollowUpRequest
 	if req.PatientID != nil {
 		updates["patient_id"] = *req.PatientID
 	}
-	if req.RecordID.Present {
-		updates["record_id"] = req.RecordID.Value // nil clears, *uint64 sets
+	if req.RecordID != nil {
+		updates["record_id"] = *req.RecordID
 	}
 	if req.PlannedDate != nil {
 		pd, err := time.Parse("2006-01-02", *req.PlannedDate)
@@ -237,6 +222,9 @@ func (s *FollowUpService) Update(tenantID, id uint64, req *UpdateFollowUpRequest
 	if req.Content != nil {
 		updates["content"] = *req.Content
 	}
+	if req.IsRecovered != nil {
+		updates["is_recovered"] = *req.IsRecovered
+	}
 
 	if len(updates) > 0 {
 		if err := s.DB.Model(&followUp).Updates(updates).Error; err != nil {
@@ -248,6 +236,10 @@ func (s *FollowUpService) Update(tenantID, id uint64, req *UpdateFollowUpRequest
 	if err := s.DB.Where("tenant_id = ?", tenantID).First(&followUp, id).Error; err != nil {
 		return nil, nil, err
 	}
+
+	// Load patient info for oplog display.
+	s.DB.First(&oldFollowUp.Patient, oldFollowUp.PatientID)
+	s.DB.First(&followUp.Patient, followUp.PatientID)
 
 	return &oldFollowUp, &followUp, nil
 }
@@ -261,6 +253,9 @@ func (s *FollowUpService) Delete(tenantID, id uint64) (*model.FollowUp, error) {
 		}
 		return nil, err
 	}
+
+	// Load patient info for oplog display.
+	s.DB.First(&followUp.Patient, followUp.PatientID)
 
 	if err := s.DB.Delete(&followUp).Error; err != nil {
 		return nil, err

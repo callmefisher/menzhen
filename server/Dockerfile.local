@@ -1,4 +1,5 @@
 # Local build: uses cached runtime base, no Docker Hub pull needed.
 # Build binary first: CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o menzhen-api .
 FROM menzhen-api-base:latest
+WORKDIR /app
 COPY menzhen-api /usr/local/bin/menzhen-api

@@ -19,6 +19,8 @@ vi.mock('../../../api/statistics', () => ({
         revenue_change_percent: 12.5,
         records_change_percent: 8.3,
         patients_change_percent: 5.2,
+        cure_rate: 72.5,
+        cure_rate_change_percent: 3.2,
       },
       daily_trend: [
         {
@@ -65,6 +67,14 @@ describe('StatsDashboard', () => {
     });
     expect(screen.getByText('156')).toBeInTheDocument();
     expect(screen.getByText('89')).toBeInTheDocument();
+  });
+
+  it('renders cure rate card', async () => {
+    renderWithRouter();
+    await waitFor(() => {
+      expect(screen.getByText('治愈率')).toBeInTheDocument();
+    });
+    expect(screen.getByText('72.5%')).toBeInTheDocument();
   });
 
   it('renders time range buttons', async () => {

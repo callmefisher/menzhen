@@ -1283,6 +1283,18 @@ export default function RecordForm() {
                         {(item.items || []).length > 0 && <Tag color="blue" style={{ marginLeft: 4 }}>{item.total_doses} 付</Tag>}
                       </Space>
                     }
+                    extra={
+                      (item.items || []).length > 0 && (
+                        <PrescriptionPrint
+                          prescription={item}
+                          patientName={recordPatient?.name}
+                          patientAge={recordPatient?.age}
+                          chiefComplaint={form.getFieldValue('chief_complaint')}
+                          treatment={form.getFieldValue('treatment')}
+                          iconOnly
+                        />
+                      )
+                    }
                   >
                     {(item.items || []).length === 0 ? (
                       <div style={{ color: '#999', textAlign: 'center', padding: '8px 0' }}>
@@ -1356,14 +1368,6 @@ export default function RecordForm() {
                       >
                         收费
                       </Button>
-                      <PrescriptionPrint
-                        key="print"
-                        prescription={item}
-                        patientName={recordPatient?.name}
-                        patientAge={recordPatient?.age}
-                        chiefComplaint={form.getFieldValue('chief_complaint')}
-                        treatment={form.getFieldValue('treatment')}
-                      />
                       {hasPermission('prescription:create') && (
                         <>
                           <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleOpenPrescriptionModal(item)} style={{ padding: 0 }}>编辑</Button>

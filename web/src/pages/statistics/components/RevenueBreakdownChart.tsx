@@ -12,7 +12,7 @@ export default function RevenueBreakdownChart({ data }: Props) {
     legend: { data: ['诊金', '药费'], top: 0 },
     xAxis: {
       type: 'category' as const,
-      data: data.map((d) => d.date.slice(5)),
+      data: data.map((d) => d.date),
     },
     yAxis: { type: 'value' as const, name: '金额(¥)' },
     series: [

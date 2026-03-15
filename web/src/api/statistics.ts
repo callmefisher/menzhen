@@ -18,6 +18,8 @@ export interface DashboardSummary {
   revenue_change_percent: number | null;
   records_change_percent: number | null;
   patients_change_percent: number | null;
+  cure_rate: number | null;
+  cure_rate_change_percent: number | null;
 }
 
 export interface RevenueBreakdown {

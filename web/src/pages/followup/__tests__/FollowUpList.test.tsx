@@ -63,6 +63,7 @@ describe('FollowUpList', () => {
             record_id: 5, record_diagnosis: '感冒', record_visit_date: '2026-03-10',
             planned_date: '2026-03-20', actual_date: null,
             status: 'pending', method: '电话', content: '回访',
+            is_recovered: false,
             created_by: 1, created_by_name: '李医生',
             created_at: '2026-03-15', updated_at: '2026-03-15',
           },
@@ -96,9 +97,10 @@ describe('FollowUpList', () => {
         list: [
           {
             id: 2, patient_id: 10, patient_name: '王五',
-            record_id: null, record_diagnosis: '', record_visit_date: null,
+            record_id: 3, record_diagnosis: '头痛', record_visit_date: '2020-01-01',
             planned_date: '2020-01-01', actual_date: null,
             status: 'overdue', method: '微信', content: '',
+            is_recovered: false,
             created_by: 1, created_by_name: '李医生',
             created_at: '2026-03-15', updated_at: '2026-03-15',
           },
@@ -111,6 +113,56 @@ describe('FollowUpList', () => {
 
     await waitFor(() => {
       expect(screen.getByText('逾期')).toBeInTheDocument();
+    });
+  });
+
+  it('renders recovered tag for recovered follow-ups', async () => {
+    mockListFollowUps.mockResolvedValue({
+      data: {
+        list: [
+          {
+            id: 3, patient_id: 10, patient_name: '赵六',
+            record_id: 7, record_diagnosis: '感冒', record_visit_date: '2026-03-10',
+            planned_date: '2026-03-20', actual_date: '2026-03-20',
+            status: 'completed', method: '电话', content: '已痊愈',
+            is_recovered: true,
+            created_by: 1, created_by_name: '李医生',
+            created_at: '2026-03-15', updated_at: '2026-03-20',
+          },
+        ],
+        total: 1, page: 1, size: 20,
+      },
+    });
+
+    render(<MemoryRouter><FollowUpList /></MemoryRouter>);
+
+    await waitFor(() => {
+      expect(screen.getByText('已康复')).toBeInTheDocument();
+    });
+  });
+
+  it('renders not-recovered tag for non-recovered follow-ups', async () => {
+    mockListFollowUps.mockResolvedValue({
+      data: {
+        list: [
+          {
+            id: 4, patient_id: 10, patient_name: '钱七',
+            record_id: 8, record_diagnosis: '腰痛', record_visit_date: '2026-03-10',
+            planned_date: '2026-03-20', actual_date: null,
+            status: 'pending', method: '微信', content: '',
+            is_recovered: false,
+            created_by: 1, created_by_name: '李医生',
+            created_at: '2026-03-15', updated_at: '2026-03-15',
+          },
+        ],
+        total: 1, page: 1, size: 20,
+      },
+    });
+
+    render(<MemoryRouter><FollowUpList /></MemoryRouter>);
+
+    await waitFor(() => {
+      expect(screen.getByText('未康复')).toBeInTheDocument();
     });
   });
 });

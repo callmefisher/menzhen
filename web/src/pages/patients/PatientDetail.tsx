@@ -19,6 +19,7 @@ import {
   Input,
   Select,
   Badge,
+  Switch,
 } from 'antd';
 import {
   EditOutlined,
@@ -98,6 +99,7 @@ export default function PatientDetail() {
   const [followUpForm] = Form.useForm();
   const [followUpSaving, setFollowUpSaving] = useState(false);
   const [editingFollowUp, setEditingFollowUp] = useState<FollowUpListItem | null>(null);
+  const [isOtherMethod, setIsOtherMethod] = useState(false);
 
   const fetchFollowUps = useCallback(async () => {
     if (!id) return;
@@ -163,15 +165,20 @@ export default function PatientDetail() {
   const handleOpenFollowUpModal = (item?: FollowUpListItem) => {
     if (item) {
       setEditingFollowUp(item);
+      const isOther = !['电话', '微信', '到诊'].includes(item.method);
+      setIsOtherMethod(isOther);
       followUpForm.setFieldsValue({
         planned_date: dayjs(item.planned_date),
-        method: item.method,
+        method: isOther ? '其他' : item.method,
+        custom_method: isOther ? item.method : undefined,
         content: item.content,
         actual_date: item.actual_date ? dayjs(item.actual_date) : undefined,
         record_id: item.record_id || undefined,
+        is_recovered: item.is_recovered,
       });
     } else {
       setEditingFollowUp(null);
+      setIsOtherMethod(false);
       followUpForm.resetFields();
       followUpForm.setFieldsValue({ method: '电话' });
     }
@@ -182,12 +189,14 @@ export default function PatientDetail() {
     try {
       const values = await followUpForm.validateFields();
       setFollowUpSaving(true);
+      const method = values.method === '其他' ? (values.custom_method || '其他') : values.method;
       if (editingFollowUp) {
         const data: Record<string, unknown> = {
           planned_date: values.planned_date.format('YYYY-MM-DD'),
-          method: values.method,
+          method,
           content: values.content || '',
           record_id: values.record_id || null,
+          is_recovered: values.is_recovered ?? false,
         };
         if (values.actual_date) {
           data.actual_date = values.actual_date.format('YYYY-MM-DD');
@@ -198,7 +207,7 @@ export default function PatientDetail() {
         await createFollowUp({
           patient_id: Number(id),
           planned_date: values.planned_date.format('YYYY-MM-DD'),
-          method: values.method,
+          method,
           content: values.content || '',
           record_id: values.record_id || undefined,
         });
@@ -676,10 +685,12 @@ export default function PatientDetail() {
                     >
                       {cfg.label}
                     </Tag>
+                    {item.is_recovered && (
+                      <Tag color="green" style={{ margin: 0, fontSize: 12 }}>已康复</Tag>
+                    )}
                     <span style={{ fontSize: 13, color: '#333', whiteSpace: 'nowrap' }}>
                       {item.planned_date}
                     </span>
-                    <Tag style={{ margin: 0, fontSize: 11 }}>{item.method}</Tag>
                   </div>
 
                   {/* Middle: content + related record */}
@@ -832,6 +843,7 @@ export default function PatientDetail() {
             rules={[{ required: true, message: '请选择方式' }]}
           >
             <Select
+              onChange={(v: string) => setIsOtherMethod(v === '其他')}
               options={[
                 { value: '电话', label: '电话' },
                 { value: '微信', label: '微信' },
@@ -840,6 +852,11 @@ export default function PatientDetail() {
               ]}
             />
           </Form.Item>
+          {isOtherMethod && (
+            <Form.Item name="custom_method" label="自定义方式" rules={[{ required: true, message: '请输入方式' }]}>
+              <Input maxLength={50} />
+            </Form.Item>
+          )}
           {records.length > 0 && (
             <Form.Item name="record_id" label="关联诊疗记录">
               <Select
@@ -855,6 +872,11 @@ export default function PatientDetail() {
           {editingFollowUp && (
             <Form.Item name="actual_date" label="实际回访日期">
               <DatePicker style={{ width: '100%' }} placeholder="填写后自动标记为已完成" />
+            </Form.Item>
+          )}
+          {editingFollowUp && (
+            <Form.Item name="is_recovered" label="是否康复" valuePropName="checked">
+              <Switch checkedChildren="已康复" unCheckedChildren="未康复" />
             </Form.Item>
           )}
           <Form.Item name="content" label="回访内容">

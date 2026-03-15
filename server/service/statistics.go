@@ -13,13 +13,15 @@ import (
 // Response structures for GetDashboard.
 
 type DashboardSummary struct {
-	TotalRevenue          float64  `json:"total_revenue"`
-	TotalRecords          int      `json:"total_records"`
-	TotalPatients         int      `json:"total_patients"`
-	AvgRevenuePerRecord   float64  `json:"avg_revenue_per_record"`
-	RevenueChangePercent  *float64 `json:"revenue_change_percent"`
-	RecordsChangePercent  *float64 `json:"records_change_percent"`
-	PatientsChangePercent *float64 `json:"patients_change_percent"`
+	TotalRevenue             float64  `json:"total_revenue"`
+	TotalRecords             int      `json:"total_records"`
+	TotalPatients            int      `json:"total_patients"`
+	AvgRevenuePerRecord      float64  `json:"avg_revenue_per_record"`
+	RevenueChangePercent     *float64 `json:"revenue_change_percent"`
+	RecordsChangePercent     *float64 `json:"records_change_percent"`
+	PatientsChangePercent    *float64 `json:"patients_change_percent"`
+	CureRate                 *float64 `json:"cure_rate"`
+	CureRateChangePercent    *float64 `json:"cure_rate_change_percent"`
 }
 
 type DailyTrendItem struct {
@@ -77,8 +79,9 @@ func (s *StatisticsService) RefreshDailyStats(tenantID uint64, date time.Time) e
 		ConsultationFee float64
 	}
 	var summary billingSummary
+	// 以实收为准：每笔诊金不超过该笔实收，避免药费为负
 	s.DB.Model(&model.Billing{}).
-		Select("COALESCE(SUM(billings.actual_paid), 0) AS revenue, COALESCE(SUM(billings.consultation_fee), 0) AS consultation_fee").
+		Select("COALESCE(SUM(billings.actual_paid), 0) AS revenue, COALESCE(SUM(LEAST(billings.consultation_fee, billings.actual_paid)), 0) AS consultation_fee").
 		Joins("JOIN medical_records ON medical_records.id = billings.record_id AND medical_records.deleted_at IS NULL").
 		Where("billings.tenant_id = ? AND DATE(medical_records.visit_date) = ? AND billings.deleted_at IS NULL", tenantID, dateStr).
 		Scan(&summary)
@@ -164,27 +167,36 @@ func (s *StatisticsService) GetDashboard(tenantID uint64, startDate, endDate tim
 		Order("stat_date ASC").
 		Find(&stats)
 
+	// Build a lookup from stat rows keyed by date string.
+	statsMap := make(map[string]model.DailyStats, len(stats))
+	for _, st := range stats {
+		statsMap[st.StatDate.Format("2006-01-02")] = st
+	}
+
+	// Fill in every date in [startDate, endDate] so charts always show the full range.
 	var totalRevenue, totalConsultation, totalDrug float64
 	var totalRecords, totalNew, totalReturning int
-	dailyTrend := make([]DailyTrendItem, 0, len(stats))
+	var dailyTrend []DailyTrendItem
 
-	for _, st := range stats {
-		totalRevenue += st.Revenue
-		totalConsultation += st.ConsultationFee
-		totalDrug += st.DrugFee
-		totalRecords += st.RecordCount
-		totalNew += st.NewPatientCount
-		totalReturning += st.ReturningPatientCount
+	for d := startDate; !d.After(endDate); d = d.AddDate(0, 0, 1) {
+		dateStr := d.Format("2006-01-02")
+		item := DailyTrendItem{Date: dateStr}
+		if st, ok := statsMap[dateStr]; ok {
+			totalRevenue += st.Revenue
+			totalConsultation += st.ConsultationFee
+			totalDrug += st.DrugFee
+			totalRecords += st.RecordCount
+			totalNew += st.NewPatientCount
+			totalReturning += st.ReturningPatientCount
 
-		dailyTrend = append(dailyTrend, DailyTrendItem{
-			Date:                  st.StatDate.Format("2006-01-02"),
-			Revenue:               st.Revenue,
-			ConsultationFee:       st.ConsultationFee,
-			DrugFee:               st.DrugFee,
-			RecordCount:           st.RecordCount,
-			NewPatientCount:       st.NewPatientCount,
-			ReturningPatientCount: st.ReturningPatientCount,
-		})
+			item.Revenue = st.Revenue
+			item.ConsultationFee = st.ConsultationFee
+			item.DrugFee = st.DrugFee
+			item.RecordCount = st.RecordCount
+			item.NewPatientCount = st.NewPatientCount
+			item.ReturningPatientCount = st.ReturningPatientCount
+		}
+		dailyTrend = append(dailyTrend, item)
 	}
 
 	totalPatients := totalNew + totalReturning
@@ -226,6 +238,46 @@ func (s *StatisticsService) GetDashboard(tenantID uint64, startDate, endDate tim
 		RevenueChangePercent:  calcChange(totalRevenue, prevRevenue),
 		RecordsChangePercent:  calcChange(float64(totalRecords), float64(prevRecords)),
 		PatientsChangePercent: calcChange(float64(totalPatients), float64(prevPatients)),
+	}
+
+	// Cure rate: real-time from follow_ups (not stored in daily_stats).
+	type cureResult struct {
+		Total     int
+		Recovered int
+	}
+	var curCure cureResult
+	s.DB.Raw(`
+		SELECT
+			COUNT(DISTINCT mr.id) AS total,
+			COUNT(DISTINCT CASE WHEN f2.id IS NOT NULL THEN mr.id END) AS recovered
+		FROM medical_records mr
+		JOIN follow_ups f ON f.record_id = mr.id AND f.deleted_at IS NULL
+		LEFT JOIN follow_ups f2 ON f2.record_id = mr.id AND f2.is_recovered = 1 AND f2.deleted_at IS NULL
+		WHERE mr.tenant_id = ? AND DATE(mr.visit_date) BETWEEN ? AND ? AND mr.deleted_at IS NULL
+	`, tenantID, startDate.Format("2006-01-02"), endDate.Format("2006-01-02")).Scan(&curCure)
+
+	if curCure.Total > 0 {
+		rate := float64(curCure.Recovered) / float64(curCure.Total) * 100
+		rate = math.Round(rate*10) / 10
+		summary.CureRate = &rate
+	}
+
+	// Previous period cure rate for comparison.
+	var prevCure cureResult
+	s.DB.Raw(`
+		SELECT
+			COUNT(DISTINCT mr.id) AS total,
+			COUNT(DISTINCT CASE WHEN f2.id IS NOT NULL THEN mr.id END) AS recovered
+		FROM medical_records mr
+		JOIN follow_ups f ON f.record_id = mr.id AND f.deleted_at IS NULL
+		LEFT JOIN follow_ups f2 ON f2.record_id = mr.id AND f2.is_recovered = 1 AND f2.deleted_at IS NULL
+		WHERE mr.tenant_id = ? AND DATE(mr.visit_date) BETWEEN ? AND ? AND mr.deleted_at IS NULL
+	`, tenantID, prevStart.Format("2006-01-02"), prevEnd.Format("2006-01-02")).Scan(&prevCure)
+
+	if summary.CureRate != nil && prevCure.Total > 0 {
+		prevRate := float64(prevCure.Recovered) / float64(prevCure.Total) * 100
+		change := *summary.CureRate - prevRate
+		summary.CureRateChangePercent = &change
 	}
 
 	return &DashboardResult{

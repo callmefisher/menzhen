@@ -41,6 +41,7 @@ const ACTION_MAP: Record<string, { label: string; color: string }> = {
   delete: { label: '删除', color: 'red' },
   stock_in: { label: '入库', color: 'cyan' },
   batch_stock_in: { label: '批量入库', color: 'cyan' },
+  deduct_stock: { label: '扣减库存', color: 'orange' },
 };
 
 const RESOURCE_TYPE_MAP: Record<string, string> = {
@@ -51,10 +52,12 @@ const RESOURCE_TYPE_MAP: Record<string, string> = {
   prescription: '处方',
   user: '用户',
   inventory_drug: '库存药物',
+  follow_up: '回访',
+  billing: '收费',
 };
 
 // Resource types that are associated with a patient
-const PATIENT_RELATED = new Set(['record', 'medical_record', 'prescription', 'attachment']);
+const PATIENT_RELATED = new Set(['record', 'medical_record', 'prescription', 'attachment', 'follow_up', 'billing']);
 
 /** Extract a display name from oplog record data (patient name, drug name, etc.) */
 function getResourceDisplayName(record: OpLogItem): string | undefined {
@@ -90,6 +93,12 @@ const FIELD_LABEL_MAP: Record<string, string> = {
   // 库存
   stock: '库存', purchase_price: '进货价', selling_price: '出售价',
   category: '类别', alert_threshold: '预警阈值', remark: '备注',
+  // 回访
+  is_recovered: '是否康复', planned_date: '计划回访日期', actual_date: '实际回访日期',
+  method: '回访方式', content: '回访内容',
+  // 收费
+  consultation_fee: '诊金', drug_cost_total: '药费合计',
+  total_amount: '总金额', actual_paid: '实付金额', stock_deducted: '已扣库存',
   // 系统
   created_by: '创建人ID',
   // 处方明细
@@ -131,10 +140,23 @@ function formatItems(items: any[]): string {
     .join('、');
 }
 
+// Value translations for specific fields
+const VALUE_LABEL_MAP: Record<string, Record<string, string>> = {
+  status: { pending: '待回访', completed: '已完成', cancelled: '已取消', active: '启用', disabled: '禁用' },
+  method: { phone: '电话', visit: '上门', online: '线上' },
+  gender: { male: '男', female: '女' },
+};
+
 function formatValue(val: unknown, key?: string): string {
   if (val === null || val === undefined || val === '') return '(空)';
   if (key === 'items' && Array.isArray(val)) return formatItems(val);
+  if (typeof val === 'boolean') return val ? '是' : '否';
   if (typeof val === 'object') return JSON.stringify(val);
+  // Translate known enum values
+  if (key && VALUE_LABEL_MAP[key]) {
+    const mapped = VALUE_LABEL_MAP[key][String(val)];
+    if (mapped) return mapped;
+  }
   return String(val);
 }
 
@@ -185,6 +207,22 @@ function computeDiff(action: string, oldData: any, newData: any, resourceType?: 
     return fields;
   }
 
+  // deduct_stock / stock_in / batch_stock_in: old_data is null, treat like create
+  if (!oldData && newData && action !== 'create') {
+    for (const key of Object.keys(newData)) {
+      if (SKIP_FIELDS.has(key)) continue;
+      const val = newData[key];
+      if (val === null || val === undefined || val === '' || val === 0) continue;
+      fields.push({
+        key,
+        label: getFieldLabel(key, resourceType),
+        newVal: displayValue(key, val),
+        type: 'added',
+      });
+    }
+    return fields;
+  }
+
   // update: only show changed fields
   if (oldData && newData) {
     const allKeys = new Set([...Object.keys(oldData), ...Object.keys(newData)]);
@@ -208,8 +246,68 @@ function computeDiff(action: string, oldData: any, newData: any, resourceType?: 
   return fields;
 }
 
+/** Special view for deduct_stock action showing drug deductions clearly */
+function DeductStockView({ record, isMobile }: { record: OpLogItem; isMobile: boolean }) {
+  const data = record.new_data;
+  if (!data) return <div style={{ color: '#999', padding: 8 }}>无变更数据</div>;
+
+  const patientName = data.patient?.name;
+  const formulaName = data.formula_name;
+  const totalDoses = data.total_doses;
+  const items: any[] = data.items || [];
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {/* Summary */}
+      <div style={{
+        display: 'flex', flexWrap: 'wrap', gap: isMobile ? 6 : 12,
+        padding: '6px 10px', background: '#fff7e6', borderRadius: 4, fontSize: 13,
+      }}>
+        {patientName && <span><b>患者：</b>{patientName}</span>}
+        {formulaName && <span><b>方剂：</b>{formulaName}</span>}
+        {totalDoses > 0 && <span><b>剂数：</b>{totalDoses}</span>}
+        {data.drug_cost_total != null && <span><b>药费：</b>¥{Number(data.drug_cost_total).toFixed(2)}</span>}
+        {data.total_amount != null && <span><b>总额：</b>¥{Number(data.total_amount).toFixed(2)}</span>}
+      </div>
+      {/* Drug items */}
+      {items.length > 0 && (
+        <div style={{ border: '1px solid #f0f0f0', borderRadius: 4, overflow: 'hidden' }}>
+          <div style={{
+            display: 'flex', padding: '6px 10px', background: '#fafafa',
+            fontWeight: 600, fontSize: 12, color: '#666',
+          }}>
+            <span style={{ flex: 2 }}>药材</span>
+            <span style={{ flex: 1 }}>用量</span>
+            <span style={{ flex: 1 }}>类别</span>
+          </div>
+          {items
+            .sort((a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0))
+            .map((item: any, idx: number) => (
+              <div key={idx} style={{
+                display: 'flex', padding: '5px 10px', fontSize: 13,
+                borderTop: '1px solid #f0f0f0',
+                background: idx % 2 === 0 ? '#fff' : '#fafafa',
+              }}>
+                <span style={{ flex: 2, fontWeight: 500 }}>{item.herb_name || '-'}</span>
+                <span style={{ flex: 1, color: '#d4380d' }}>{item.dosage || '-'}</span>
+                <span style={{ flex: 1, color: '#888' }}>
+                  {item.category === 'patent' ? '成药' : '中药'}
+                </span>
+              </div>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // --- Diff rendering ---
 function DiffView({ record, isMobile }: { record: OpLogItem; isMobile: boolean }) {
+  // Special rendering for deduct_stock
+  if (record.action === 'deduct_stock') {
+    return <DeductStockView record={record} isMobile={isMobile} />;
+  }
+
   const fields = computeDiff(record.action, record.old_data, record.new_data, record.resource_type);
 
   if (fields.length === 0) {
@@ -432,8 +530,9 @@ export default function OpLogList() {
     const resourceLabel = RESOURCE_TYPE_MAP[record.resource_type] || record.resource_type;
     const displayName = getResourceDisplayName(record);
     const expanded = expandedIds.has(record.id);
-    const diffFields = computeDiff(record.action, record.old_data, record.new_data, record.resource_type);
-    const hasDetail = diffFields.length > 0;
+    const hasDetail = record.action === 'deduct_stock'
+      ? !!(record.new_data)
+      : computeDiff(record.action, record.old_data, record.new_data, record.resource_type).length > 0;
 
     return (
       <Card
@@ -624,6 +723,10 @@ export default function OpLogList() {
             expandedRowRender: (record) => (
               <DiffView record={record} isMobile={false} />
             ),
+            rowExpandable: (record) =>
+              record.action === 'deduct_stock'
+                ? !!(record.new_data)
+                : computeDiff(record.action, record.old_data, record.new_data, record.resource_type).length > 0,
           }}
           pagination={{
             current: params.page,
