@@ -10,9 +10,11 @@ services:
       - web
 
   web:
+    image: menzhen-web:latest
     build: ./web
 
   api:
+    image: menzhen-api:latest
     build: ./server
     env_file: .env
     depends_on:
@@ -50,6 +52,7 @@ services:
       - minio-data:/data
 
   backup:
+    image: menzhen-backup:latest
     build:
       context: ./scripts
       dockerfile: Dockerfile.backup

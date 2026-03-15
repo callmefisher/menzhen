@@ -5,33 +5,34 @@ import { BrowserRouter } from 'react-router-dom';
 import StatsDashboard from '../StatsDashboard';
 
 
+// Mock must match what request interceptor actually returns:
+// interceptor does `response.data`, so getDashboard resolves to { code, data }.
 vi.mock('../../../api/statistics', () => ({
   getDashboard: vi.fn().mockResolvedValue({
+    code: 0,
     data: {
-      data: {
-        summary: {
-          total_revenue: 48600,
-          total_records: 156,
-          total_patients: 89,
-          avg_revenue_per_record: 311.54,
-          revenue_change_percent: 12.5,
-          records_change_percent: 8.3,
-          patients_change_percent: 5.2,
-        },
-        daily_trend: [
-          {
-            date: '2026-03-01',
-            revenue: 1680,
-            consultation_fee: 500,
-            drug_fee: 1180,
-            record_count: 6,
-            new_patient_count: 2,
-            returning_patient_count: 4,
-          },
-        ],
-        revenue_breakdown: { consultation_fee_total: 15600, drug_fee_total: 33000 },
-        patient_breakdown: { new_patients: 34, returning_patients: 55 },
+      summary: {
+        total_revenue: 48600,
+        total_records: 156,
+        total_patients: 89,
+        avg_revenue_per_record: 311.54,
+        revenue_change_percent: 12.5,
+        records_change_percent: 8.3,
+        patients_change_percent: 5.2,
       },
+      daily_trend: [
+        {
+          date: '2026-03-01',
+          revenue: 1680,
+          consultation_fee: 500,
+          drug_fee: 1180,
+          record_count: 6,
+          new_patient_count: 2,
+          returning_patient_count: 4,
+        },
+      ],
+      revenue_breakdown: { consultation_fee_total: 15600, drug_fee_total: 33000 },
+      patient_breakdown: { new_patients: 34, returning_patients: 55 },
     },
   }),
 }));
@@ -101,7 +102,8 @@ describe('StatsDashboard', () => {
   it('shows empty state when no data', async () => {
     const { getDashboard } = await import('../../../api/statistics');
     (getDashboard as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      data: { data: null },
+      code: 0,
+      data: null,
     });
     renderWithRouter();
     await waitFor(() => {

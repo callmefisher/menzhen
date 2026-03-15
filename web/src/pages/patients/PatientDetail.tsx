@@ -13,6 +13,12 @@ import {
   message,
   Popconfirm,
   Tag,
+  Modal,
+  Form,
+  DatePicker,
+  Input,
+  Select,
+  Badge,
 } from 'antd';
 import {
   EditOutlined,
@@ -20,11 +26,21 @@ import {
   DownOutlined,
   UpOutlined,
   DeleteOutlined,
+  CheckCircleOutlined,
+  ClockCircleOutlined,
+  ExclamationCircleOutlined,
 } from '@ant-design/icons';
 import { getPatient } from '../../api/patient';
 import { deleteRecord } from '../../api/record';
 import type { PrescriptionData } from '../../api/prescription';
 import { getFileUrl } from '../../api/upload';
+import type { FollowUpListItem } from '../../api/followUp';
+import {
+  listFollowUps,
+  createFollowUp,
+  updateFollowUp,
+  deleteFollowUp,
+} from '../../api/followUp';
 import dayjs from 'dayjs';
 import { PatientFormModal } from './PatientForm';
 import useIsMobile from '../../hooks/useIsMobile';
@@ -75,6 +91,28 @@ export default function PatientDetail() {
   const [expandedRecords, setExpandedRecords] = useState<Set<number>>(new Set());
   const [editModalVisible, setEditModalVisible] = useState(false);
 
+  // Follow-up state
+  const [followUps, setFollowUps] = useState<FollowUpListItem[]>([]);
+  const [followUpLoading, setFollowUpLoading] = useState(false);
+  const [followUpModalOpen, setFollowUpModalOpen] = useState(false);
+  const [followUpForm] = Form.useForm();
+  const [followUpSaving, setFollowUpSaving] = useState(false);
+  const [editingFollowUp, setEditingFollowUp] = useState<FollowUpListItem | null>(null);
+
+  const fetchFollowUps = useCallback(async () => {
+    if (!id) return;
+    setFollowUpLoading(true);
+    try {
+      const res = await listFollowUps({ patient_id: Number(id), size: 100 });
+      const body = res as unknown as { data: { list: FollowUpListItem[] } };
+      setFollowUps(body.data?.list || []);
+    } catch {
+      // silent
+    } finally {
+      setFollowUpLoading(false);
+    }
+  }, [id]);
+
   const fetchPatient = useCallback(async () => {
     if (!id) return;
     setLoading(true);
@@ -92,7 +130,8 @@ export default function PatientDetail() {
 
   useEffect(() => {
     fetchPatient();
-  }, [fetchPatient]);
+    fetchFollowUps();
+  }, [fetchPatient, fetchFollowUps]);
 
   const toggleExpand = (recordId: number) => {
     setExpandedRecords((prev) => {
@@ -120,6 +159,106 @@ export default function PatientDetail() {
     fetchPatient();
   };
 
+  // Follow-up handlers
+  const handleOpenFollowUpModal = (item?: FollowUpListItem) => {
+    if (item) {
+      setEditingFollowUp(item);
+      followUpForm.setFieldsValue({
+        planned_date: dayjs(item.planned_date),
+        method: item.method,
+        content: item.content,
+        actual_date: item.actual_date ? dayjs(item.actual_date) : undefined,
+        record_id: item.record_id || undefined,
+      });
+    } else {
+      setEditingFollowUp(null);
+      followUpForm.resetFields();
+      followUpForm.setFieldsValue({ method: '电话' });
+    }
+    setFollowUpModalOpen(true);
+  };
+
+  const handleFollowUpSave = async () => {
+    try {
+      const values = await followUpForm.validateFields();
+      setFollowUpSaving(true);
+      if (editingFollowUp) {
+        const data: Record<string, unknown> = {
+          planned_date: values.planned_date.format('YYYY-MM-DD'),
+          method: values.method,
+          content: values.content || '',
+          record_id: values.record_id || null,
+        };
+        if (values.actual_date) {
+          data.actual_date = values.actual_date.format('YYYY-MM-DD');
+        }
+        await updateFollowUp(editingFollowUp.id, data);
+        message.success('回访记录已更新');
+      } else {
+        await createFollowUp({
+          patient_id: Number(id),
+          planned_date: values.planned_date.format('YYYY-MM-DD'),
+          method: values.method,
+          content: values.content || '',
+          record_id: values.record_id || undefined,
+        });
+        message.success('回访记录已创建');
+      }
+      setFollowUpModalOpen(false);
+      fetchFollowUps();
+    } catch {
+      // validation
+    } finally {
+      setFollowUpSaving(false);
+    }
+  };
+
+  const handleCompleteFollowUp = async (item: FollowUpListItem) => {
+    try {
+      await updateFollowUp(item.id, {
+        actual_date: dayjs().format('YYYY-MM-DD'),
+      });
+      message.success('已完成回访');
+      fetchFollowUps();
+    } catch {
+      message.error('操作失败');
+    }
+  };
+
+  const handleDeleteFollowUp = async (fid: number) => {
+    try {
+      await deleteFollowUp(fid);
+      message.success('回访记录已删除');
+      fetchFollowUps();
+    } catch {
+      message.error('删除失败');
+    }
+  };
+
+  const statusConfig: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
+    overdue: { color: '#ff4d4f', icon: <ExclamationCircleOutlined />, label: '逾期' },
+    pending: { color: '#1677ff', icon: <ClockCircleOutlined />, label: '待回访' },
+    completed: { color: '#52c41a', icon: <CheckCircleOutlined />, label: '已完成' },
+  };
+
+  // Sort follow-ups: overdue first, then pending, then completed
+  const sortedFollowUps = [...followUps].sort((a, b) => {
+    const order: Record<string, number> = { overdue: 0, pending: 1, completed: 2 };
+    return (order[a.status] ?? 1) - (order[b.status] ?? 1);
+  });
+
+  const [expandedFollowUps, setExpandedFollowUps] = useState<Set<number>>(new Set());
+  const toggleFollowUpExpand = (fid: number) => {
+    setExpandedFollowUps((prev) => {
+      const next = new Set(prev);
+      next.has(fid) ? next.delete(fid) : next.add(fid);
+      return next;
+    });
+  };
+
+  const overdueCount = followUps.filter((f) => f.status === 'overdue').length;
+  const pendingCount = followUps.filter((f) => f.status === 'pending').length;
+
   if (loading) {
     return (
       <div
@@ -140,6 +279,7 @@ export default function PatientDetail() {
   }
 
   const records = patient.medical_records || [];
+  const recordMap = new Map(records.map((r) => [r.id, r]));
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -478,6 +618,250 @@ export default function PatientDetail() {
           />
         )}
       </Card>
+
+      {/* Follow-up section */}
+      <Card
+        title={
+          <Space>
+            <span>回访记录</span>
+            {overdueCount > 0 && <Badge count={overdueCount} style={{ backgroundColor: '#ff4d4f' }} />}
+            {pendingCount > 0 && <Badge count={pendingCount} style={{ backgroundColor: '#1677ff' }} />}
+          </Space>
+        }
+        extra={
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            size={isMobile ? 'small' : 'middle'}
+            onClick={() => handleOpenFollowUpModal()}
+          >
+            新增回访
+          </Button>
+        }
+        loading={followUpLoading}
+      >
+        {sortedFollowUps.length === 0 ? (
+          <Empty description="暂无回访记录" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {sortedFollowUps.map((item) => {
+              const cfg = statusConfig[item.status] || statusConfig.pending;
+              const isOverdue = item.status === 'overdue';
+              return (
+                <div
+                  key={item.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: isMobile ? 'flex-start' : 'center',
+                    flexDirection: isMobile ? 'column' : 'row',
+                    gap: isMobile ? 6 : 12,
+                    padding: isMobile ? '10px 12px' : '10px 16px',
+                    borderRadius: 8,
+                    border: `1px solid ${isOverdue ? '#ffccc7' : '#f0f0f0'}`,
+                    background: isOverdue ? '#fff2f0' : '#fafafa',
+                  }}
+                >
+                  {/* Left: status + date + method */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    flexShrink: 0,
+                    width: isMobile ? '100%' : undefined,
+                  }}>
+                    <Tag
+                      color={cfg.color}
+                      icon={cfg.icon}
+                      style={{ margin: 0, fontSize: 12 }}
+                    >
+                      {cfg.label}
+                    </Tag>
+                    <span style={{ fontSize: 13, color: '#333', whiteSpace: 'nowrap' }}>
+                      {item.planned_date}
+                    </span>
+                    <Tag style={{ margin: 0, fontSize: 11 }}>{item.method}</Tag>
+                  </div>
+
+                  {/* Middle: content + related record */}
+                  <div style={{
+                    flex: 1,
+                    minWidth: 0,
+                    fontSize: 13,
+                    color: '#666',
+                    width: isMobile ? '100%' : undefined,
+                  }}>
+                    {item.content && (
+                      <div style={{
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}>
+                        {item.content}
+                      </div>
+                    )}
+                    {item.status === 'completed' && item.actual_date && (
+                      <span style={{ fontSize: 12, color: '#52c41a' }}>
+                        完成于 {item.actual_date}
+                      </span>
+                    )}
+                    {/* Related record: abbreviated tag + expand/link */}
+                    {item.record_id && item.record_diagnosis && (() => {
+                      const isExpanded = expandedFollowUps.has(item.id);
+                      const linkedRecord = recordMap.get(item.record_id);
+                      return (
+                        <div style={{ marginTop: 4 }}>
+                          <Space size={4} wrap>
+                            <Tag
+                              color="default"
+                              style={{ fontSize: 11, cursor: 'pointer', margin: 0 }}
+                              onClick={() => toggleFollowUpExpand(item.id)}
+                            >
+                              {isExpanded ? <UpOutlined /> : <DownOutlined />}
+                              <span style={{ marginLeft: 4 }}>
+                                诊疗 {item.record_visit_date || ''} {item.record_diagnosis.slice(0, 15)}{item.record_diagnosis.length > 15 ? '...' : ''}
+                              </span>
+                            </Tag>
+                            <Button
+                              type="link"
+                              size="small"
+                              style={{ padding: 0, fontSize: 12 }}
+                              onClick={() => navigate(`/records/${item.record_id}`)}
+                            >
+                              查看
+                            </Button>
+                          </Space>
+                          {isExpanded && linkedRecord && (
+                            <div style={{
+                              marginTop: 6,
+                              padding: '8px 10px',
+                              background: '#fff',
+                              borderRadius: 6,
+                              border: '1px solid #e8e8e8',
+                              fontSize: 12,
+                              color: '#555',
+                            }}>
+                              {linkedRecord.diagnosis && (
+                                <div style={{ marginBottom: 4 }}>
+                                  <Text strong style={{ fontSize: 12 }}>诊断：</Text>
+                                  <span>{linkedRecord.diagnosis}</span>
+                                </div>
+                              )}
+                              {linkedRecord.treatment && (
+                                <div style={{ marginBottom: 4 }}>
+                                  <Text strong style={{ fontSize: 12 }}>治疗：</Text>
+                                  <span>{linkedRecord.treatment}</span>
+                                </div>
+                              )}
+                              {(linkedRecord.prescriptions || []).length > 0 && (
+                                <div>
+                                  {linkedRecord.prescriptions.map((rx) => (
+                                    <Tag key={rx.id} color="geekblue" style={{ fontSize: 11, marginBottom: 2 }}>
+                                      {rx.formula_name || '自定义处方'} {rx.total_doses}付
+                                    </Tag>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Right: actions */}
+                  <Space size={4} style={{ flexShrink: 0 }}>
+                    {item.status !== 'completed' && (
+                      <Popconfirm
+                        title="确认完成此回访？"
+                        onConfirm={() => handleCompleteFollowUp(item)}
+                        okText="确认"
+                        cancelText="取消"
+                      >
+                        <Button type="link" size="small" style={{ padding: 0, color: '#52c41a' }}>
+                          完成
+                        </Button>
+                      </Popconfirm>
+                    )}
+                    <Button
+                      type="link"
+                      size="small"
+                      style={{ padding: 0 }}
+                      onClick={() => handleOpenFollowUpModal(item)}
+                    >
+                      编辑
+                    </Button>
+                    <Popconfirm
+                      title="确定删除此回访记录？"
+                      onConfirm={() => handleDeleteFollowUp(item.id)}
+                      okText="确定"
+                      cancelText="取消"
+                    >
+                      <Button type="link" size="small" danger style={{ padding: 0 }}>
+                        删除
+                      </Button>
+                    </Popconfirm>
+                  </Space>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+
+      {/* Follow-up modal */}
+      <Modal
+        title={editingFollowUp ? '编辑回访' : '新增回访'}
+        open={followUpModalOpen}
+        onOk={handleFollowUpSave}
+        onCancel={() => setFollowUpModalOpen(false)}
+        confirmLoading={followUpSaving}
+        width={isMobile ? '95%' : 480}
+        destroyOnClose
+      >
+        <Form form={followUpForm} layout="vertical" style={{ marginTop: 16 }}>
+          <Form.Item
+            name="planned_date"
+            label="计划回访日期"
+            rules={[{ required: true, message: '请选择日期' }]}
+          >
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item
+            name="method"
+            label="回访方式"
+            rules={[{ required: true, message: '请选择方式' }]}
+          >
+            <Select
+              options={[
+                { value: '电话', label: '电话' },
+                { value: '微信', label: '微信' },
+                { value: '到诊', label: '到诊' },
+                { value: '其他', label: '其他' },
+              ]}
+            />
+          </Form.Item>
+          {records.length > 0 && (
+            <Form.Item name="record_id" label="关联诊疗记录">
+              <Select
+                allowClear
+                placeholder="选择关联的诊疗记录（可选）"
+                options={records.map((r) => ({
+                  value: r.id,
+                  label: `${r.visit_date?.slice(0, 10)} ${r.diagnosis?.slice(0, 30) || '(无诊断)'}`,
+                }))}
+              />
+            </Form.Item>
+          )}
+          {editingFollowUp && (
+            <Form.Item name="actual_date" label="实际回访日期">
+              <DatePicker style={{ width: '100%' }} placeholder="填写后自动标记为已完成" />
+            </Form.Item>
+          )}
+          <Form.Item name="content" label="回访内容">
+            <Input.TextArea rows={3} maxLength={2000} showCount placeholder="记录回访情况..." />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       {/* Edit patient modal */}
       <PatientFormModal

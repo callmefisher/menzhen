@@ -6,6 +6,7 @@ import (
 	"log"
 
 	"github.com/callmefisher/menzhen/server/model"
+	"github.com/callmefisher/menzhen/server/service"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -25,6 +26,7 @@ func Seed(db *gorm.DB) {
 	seedClinicOpsRole(db, tenant.ID)
 	seedSolarTerms(db)
 	seedHexagrams(db)
+	rebuildEmptyDailyStats(db)
 	log.Println("Seed data check completed")
 }
 
@@ -59,6 +61,7 @@ func seedPermissions(db *gorm.DB) {
 		{Code: "followup:read", Name: "查看回访", Description: "查看回访列表和详情"},
 		{Code: "followup:update", Name: "编辑回访", Description: "修改回访记录"},
 		{Code: "followup:delete", Name: "删除回访", Description: "删除回访记录"},
+		{Code: "statistics:read", Name: "统计数据", Description: "查看统计概览"},
 	}
 
 	for _, p := range permissions {
@@ -174,29 +177,40 @@ func seedAdminUser(db *gorm.DB, tenantID uint64, roleID uint64) {
 	log.Println("Admin user seeded successfully")
 }
 
-// seedClinicOpsRole creates the "诊所运营" role with tenant-scoped management permissions.
+// seedClinicOpsRole creates or syncs the "诊所运营" role with tenant-scoped management permissions.
 func seedClinicOpsRole(db *gorm.DB, tenantID uint64) {
-	var role model.Role
-	result := db.Where("name = ? AND tenant_id = ?", "诊所运营", tenantID).First(&role)
-	if result.Error == nil {
-		log.Println("Clinic ops role already exists, skipping")
+	clinicOpsPermCodes := []string{"tenant:user:manage", "tenant:role:manage", "statistics:read"}
+
+	var perms []model.Permission
+	if err := db.Where("code IN ?", clinicOpsPermCodes).Find(&perms).Error; err != nil {
+		log.Printf("Warning: failed to fetch permissions for clinic ops role: %v", err)
 		return
 	}
 
-	var perms []model.Permission
-	if err := db.Where("code IN ?", []string{"tenant:user:manage", "tenant:role:manage"}).Find(&perms).Error; err != nil {
-		log.Printf("Warning: failed to fetch tenant permissions for clinic ops role: %v", err)
-		return
+	// Sync all existing "诊所运营" roles across all tenants.
+	var opsRoles []model.Role
+	if err := db.Where("name = ?", "诊所运营").Find(&opsRoles).Error; err == nil {
+		for _, r := range opsRoles {
+			if err := db.Model(&r).Association("Permissions").Replace(perms); err != nil {
+				log.Printf("Warning: failed to sync clinic ops role (id=%d) permissions: %v", r.ID, err)
+			}
+		}
+		if len(opsRoles) > 0 {
+			log.Printf("Clinic ops role permissions synced for %d tenants", len(opsRoles))
+		}
 	}
-	if len(perms) != 2 {
-		log.Println("Warning: tenant permissions not yet seeded, skipping clinic ops role")
+
+	// Ensure default tenant has a clinic ops role.
+	var role model.Role
+	result := db.Where("name = ? AND tenant_id = ?", "诊所运营", tenantID).First(&role)
+	if result.Error == nil {
 		return
 	}
 
 	role = model.Role{
 		TenantID:    tenantID,
 		Name:        "诊所运营",
-		Description: "诊所运营管理，可管理本诊所的用户和角色",
+		Description: "诊所运营管理，可管理本诊所的用户和角色、查看统计",
 		Permissions: perms,
 	}
 	if err := db.Create(&role).Error; err != nil {
@@ -281,4 +295,28 @@ func seedHexagrams(db *gorm.DB) {
 		}
 	}
 	log.Println("Hexagram seed upsert completed")
+}
+
+// rebuildEmptyDailyStats checks if daily_stats is empty for tenants that have
+// billing records, and triggers a full rebuild if so. This handles the case
+// where billing data was created before the statistics feature was added.
+func rebuildEmptyDailyStats(db *gorm.DB) {
+	// Find tenant IDs that have billing records.
+	var tenantIDs []uint64
+	db.Model(&model.Billing{}).Distinct("tenant_id").Pluck("tenant_id", &tenantIDs)
+	if len(tenantIDs) == 0 {
+		return
+	}
+
+	statsSvc := service.NewStatisticsService(db)
+	for _, tid := range tenantIDs {
+		var statsCount int64
+		db.Model(&model.DailyStats{}).Where("tenant_id = ?", tid).Count(&statsCount)
+		if statsCount == 0 {
+			log.Printf("Rebuilding daily stats for tenant %d (billing records exist but no stats)", tid)
+			if err := statsSvc.RebuildAllDailyStats(tid); err != nil {
+				log.Printf("Warning: failed to rebuild daily stats for tenant %d: %v", tid, err)
+			}
+		}
+	}
 }

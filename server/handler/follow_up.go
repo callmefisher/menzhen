@@ -26,9 +26,15 @@ func NewFollowUpHandler(db *gorm.DB) *FollowUpHandler {
 func (h *FollowUpHandler) List(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
 	patientName := c.Query("patient_name")
+	patientIDStr := c.Query("patient_id")
 	status := c.Query("status")
 	plannedFrom := c.Query("planned_date_from")
 	plannedTo := c.Query("planned_date_to")
+
+	var patientID uint64
+	if patientIDStr != "" {
+		patientID, _ = strconv.ParseUint(patientIDStr, 10, 64)
+	}
 
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	if page < 1 {
@@ -40,7 +46,7 @@ func (h *FollowUpHandler) List(c *gin.Context) {
 	}
 
 	svc := service.NewFollowUpService(h.db)
-	items, total, err := svc.List(tenantID, patientName, status, plannedFrom, plannedTo, page, size)
+	items, total, err := svc.List(tenantID, patientID, patientName, status, plannedFrom, plannedTo, page, size)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,

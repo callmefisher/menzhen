@@ -348,11 +348,6 @@ export default function PrescriptionModal({
       const validHerbs = herbRows.filter((r) => r.herb_name.trim());
       const validPatents = patentRows.filter((r) => r.name.trim());
 
-      if (validHerbs.length === 0 && validPatents.length === 0) {
-        message.warning('请至少添加一味药物或一种中成药');
-        return;
-      }
-
       setSubmitting(true);
 
       const herbItems: PrescriptionItemReq[] = validHerbs.map((r, idx) => ({

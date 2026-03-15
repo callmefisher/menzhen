@@ -1,0 +1,5 @@
+# Local build: uses cached runtime base, only updates scripts.
+# No Docker Hub pull needed.
+FROM menzhen-backup-base:latest
+COPY backup-loop.sh backup.sh backup-minio.sh restore.sh upload_to_qiniu.py download_from_qiniu.py cleanup_qiniu.py /scripts/
+RUN chmod +x /scripts/*.sh /scripts/*.py

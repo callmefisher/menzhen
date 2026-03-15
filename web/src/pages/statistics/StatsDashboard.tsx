@@ -48,7 +48,8 @@ export default function StatsDashboard() {
         dateRange[0].format('YYYY-MM-DD'),
         dateRange[1].format('YYYY-MM-DD'),
       );
-      setData(res.data.data);
+      const body = res as unknown as { code: number; data: DashboardData };
+      setData(body.data);
     } catch {
       // silently handle
     } finally {

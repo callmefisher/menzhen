@@ -67,6 +67,7 @@ func (h *RecordHandler) List(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
 	name := c.Query("name")
 	date := c.Query("date")
+	patientID, _ := strconv.ParseUint(c.Query("patient_id"), 10, 64)
 
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	if page < 1 {
@@ -78,7 +79,7 @@ func (h *RecordHandler) List(c *gin.Context) {
 	}
 
 	svc := service.NewRecordService(h.db)
-	records, total, err := svc.ListRecords(tenantID, name, date, page, size)
+	records, total, err := svc.ListRecords(tenantID, name, date, patientID, page, size)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,

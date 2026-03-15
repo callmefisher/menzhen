@@ -174,8 +174,16 @@ func (s *BillingService) CreateBilling(tenantID, userID, prescriptionID uint64, 
 		return nil, err
 	}
 
+	// Compute drug cost from billing detail.
+	detail, err := s.GetBillingDetail(tenantID, prescriptionID)
+	drugCostTotal := float64(0)
+	if err == nil {
+		drugCostTotal = detail.DrugCostTotal
+	}
+	totalAmount := drugCostTotal + req.ConsultationFee
+
 	var billing model.Billing
-	err := s.DB.Where("prescription_id = ? AND tenant_id = ?", prescriptionID, tenantID).First(&billing).Error
+	err = s.DB.Where("prescription_id = ? AND tenant_id = ?", prescriptionID, tenantID).First(&billing).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		// Create new billing.
 		billing = model.Billing{
@@ -183,6 +191,8 @@ func (s *BillingService) CreateBilling(tenantID, userID, prescriptionID uint64, 
 			RecordID:        prescription.RecordID,
 			TenantID:        tenantID,
 			ConsultationFee: req.ConsultationFee,
+			DrugCostTotal:   drugCostTotal,
+			TotalAmount:     totalAmount,
 			ActualPaid:      req.ActualPaid,
 			CreatedBy:       userID,
 		}
@@ -194,6 +204,8 @@ func (s *BillingService) CreateBilling(tenantID, userID, prescriptionID uint64, 
 	} else {
 		// Update existing billing.
 		billing.ConsultationFee = req.ConsultationFee
+		billing.DrugCostTotal = drugCostTotal
+		billing.TotalAmount = totalAmount
 		billing.ActualPaid = req.ActualPaid
 		if err := s.DB.Save(&billing).Error; err != nil {
 			return nil, err
@@ -268,6 +280,32 @@ func (s *BillingService) DeductStockAndBill(tenantID, userID, prescriptionID uin
 			}
 		}
 
+		// Compute drug cost from inventory prices.
+		var drugs []model.InventoryDrug
+		if err := tx.Where("tenant_id = ?", tenantID).Find(&drugs).Error; err != nil {
+			return err
+		}
+		drugMap := make(map[string]*model.InventoryDrug)
+		for i := range drugs {
+			drugMap[drugs[i].Name] = &drugs[i]
+		}
+		var drugCostTotal float64
+		for _, pi := range prescription.Items {
+			dosageVal := parseDosageValue(pi.Dosage)
+			category := pi.Category
+			if category == "" {
+				category = "herb"
+			}
+			if drug, ok := drugMap[pi.HerbName]; ok {
+				if category == "herb" {
+					drugCostTotal += dosageVal * (drug.SellingPrice / 500) * float64(prescription.TotalDoses)
+				} else {
+					drugCostTotal += dosageVal * drug.SellingPrice
+				}
+			}
+		}
+		totalAmount := drugCostTotal + req.ConsultationFee
+
 		// Create or update billing with stock_deducted = true.
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			billing = model.Billing{
@@ -275,6 +313,8 @@ func (s *BillingService) DeductStockAndBill(tenantID, userID, prescriptionID uin
 				RecordID:        prescription.RecordID,
 				TenantID:        tenantID,
 				ConsultationFee: req.ConsultationFee,
+				DrugCostTotal:   drugCostTotal,
+				TotalAmount:     totalAmount,
 				ActualPaid:      req.ActualPaid,
 				StockDeducted:   true,
 				CreatedBy:       userID,
@@ -284,6 +324,8 @@ func (s *BillingService) DeductStockAndBill(tenantID, userID, prescriptionID uin
 			}
 		} else {
 			billing.ConsultationFee = req.ConsultationFee
+			billing.DrugCostTotal = drugCostTotal
+			billing.TotalAmount = totalAmount
 			billing.ActualPaid = req.ActualPaid
 			billing.StockDeducted = true
 			if err := tx.Save(&billing).Error; err != nil {
@@ -364,6 +406,8 @@ func (s *BillingService) CreateRecordBilling(tenantID, userID, recordID uint64, 
 			RecordID:        recordID,
 			TenantID:        tenantID,
 			ConsultationFee: req.ConsultationFee,
+			DrugCostTotal:   0,
+			TotalAmount:     req.ConsultationFee,
 			ActualPaid:      req.ActualPaid,
 			CreatedBy:       userID,
 		}
@@ -374,6 +418,8 @@ func (s *BillingService) CreateRecordBilling(tenantID, userID, recordID uint64, 
 		return nil, err
 	} else {
 		billing.ConsultationFee = req.ConsultationFee
+		billing.DrugCostTotal = 0
+		billing.TotalAmount = req.ConsultationFee
 		billing.ActualPaid = req.ActualPaid
 		if err := s.DB.Save(&billing).Error; err != nil {
 			return nil, err

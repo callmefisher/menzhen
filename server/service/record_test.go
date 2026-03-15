@@ -152,14 +152,14 @@ func TestListRecords_Pagination(t *testing.T) {
 	}
 
 	// Page 1, size 2 -> should get 2 items, total 5.
-	items, total, err := svc.ListRecords(tenantID, "", "", 1, 2)
+	items, total, err := svc.ListRecords(tenantID, "", "", 0, 1, 2)
 
 	assert.NoError(t, err)
 	assert.Equal(t, int64(5), total)
 	assert.Len(t, items, 2)
 
 	// Page 3, size 2 -> should get 1 item.
-	items2, total2, err := svc.ListRecords(tenantID, "", "", 3, 2)
+	items2, total2, err := svc.ListRecords(tenantID, "", "", 0, 3, 2)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(5), total2)
 	assert.Len(t, items2, 1)
@@ -178,7 +178,7 @@ func TestListRecords_SearchByName(t *testing.T) {
 	_, err = svc.CreateRecord(tenant.ID, user.ID, &service.CreateRecordRequest{PatientID: p2.ID, VisitDate: "2025-06-02"})
 	assert.NoError(t, err)
 
-	items, total, err := svc.ListRecords(tenant.ID, "张", "", 1, 10)
+	items, total, err := svc.ListRecords(tenant.ID, "张", "", 0, 1, 10)
 
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), total)
@@ -197,7 +197,7 @@ func TestListRecords_FilterByDate(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Filter to June only.
-	items, total, err := svc.ListRecords(tenantID, "", "2025-06-01,2025-06-30", 1, 10)
+	items, total, err := svc.ListRecords(tenantID, "", "2025-06-01,2025-06-30", 0, 1, 10)
 
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), total)
@@ -466,7 +466,7 @@ func TestRecordService_FindRecordPage(t *testing.T) {
 	}
 
 	// Get all records to find an ID
-	items, total, err := svc.ListRecords(tenant.ID, "", "", 1, 10)
+	items, total, err := svc.ListRecords(tenant.ID, "", "", 0, 1, 10)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(5), total)
 	assert.True(t, len(items) > 0)

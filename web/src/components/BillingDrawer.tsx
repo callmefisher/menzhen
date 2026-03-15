@@ -104,7 +104,7 @@ export default function BillingDrawer({
         });
       }
       message.success('收费记录已保存');
-      await loadDetail();
+      onClose();
     } catch {
       message.error('保存失败');
     } finally {
@@ -127,7 +127,10 @@ export default function BillingDrawer({
         });
       }
       await loadDetail();
-      setTimeout(() => printRef.current?.print(), 100);
+      setTimeout(() => {
+        printRef.current?.print();
+        onClose();
+      }, 100);
     } catch {
       message.error('保存失败');
     } finally {
@@ -144,7 +147,10 @@ export default function BillingDrawer({
       });
       message.success('库存已扣除，收费记录已保存');
       await loadDetail();
-      setTimeout(() => printRef.current?.print(), 100);
+      setTimeout(() => {
+        printRef.current?.print();
+        onClose();
+      }, 100);
     } catch (err: unknown) {
       const errMsg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
       message.error(errMsg || '扣除库存失败');
@@ -429,7 +435,16 @@ export default function BillingDrawer({
                 <span>诊疗费</span>
                 <InputNumber
                   value={consultationFee}
-                  onChange={(v) => setConsultationFee(v ?? 0)}
+                  onChange={(v) => {
+                    const newFee = v ?? 0;
+                    const oldTotal = drugCostTotal + consultationFee;
+                    const newTotal = drugCostTotal + newFee;
+                    setConsultationFee(newFee);
+                    // 实收等于旧应收时联动更新（用户未手动修改过实收）
+                    if (actualPaid === oldTotal) {
+                      setActualPaid(newTotal);
+                    }
+                  }}
                   min={0}
                   precision={2}
                   prefix="¥"

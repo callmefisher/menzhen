@@ -9,7 +9,7 @@ interface Props {
 export default function RevenueBreakdownChart({ data }: Props) {
   const option = {
     tooltip: { trigger: 'axis' as const },
-    legend: { data: ['诊金', '药费'] },
+    legend: { data: ['诊金', '药费'], top: 0 },
     xAxis: {
       type: 'category' as const,
       data: data.map((d) => d.date.slice(5)),
@@ -33,7 +33,7 @@ export default function RevenueBreakdownChart({ data }: Props) {
         barMaxWidth: 30,
       },
     ],
-    grid: { left: 60, right: 20, bottom: 30 },
+    grid: { left: 60, right: 20, bottom: 30, top: 40 },
   };
 
   return (

@@ -42,13 +42,18 @@ else
     echo ">> 使用已有 .env 配置"
 fi
 
-# 3. Handle --restore flag
+# 3. Handle flags
 RESTORE_DIR=""
+FULL_BUILD=false
 while [[ $# -gt 0 ]]; do
     case $1 in
         --restore)
             RESTORE_DIR="$2"
             shift 2
+            ;;
+        --full)
+            FULL_BUILD=true
+            shift
             ;;
         *)
             shift
@@ -56,17 +61,77 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# 4. Build and start services
-echo ">> 构建服务..."
-docker compose build web api
+# 4. Detect architecture
+ARCH=$(uname -m)
+case "$ARCH" in
+    arm64|aarch64) GOARCH=arm64 ;;
+    x86_64)        GOARCH=amd64 ;;
+    *)             GOARCH=amd64 ;;
+esac
 
-echo ">> 停止旧服务..."
-docker compose down
+# 5. Check if base images exist locally (first deploy needs --full)
+check_base_images() {
+    local missing=false
+    for img in "menzhen-api-base:latest" "menzhen-backup-base:latest" "nginx:alpine" "mysql:8.0" "minio/minio:latest"; do
+        if ! docker image inspect "$img" &>/dev/null; then
+            echo "  缺少本地镜像: $img"
+            missing=true
+        fi
+    done
+    if $missing; then
+        return 1
+    fi
+    return 0
+}
 
-echo ">> 启动服务..."
+if ! check_base_images; then
+    echo ">> 检测到缺少基础镜像，使用完整构建模式（需要网络）"
+    FULL_BUILD=true
+fi
+
+# 6. Build
+if $FULL_BUILD; then
+    echo ">> [完整构建] 拉取基础镜像 + 构建所有服务..."
+    docker compose build
+
+    # Create flat, clean runtime base images for future local builds.
+    # Export/import flattens layers and removes application code,
+    # so local builds stay small and constant-size.
+    echo ">> 创建干净的运行时基础镜像..."
+    bash "$SCRIPT_DIR/scripts/init-base-images.sh"
+else
+    echo ">> [本地构建] 使用本地镜像，仅更新应用代码..."
+
+    # 6a. Build Go binary locally
+    echo "  构建后端二进制 (linux/$GOARCH)..."
+    (cd server && CGO_ENABLED=0 GOOS=linux GOARCH=$GOARCH go build -o menzhen-api .)
+
+    # 6b. Build API image (copy binary into clean base)
+    echo "  构建 API 镜像..."
+    docker build --no-cache -f server/Dockerfile.local -t menzhen-api:latest server/
+
+    # 6c. Build frontend locally
+    echo "  构建前端..."
+    (cd web && npm run build)
+
+    # 6d. Build Web image (copy dist into clean nginx base)
+    echo "  构建 Web 镜像..."
+    docker build --no-cache -f web/Dockerfile.local -t menzhen-web:latest web/
+
+    # 6e. Build backup image (copy scripts into clean base)
+    echo "  构建备份镜像..."
+    docker build --no-cache -f scripts/Dockerfile.local -t menzhen-backup:latest scripts/
+fi
+
+# 7. Update services (only recreates containers with changed images/config)
+echo ">> 更新服务..."
 docker compose up -d
 
-# 5. Wait for MySQL to be healthy
+# Restart nginx to refresh upstream DNS (api/web container IPs may have changed)
+echo ">> 刷新 nginx 上游连接..."
+docker compose restart nginx
+
+# 8. Wait for MySQL to be healthy
 echo ">> 等待 MySQL 就绪..."
 for i in $(seq 1 30); do
     if docker compose exec -T mysql mysqladmin ping -h localhost --silent 2>/dev/null; then
@@ -81,7 +146,50 @@ for i in $(seq 1 30); do
     sleep 2
 done
 
-# 6. Restore from backup if specified
+# 9. Post-deploy verification
+echo ">> 验证部署..."
+DEPLOY_OK=true
+
+# Check all containers are running
+for svc in api web nginx mysql minio backup; do
+    STATUS=$(docker compose ps --format '{{.State}}' "$svc" 2>/dev/null)
+    if [ "$STATUS" = "running" ]; then
+        echo "  $svc: running"
+    else
+        echo "  $svc: $STATUS [异常]"
+        DEPLOY_OK=false
+    fi
+done
+
+# Check API health
+sleep 2
+API_CODE=$(docker compose exec -T api wget -qO- --spider http://localhost:8080/api/v1/solar-terms 2>&1 | grep -o "200" || echo "fail")
+if [ "$API_CODE" = "fail" ]; then
+    # Try with curl as fallback
+    API_CODE=$(docker compose exec -T api sh -c 'wget -qS -O /dev/null http://localhost:8080/api/v1/solar-terms 2>&1 | head -1' || echo "fail")
+    echo "  API 健康检查: $API_CODE"
+else
+    echo "  API 健康检查: OK"
+fi
+
+# Verify web container serves latest index.html
+CONTAINER_HASH=$(docker exec menzhen-web-1 md5sum /usr/share/nginx/html/index.html 2>/dev/null | awk '{print $1}')
+LOCAL_HASH=$(md5 -q web/dist/index.html 2>/dev/null || md5sum web/dist/index.html 2>/dev/null | awk '{print $1}')
+if [ "$CONTAINER_HASH" = "$LOCAL_HASH" ]; then
+    echo "  前端文件: 已同步"
+else
+    echo "  前端文件: 不一致 [异常]"
+    echo "    容器: $CONTAINER_HASH"
+    echo "    本地: $LOCAL_HASH"
+    DEPLOY_OK=false
+fi
+
+if ! $DEPLOY_OK; then
+    echo ""
+    echo "警告: 部署验证发现异常，请检查日志: docker compose logs"
+fi
+
+# 10. Restore from backup if specified
 if [ -n "$RESTORE_DIR" ]; then
     echo ">> 从备份恢复数据: $RESTORE_DIR"
     if [ -f "$SCRIPT_DIR/scripts/restore.sh" ]; then
@@ -91,17 +199,17 @@ if [ -n "$RESTORE_DIR" ]; then
     fi
 fi
 
-# 7. Clean up old Docker images and build cache
+# 11. Clean up old Docker images and build cache
 echo ">> 清理旧镜像和构建缓存..."
 docker image prune -f
 docker builder prune -f --filter "until=24h"
-FREED=$(docker system df --format '{{.Reclaimable}}' 2>/dev/null | head -1)
-echo "清理完成${FREED:+，可回收空间: $FREED}"
 
-# 8. Print access info
+# 12. Print access info
 echo ""
 echo "=== 部署完成 ==="
 echo "访问地址: http://localhost"
 echo "默认账号: admin / admin123"
 echo "请登录后立即修改默认密码"
+echo ""
+echo "提示: 首次部署或需更新基础镜像时，使用 ./deploy.sh --full"
 echo ""

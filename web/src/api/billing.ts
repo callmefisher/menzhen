@@ -38,6 +38,8 @@ export interface BillingRecord {
   record_id: number;
   tenant_id: number;
   consultation_fee: number;
+  drug_cost_total: number;
+  total_amount: number;
   actual_paid: number;
   stock_deducted: boolean;
   created_by: number;

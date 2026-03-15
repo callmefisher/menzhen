@@ -61,6 +61,7 @@ export default function FollowUpList() {
       const res = await getFollowUpStats();
       const body = res as any;
       if (body.data) setStats(body.data);
+      window.dispatchEvent(new Event('followup-data-changed'));
     } catch { /* ignore */ }
   }, []);
 
@@ -82,7 +83,7 @@ export default function FollowUpList() {
     form.setFieldValue('record_id', undefined);
     setPatientRecords([]);
     try {
-      const res = await listRecords({ patient_id: patientId, size: 100 } as any);
+      const res = await listRecords({ patient_id: patientId, size: 100 });
       const body = res as any;
       setPatientRecords((body.data?.list || []).map((r: any) => ({
         id: r.id, diagnosis: r.diagnosis || r.chief_complaint || '未填写', visit_date: r.visit_date,
@@ -103,6 +104,11 @@ export default function FollowUpList() {
     setEditing(record);
     const isOther = !['电话', '微信', '到诊'].includes(record.method);
     setIsOtherMethod(isOther);
+    // 确保患者列表包含当前患者，这样 Select 能显示名字而非 ID
+    setPatients((prev) => {
+      const exists = prev.some((p) => p.id === record.patient_id);
+      return exists ? prev : [...prev, { id: record.patient_id, name: record.patient_name }];
+    });
     form.setFieldsValue({
       patient_id: record.patient_id,
       record_id: record.record_id,
@@ -170,12 +176,27 @@ export default function FollowUpList() {
       ),
     },
     {
-      title: '关联诊疗', key: 'record', width: 160,
-      render: (_, record) => record.record_id
-        ? (record.record_diagnosis
-          ? <a onClick={() => navigate(`/records/${record.record_id}`)}>{record.record_diagnosis} ({record.record_visit_date})</a>
-          : <span style={{ color: '#999' }}>已删除</span>)
-        : '—',
+      title: '关联诊疗', key: 'record', width: 180,
+      render: (_, record) => {
+        if (!record.record_id) return '—';
+        if (!record.record_diagnosis) return <span style={{ color: '#999' }}>已删除</span>;
+        const short = record.record_diagnosis.length > 20
+          ? record.record_diagnosis.slice(0, 20) + '...'
+          : record.record_diagnosis;
+        return (
+          <div>
+            <div title={record.record_diagnosis} style={{ fontSize: 13, color: '#333' }}>
+              {short}
+            </div>
+            <a
+              style={{ fontSize: 12 }}
+              onClick={() => navigate(`/records/${record.record_id}`)}
+            >
+              {record.record_visit_date} 查看详情 →
+            </a>
+          </div>
+        );
+      },
     },
     { title: '计划日期', dataIndex: 'planned_date', key: 'planned_date', width: 110 },
     {
@@ -221,9 +242,12 @@ export default function FollowUpList() {
           {item.actual_date && ` | 实际: ${item.actual_date}`}
         </div>
         {item.record_id && item.record_diagnosis && (
-          <div style={{ marginTop: 4 }}>
-            <a onClick={() => navigate(`/records/${item.record_id}`)} style={{ fontSize: 13 }}>
-              诊疗: {item.record_diagnosis}
+          <div style={{ marginTop: 4, fontSize: 13 }}>
+            <span style={{ color: '#666' }}>
+              诊疗: {item.record_diagnosis.slice(0, 20)}{item.record_diagnosis.length > 20 ? '...' : ''}
+            </span>
+            <a onClick={() => navigate(`/records/${item.record_id}`)} style={{ marginLeft: 6, fontSize: 12 }}>
+              查看 →
             </a>
           </div>
         )}
