@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-03-15（新增：租户级用户/角色管理 tenant:user:manage + tenant:role:manage 权限及 /api/v1/tenant/* 路由）
+> 最后更新：2026-03-15（新增：统计仪表盘 — daily_stats 汇总表 + ECharts 可视化 + /api/v1/statistics/dashboard 路由）
 
 ---
 
@@ -48,7 +48,8 @@ menzhen/
 │   │   ├── wuyun_liuqi.go          # Get/QueryStream/Update/Delete（五运六气，SSE流式查询）
 │   │   ├── clinical_experience.go  # List/Detail/Create/Update/Delete/Categories（临床经验集）
 │   │   ├── inventory_drug.go      # List/Create/Update/Delete/StockIn/BatchStockIn（库存药物，租户隔离）
-│   │   ├── billing.go             # GetDetail/Create/DeductStock/ListByRecord（收费管理，租户隔离）
+│   │   ├── billing.go             # GetDetail/Create/DeductStock/ListByRecord/GetRecordBillingDetail/CreateRecordBilling（收费管理，租户隔离，支持处方收费和记录级收费）
+│   │   ├── statistics.go          # GetDashboard（统计仪表盘 API，读取 daily_stats）
 │   │   ├── tenant_admin.go        # 租户级管理 HTTP 处理器（ListTenantUsers/UpdateTenantUser/DisableTenantUser/AssignTenantUserRoles/ListTenantRoles/CreateTenantRole/UpdateTenantRole/ListAssignablePermissions）
 │   │   ├── hexagram.go              # List/Detail/Create/Update/Delete/Trigrams（卦象管理）
 │   │   ├── ai_analysis.go           # Analyze（AI 辩证论治，含缓存）+ SaveCached + GetCached
@@ -77,7 +78,8 @@ menzhen/
 │   │   ├── wuyun_liuqi.go          # 五运六气 GetByYear/SaveFromAI/Update/Delete
 │   │   ├── clinical_experience.go  # 临床经验 Search/ListCategories/GetByID/Create/Update/DeleteByID
 │   │   ├── inventory_drug.go      # 库存药物 List/Create/Update/Delete/StockIn/BatchStockIn（租户隔离）
-│   │   ├── billing.go              # 收费 GetBillingDetail/CreateBilling/DeductStockAndBill/ListBillingsByRecord（含实时价格计算+事务库存扣除）
+│   │   ├── billing.go              # 收费 GetBillingDetail/CreateBilling/DeductStockAndBill/ListBillingsByRecord/GetRecordBillingDetail/CreateRecordBilling（含实时价格计算：中药 元/500g→元/g 转换 + 中成药不乘付数 + 事务库存扣除 + 写时刷新daily_stats）
+│   │   ├── statistics.go           # 统计服务 RefreshDailyStats/GetDashboard/RebuildAllDailyStats（每日汇总表聚合）
 │   │   ├── tenant_admin.go         # 租户级用户/角色管理服务（ListTenantUsers/UpdateTenantUser/DisableTenantUser/AssignTenantUserRoles/ListTenantRoles/CreateTenantRole/UpdateTenantRole/ListAssignablePermissions）
 │   │   ├── hexagram.go              # 卦象 Search/GetByID/Create/Update/DeleteByID/ListTrigrams
 │   │   ├── deepseek.go              # DeepSeek API 客户端（chat/chatLong/chatStream/QueryHerb/QueryFormula/QueryPulse/AnalyzeDiagnosis/AnalyzeTongue/QueryWuyunLiuqiStream）
@@ -105,7 +107,8 @@ menzhen/
 │       │   ├── prescription.ts      # 处方 CRUD + 按记录查询
 │       │   ├── pulse.ts             # 脉象搜索/详情/分类/新增/更新/删除
 │       │   ├── inventory.ts         # 库存药物 CRUD + 入库（listInventoryDrugs/create/update/delete/stockIn/batchStockIn）
-│       │   ├── billing.ts          # 收费 API（getPrescriptionBilling/createPrescriptionBilling/deductStockAndBill/listRecordBillings）
+│       │   ├── billing.ts          # 收费 API（getPrescriptionBilling/createPrescriptionBilling/deductStockAndBill/listRecordBillings/getRecordBillingDetail/createRecordBilling）
+│       │   ├── statistics.ts       # 统计 API（getDashboard）
 │       │   ├── wuyunLiuqi.ts        # 五运六气缓存获取/更新/删除
 │       │   ├── clinicalExperience.ts # 临床经验集 CRUD + 分类列表
 │       │   ├── yijing.ts            # 卦象 CRUD + 八卦分类列表
@@ -122,8 +125,8 @@ menzhen/
 │       │   ├── PrescriptionModal.tsx  # 处方弹窗（开方/编辑，草药+中成药双区域，含药物详情查看，医嘱预填分行，按方开药自动追加方剂备注，选方后横排展示功效/主治/备注，编辑模式自动根据方剂名加载详情，开方时显示库存提示，中成药自动查询方剂功效/主治和库存）
 │       │   ├── HerbDetailModal.tsx   # 通用中药详情弹窗（方剂/处方复用）
 │       │   ├── PrescriptionPrint.tsx  # 处方打印（草药每10味一列多列并排，中成药单独一段，医嘱分行）
-│       │   ├── BillingDrawer.tsx    # 收费明细抽屉（药品价格表+诊疗费编辑+实收+扣库存+打印）
-│       │   ├── BillingPrint.tsx     # 收费单打印（window.open+window.print，含药品明细+费用汇总）
+│       │   ├── BillingDrawer.tsx    # 收费明细抽屉（处方收费+记录级收费，药品价格表+诊疗费编辑+实收+扣库存+打印，移动端卡片布局优化）
+│       │   ├── BillingPrint.tsx     # 收费单打印（window.open+window.print，中药含付数×，中成药仅数量）
 │       │   └── __tests__/           # 组件测试
 │       ├── pages/
 │       │   ├── Login.tsx            # 登录页（登录后跳转患者管理，移动端标题/图标尺寸自适应）
@@ -177,6 +180,9 @@ menzhen/
 │       │   ├── inventory/             # 库存管理
 │       │   │   ├── DrugList.tsx       # 药物库存CRUD（分页+搜索+分类筛选，低库存红色高亮，货架号显示/编辑，批量入库支持货架号列）
 │       │   │   └── InventoryAlert.tsx # 库存预警（前端定时扫描，屏蔽/全局阈值配置，存localStorage，显示货架号便于定位补货）
+│       │   ├── statistics/            # 统计仪表盘
+│       │   │   ├── StatsDashboard.tsx # 综合仪表盘（时间选择+渐变汇总卡片+ECharts双轴图/堆叠图/分组图，响应式布局）
+│       │   │   └── components/        # SummaryCards/RevenueTrendChart/RevenueBreakdownChart/PatientChart
 │       │   └── settings/            # 系统设置
 │       │       ├── UserList.tsx     # 移动端卡片列表 + Modal 自适应
 │       │       ├── RoleList.tsx     # 移动端卡片列表 + Modal 自适应
@@ -516,13 +522,27 @@ menzhen/
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | BaseModel | — | id, created_at, updated_at, deleted_at |
-| `prescription_id` | `uint64` | 关联处方（唯一索引，一对一） |
-| `record_id` | `uint64` | 关联诊疗记录（索引） |
+| `prescription_id` | `uint64` | 关联处方（复合唯一索引 prescription_id+record_id，=0 表示记录级收费） |
+| `record_id` | `uint64` | 关联诊疗记录（索引，复合唯一索引） |
 | `tenant_id` | `uint64` | 租户 ID（索引） |
 | `consultation_fee` | `decimal(10,2)` | 诊疗费（默认 100） |
 | `actual_paid` | `decimal(10,2)` | 实收金额 |
 | `stock_deducted` | `bool` | 是否已扣库存（防重复扣除） |
 | `created_by` | `uint64` | 操作人 |
+
+#### `daily_stats` — 每日统计汇总表（无软删除）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | `uint64` | 自增主键 |
+| `tenant_id` | `uint64` | 租户 ID（唯一索引 tenant_id+stat_date） |
+| `stat_date` | `date` | 统计日期（唯一索引） |
+| `revenue` | `decimal(12,2)` | 实收总额 |
+| `consultation_fee` | `decimal(12,2)` | 诊金合计 |
+| `drug_fee` | `decimal(12,2)` | 药费合计（实收-诊金） |
+| `record_count` | `int` | 诊疗记录数 |
+| `new_patient_count` | `int` | 新增患者数 |
+| `returning_patient_count` | `int` | 复诊患者数 |
 
 ---
 
@@ -664,10 +684,12 @@ menzhen/
 
 | 方法 | 路径 | 权限 | 说明 |
 |------|------|------|------|
-| GET | `/api/v1/prescriptions/:id/billing` | `billing:read` | 获取收费明细（含实时计算价格） |
+| GET | `/api/v1/prescriptions/:id/billing` | `billing:read` | 获取收费明细（含实时计算价格，中药 元/500g→元/g） |
 | POST | `/api/v1/prescriptions/:id/billing` | `billing:create` | 保存收费记录（不扣库存） |
 | POST | `/api/v1/prescriptions/:id/billing/deduct-stock` | `billing:create` | 扣库存 + 保存收费 |
 | GET | `/api/v1/records/:id/billings` | `billing:read` | 某次就诊的收费列表 |
+| GET | `/api/v1/records/:id/billing-detail` | `billing:read` | 记录级收费明细（仅诊疗费，无处方） |
+| POST | `/api/v1/records/:id/billing` | `billing:create` | 创建/更新记录级收费 |
 
 #### 操作日志
 
@@ -727,6 +749,12 @@ menzhen/
 | POST | `/api/v1/inventory/drugs/:id/stock-in` | `inventory:update` | 单个药物入库（累加库存量） |
 | PUT | `/api/v1/inventory/drugs/:id` | `inventory:update` | 更新库存药物 |
 | DELETE | `/api/v1/inventory/drugs/:id` | `inventory:delete` | 删除库存药物 |
+
+#### 统计（需 tenant:manage 权限）
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| GET | `/api/v1/statistics/dashboard` | `tenant:manage` | 统计仪表盘（参数：start_date, end_date） |
 
 ---
 

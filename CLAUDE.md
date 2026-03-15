@@ -53,6 +53,7 @@
 - 移动端表格优化统一模式：`isMobile ? 卡片列表 : Table`，分页用 `<Pagination size="small" simple />`
 - Modal 在移动端宽度应设为 `calc(100vw - 32px)` 防止溢出
 - **每次新增功能必须同步编写单元测试**：后端用 `testutil.SetupTestDB` + testify（middleware/service/handler 三层），前端用 vitest + testing-library（API service + store + page 组件），测试必须基于实际业务逻辑、覆盖正常流程/边界/错误场景，且全量测试通过（`go test ./...` + `npm test`）后才算完成
+- 及时用中文报告进度和总结
 
 ---
 
@@ -84,6 +85,7 @@
 - **3D经络坐标分模型**：坐标数据按人体模型独立存储（`meridian-paths-{female|male}.ts` / `acupoint-positions-{female|male}.ts`），元数据（名称、功效等）共享，通过 `getMeridians(model)` / `getAcupoints(model)` 按模型组装
 - **权限码**：`patient:create/read/update/delete`, `record:create/read/update/delete`, `oplog:read`, `user:manage`, `role:manage`, `tenant:user:manage`, `tenant:role:manage`, `herb:read`, `formula:read`, `pulse:read`, `prescription:create`, `prescription:read`, `tenant:manage`, `inventory:create/read/update/delete`, `billing:create`, `billing:read`
 - **诊所运营角色**：`tenant:user:manage` + `tenant:role:manage` 仅管理本诊所，API 端点 `/api/v1/tenant/*`，全局管理权限自动兼容
+- **统计仪表盘**：`daily_stats` 每日汇总表，billing 写时聚合更新，`tenant:manage` 权限可查看，ECharts 可视化
 
 ## 开发环境
 
@@ -190,4 +192,6 @@ DeepSeek AI 相关（可选）：
 - [易理卦象功能设计](docs/plans/2026-03-14-yijing-hexagram-design.md)
 - [诊所运营角色设计](docs/plans/2026-03-14-tenant-operations-design.md)
 - [诊所运营角色实施计划](docs/plans/2026-03-14-tenant-operations-plan.md)
+- [统计仪表盘设计](docs/plans/2026-03-15-statistics-dashboard-design.md)
+- [统计仪表盘实施计划](docs/plans/2026-03-15-statistics-dashboard-plan.md)
 - [Codebase 全局上下文](docs/codebase.md)
