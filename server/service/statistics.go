@@ -65,12 +65,12 @@ func NewStatisticsService(db *gorm.DB) *StatisticsService {
 func (s *StatisticsService) RefreshDailyStats(tenantID uint64, date time.Time) error {
 	// Normalise to midnight so the unique index (tenant_id, stat_date) stays stable.
 	statDate := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
-	dateStr := statDate.Format("2006-01-02")
+	nextDate := statDate.AddDate(0, 0, 1)
 
-	// 1. Count medical records on this date.
+	// 1. Count medical records on this date (range query for index).
 	var recordCount int64
 	s.DB.Model(&model.MedicalRecord{}).
-		Where("tenant_id = ? AND DATE(visit_date) = ?", tenantID, dateStr).
+		Where("tenant_id = ? AND visit_date >= ? AND visit_date < ?", tenantID, statDate, nextDate).
 		Count(&recordCount)
 
 	// 2. Aggregate billing amounts joined through medical_records.visit_date.
@@ -83,33 +83,40 @@ func (s *StatisticsService) RefreshDailyStats(tenantID uint64, date time.Time) e
 	s.DB.Model(&model.Billing{}).
 		Select("COALESCE(SUM(billings.actual_paid), 0) AS revenue, COALESCE(SUM(LEAST(billings.consultation_fee, billings.actual_paid)), 0) AS consultation_fee").
 		Joins("JOIN medical_records ON medical_records.id = billings.record_id AND medical_records.deleted_at IS NULL").
-		Where("billings.tenant_id = ? AND DATE(medical_records.visit_date) = ? AND billings.deleted_at IS NULL", tenantID, dateStr).
+		Where("billings.tenant_id = ? AND medical_records.visit_date >= ? AND medical_records.visit_date < ? AND billings.deleted_at IS NULL", tenantID, statDate, nextDate).
 		Scan(&summary)
 
 	drugFee := summary.Revenue - summary.ConsultationFee
 
 	// 3. Classify patients who visited today as new vs returning.
+	//    Single batch query replaces N+1 loop.
 	var patientIDs []uint64
 	s.DB.Model(&model.MedicalRecord{}).
-		Where("tenant_id = ? AND DATE(visit_date) = ?", tenantID, dateStr).
+		Where("tenant_id = ? AND visit_date >= ? AND visit_date < ?", tenantID, statDate, nextDate).
 		Distinct("patient_id").
 		Pluck("patient_id", &patientIDs)
 
 	newCount := 0
 	returningCount := 0
-	for _, pid := range patientIDs {
-		var firstVisit time.Time
+	if len(patientIDs) > 0 {
+		type firstVisitRow struct {
+			PatientID  uint64
+			FirstVisit time.Time
+		}
+		var rows []firstVisitRow
 		s.DB.Model(&model.MedicalRecord{}).
-			Where("tenant_id = ? AND patient_id = ?", tenantID, pid).
-			Order("visit_date ASC").
-			Limit(1).
-			Pluck("visit_date", &firstVisit)
+			Select("patient_id, MIN(visit_date) AS first_visit").
+			Where("tenant_id = ? AND patient_id IN ?", tenantID, patientIDs).
+			Group("patient_id").
+			Scan(&rows)
 
-		firstDate := time.Date(firstVisit.Year(), firstVisit.Month(), firstVisit.Day(), 0, 0, 0, 0, firstVisit.Location())
-		if firstDate.Equal(statDate) {
-			newCount++
-		} else {
-			returningCount++
+		for _, r := range rows {
+			firstDate := time.Date(r.FirstVisit.Year(), r.FirstVisit.Month(), r.FirstVisit.Day(), 0, 0, 0, 0, r.FirstVisit.Location())
+			if firstDate.Equal(statDate) {
+				newCount++
+			} else {
+				returningCount++
+			}
 		}
 	}
 
@@ -145,9 +152,10 @@ func (s *StatisticsService) RebuildAllDailyStats(tenantID uint64) error {
 	// Collect all distinct visit dates for this tenant.
 	var dates []time.Time
 	s.DB.Model(&model.MedicalRecord{}).
+		Select("MIN(visit_date) AS visit_date").
 		Where("tenant_id = ?", tenantID).
-		Distinct("DATE(visit_date)").
-		Pluck("DATE(visit_date)", &dates)
+		Group("visit_date").
+		Pluck("visit_date", &dates)
 
 	for _, d := range dates {
 		if err := s.RefreshDailyStats(tenantID, d); err != nil {
@@ -246,6 +254,8 @@ func (s *StatisticsService) GetDashboard(tenantID uint64, startDate, endDate tim
 		Recovered int
 	}
 	var curCure cureResult
+	// endDate is inclusive, so use next day for range upper bound.
+	cureEndNext := endDate.AddDate(0, 0, 1)
 	s.DB.Raw(`
 		SELECT
 			COUNT(DISTINCT mr.id) AS total,
@@ -253,8 +263,8 @@ func (s *StatisticsService) GetDashboard(tenantID uint64, startDate, endDate tim
 		FROM medical_records mr
 		JOIN follow_ups f ON f.record_id = mr.id AND f.deleted_at IS NULL
 		LEFT JOIN follow_ups f2 ON f2.record_id = mr.id AND f2.is_recovered = 1 AND f2.deleted_at IS NULL
-		WHERE mr.tenant_id = ? AND DATE(mr.visit_date) BETWEEN ? AND ? AND mr.deleted_at IS NULL
-	`, tenantID, startDate.Format("2006-01-02"), endDate.Format("2006-01-02")).Scan(&curCure)
+		WHERE mr.tenant_id = ? AND mr.visit_date >= ? AND mr.visit_date < ? AND mr.deleted_at IS NULL
+	`, tenantID, startDate, cureEndNext).Scan(&curCure)
 
 	if curCure.Total > 0 {
 		rate := float64(curCure.Recovered) / float64(curCure.Total) * 100
@@ -264,6 +274,7 @@ func (s *StatisticsService) GetDashboard(tenantID uint64, startDate, endDate tim
 
 	// Previous period cure rate for comparison.
 	var prevCure cureResult
+	prevEndNext := prevEnd.AddDate(0, 0, 1)
 	s.DB.Raw(`
 		SELECT
 			COUNT(DISTINCT mr.id) AS total,
@@ -271,8 +282,8 @@ func (s *StatisticsService) GetDashboard(tenantID uint64, startDate, endDate tim
 		FROM medical_records mr
 		JOIN follow_ups f ON f.record_id = mr.id AND f.deleted_at IS NULL
 		LEFT JOIN follow_ups f2 ON f2.record_id = mr.id AND f2.is_recovered = 1 AND f2.deleted_at IS NULL
-		WHERE mr.tenant_id = ? AND DATE(mr.visit_date) BETWEEN ? AND ? AND mr.deleted_at IS NULL
-	`, tenantID, prevStart.Format("2006-01-02"), prevEnd.Format("2006-01-02")).Scan(&prevCure)
+		WHERE mr.tenant_id = ? AND mr.visit_date >= ? AND mr.visit_date < ? AND mr.deleted_at IS NULL
+	`, tenantID, prevStart, prevEndNext).Scan(&prevCure)
 
 	if summary.CureRate != nil && prevCure.Total > 0 {
 		prevRate := float64(prevCure.Recovered) / float64(prevCure.Total) * 100

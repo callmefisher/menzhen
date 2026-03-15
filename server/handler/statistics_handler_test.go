@@ -99,5 +99,6 @@ func TestGetDashboard_EmptyResult(t *testing.T) {
 
 	trend, ok := data["daily_trend"].([]interface{})
 	require.True(t, ok)
-	assert.Len(t, trend, 0)
+	// Dashboard always fills every date in the range with zero values.
+	assert.Len(t, trend, 31)
 }

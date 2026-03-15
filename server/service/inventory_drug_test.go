@@ -7,6 +7,7 @@ import (
 	"github.com/callmefisher/menzhen/server/service"
 	"github.com/callmefisher/menzhen/server/testutil"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func setupInventoryDrugService(t *testing.T) (*service.InventoryDrugService, uint64, uint64) {
@@ -341,4 +342,116 @@ func TestInventoryDrugService_StockIn_WithShelfNo(t *testing.T) {
 	res, err := svc.StockIn(tenantID, seeded[0].ID, req)
 	assert.NoError(t, err)
 	assert.Equal(t, "E1", res.NewDrug.ShelfNo)
+}
+
+func TestInventoryDrugService_BatchStockIn_LargeBatch(t *testing.T) {
+	svc, tenantID, _ := setupInventoryDrugService(t)
+
+	// Pre-create 5 drugs that will be updated.
+	existingNames := []string{"已有药A", "已有药B", "已有药C", "已有药D", "已有药E"}
+	for _, name := range existingNames {
+		_, err := svc.Create(tenantID, &service.CreateInventoryDrugRequest{
+			Name: name, Category: "herb", Stock: 100, PurchasePrice: 10, SellingPrice: 50,
+		})
+		require.NoError(t, err)
+	}
+
+	// Build batch: 5 existing + 15 new = 20 items.
+	items := make([]service.StockInItem, 0, 20)
+	for _, name := range existingNames {
+		items = append(items, service.StockInItem{Name: name, Quantity: 50, PurchasePrice: 12, SellingPrice: 55})
+	}
+	for i := 0; i < 15; i++ {
+		items = append(items, service.StockInItem{
+			Name: "新药" + string(rune('A'+i)), Quantity: 200, PurchasePrice: 8, SellingPrice: 40,
+		})
+	}
+
+	result, err := svc.BatchStockIn(tenantID, &service.BatchStockInRequest{Items: items})
+	require.NoError(t, err)
+
+	assert.Equal(t, 20, result.Total)
+	assert.Equal(t, 15, result.Created)
+	assert.Equal(t, 5, result.Updated)
+
+	// Verify an updated drug has increased stock.
+	drugs, _, err := svc.List(tenantID, "已有药A", "", 1, 10)
+	require.NoError(t, err)
+	require.Len(t, drugs, 1)
+	assert.InDelta(t, 150, drugs[0].Stock, 0.01) // 100 + 50
+
+	// Verify a new drug was created with correct stock.
+	newDrugs, _, err := svc.List(tenantID, "新药A", "", 1, 10)
+	require.NoError(t, err)
+	require.Len(t, newDrugs, 1)
+	assert.InDelta(t, 200, newDrugs[0].Stock, 0.01)
+}
+
+func TestInventoryDrugService_Create_RestoreSoftDeleted(t *testing.T) {
+	svc, tenantID, _ := setupInventoryDrugService(t)
+
+	// Create and then delete a drug
+	drug, err := svc.Create(tenantID, &service.CreateInventoryDrugRequest{
+		Name: "炙甘草", Category: "herb", Stock: 500, PurchasePrice: 10, SellingPrice: 30,
+	})
+	require.NoError(t, err)
+	originalID := drug.ID
+
+	_, err = svc.Delete(tenantID, drug.ID)
+	require.NoError(t, err)
+
+	// Verify it's gone from normal list
+	drugs, count, err := svc.List(tenantID, "炙甘草", "", 1, 10)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), count)
+	assert.Empty(t, drugs)
+
+	// Re-create with same name — should restore the soft-deleted record
+	restored, err := svc.Create(tenantID, &service.CreateInventoryDrugRequest{
+		Name: "炙甘草", Category: "herb", Stock: 1000, PurchasePrice: 15, SellingPrice: 35, ShelfNo: "H2",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, originalID, restored.ID) // same record restored
+	assert.InDelta(t, 1000, restored.Stock, 0.01)
+	assert.InDelta(t, 15, restored.PurchasePrice, 0.01)
+	assert.Equal(t, "H2", restored.ShelfNo)
+
+	// Verify it's back in list
+	drugs, count, err = svc.List(tenantID, "炙甘草", "", 1, 10)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count)
+	assert.Len(t, drugs, 1)
+}
+
+func TestInventoryDrugService_BatchStockIn_RestoreSoftDeleted(t *testing.T) {
+	svc, tenantID, _ := setupInventoryDrugService(t)
+
+	// Create and delete two drugs
+	for _, name := range []string{"茯苓", "当归"} {
+		drug, err := svc.Create(tenantID, &service.CreateInventoryDrugRequest{
+			Name: name, Category: "herb", Stock: 100, PurchasePrice: 5, SellingPrice: 20,
+		})
+		require.NoError(t, err)
+		_, err = svc.Delete(tenantID, drug.ID)
+		require.NoError(t, err)
+	}
+
+	// BatchStockIn with deleted names + one new
+	result, err := svc.BatchStockIn(tenantID, &service.BatchStockInRequest{
+		Items: []service.StockInItem{
+			{Name: "茯苓", Quantity: 200, PurchasePrice: 8, SellingPrice: 25},
+			{Name: "当归", Quantity: 300, PurchasePrice: 12, SellingPrice: 30},
+			{Name: "黄芪", Quantity: 500, PurchasePrice: 6, SellingPrice: 18},
+		},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 3, result.Total)
+	assert.Equal(t, 3, result.Created) // 2 restored + 1 new
+	assert.Equal(t, 0, result.Updated)
+
+	// Verify all three are in the list
+	drugs, count, err := svc.List(tenantID, "", "", 1, 10)
+	require.NoError(t, err)
+	assert.Equal(t, int64(3), count)
+	assert.Len(t, drugs, 3)
 }

@@ -7,3 +7,7 @@ export function getConfig() {
 export function updateConfig(data: Record<string, string>) {
   return request.put('/config', data);
 }
+
+export function restartService() {
+  return request.post('/config/restart');
+}

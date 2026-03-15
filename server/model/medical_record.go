@@ -6,11 +6,11 @@ import "time"
 type MedicalRecord struct {
 	BaseModel
 	PatientID uint64    `gorm:"column:patient_id;not null;index" json:"patient_id"`
-	TenantID  uint64    `gorm:"column:tenant_id;not null;index" json:"tenant_id"`
+	TenantID  uint64    `gorm:"column:tenant_id;not null;index;index:idx_tenant_visit_date" json:"tenant_id"`
 	Diagnosis string    `gorm:"column:diagnosis;type:text" json:"diagnosis"`
 	Treatment string    `gorm:"column:treatment;type:text" json:"treatment"`
 	Notes     string    `gorm:"column:notes;type:text" json:"notes"`
-	VisitDate time.Time `gorm:"column:visit_date;type:date;not null" json:"visit_date"`
+	VisitDate time.Time `gorm:"column:visit_date;type:date;not null;index:idx_tenant_visit_date" json:"visit_date"`
 	CreatedBy uint64    `gorm:"column:created_by;not null" json:"created_by"`
 
 	// New fields: chief complaint, pulse, tongue

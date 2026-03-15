@@ -1,14 +1,19 @@
 package handler
 
 import (
+	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/callmefisher/menzhen/server/middleware"
 	"github.com/callmefisher/menzhen/server/service"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+// exitFunc is the function called to terminate the process. Overridden in tests.
+var exitFunc = os.Exit
 
 type ConfigHandler struct {
 	db      *gorm.DB
@@ -54,4 +59,17 @@ func (h *ConfigHandler) Update(c *gin.Context) {
 			map[string]interface{}{"changed_keys": changedKeys})
 	}
 	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success"})
+}
+
+func (h *ConfigHandler) Restart(c *gin.Context) {
+	if h.db != nil {
+		middleware.LogOperation(h.db, c, "restart", "system_config", 0, nil, nil)
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "服务将在 2 秒后重启"})
+
+	go func() {
+		time.Sleep(2 * time.Second)
+		log.Println("管理员触发服务重启，进程退出...")
+		exitFunc(0)
+	}()
 }

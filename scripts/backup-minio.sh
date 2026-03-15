@@ -4,6 +4,9 @@ set -e
 # MinIO backup script
 # Flow: mc mirror → tar.gz → upload to Qiniu → cleanup
 
+# Re-read .env so config changes take effect without container restart
+[ -f /app/.env ] && set -a && . /app/.env && set +a
+
 BACKUP_DIR="${BACKUP_DIR:-/backups}"
 MINIO_ENDPOINT="${MINIO_ENDPOINT:-minio:9000}"
 MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-minioadmin}"

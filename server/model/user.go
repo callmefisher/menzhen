@@ -5,8 +5,8 @@ import "time"
 // User represents a system user belonging to a tenant.
 type User struct {
 	ID           uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
-	TenantID     uint64    `gorm:"column:tenant_id;not null;index" json:"tenant_id"`
-	Username     string    `gorm:"column:username;type:varchar(50);not null" json:"username"`
+	TenantID     uint64    `gorm:"column:tenant_id;not null;index;uniqueIndex:idx_tenant_username" json:"tenant_id"`
+	Username     string    `gorm:"column:username;type:varchar(50);not null;uniqueIndex:idx_tenant_username" json:"username"`
 	PasswordHash string    `gorm:"column:password_hash;type:varchar(255);not null" json:"-"`
 	RealName     string    `gorm:"column:real_name;type:varchar(50);not null" json:"real_name"`
 	Phone        string    `gorm:"column:phone;type:varchar(20)" json:"phone"`

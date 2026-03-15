@@ -305,6 +305,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		{
 			configRoutes.GET("", middleware.RequirePermission(db, "user:manage"), configHandler.Get)
 			configRoutes.PUT("", middleware.RequirePermission(db, "user:manage"), configHandler.Update)
+			configRoutes.POST("/restart", middleware.RequirePermission(db, "user:manage"), configHandler.Restart)
 		}
 
 		// Statistics routes (tenant-scoped).

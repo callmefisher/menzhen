@@ -110,7 +110,7 @@ func (s *PatientService) GetPatient(tenantID uint64, id uint64) (*model.Patient,
 	err := s.DB.
 		Where("tenant_id = ?", tenantID).
 		Preload("MedicalRecords", func(db *gorm.DB) *gorm.DB {
-			return db.Order("visit_date DESC")
+			return db.Order("visit_date DESC").Limit(100)
 		}).
 		Preload("MedicalRecords.Attachments").
 		Preload("MedicalRecords.Prescriptions").

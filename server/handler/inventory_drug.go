@@ -199,7 +199,17 @@ func (h *InventoryDrugHandler) BatchStockIn(c *gin.Context) {
 		return
 	}
 
-	middleware.LogOperation(h.db, c, "batch_stock_in", "inventory_drug", 0, nil, result)
+	// Record operation log with full item details.
+	logData := map[string]interface{}{
+		"items":   req.Items,
+		"created": result.Created,
+		"updated": result.Updated,
+		"total":   result.Total,
+	}
+	if req.AlertThreshold != nil {
+		logData["alert_threshold"] = *req.AlertThreshold
+	}
+	middleware.LogOperation(h.db, c, "batch_stock_in", "inventory_drug", 0, nil, logData)
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,

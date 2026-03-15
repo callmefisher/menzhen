@@ -78,7 +78,36 @@ func (s *InventoryDrugService) List(tenantID uint64, name, category string, page
 }
 
 // Create creates a new inventory drug record.
+// If a soft-deleted record with the same tenant_id+name exists, it is restored
+// and updated with the new data instead of inserting a duplicate.
 func (s *InventoryDrugService) Create(tenantID uint64, req *CreateInventoryDrugRequest) (*model.InventoryDrug, error) {
+	// Check for soft-deleted record with same name (Unscoped bypasses deleted_at filter)
+	var existing model.InventoryDrug
+	err := s.DB.Unscoped().
+		Where("tenant_id = ? AND name = ? AND deleted_at IS NOT NULL", tenantID, req.Name).
+		First(&existing).Error
+	if err == nil {
+		// Restore the soft-deleted record with new data
+		updates := map[string]interface{}{
+			"deleted_at":      nil,
+			"category":        req.Category,
+			"stock":           req.Stock,
+			"purchase_price":  req.PurchasePrice,
+			"selling_price":   req.SellingPrice,
+			"alert_threshold": req.AlertThreshold,
+			"remark":          req.Remark,
+			"shelf_no":        req.ShelfNo,
+		}
+		if err := s.DB.Unscoped().Model(&existing).Updates(updates).Error; err != nil {
+			return nil, err
+		}
+		// Reload to get full updated record
+		if err := s.DB.First(&existing, existing.ID).Error; err != nil {
+			return nil, err
+		}
+		return &existing, nil
+	}
+
 	drug := model.InventoryDrug{
 		TenantID:       tenantID,
 		Name:           req.Name,
@@ -199,33 +228,46 @@ type BatchStockInResult struct {
 }
 
 // BatchStockIn adds stock to existing drugs or creates new ones.
+// Soft-deleted drugs with matching names are restored instead of creating duplicates.
 func (s *InventoryDrugService) BatchStockIn(tenantID uint64, req *BatchStockInRequest) (*BatchStockInResult, error) {
 	result := &BatchStockInResult{Total: len(req.Items)}
 
+	// 1. Collect all drug names and batch query existing drugs (including soft-deleted).
+	names := make([]string, 0, len(req.Items))
 	for _, item := range req.Items {
-		var drug model.InventoryDrug
-		err := s.DB.Where("tenant_id = ? AND name = ?", tenantID, item.Name).First(&drug).Error
+		names = append(names, item.Name)
+	}
 
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			// Create new drug
-			newDrug := model.InventoryDrug{
-				TenantID:       tenantID,
-				Name:           item.Name,
-				Category:       "herb",
-				Stock:          item.Quantity,
-				PurchasePrice:  item.PurchasePrice,
-				SellingPrice:   item.SellingPrice,
-				AlertThreshold: req.AlertThreshold,
-				ShelfNo:        item.ShelfNo,
-			}
-			if err := s.DB.Create(&newDrug).Error; err != nil {
-				return nil, err
-			}
-			result.Created++
-		} else if err != nil {
+	var existingDrugs []model.InventoryDrug
+	if len(names) > 0 {
+		if err := s.DB.Where("tenant_id = ? AND name IN ?", tenantID, names).Find(&existingDrugs).Error; err != nil {
 			return nil, err
-		} else {
-			// Update existing drug: add stock, update prices
+		}
+	}
+	drugMap := make(map[string]*model.InventoryDrug, len(existingDrugs))
+	for i := range existingDrugs {
+		drugMap[existingDrugs[i].Name] = &existingDrugs[i]
+	}
+
+	// Also query soft-deleted drugs for restore
+	var softDeletedDrugs []model.InventoryDrug
+	if len(names) > 0 {
+		if err := s.DB.Unscoped().
+			Where("tenant_id = ? AND name IN ? AND deleted_at IS NOT NULL", tenantID, names).
+			Find(&softDeletedDrugs).Error; err != nil {
+			return nil, err
+		}
+	}
+	softDeletedMap := make(map[string]*model.InventoryDrug, len(softDeletedDrugs))
+	for i := range softDeletedDrugs {
+		softDeletedMap[softDeletedDrugs[i].Name] = &softDeletedDrugs[i]
+	}
+
+	// 2. Classify items into create vs update vs restore.
+	var newDrugs []model.InventoryDrug
+	for _, item := range req.Items {
+		if drug, exists := drugMap[item.Name]; exists {
+			// Update existing drug: add stock, update prices.
 			updates := map[string]interface{}{
 				"stock": gorm.Expr("stock + ?", item.Quantity),
 			}
@@ -238,11 +280,48 @@ func (s *InventoryDrugService) BatchStockIn(tenantID uint64, req *BatchStockInRe
 			if item.ShelfNo != "" {
 				updates["shelf_no"] = item.ShelfNo
 			}
-			if err := s.DB.Model(&drug).Updates(updates).Error; err != nil {
+			if err := s.DB.Model(drug).Updates(updates).Error; err != nil {
 				return nil, err
 			}
 			result.Updated++
+		} else if sd, ok := softDeletedMap[item.Name]; ok {
+			// Restore soft-deleted drug with new data
+			updates := map[string]interface{}{
+				"deleted_at":     nil,
+				"stock":          item.Quantity,
+				"purchase_price": item.PurchasePrice,
+				"selling_price":  item.SellingPrice,
+			}
+			if req.AlertThreshold != nil {
+				updates["alert_threshold"] = req.AlertThreshold
+			}
+			if item.ShelfNo != "" {
+				updates["shelf_no"] = item.ShelfNo
+			}
+			if err := s.DB.Unscoped().Model(sd).Updates(updates).Error; err != nil {
+				return nil, err
+			}
+			result.Created++
+		} else {
+			newDrugs = append(newDrugs, model.InventoryDrug{
+				TenantID:       tenantID,
+				Name:           item.Name,
+				Category:       "herb",
+				Stock:          item.Quantity,
+				PurchasePrice:  item.PurchasePrice,
+				SellingPrice:   item.SellingPrice,
+				AlertThreshold: req.AlertThreshold,
+				ShelfNo:        item.ShelfNo,
+			})
 		}
+	}
+
+	// 3. Batch create new drugs.
+	if len(newDrugs) > 0 {
+		if err := s.DB.Create(&newDrugs).Error; err != nil {
+			return nil, err
+		}
+		result.Created += len(newDrugs)
 	}
 
 	return result, nil

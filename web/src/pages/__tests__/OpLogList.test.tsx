@@ -219,4 +219,102 @@ describe('OpLogList', () => {
     const expandBtn = document.querySelector('.ant-table-row-expand-icon:not(.ant-table-row-expand-icon-spaced)');
     expect(expandBtn).toBeNull();
   });
+
+  it('renders batch_stock_in action tag', async () => {
+    mockListOpLogs.mockResolvedValue({
+      data: {
+        list: [
+          {
+            id: 20,
+            user_name: '李药师',
+            action: 'batch_stock_in',
+            resource_type: 'inventory_drug',
+            resource_id: 0,
+            old_data: null,
+            new_data: {
+              items: [
+                { name: '黄芪', quantity: 100, purchase_price: 15.5, selling_price: 25.0, shelf_no: 'A-01' },
+                { name: '当归', quantity: 200, purchase_price: 20.0, selling_price: 35.0 },
+              ],
+              created: 2,
+              updated: 0,
+              total: 2,
+              alert_threshold: 10,
+            },
+            created_at: '2026-03-15T14:00:00Z',
+          },
+        ],
+        total: 1,
+      },
+    });
+
+    renderOpLogList();
+
+    await waitFor(() => {
+      expect(screen.getByText('批量入库')).toBeInTheDocument();
+    });
+    expect(screen.getByText('李药师')).toBeInTheDocument();
+  });
+
+  it('shows batch_stock_in item details when expanding row', async () => {
+    const user = userEvent.setup();
+    mockListOpLogs.mockResolvedValue({
+      data: {
+        list: [
+          {
+            id: 21,
+            user_name: '王药师',
+            action: 'batch_stock_in',
+            resource_type: 'inventory_drug',
+            resource_id: 0,
+            old_data: null,
+            new_data: {
+              items: [
+                { name: '黄芪', quantity: 100, purchase_price: 15.5, selling_price: 25.0, shelf_no: 'A-01' },
+                { name: '当归', quantity: 200, purchase_price: 20.0, selling_price: 35.0 },
+                { name: '白术', quantity: 50, purchase_price: 12.0, selling_price: 18.0, shelf_no: 'B-02' },
+              ],
+              created: 2,
+              updated: 1,
+              total: 3,
+              alert_threshold: 10,
+            },
+            created_at: '2026-03-15T15:00:00Z',
+          },
+        ],
+        total: 1,
+      },
+    });
+
+    renderOpLogList();
+
+    await waitFor(() => {
+      expect(screen.getByText('王药师')).toBeInTheDocument();
+    });
+
+    // Click expand button
+    const expandBtn = document.querySelector('.ant-table-row-expand-icon');
+    expect(expandBtn).toBeTruthy();
+    await user.click(expandBtn as HTMLElement);
+
+    // Verify summary info is rendered
+    await waitFor(() => {
+      expect(screen.getByText((_, el) => el?.textContent === '总计：3 项')).toBeInTheDocument();
+    });
+    expect(screen.getByText((_, el) => el?.textContent === '新增：2')).toBeInTheDocument();
+    expect(screen.getByText((_, el) => el?.textContent === '追加：1')).toBeInTheDocument();
+
+    // Verify drug item details
+    expect(screen.getByText('黄芪')).toBeInTheDocument();
+    expect(screen.getByText('当归')).toBeInTheDocument();
+    expect(screen.getByText('白术')).toBeInTheDocument();
+
+    // Verify prices displayed
+    expect(screen.getByText('¥15.50')).toBeInTheDocument();
+    expect(screen.getByText('¥25.00')).toBeInTheDocument();
+
+    // Verify shelf_no displayed
+    expect(screen.getByText('A-01')).toBeInTheDocument();
+    expect(screen.getByText('B-02')).toBeInTheDocument();
+  });
 });

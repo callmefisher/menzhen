@@ -8,6 +8,7 @@ import {
   Card,
   Tag,
   Popconfirm,
+  Checkbox,
   message,
   Pagination,
 } from 'antd';
@@ -15,6 +16,8 @@ import {
   SearchOutlined,
   DeleteOutlined,
   ArrowRightOutlined,
+  CheckSquareOutlined,
+  CloseOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { Dayjs } from 'dayjs';
@@ -301,11 +304,69 @@ function DeductStockView({ record, isMobile }: { record: OpLogItem; isMobile: bo
   );
 }
 
+/** Special view for batch_stock_in action showing imported items */
+function BatchStockInView({ record, isMobile }: { record: OpLogItem; isMobile: boolean }) {
+  const data = record.new_data;
+  if (!data) return <div style={{ color: '#999', padding: 8 }}>无变更数据</div>;
+
+  const items: any[] = data.items || [];
+  const created = data.created ?? 0;
+  const updated = data.updated ?? 0;
+  const total = data.total ?? 0;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {/* Summary */}
+      <div style={{
+        display: 'flex', flexWrap: 'wrap', gap: isMobile ? 6 : 12,
+        padding: '6px 10px', background: '#e6f7ff', borderRadius: 4, fontSize: 13,
+      }}>
+        <span><b>总计：</b>{total} 项</span>
+        {created > 0 && <span><b>新增：</b>{created}</span>}
+        {updated > 0 && <span><b>追加：</b>{updated}</span>}
+        {data.alert_threshold != null && <span><b>预警阈值：</b>{data.alert_threshold}</span>}
+      </div>
+      {/* Drug items */}
+      {items.length > 0 && (
+        <div style={{ border: '1px solid #f0f0f0', borderRadius: 4, overflow: 'hidden' }}>
+          <div style={{
+            display: 'flex', padding: '6px 10px', background: '#fafafa',
+            fontWeight: 600, fontSize: 12, color: '#666',
+          }}>
+            <span style={{ flex: 2 }}>药材</span>
+            <span style={{ flex: 1, textAlign: 'right' }}>数量</span>
+            <span style={{ flex: 1, textAlign: 'right' }}>进价</span>
+            <span style={{ flex: 1, textAlign: 'right' }}>售价</span>
+            {!isMobile && <span style={{ flex: 1, textAlign: 'center' }}>货架</span>}
+          </div>
+          {items.map((item: any, idx: number) => (
+            <div key={idx} style={{
+              display: 'flex', padding: '5px 10px', fontSize: 13,
+              borderTop: '1px solid #f0f0f0',
+              background: idx % 2 === 0 ? '#fff' : '#fafafa',
+            }}>
+              <span style={{ flex: 2, fontWeight: 500 }}>{item.name || '-'}</span>
+              <span style={{ flex: 1, textAlign: 'right', color: '#1890ff' }}>{item.quantity || '-'}</span>
+              <span style={{ flex: 1, textAlign: 'right' }}>{item.purchase_price ? `¥${Number(item.purchase_price).toFixed(2)}` : '-'}</span>
+              <span style={{ flex: 1, textAlign: 'right' }}>{item.selling_price ? `¥${Number(item.selling_price).toFixed(2)}` : '-'}</span>
+              {!isMobile && <span style={{ flex: 1, textAlign: 'center', color: '#888' }}>{item.shelf_no || '-'}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // --- Diff rendering ---
 function DiffView({ record, isMobile }: { record: OpLogItem; isMobile: boolean }) {
   // Special rendering for deduct_stock
   if (record.action === 'deduct_stock') {
     return <DeductStockView record={record} isMobile={isMobile} />;
+  }
+  // Special rendering for batch_stock_in
+  if (record.action === 'batch_stock_in') {
+    return <BatchStockInView record={record} isMobile={isMobile} />;
   }
 
   const fields = computeDiff(record.action, record.old_data, record.new_data, record.resource_type);
@@ -375,6 +436,8 @@ export default function OpLogList() {
 
   // Expanded rows for mobile card view
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
+  // Mobile batch selection mode
+  const [mobileSelecting, setMobileSelecting] = useState(false);
 
   // Search form local state
   const [searchName, setSearchName] = useState('');
@@ -530,21 +593,52 @@ export default function OpLogList() {
     const resourceLabel = RESOURCE_TYPE_MAP[record.resource_type] || record.resource_type;
     const displayName = getResourceDisplayName(record);
     const expanded = expandedIds.has(record.id);
-    const hasDetail = record.action === 'deduct_stock'
+    const hasDetail = (record.action === 'deduct_stock' || record.action === 'batch_stock_in')
       ? !!(record.new_data)
       : computeDiff(record.action, record.old_data, record.new_data, record.resource_type).length > 0;
+
+    const isSelected = selectedRowKeys.includes(record.id);
 
     return (
       <Card
         key={record.id}
         size="small"
-        style={{ marginBottom: 8, cursor: hasDetail ? 'pointer' : undefined }}
+        style={{
+          marginBottom: 8,
+          cursor: mobileSelecting ? 'pointer' : hasDetail ? 'pointer' : undefined,
+          border: isSelected && mobileSelecting ? '1px solid #1677ff' : undefined,
+          background: isSelected && mobileSelecting ? '#e6f4ff' : undefined,
+        }}
         styles={{ body: { padding: '10px 12px' } }}
-        onClick={() => hasDetail && toggleExpand(record.id)}
+        onClick={() => {
+          if (mobileSelecting) {
+            setSelectedRowKeys(prev =>
+              prev.includes(record.id)
+                ? prev.filter(k => k !== record.id)
+                : [...prev, record.id]
+            );
+          } else if (hasDetail) {
+            toggleExpand(record.id);
+          }
+        }}
       >
         {/* Row 1: action tag + resource type + patient name + time */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+            {mobileSelecting && (
+              <Checkbox
+                checked={isSelected}
+                onClick={e => e.stopPropagation()}
+                onChange={() => {
+                  setSelectedRowKeys(prev =>
+                    prev.includes(record.id)
+                      ? prev.filter(k => k !== record.id)
+                      : [...prev, record.id]
+                  );
+                }}
+                style={{ flexShrink: 0 }}
+              />
+            )}
             {actionCfg && (
               <Tag color={actionCfg.color} style={{ margin: 0, flexShrink: 0 }}>{actionCfg.label}</Tag>
             )}
@@ -605,6 +699,17 @@ export default function OpLogList() {
             <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>
               搜索
             </Button>
+            {canDelete && (
+              <Button
+                icon={mobileSelecting ? <CloseOutlined /> : <CheckSquareOutlined />}
+                onClick={() => {
+                  setMobileSelecting(prev => !prev);
+                  if (mobileSelecting) setSelectedRowKeys([]);
+                }}
+              >
+                {mobileSelecting ? '取消' : '选择'}
+              </Button>
+            )}
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <RangePicker
@@ -689,7 +794,7 @@ export default function OpLogList() {
             data.map(renderMobileCard)
           )}
           {total > 0 && (
-            <div style={{ textAlign: 'center', paddingTop: 12 }}>
+            <div style={{ textAlign: 'center', paddingTop: mobileSelecting ? 60 : 12 }}>
               <Pagination
                 current={params.page}
                 pageSize={params.size}
@@ -702,6 +807,49 @@ export default function OpLogList() {
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
               />
+            </div>
+          )}
+          {/* Floating batch action bar */}
+          {mobileSelecting && (
+            <div style={{
+              position: 'fixed',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              background: '#fff',
+              borderTop: '1px solid #f0f0f0',
+              padding: '10px 16px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              zIndex: 100,
+              boxShadow: '0 -2px 8px rgba(0,0,0,0.08)',
+            }}>
+              <Checkbox
+                checked={data.length > 0 && selectedRowKeys.length === data.length}
+                indeterminate={selectedRowKeys.length > 0 && selectedRowKeys.length < data.length}
+                onChange={(e) => {
+                  setSelectedRowKeys(e.target.checked ? data.map(d => d.id) : []);
+                }}
+              >
+                全选
+              </Checkbox>
+              <Popconfirm
+                title={`确定删除选中的 ${selectedRowKeys.length} 条日志？`}
+                onConfirm={handleBatchDelete}
+                okText="删除"
+                cancelText="取消"
+                disabled={selectedRowKeys.length === 0}
+              >
+                <Button
+                  danger
+                  type="primary"
+                  icon={<DeleteOutlined />}
+                  disabled={selectedRowKeys.length === 0}
+                >
+                  删除 ({selectedRowKeys.length})
+                </Button>
+              </Popconfirm>
             </div>
           )}
         </>
@@ -724,7 +872,7 @@ export default function OpLogList() {
               <DiffView record={record} isMobile={false} />
             ),
             rowExpandable: (record) =>
-              record.action === 'deduct_stock'
+              (record.action === 'deduct_stock' || record.action === 'batch_stock_in')
                 ? !!(record.new_data)
                 : computeDiff(record.action, record.old_data, record.new_data, record.resource_type).length > 0,
           }}

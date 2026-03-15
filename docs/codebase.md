@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-03-15（回访增强：record_id 改为必填 + is_recovered 字段；统计概览新增治愈率指标）
+> 最后更新：2026-03-15（软件配置增强：备份脚本热加载 .env、保存风险提示、配置影响说明抽屉）
 
 ---
 
@@ -70,7 +70,7 @@ menzhen/
 │   │   └── router.go                # SetupRouter：注册所有路由和中间件
 │   ├── service/
 │   │   ├── auth.go                  # 登录/注册逻辑
-│   │   ├── patient.go               # 患者 CRUD
+│   │   ├── patient.go               # 患者 CRUD（GetPatient Preload 最近 100 条就诊记录）
 │   │   ├── record.go                # 诊疗记录 CRUD（含主诉/脉象/舌象字段，列表含 chief_complaint+pulse_name，详情 Preload Pulse）
 │   │   ├── herb.go                  # 中药查询（DB + AI 回退 + 自动入库 + 分类列表）
 │   │   ├── formula.go               # 方剂查询（DB + AI 回退 + 自动入库）
@@ -79,10 +79,10 @@ menzhen/
 │   │   ├── meridian_resource.go     # 经络资源 GetByMeridianID/Upsert
 │   │   ├── wuyun_liuqi.go          # 五运六气 GetByYear/SaveFromAI/Update/Delete
 │   │   ├── clinical_experience.go  # 临床经验 Search/ListCategories/GetByID/Create/Update/DeleteByID
-│   │   ├── inventory_drug.go      # 库存药物 List/Create/Update/Delete/StockIn/BatchStockIn（租户隔离）
-│   │   ├── billing.go              # 收费 GetBillingDetail/CreateBilling/DeductStockAndBill/ListBillingsByRecord/GetRecordBillingDetail/CreateRecordBilling（含实时价格计算：中药 元/500g→元/g 转换 + 中成药不乘付数 + 事务库存扣除 + 写时刷新daily_stats）
-│   │   ├── statistics.go           # 统计服务 RefreshDailyStats/GetDashboard/RebuildAllDailyStats（每日汇总表聚合）
-│   │   ├── follow_up.go           # 回访 List/Create/Get/Update/Delete/Stats（租户隔离，含患者/记录名称关联+逾期状态自动标记）
+│   │   ├── inventory_drug.go      # 库存药物 List/Create/Update/Delete/StockIn/BatchStockIn（租户隔离，BatchStockIn 批量查询+批量创建）
+│   │   ├── billing.go              # 收费 GetBillingDetail/CreateBilling/DeductStockAndBill/ListBillingsByRecord/GetRecordBillingDetail/CreateRecordBilling（含实时价格计算：中药 元/500g→元/g 转换 + 中成药不乘付数 + 事务库存扣除 + 写时刷新daily_stats + 按处方药品名称定向查库存避免全表扫描）
+│   │   ├── statistics.go           # 统计服务 RefreshDailyStats/GetDashboard/RebuildAllDailyStats（每日汇总表聚合，批量查首诊日期替代N+1，范围查询替代DATE()函数确保索引生效）
+│   │   ├── follow_up.go           # 回访 List/Create/Get/Update/Delete/Stats（租户隔离，含患者/记录名称关联+逾期状态自动标记，Stats单条聚合SQL替代4次COUNT）
 │   │   ├── tenant_admin.go         # 租户级用户/角色管理服务（ListTenantUsers 隐藏 user:manage 用户，UpdateUser/DisableUser/AssignRoles 返回 ErrProtectedUser）
 │   │   ├── hexagram.go              # 卦象 Search/GetByID/Create/Update/DeleteByID/ListTrigrams
 │   │   ├── deepseek.go              # DeepSeek API 客户端（chat/chatLong/chatStream/QueryHerb/QueryFormula/QueryPulse/AnalyzeDiagnosis/AnalyzeTongue/QueryWuyunLiuqiStream）
@@ -195,7 +195,7 @@ menzhen/
 │       │       ├── UserList.tsx     # 移动端卡片列表 + Modal 自适应，当前用户橙色高亮+"当前"标签
 │       │       ├── RoleList.tsx     # 移动端卡片列表 + Modal 自适应
 │       │       ├── TenantList.tsx   # 移动端卡片列表 + Modal 自适应
-│       │       └── SystemConfig.tsx # 软件配置页面（DeepSeek AI / 备份参数，敏感字段掩码展示）
+│       │       └── SystemConfig.tsx # 软件配置页面（敏感字段掩码展示、保存风险提示、配置影响说明抽屉）
 │       ├── store/
 │       │   └── auth.tsx             # 认证状态管理
 │       ├── test/
@@ -206,9 +206,9 @@ menzhen/
 ├── nginx/
 │   └── nginx.conf                   # Nginx 反向代理配置
 ├── scripts/
-│   ├── backup.sh                    # MySQL 备份脚本（dump + 清理 + 上传七牛云）
-│   ├── backup-minio.sh              # MinIO 备份脚本（mc mirror → tar.gz → 上传七牛云）
-│   ├── backup-loop.sh               # 定时备份守护进程（MySQL + MinIO 双循环，间隔可配置）
+│   ├── backup.sh                    # MySQL 备份脚本（dump + 清理 + 上传七牛云，启动时 source /app/.env）
+│   ├── backup-minio.sh              # MinIO 备份脚本（mc mirror → tar.gz → 上传七牛云，启动时 source /app/.env）
+│   ├── backup-loop.sh               # 定时备份守护进程（MySQL + MinIO 双循环，每次循环 source /app/.env 热加载配置）
 │   ├── restore.sh                   # 恢复脚本（支持 --auto/--sql/--minio-tar 多模式）
 │   ├── upload_to_qiniu.py           # 七牛云上传脚本（AK/SK 从环境变量读取）
 │   ├── download_from_qiniu.py       # 七牛云下载脚本（下载最新备份文件）
@@ -392,8 +392,8 @@ menzhen/
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `id` | `uint64` | 主键 |
-| `tenant_id` | `uint64` | 租户 ID（索引） |
-| `username` | `varchar(50)` | 用户名 |
+| `tenant_id` | `uint64` | 租户 ID（索引，唯一复合索引 idx_tenant_username） |
+| `username` | `varchar(50)` | 用户名（唯一复合索引 idx_tenant_username） |
 | `password_hash` | `varchar(255)` | bcrypt 密码哈希 |
 | `real_name` | `varchar(50)` | 真实姓名 |
 | `phone` | `varchar(20)` | 手机号 |
@@ -416,8 +416,8 @@ menzhen/
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | BaseModel | — | id, created_at, updated_at, deleted_at |
-| `tenant_id` | `uint64` | 租户 ID（索引） |
-| `name` | `varchar(50)` | 姓名 |
+| `tenant_id` | `uint64` | 租户 ID（索引，复合索引 idx_tenant_name） |
+| `name` | `varchar(50)` | 姓名（复合索引 idx_tenant_name） |
 | `gender` | `tinyint` | 性别：1=男, 2=女 |
 | `age` | `int` | 年龄（可由生日自动计算） |
 | `birthday` | `date` | 出生日期（nullable，填写后自动计算年龄） |
@@ -435,7 +435,7 @@ menzhen/
 |------|------|------|
 | BaseModel | — | id, created_at, updated_at, deleted_at |
 | `patient_id` | `uint64` | 患者 ID（索引） |
-| `tenant_id` | `uint64` | 租户 ID（索引） |
+| `tenant_id` | `uint64` | 租户 ID（索引，复合索引 idx_tenant_visit_date） |
 | `chief_complaint` | `text` | 主诉 |
 | `diagnosis` | `text` | 诊断 |
 | `treatment` | `text` | 治疗方案 |
@@ -445,7 +445,7 @@ menzhen/
 | `tongue_description` | `text` | 舌象描述（用户输入） |
 | `tongue_analysis` | `text` | 舌象 AI 分析结果（缓存） |
 | `notes` | `text` | 备注 |
-| `visit_date` | `date` | 就诊日期 |
+| `visit_date` | `date` | 就诊日期（复合索引 idx_tenant_visit_date） |
 | `created_by` | `uint64` | 创建者用户 ID |
 
 **关联：** `Pulse` — belongs to `pulses`（通过 `pulse_id`），GetRecord 时 Preload
@@ -492,7 +492,7 @@ menzhen/
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `id` | `uint64` | 主键 |
-| `tenant_id` | `uint64` | 租户 ID（索引） |
+| `tenant_id` | `uint64` | 租户 ID（索引，复合索引 idx_tenant_created_at） |
 | `user_id` | `uint64` | 操作用户 ID（索引） |
 | `user_name` | `varchar(50)` | 冗余用户名（用于展示） |
 | `action` | `varchar(20)` | 操作类型：create/update/delete |
@@ -500,7 +500,7 @@ menzhen/
 | `resource_id` | `bigint` | 资源 ID |
 | `old_data` | `json` | 变更前数据 |
 | `new_data` | `json` | 变更后数据 |
-| `created_at` | `time.Time` | 操作时间 |
+| `created_at` | `time.Time` | 操作时间（复合索引 idx_tenant_created_at） |
 
 #### `ai_analyses` — AI 分析缓存（含 BaseModel 软删除）
 
@@ -517,8 +517,8 @@ menzhen/
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | BaseModel | — | id, created_at, updated_at, deleted_at |
-| `tenant_id` | `uint64` | 租户 ID（索引） |
-| `name` | `varchar(100)` | 药物名称 |
+| `tenant_id` | `uint64` | 租户 ID（索引，唯一复合索引 idx_tenant_name） |
+| `name` | `varchar(100)` | 药物名称（唯一复合索引 idx_tenant_name） |
 | `category` | `varchar(10)` | 种类：herb=本草, patent=成药（索引） |
 | `stock` | `decimal(10,2)` | 库存量（本草:克, 成药:盒） |
 | `purchase_price` | `decimal(10,2)` | 进货单价（本草:元/500克, 成药:元/盒） |
@@ -559,13 +559,13 @@ menzhen/
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | BaseModel | — | id, created_at, updated_at, deleted_at |
-| `tenant_id` | `uint64` | 租户 ID（索引） |
+| `tenant_id` | `uint64` | 租户 ID（索引，复合索引 idx_tenant_status_planned） |
 | `patient_id` | `uint64` | 患者 ID（索引） |
 | `record_id` | `uint64 not null` | 诊疗记录 ID（索引，必填） |
 | `is_recovered` | `bool default false` | 是否康复 |
-| `planned_date` | `date` | 计划回访日期 |
+| `planned_date` | `date` | 计划回访日期（复合索引 idx_tenant_status_planned） |
 | `actual_date` | `date nullable` | 实际回访日期 |
-| `status` | `varchar(20) default 'pending'` | 状态（pending/completed） |
+| `status` | `varchar(20) default 'pending'` | 状态（pending/completed）（复合索引 idx_tenant_status_planned） |
 | `method` | `varchar(50)` | 回访方式 |
 | `content` | `text` | 回访内容 |
 | `created_by` | `uint64` | 创建者 |
@@ -938,7 +938,7 @@ menzhen/
 |------|------|
 | `scripts/backup.sh` | MySQL 备份：dump + 清理 3 月前 oplog + 清理 3 天前备份 + 上传七牛云 + 清理云端旧备份 |
 | `scripts/backup-minio.sh` | MinIO 备份：mc mirror → tar.gz → 上传七牛云 → 清理云端旧备份 → 清理 3 天前本地备份 |
-| `scripts/backup-loop.sh` | 定时备份守护：双循环（MySQL + MinIO），间隔从环境变量读取，启动时检测 |
+| `scripts/backup-loop.sh` | 定时备份守护：双循环（MySQL + MinIO），每次循环 source /app/.env 热加载配置 |
 | `scripts/restore.sh` | 恢复：支持旧格式目录 / --auto 自动检测 / --sql + --minio-tar 指定文件 |
 | `scripts/upload_to_qiniu.py` | 七牛云上传：备份完成后自动上传 SQL 文件，AK/SK 从环境变量读取 |
 | `scripts/download_from_qiniu.py` | 七牛云下载：列出并下载最新的 MySQL/MinIO 备份文件，支持 --type 过滤 |
@@ -955,7 +955,7 @@ menzhen/
 | `api` | `./server` 构建 | - | Go 后端（依赖 mysql + minio） |
 | `mysql` | `mysql:8.0` | - | 数据库（health check） |
 | `minio` | `minio/minio` | - | 对象存储（console 端口 9001） |
-| `backup` | `./scripts` 构建 | - | 定时备份（unless-stopped） |
+| `backup` | `./scripts` 构建 | - | 定时备份（挂载 .env 热加载配置，unless-stopped） |
 
 ### 种子数据
 

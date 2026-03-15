@@ -1092,7 +1092,7 @@ export default function RecordForm() {
         {/* Card 4: 备注附件 */}
         <div className="section-card">
           <div className="section-card-title" style={{ marginBottom: 0, borderBottom: 'none', paddingBottom: 0 }}>
-            <div className="section-card-icon" style={{ background: '#8c8c8c' }}>+</div>
+            <div className="section-card-icon" style={{ background: '#8c8c8c' }}>附</div>
             备注附件
           </div>
 

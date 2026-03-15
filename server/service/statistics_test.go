@@ -476,3 +476,43 @@ func TestGetDashboard_CureRate_AllRecovered(t *testing.T) {
 	require.NotNil(t, result.Summary.CureRate)
 	assert.InDelta(t, 100.0, *result.Summary.CureRate, 0.1)
 }
+
+func TestRefreshDailyStats_ManyPatients(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	svc := NewStatisticsService(db)
+
+	tenant := testutil.SeedTestTenant(t, db, "clinic-many", "many")
+	user, _ := testutil.SeedTestUser(t, db, tenant.ID, "doc", "pass", nil)
+
+	today := statsDay(2026, 3, 15)
+	yesterday := statsDay(2026, 3, 14)
+
+	// Create 20 patients: first 10 are new (first visit today), last 10 are returning (visited yesterday too)
+	for i := 0; i < 20; i++ {
+		p := testutil.SeedTestPatient(t, db, tenant.ID, user.ID, "患者"+string(rune('A'+i)))
+
+		if i >= 10 {
+			// Returning patients: create a record yesterday first
+			rYesterday := model.MedicalRecord{TenantID: tenant.ID, PatientID: p.ID, CreatedBy: user.ID, VisitDate: yesterday, Diagnosis: "初诊"}
+			require.NoError(t, db.Create(&rYesterday).Error)
+		}
+
+		// All 20 patients visit today
+		rToday := model.MedicalRecord{TenantID: tenant.ID, PatientID: p.ID, CreatedBy: user.ID, VisitDate: today, Diagnosis: "就诊"}
+		require.NoError(t, db.Create(&rToday).Error)
+		presc := model.Prescription{RecordID: rToday.ID, TenantID: tenant.ID, TotalDoses: 3, CreatedBy: user.ID}
+		require.NoError(t, db.Create(&presc).Error)
+		bill := model.Billing{PrescriptionID: presc.ID, RecordID: rToday.ID, TenantID: tenant.ID, ConsultationFee: 50, ActualPaid: 100, CreatedBy: user.ID}
+		require.NoError(t, db.Create(&bill).Error)
+	}
+
+	require.NoError(t, svc.RefreshDailyStats(tenant.ID, today))
+
+	var stats model.DailyStats
+	require.NoError(t, db.Where("tenant_id = ? AND stat_date = ?", tenant.ID, today.Format("2006-01-02")).First(&stats).Error)
+
+	assert.Equal(t, 20, stats.RecordCount)
+	assert.Equal(t, 10, stats.NewPatientCount)
+	assert.Equal(t, 10, stats.ReturningPatientCount)
+	assert.InDelta(t, 2000, stats.Revenue, 0.01) // 20 * 100
+}

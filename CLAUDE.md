@@ -130,6 +130,7 @@ DeepSeek AI 相关（可选）：
 ### 备份策略
 - **MySQL**：每 2 小时自动备份（可通过 `BACKUP_INTERVAL_MYSQL` 配置），`YYYYMMDD_HHMMSS.sql` 存放于 `backups/`
 - **MinIO**：每 12 小时自动备份（可通过 `BACKUP_INTERVAL_MINIO` 配置），`minio_YYYYMMDD_HHMMSS.tar.gz` 存放于 `backups/minio/`
+- **配置热加载**：backup 容器挂载 `.env` 文件，每次备份执行前重新 `source /app/.env`，备份间隔和七牛云配置修改后自动生效，无需重启容器
 - **本地清理**：本地和云端保留策略一致，默认各保留最新 5 个（`QINIU_RETAIN_MYSQL`/`QINIU_RETAIN_MINIO`）
 - **七牛云清理**：上传后自动清理云端旧备份，保留数与本地一致
 - 启动时检测：若最近备份超过配置间隔则立即触发

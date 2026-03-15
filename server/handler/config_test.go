@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -21,6 +22,7 @@ func setupConfigTestRouter(envPath string) *gin.Engine {
 	h := &ConfigHandler{db: nil, envPath: envPath}
 	r.GET("/config", h.Get)
 	r.PUT("/config", h.Update)
+	r.POST("/config/restart", h.Restart)
 	return r
 }
 
@@ -82,4 +84,26 @@ func TestConfigHandler_Update_InvalidBody(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestConfigHandler_Restart(t *testing.T) {
+	var exitCalled bool
+	var exitCode int
+	origExit := exitFunc
+	exitFunc = func(code int) { exitCalled = true; exitCode = code }
+	defer func() { exitFunc = origExit }()
+
+	r := setupConfigTestRouter("")
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/config/restart", nil)
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, float64(0), resp["code"])
+	assert.Contains(t, resp["message"], "重启")
+
+	// Wait for the goroutine to call exitFunc (2s delay + margin)
+	assert.Eventually(t, func() bool { return exitCalled }, 4*time.Second, 100*time.Millisecond)
+	assert.Equal(t, 0, exitCode)
 }

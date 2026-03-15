@@ -266,25 +266,29 @@ func (s *FollowUpService) Delete(tenantID, id uint64) (*model.FollowUp, error) {
 // Stats returns follow-up counts for the menu badge.
 // Note: TodayCount overlaps with PendingCount by design (today's items are both "pending" and "today").
 func (s *FollowUpService) Stats(tenantID uint64) (*FollowUpStats, error) {
-	var stats FollowUpStats
+	type aggregated struct {
+		PendingCount   int64
+		OverdueCount   int64
+		TodayCount     int64
+		CompletedCount int64
+	}
+	var agg aggregated
+	if err := s.DB.Model(&model.FollowUp{}).
+		Select(`
+			SUM(CASE WHEN status='pending' AND planned_date >= CURDATE() THEN 1 ELSE 0 END) AS pending_count,
+			SUM(CASE WHEN status='pending' AND planned_date < CURDATE() THEN 1 ELSE 0 END) AS overdue_count,
+			SUM(CASE WHEN status='pending' AND planned_date = CURDATE() THEN 1 ELSE 0 END) AS today_count,
+			SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) AS completed_count
+		`).
+		Where("tenant_id = ?", tenantID).
+		Scan(&agg).Error; err != nil {
+		return nil, err
+	}
 
-	// IMPORTANT: Each count must use a fresh query to avoid GORM Where clause accumulation.
-	base := func() *gorm.DB {
-		return s.DB.Model(&model.FollowUp{}).Where("tenant_id = ?", tenantID)
-	}
-
-	if err := base().Where("status = 'pending' AND planned_date >= CURDATE()").Count(&stats.PendingCount).Error; err != nil {
-		return nil, err
-	}
-	if err := base().Where("status = 'pending' AND planned_date < CURDATE()").Count(&stats.OverdueCount).Error; err != nil {
-		return nil, err
-	}
-	if err := base().Where("status = 'pending' AND planned_date = CURDATE()").Count(&stats.TodayCount).Error; err != nil {
-		return nil, err
-	}
-	if err := base().Where("status = 'completed'").Count(&stats.CompletedCount).Error; err != nil {
-		return nil, err
-	}
-
-	return &stats, nil
+	return &FollowUpStats{
+		PendingCount:   agg.PendingCount,
+		OverdueCount:   agg.OverdueCount,
+		TodayCount:     agg.TodayCount,
+		CompletedCount: agg.CompletedCount,
+	}, nil
 }
