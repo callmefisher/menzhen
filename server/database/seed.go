@@ -22,6 +22,7 @@ func Seed(db *gorm.DB) {
 	tenant := seedDefaultTenant(db)
 	role := seedAdminRole(db, tenant.ID)
 	seedAdminUser(db, tenant.ID, role.ID)
+	seedClinicOpsRole(db, tenant.ID)
 	seedSolarTerms(db)
 	seedHexagrams(db)
 	log.Println("Seed data check completed")
@@ -52,6 +53,8 @@ func seedPermissions(db *gorm.DB) {
 		{Code: "inventory:delete", Name: "删除库存", Description: "删除库存药物"},
 		{Code: "billing:create", Name: "收费", Description: "创建收费记录"},
 		{Code: "billing:read", Name: "查看收费", Description: "查看收费记录"},
+		{Code: "tenant:user:manage", Name: "诊所用户管理", Description: "管理本诊所用户"},
+		{Code: "tenant:role:manage", Name: "诊所角色管理", Description: "管理本诊所角色"},
 	}
 
 	for _, p := range permissions {
@@ -88,24 +91,32 @@ func seedDefaultTenant(db *gorm.DB) model.Tenant {
 }
 
 // seedAdminRole creates the admin role with all permissions if it does not
-// already exist within the default tenant.
+// already exist within the default tenant. Also syncs all "管理员" roles across
+// all tenants to the latest full permission set.
 func seedAdminRole(db *gorm.DB, tenantID uint64) model.Role {
-	var role model.Role
-	result := db.Where("name = ? AND tenant_id = ?", "管理员", tenantID).First(&role)
-
-	// Fetch all permissions to assign to the admin role.
+	// Fetch all permissions to assign to admin roles.
 	var permissions []model.Permission
 	if err := db.Find(&permissions).Error; err != nil {
 		log.Panicf("failed to fetch permissions for admin role: %v", err)
 	}
 
-	if result.Error == nil {
-		// Role already exists — sync permissions to latest full set.
-		if err := db.Model(&role).Association("Permissions").Replace(permissions); err != nil {
-			log.Printf("Warning: failed to update admin role permissions: %v", err)
-		} else {
-			log.Println("Admin role permissions synced")
+	// Sync all existing "管理员" roles across all tenants.
+	var adminRoles []model.Role
+	if err := db.Where("name = ?", "管理员").Find(&adminRoles).Error; err == nil {
+		for _, r := range adminRoles {
+			if err := db.Model(&r).Association("Permissions").Replace(permissions); err != nil {
+				log.Printf("Warning: failed to sync admin role (id=%d) permissions: %v", r.ID, err)
+			}
 		}
+		if len(adminRoles) > 0 {
+			log.Printf("Admin role permissions synced for %d tenants", len(adminRoles))
+		}
+	}
+
+	// Ensure default tenant has an admin role.
+	var role model.Role
+	result := db.Where("name = ? AND tenant_id = ?", "管理员", tenantID).First(&role)
+	if result.Error == nil {
 		return role
 	}
 
@@ -157,6 +168,37 @@ func seedAdminUser(db *gorm.DB, tenantID uint64, roleID uint64) {
 		log.Panicf("failed to assign admin role to admin user: %v", err)
 	}
 	log.Println("Admin user seeded successfully")
+}
+
+// seedClinicOpsRole creates the "诊所运营" role with tenant-scoped management permissions.
+func seedClinicOpsRole(db *gorm.DB, tenantID uint64) {
+	var role model.Role
+	result := db.Where("name = ? AND tenant_id = ?", "诊所运营", tenantID).First(&role)
+	if result.Error == nil {
+		log.Println("Clinic ops role already exists, skipping")
+		return
+	}
+
+	var perms []model.Permission
+	if err := db.Where("code IN ?", []string{"tenant:user:manage", "tenant:role:manage"}).Find(&perms).Error; err != nil {
+		log.Printf("Warning: failed to fetch tenant permissions for clinic ops role: %v", err)
+		return
+	}
+	if len(perms) != 2 {
+		log.Println("Warning: tenant permissions not yet seeded, skipping clinic ops role")
+		return
+	}
+
+	role = model.Role{
+		TenantID:    tenantID,
+		Name:        "诊所运营",
+		Description: "诊所运营管理，可管理本诊所的用户和角色",
+		Permissions: perms,
+	}
+	if err := db.Create(&role).Error; err != nil {
+		log.Printf("Warning: failed to seed clinic ops role: %v", err)
+	}
+	log.Println("Clinic ops role seeded successfully")
 }
 
 // seedSolarTerms upserts all 24 solar terms (creates new ones, skips existing).

@@ -25,6 +25,13 @@ import type { ColumnsType } from 'antd/es/table';
 import { listUsers, updateUser, assignRoles } from '../../api/user';
 import { listRoles } from '../../api/role';
 import { listTenants } from '../../api/tenant';
+import {
+  listTenantUsers,
+  updateTenantUser,
+  assignTenantUserRoles,
+  listTenantRoles,
+} from '../../api/tenant-admin';
+import { useAuth } from '../../store/auth';
 import useIsMobile from '../../hooks/useIsMobile';
 
 interface TenantItem {
@@ -61,6 +68,8 @@ export default function UserList() {
   const [total, setTotal] = useState(0);
   const [params, setParams] = useState<ListParams>({ page: 1, size: 20 });
   const isMobile = useIsMobile();
+  const { hasPermission } = useAuth();
+  const isGlobalAdmin = hasPermission('user:manage');
 
   // Edit modal state
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -79,10 +88,9 @@ export default function UserList() {
   const fetchData = useCallback(async (query: ListParams) => {
     setLoading(true);
     try {
-      const res = await listUsers({
-        page: query.page,
-        size: query.size,
-      });
+      const res = isGlobalAdmin
+        ? await listUsers({ page: query.page, size: query.size })
+        : await listTenantUsers({ page: query.page, size: query.size });
       const body = res as unknown as {
         data: {
           list: UserItem[];
@@ -96,7 +104,7 @@ export default function UserList() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isGlobalAdmin]);
 
   useEffect(() => {
     fetchData(params);
@@ -113,13 +121,15 @@ export default function UserList() {
       notes: record.notes,
     });
     setEditModalVisible(true);
-    // Load tenants for selector
-    try {
-      const res = await listTenants({ page: 1, size: 100 });
-      const body = res as unknown as { data: { list: TenantItem[] } };
-      setAllTenants(body.data.list || []);
-    } catch {
-      // handled
+    // Load tenants for selector (global admin only)
+    if (isGlobalAdmin) {
+      try {
+        const res = await listTenants({ page: 1, size: 100 });
+        const body = res as unknown as { data: { list: TenantItem[] } };
+        setAllTenants(body.data.list || []);
+      } catch {
+        // handled
+      }
     }
   };
 
@@ -127,13 +137,22 @@ export default function UserList() {
     try {
       const values = await editForm.validateFields();
       setEditLoading(true);
-      await updateUser(editingUser!.id, {
-        real_name: values.real_name,
-        phone: values.phone,
-        status: values.status,
-        tenant_id: values.tenant_id,
-        notes: values.notes,
-      });
+      if (isGlobalAdmin) {
+        await updateUser(editingUser!.id, {
+          real_name: values.real_name,
+          phone: values.phone,
+          status: values.status,
+          tenant_id: values.tenant_id,
+          notes: values.notes,
+        });
+      } else {
+        await updateTenantUser(editingUser!.id, {
+          real_name: values.real_name,
+          phone: values.phone,
+          status: values.status,
+          notes: values.notes,
+        });
+      }
       message.success('更新成功');
       setEditModalVisible(false);
       setEditingUser(null);
@@ -150,7 +169,11 @@ export default function UserList() {
   const handleToggleStatus = async (record: UserItem) => {
     const newStatus = record.status === 1 ? 0 : 1;
     try {
-      await updateUser(record.id, { status: newStatus });
+      if (isGlobalAdmin) {
+        await updateUser(record.id, { status: newStatus });
+      } else {
+        await updateTenantUser(record.id, { status: newStatus });
+      }
       message.success(newStatus === 1 ? '已启用' : '已禁用');
       fetchData(params);
     } catch {
@@ -165,7 +188,7 @@ export default function UserList() {
     setRoleModalVisible(true);
     // Fetch all roles
     try {
-      const res = await listRoles();
+      const res = isGlobalAdmin ? await listRoles() : await listTenantRoles();
       const body = res as unknown as { data: RoleItem[] };
       setAllRoles(body.data || []);
     } catch {
@@ -177,7 +200,11 @@ export default function UserList() {
     if (!roleTargetUser) return;
     setRoleLoading(true);
     try {
-      await assignRoles(roleTargetUser.id, selectedRoleIds);
+      if (isGlobalAdmin) {
+        await assignRoles(roleTargetUser.id, selectedRoleIds);
+      } else {
+        await assignTenantUserRoles(roleTargetUser.id, selectedRoleIds);
+      }
       message.success('角色分配成功');
       setRoleModalVisible(false);
       setRoleTargetUser(null);
@@ -210,12 +237,12 @@ export default function UserList() {
       width: 140,
       render: (val: string) => val || '-',
     },
-    {
+    ...(isGlobalAdmin ? [{
       title: '所属诊所',
       key: 'tenant',
       width: 120,
       render: (_: unknown, record: UserItem) => record.tenant?.name || '-',
-    },
+    }] : []),
     {
       title: '备注',
       dataIndex: 'notes',
@@ -407,15 +434,17 @@ export default function UserList() {
           <Form.Item name="phone" label="手机号">
             <Input placeholder="请输入手机号" />
           </Form.Item>
-          <Form.Item name="tenant_id" label="所属诊所">
-            <Select
-              placeholder="请选择所属诊所"
-              options={allTenants.map((t) => ({
-                value: t.id,
-                label: t.name,
-              }))}
-            />
-          </Form.Item>
+          {isGlobalAdmin && (
+            <Form.Item name="tenant_id" label="所属诊所">
+              <Select
+                placeholder="请选择所属诊所"
+                options={allTenants.map((t) => ({
+                  value: t.id,
+                  label: t.name,
+                }))}
+              />
+            </Form.Item>
+          )}
           <Form.Item name="notes" label="备注">
             <Input.TextArea rows={2} placeholder="请输入备注" />
           </Form.Item>

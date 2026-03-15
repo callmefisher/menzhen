@@ -36,6 +36,7 @@ func setupTestRouter(db *gorm.DB) *gin.Engine {
 	solarTermHandler := NewSolarTermHandler(db)
 	hexagramHandler := NewHexagramHandler(db)
 	billingHandler := NewBillingHandler(db)
+	tenantAdminHandler := NewTenantAdminHandler(db)
 
 	deepSeekService := service.NewDeepSeekService(cfg)
 	herbHandler := NewHerbHandler(db, deepSeekService)
@@ -143,6 +144,22 @@ func setupTestRouter(db *gorm.DB) *gin.Engine {
 	hexagrams.POST("", middleware.RequirePermission(db, "role:manage"), hexagramHandler.Create)
 	hexagrams.PUT("/:id", middleware.RequirePermission(db, "role:manage"), hexagramHandler.Update)
 	hexagrams.DELETE("/:id", middleware.RequirePermission(db, "role:manage"), hexagramHandler.Delete)
+
+	tenantAdmin := authed.Group("/tenant")
+	tenantUsers := tenantAdmin.Group("/users")
+	tenantUsers.Use(middleware.RequirePermission(db, "tenant:user:manage", "user:manage"))
+	tenantUsers.GET("", tenantAdminHandler.ListUsers)
+	tenantUsers.PUT("/:id", tenantAdminHandler.UpdateUser)
+	tenantUsers.DELETE("/:id", tenantAdminHandler.DisableUser)
+	tenantUsers.POST("/:id/roles", tenantAdminHandler.AssignRoles)
+	tenantRoles := tenantAdmin.Group("/roles")
+	tenantRoles.Use(middleware.RequirePermission(db, "tenant:role:manage", "role:manage"))
+	tenantRoles.GET("", tenantAdminHandler.ListRoles)
+	tenantRoles.POST("", tenantAdminHandler.CreateRole)
+	tenantRoles.PUT("/:id", tenantAdminHandler.UpdateRole)
+	tenantAdmin.GET("/permissions",
+		middleware.RequirePermission(db, "tenant:role:manage", "role:manage"),
+		tenantAdminHandler.ListTenantPermissions)
 
 	return r
 }

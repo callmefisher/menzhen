@@ -20,6 +20,13 @@ import {
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { listRoles, createRole, updateRole, listPermissions } from '../../api/role';
+import {
+  listTenantRoles,
+  createTenantRole,
+  updateTenantRole,
+  listTenantPermissions,
+} from '../../api/tenant-admin';
+import { useAuth } from '../../store/auth';
 import useIsMobile from '../../hooks/useIsMobile';
 
 interface PermissionItem {
@@ -65,12 +72,22 @@ const PERMISSION_GROUPS: { label: string; codes: string[] }[] = [
     label: '系统管理',
     codes: ['user:manage', 'role:manage', 'tenant:manage'],
   },
+  {
+    label: '收费管理',
+    codes: ['billing:create', 'billing:read'],
+  },
+  {
+    label: '诊所运营',
+    codes: ['tenant:user:manage', 'tenant:role:manage'],
+  },
 ];
 
 export default function RoleList() {
   const [data, setData] = useState<RoleItem[]>([]);
   const [loading, setLoading] = useState(false);
   const isMobile = useIsMobile();
+  const { hasPermission } = useAuth();
+  const isGlobalAdmin = hasPermission('role:manage');
 
   // All permissions from the backend
   const [allPermissions, setAllPermissions] = useState<PermissionItem[]>([]);
@@ -85,7 +102,7 @@ export default function RoleList() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await listRoles();
+      const res = isGlobalAdmin ? await listRoles() : await listTenantRoles();
       const body = res as unknown as { data: RoleItem[] };
       setData(body.data || []);
     } catch {
@@ -93,17 +110,17 @@ export default function RoleList() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isGlobalAdmin]);
 
   const fetchPermissions = useCallback(async () => {
     try {
-      const res = await listPermissions();
+      const res = isGlobalAdmin ? await listPermissions() : await listTenantPermissions();
       const body = res as unknown as { data: PermissionItem[] };
       setAllPermissions(body.data || []);
     } catch {
       // Error already handled by request interceptor
     }
-  }, []);
+  }, [isGlobalAdmin]);
 
   useEffect(() => {
     fetchData();
@@ -147,18 +164,34 @@ export default function RoleList() {
       const values = await form.validateFields();
       setSubmitLoading(true);
       if (editingRole) {
-        await updateRole(editingRole.id, {
-          name: values.name,
-          description: values.description,
-          permission_ids: selectedPermissionIds,
-        });
+        if (isGlobalAdmin) {
+          await updateRole(editingRole.id, {
+            name: values.name,
+            description: values.description,
+            permission_ids: selectedPermissionIds,
+          });
+        } else {
+          await updateTenantRole(editingRole.id, {
+            name: values.name,
+            description: values.description,
+            permission_ids: selectedPermissionIds,
+          });
+        }
         message.success('更新成功');
       } else {
-        await createRole({
-          name: values.name,
-          description: values.description,
-          permission_ids: selectedPermissionIds,
-        });
+        if (isGlobalAdmin) {
+          await createRole({
+            name: values.name,
+            description: values.description,
+            permission_ids: selectedPermissionIds,
+          });
+        } else {
+          await createTenantRole({
+            name: values.name,
+            description: values.description,
+            permission_ids: selectedPermissionIds,
+          });
+        }
         message.success('创建成功');
       }
       handleModalCancel();

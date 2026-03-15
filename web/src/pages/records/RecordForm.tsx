@@ -905,10 +905,11 @@ export default function RecordForm() {
                   </Tag>
                 ))}
                 <Button
-                  type="link"
+                  type="default"
                   size="small"
+                  icon={<SearchOutlined />}
                   onClick={() => { setPulseOptions([]); setPulseSearchText(''); }}
-                  style={{ fontSize: 12, padding: 0 }}
+                  style={{ fontSize: 14, marginLeft: 8, borderStyle: 'dashed', color: '#fa8c16', borderColor: '#fa8c16' }}
                 >
                   重新搜索
                 </Button>

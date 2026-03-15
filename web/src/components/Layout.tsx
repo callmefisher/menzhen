@@ -207,8 +207,8 @@ export default function AppLayout() {
       });
     }
 
-    const canManageUsers = hasPermission('user:manage');
-    const canManageRoles = hasPermission('role:manage');
+    const canManageUsers = hasPermission('user:manage') || hasPermission('tenant:user:manage');
+    const canManageRoles = hasPermission('role:manage') || hasPermission('tenant:role:manage');
     const canManageTenants = hasPermission('tenant:manage');
 
     if (canManageUsers || canManageRoles || canManageTenants) {

@@ -17,6 +17,19 @@ vi.mock('../../../hooks/useIsMobile', () => ({
   default: () => false,
 }));
 
+vi.mock('../../../store/auth', () => ({
+  useAuth: () => ({
+    hasPermission: (code: string) => code === 'role:manage',
+  }),
+}));
+
+vi.mock('../../../api/tenant-admin', () => ({
+  listTenantRoles: vi.fn(),
+  createTenantRole: vi.fn(),
+  updateTenantRole: vi.fn(),
+  listTenantPermissions: vi.fn(),
+}));
+
 vi.mock('antd', async () => {
   const actual = await vi.importActual('antd');
   return { ...actual, message: { error: vi.fn(), success: vi.fn(), warning: vi.fn(), info: vi.fn() } };
