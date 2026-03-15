@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-03-15（新增：回访功能 follow_ups 表 + API + 权限码）
+> 最后更新：2026-03-15（回访增强：record_id 改为必填 + is_recovered 字段；统计概览新增治愈率指标）
 
 ---
 
@@ -54,6 +54,7 @@ menzhen/
 │   │   ├── tenant_admin.go        # 租户级管理 HTTP 处理器（ListTenantUsers/UpdateTenantUser/DisableTenantUser/AssignTenantUserRoles/ListTenantRoles/CreateTenantRole/UpdateTenantRole/ListAssignablePermissions，ErrProtectedUser→403）
 │   │   ├── hexagram.go              # List/Detail/Create/Update/Delete/Trigrams（卦象管理）
 │   │   ├── ai_analysis.go           # Analyze（AI 辩证论治，含缓存）+ SaveCached + GetCached
+│   │   ├── config.go                # 系统配置 API handler（GetConfig/UpdateConfig，读取 .env 敏感字段掩码）
 │   │   ├── oplog.go                 # ListOpLogs/DeleteOpLog/BatchDeleteOpLogs
 │   │   ├── user.go                  # List/Update/Delete/AssignRoles
 │   │   ├── role.go                  # List/Create/Update/ListPermissions
@@ -86,6 +87,7 @@ menzhen/
 │   │   ├── hexagram.go              # 卦象 Search/GetByID/Create/Update/DeleteByID/ListTrigrams
 │   │   ├── deepseek.go              # DeepSeek API 客户端（chat/chatLong/chatStream/QueryHerb/QueryFormula/QueryPulse/AnalyzeDiagnosis/AnalyzeTongue/QueryWuyunLiuqiStream）
 │   │   ├── deepseek_test.go         # DeepSeek 测试
+│   │   ├── config.go                # .env 读写服务（ReadEnv/WriteEnv/MaskSensitive）
 │   │   ├── oplog.go                 # 操作日志 CRUD
 │   │   ├── permission.go            # HasPermission 检查
 │   │   ├── user.go                  # 用户管理（ListUsers 隐藏 user:manage 用户，UpdateUser 租户变更时 bump token_version，含 getAdminUserIDs/isAdminUser/ErrProtectedUser）
@@ -112,6 +114,7 @@ menzhen/
 │       │   ├── billing.ts          # 收费 API（getPrescriptionBilling/createPrescriptionBilling/deductStockAndBill/listRecordBillings/getRecordBillingDetail/createRecordBilling）
 │       │   ├── statistics.ts       # 统计 API（getDashboard）
 │       │   ├── followUp.ts        # 回访 API（listFollowUps/createFollowUp/getFollowUp/updateFollowUp/deleteFollowUp/getFollowUpStats）
+│       │   ├── config.ts          # 配置 API（getSystemConfig/updateSystemConfig）
 │       │   ├── wuyunLiuqi.ts        # 五运六气缓存获取/更新/删除
 │       │   ├── clinicalExperience.ts # 临床经验集 CRUD + 分类列表
 │       │   ├── yijing.ts            # 卦象 CRUD + 八卦分类列表
@@ -184,14 +187,15 @@ menzhen/
 │       │   │   ├── DrugList.tsx       # 药物库存CRUD（分页+搜索+分类筛选，低库存红色高亮，货架号显示/编辑，批量入库支持货架号列）
 │       │   │   └── InventoryAlert.tsx # 库存预警（前端定时扫描，屏蔽/全局阈值配置，存localStorage，显示货架号便于定位补货）
 │       │   ├── followup/              # 回访管理
-│       │   │   └── FollowUpList.tsx  # 回访列表（统计卡片+搜索+Table/Card响应式，CRUD Modal）
+│       │   │   └── FollowUpList.tsx  # 回访列表（统计卡片+搜索+Table/Card响应式，CRUD Modal，含康复标签）
 │       │   ├── statistics/            # 统计仪表盘
 │       │   │   ├── StatsDashboard.tsx # 综合仪表盘（时间选择+渐变汇总卡片+ECharts双轴图/堆叠图/分组图，响应式布局）
-│       │   │   └── components/        # SummaryCards/RevenueTrendChart/RevenueBreakdownChart/PatientChart
+│       │   │   └── components/        # SummaryCards（4卡片含治愈率）/RevenueTrendChart/RevenueBreakdownChart/PatientChart
 │       │   └── settings/            # 系统设置
 │       │       ├── UserList.tsx     # 移动端卡片列表 + Modal 自适应，当前用户橙色高亮+"当前"标签
 │       │       ├── RoleList.tsx     # 移动端卡片列表 + Modal 自适应
-│       │       └── TenantList.tsx   # 移动端卡片列表 + Modal 自适应
+│       │       ├── TenantList.tsx   # 移动端卡片列表 + Modal 自适应
+│       │       └── SystemConfig.tsx # 软件配置页面（DeepSeek AI / 备份参数，敏感字段掩码展示）
 │       ├── store/
 │       │   └── auth.tsx             # 认证状态管理
 │       ├── test/
@@ -557,7 +561,8 @@ menzhen/
 | BaseModel | — | id, created_at, updated_at, deleted_at |
 | `tenant_id` | `uint64` | 租户 ID（索引） |
 | `patient_id` | `uint64` | 患者 ID（索引） |
-| `record_id` | `uint64 nullable` | 诊疗记录 ID（索引） |
+| `record_id` | `uint64 not null` | 诊疗记录 ID（索引，必填） |
+| `is_recovered` | `bool default false` | 是否康复 |
 | `planned_date` | `date` | 计划回访日期 |
 | `actual_date` | `date nullable` | 实际回访日期 |
 | `status` | `varchar(20) default 'pending'` | 状态（pending/completed） |
@@ -776,7 +781,7 @@ menzhen/
 
 | 方法 | 路径 | 权限 | 说明 |
 |------|------|------|------|
-| GET | `/api/v1/statistics/dashboard` | `tenant:manage` | 统计仪表盘（参数：start_date, end_date） |
+| GET | `/api/v1/statistics/dashboard` | `tenant:manage` | 统计仪表盘（参数：start_date, end_date）返回 summary（含 cure_rate/cure_rate_change_percent）、daily_trend、breakdown |
 
 #### 回访管理（租户隔离）
 
@@ -788,6 +793,13 @@ menzhen/
 | GET | `/api/v1/follow-ups/:id` | `followup:read` | 回访详情 |
 | PUT | `/api/v1/follow-ups/:id` | `followup:update` | 编辑回访 |
 | DELETE | `/api/v1/follow-ups/:id` | `followup:delete` | 删除回访 |
+
+### 系统配置
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| GET | `/api/v1/config` | `user:manage` | 读取系统配置（敏感字段掩码） |
+| PUT | `/api/v1/config` | `user:manage` | 更新系统配置（写入 .env） |
 
 ---
 

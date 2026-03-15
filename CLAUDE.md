@@ -200,4 +200,6 @@ DeepSeek AI 相关（可选）：
 - [统计仪表盘实施计划](docs/plans/2026-03-15-statistics-dashboard-plan.md)
 - [回访功能设计](docs/plans/2026-03-15-follow-up-design.md)
 - [回访功能实施计划](docs/plans/2026-03-15-follow-up-plan.md)
+- [软件配置设计](docs/superpowers/specs/2026-03-15-software-config-design.md)
+- [软件配置实施计划](docs/superpowers/plans/2026-03-15-software-config-plan.md)
 - [Codebase 全局上下文](docs/codebase.md)
