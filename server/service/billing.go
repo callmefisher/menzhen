@@ -189,6 +189,13 @@ func (s *BillingService) CreateBilling(tenantID, userID, prescriptionID uint64, 
 		}
 	}
 
+	// 同步刷新当天统计（汇总表查单天数据，很快）
+	statsSvc := NewStatisticsService(s.DB)
+	var record model.MedicalRecord
+	if err := s.DB.First(&record, billing.RecordID).Error; err == nil {
+		_ = statsSvc.RefreshDailyStats(tenantID, record.VisitDate)
+	}
+
 	return &billing, nil
 }
 
@@ -272,6 +279,13 @@ func (s *BillingService) DeductStockAndBill(tenantID, userID, prescriptionID uin
 	if err != nil {
 		return nil, err
 	}
+
+	statsSvc := NewStatisticsService(s.DB)
+	var record model.MedicalRecord
+	if err := s.DB.First(&record, result.RecordID).Error; err == nil {
+		_ = statsSvc.RefreshDailyStats(tenantID, record.VisitDate)
+	}
+
 	return result, nil
 }
 

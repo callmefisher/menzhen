@@ -69,9 +69,19 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	// Public file download route (no JWT required — browser <img> tags can't send Authorization headers).
 	v1.GET("/files/*key", uploadHandler.GetFile)
 
+	// Auth-only routes (JWT validated, but no token_version check).
+	// The refresh endpoint must bypass TokenVersionMiddleware so that
+	// a user with a stale token_version can still obtain a new token.
+	authOnly := v1.Group("")
+	authOnly.Use(middleware.AuthMiddleware(cfg.JWTSecret))
+	{
+		authOnly.POST("/auth/refresh", authHandler.RefreshToken)
+	}
+
 	// Authenticated routes.
 	authenticated := v1.Group("")
 	authenticated.Use(middleware.AuthMiddleware(cfg.JWTSecret))
+	authenticated.Use(middleware.TokenVersionMiddleware(db))
 	{
 		// Auth routes that require authentication.
 		authAuth := authenticated.Group("/auth")
@@ -273,6 +283,13 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			inventoryDrugs.POST("/:id/stock-in", middleware.RequirePermission(db, "inventory:update"), inventoryDrugHandler.StockIn)
 			inventoryDrugs.PUT("/:id", middleware.RequirePermission(db, "inventory:update"), inventoryDrugHandler.Update)
 			inventoryDrugs.DELETE("/:id", middleware.RequirePermission(db, "inventory:delete"), inventoryDrugHandler.Delete)
+		}
+
+		// Statistics routes (tenant-scoped).
+		statistics := authenticated.Group("/statistics")
+		{
+			statisticsHandler := handler.NewStatisticsHandler(db)
+			statistics.GET("/dashboard", middleware.RequirePermission(db, "tenant:manage"), statisticsHandler.GetDashboard)
 		}
 
 		// Prescription list by record (nested under records).
