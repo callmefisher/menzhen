@@ -14,6 +14,7 @@ import OpLogList from './pages/OpLogList';
 import UserList from './pages/settings/UserList';
 import RoleList from './pages/settings/RoleList';
 import TenantList from './pages/settings/TenantList';
+import SystemConfig from './pages/settings/SystemConfig';
 import HerbSearch from './pages/herbs/HerbSearch';
 import FormulaSearch from './pages/formulas/FormulaSearch';
 import PulseList from './pages/pulses/PulseList';
@@ -90,6 +91,7 @@ function AppRoutes() {
         <Route path="settings/users" element={<UserList />} />
         <Route path="settings/roles" element={<RoleList />} />
         <Route path="settings/tenants" element={<TenantList />} />
+        <Route path="settings/config" element={<SystemConfig />} />
       </Route>
       <Route path="*" element={<Navigate to="/patients" replace />} />
     </Routes>

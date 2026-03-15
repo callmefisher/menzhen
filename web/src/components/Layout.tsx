@@ -25,6 +25,7 @@ import {
   CalendarOutlined,
   FileTextOutlined,
   BarChartOutlined,
+  ToolOutlined,
 } from '@ant-design/icons';
 import type { MenuProps as AntMenuProps } from 'antd';
 import { useAuth } from '../store/auth';
@@ -244,8 +245,9 @@ export default function AppLayout() {
     const canManageUsers = hasPermission('user:manage') || hasPermission('tenant:user:manage');
     const canManageRoles = hasPermission('role:manage') || hasPermission('tenant:role:manage');
     const canManageTenants = hasPermission('tenant:manage');
+    const canManageConfig = hasPermission('user:manage');
 
-    if (canManageUsers || canManageRoles || canManageTenants) {
+    if (canManageUsers || canManageRoles || canManageTenants || canManageConfig) {
       const settingsChildren: MenuItem[] = [];
       if (canManageUsers) {
         settingsChildren.push({
@@ -266,6 +268,13 @@ export default function AppLayout() {
           key: '/settings/tenants',
           icon: <BankOutlined />,
           label: '诊所管理',
+        });
+      }
+      if (canManageConfig) {
+        settingsChildren.push({
+          key: '/settings/config',
+          icon: <ToolOutlined />,
+          label: '软件配置',
         });
       }
       items.push({
@@ -293,6 +302,7 @@ export default function AppLayout() {
     if (path.startsWith('/settings/roles')) return ['/settings/roles'];
     if (path.startsWith('/settings/users')) return ['/settings/users'];
     if (path.startsWith('/settings/tenants')) return ['/settings/tenants'];
+    if (path.startsWith('/settings/config')) return ['/settings/config'];
     if (path.startsWith('/patients')) return ['/patients'];
     if (path.startsWith('/oplogs')) return ['/oplogs'];
     if (path.startsWith('/herbs')) return ['/herbs'];
