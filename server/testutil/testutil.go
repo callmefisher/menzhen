@@ -105,6 +105,7 @@ func SetupTestDB(t *testing.T) *gorm.DB {
 		&model.Hexagram{},
 		&model.Billing{},
 		&model.DailyStats{},
+		&model.FollowUp{},
 	)
 	if err != nil {
 		db.Exec("DROP DATABASE IF EXISTS " + dbName)
@@ -224,6 +225,8 @@ func SeedAllPermissions(t *testing.T, db *gorm.DB) map[string]*model.Permission 
 		{"inventory:update", "库存修改"}, {"inventory:delete", "库存删除"},
 		{"billing:create", "收费"}, {"billing:read", "查看收费"},
 		{"tenant:user:manage", "诊所用户管理"}, {"tenant:role:manage", "诊所角色管理"},
+		{"followup:create", "新增回访"}, {"followup:read", "查看回访"},
+		{"followup:update", "编辑回访"}, {"followup:delete", "删除回访"},
 	}
 	result := make(map[string]*model.Permission)
 	for _, c := range codes {
