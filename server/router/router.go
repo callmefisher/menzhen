@@ -51,6 +51,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	clinicalExpHandler := handler.NewClinicalExperienceHandler(db)
 	inventoryDrugHandler := handler.NewInventoryDrugHandler(db)
 	billingHandler := handler.NewBillingHandler(db)
+	tenantAdminHandler := handler.NewTenantAdminHandler(db)
 	solarTermHandler := handler.NewSolarTermHandler(db)
 	hexagramHandler := handler.NewHexagramHandler(db)
 
@@ -145,6 +146,29 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			tenants.POST("", middleware.RequirePermission(db, "tenant:manage"), tenantHandler.Create)
 			tenants.PUT("/:id", middleware.RequirePermission(db, "tenant:manage"), tenantHandler.Update)
 			tenants.DELETE("/:id", middleware.RequirePermission(db, "tenant:manage"), tenantHandler.Delete)
+		}
+
+		// Tenant-scoped admin routes (for clinic operators).
+		tenantAdmin := authenticated.Group("/tenant")
+		{
+			tenantUsers := tenantAdmin.Group("/users")
+			tenantUsers.Use(middleware.RequirePermission(db, "tenant:user:manage", "user:manage"))
+			{
+				tenantUsers.GET("", tenantAdminHandler.ListUsers)
+				tenantUsers.PUT("/:id", tenantAdminHandler.UpdateUser)
+				tenantUsers.DELETE("/:id", tenantAdminHandler.DisableUser)
+				tenantUsers.POST("/:id/roles", tenantAdminHandler.AssignRoles)
+			}
+			tenantRoles := tenantAdmin.Group("/roles")
+			tenantRoles.Use(middleware.RequirePermission(db, "tenant:role:manage", "role:manage"))
+			{
+				tenantRoles.GET("", tenantAdminHandler.ListRoles)
+				tenantRoles.POST("", tenantAdminHandler.CreateRole)
+				tenantRoles.PUT("/:id", tenantAdminHandler.UpdateRole)
+			}
+			tenantAdmin.GET("/permissions",
+				middleware.RequirePermission(db, "tenant:role:manage", "role:manage"),
+				tenantAdminHandler.ListTenantPermissions)
 		}
 
 		// Herb routes (global data, authenticated, no permission required for read).
