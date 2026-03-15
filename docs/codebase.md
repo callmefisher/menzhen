@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-03-14（新增：易理卦象功能 hexagrams 表+API+页面）
+> 最后更新：2026-03-15（新增：租户级用户/角色管理 tenant:user:manage + tenant:role:manage 权限及 /api/v1/tenant/* 路由）
 
 ---
 
@@ -31,7 +31,7 @@ menzhen/
 │   ├── config/
 │   │   └── config.go                # Config 结构体 + Load()，全部读取环境变量
 │   ├── database/
-│   │   ├── database.go              # InitDB：连接 MySQL + AutoMigrate 全部 20 个模型
+│   │   ├── database.go              # InitDB：连接 MySQL + AutoMigrate 全部 21 个模型
 │   │   ├── seed.go                  # Seed：幂等写入 permissions/tenant/admin role/admin user
 │   │   └── hexagram_seed.json       # 64卦种子数据（卦名/卦辞/爻辞/传文/中医应用）
 │   ├── handler/
@@ -48,6 +48,8 @@ menzhen/
 │   │   ├── wuyun_liuqi.go          # Get/QueryStream/Update/Delete（五运六气，SSE流式查询）
 │   │   ├── clinical_experience.go  # List/Detail/Create/Update/Delete/Categories（临床经验集）
 │   │   ├── inventory_drug.go      # List/Create/Update/Delete/StockIn/BatchStockIn（库存药物，租户隔离）
+│   │   ├── billing.go             # GetDetail/Create/DeductStock/ListByRecord（收费管理，租户隔离）
+│   │   ├── tenant_admin.go        # 租户级管理 HTTP 处理器（ListTenantUsers/UpdateTenantUser/DisableTenantUser/AssignTenantUserRoles/ListTenantRoles/CreateTenantRole/UpdateTenantRole/ListAssignablePermissions）
 │   │   ├── hexagram.go              # List/Detail/Create/Update/Delete/Trigrams（卦象管理）
 │   │   ├── ai_analysis.go           # Analyze（AI 辩证论治，含缓存）+ SaveCached + GetCached
 │   │   ├── oplog.go                 # ListOpLogs/DeleteOpLog/BatchDeleteOpLogs
@@ -75,6 +77,8 @@ menzhen/
 │   │   ├── wuyun_liuqi.go          # 五运六气 GetByYear/SaveFromAI/Update/Delete
 │   │   ├── clinical_experience.go  # 临床经验 Search/ListCategories/GetByID/Create/Update/DeleteByID
 │   │   ├── inventory_drug.go      # 库存药物 List/Create/Update/Delete/StockIn/BatchStockIn（租户隔离）
+│   │   ├── billing.go              # 收费 GetBillingDetail/CreateBilling/DeductStockAndBill/ListBillingsByRecord（含实时价格计算+事务库存扣除）
+│   │   ├── tenant_admin.go         # 租户级用户/角色管理服务（ListTenantUsers/UpdateTenantUser/DisableTenantUser/AssignTenantUserRoles/ListTenantRoles/CreateTenantRole/UpdateTenantRole/ListAssignablePermissions）
 │   │   ├── hexagram.go              # 卦象 Search/GetByID/Create/Update/DeleteByID/ListTrigrams
 │   │   ├── deepseek.go              # DeepSeek API 客户端（chat/chatLong/chatStream/QueryHerb/QueryFormula/QueryPulse/AnalyzeDiagnosis/AnalyzeTongue/QueryWuyunLiuqiStream）
 │   │   ├── deepseek_test.go         # DeepSeek 测试
@@ -101,6 +105,7 @@ menzhen/
 │       │   ├── prescription.ts      # 处方 CRUD + 按记录查询
 │       │   ├── pulse.ts             # 脉象搜索/详情/分类/新增/更新/删除
 │       │   ├── inventory.ts         # 库存药物 CRUD + 入库（listInventoryDrugs/create/update/delete/stockIn/batchStockIn）
+│       │   ├── billing.ts          # 收费 API（getPrescriptionBilling/createPrescriptionBilling/deductStockAndBill/listRecordBillings）
 │       │   ├── wuyunLiuqi.ts        # 五运六气缓存获取/更新/删除
 │       │   ├── clinicalExperience.ts # 临床经验集 CRUD + 分类列表
 │       │   ├── yijing.ts            # 卦象 CRUD + 八卦分类列表
@@ -109,13 +114,16 @@ menzhen/
 │       │   ├── oplog.ts             # 操作日志查询/删除
 │       │   ├── user.ts              # 用户管理
 │       │   ├── role.ts              # 角色管理
-│       │   └── tenant.ts            # 租户管理
+│       │   ├── tenant.ts            # 租户管理
+│       │   └── tenant-admin.ts      # 租户级管理前端 API（listTenantUsers/updateTenantUser/disableTenantUser/assignTenantUserRoles/listTenantRoles/createTenantRole/updateTenantRole/listAssignablePermissions）
 │       ├── components/
 │       │   ├── Layout.tsx           # 侧边栏 + 顶部导航布局（移动端 Sider→Drawer + 汉堡按钮）
 │       │   ├── FileUpload.tsx       # 文件上传组件
 │       │   ├── PrescriptionModal.tsx  # 处方弹窗（开方/编辑，草药+中成药双区域，含药物详情查看，医嘱预填分行，按方开药自动追加方剂备注，选方后横排展示功效/主治/备注，编辑模式自动根据方剂名加载详情，开方时显示库存提示，中成药自动查询方剂功效/主治和库存）
 │       │   ├── HerbDetailModal.tsx   # 通用中药详情弹窗（方剂/处方复用）
 │       │   ├── PrescriptionPrint.tsx  # 处方打印（草药每10味一列多列并排，中成药单独一段，医嘱分行）
+│       │   ├── BillingDrawer.tsx    # 收费明细抽屉（药品价格表+诊疗费编辑+实收+扣库存+打印）
+│       │   ├── BillingPrint.tsx     # 收费单打印（window.open+window.print，含药品明细+费用汇总）
 │       │   └── __tests__/           # 组件测试
 │       ├── pages/
 │       │   ├── Login.tsx            # 登录页（登录后跳转患者管理，移动端标题/图标尺寸自适应）
@@ -223,7 +231,7 @@ menzhen/
 | `name` | `varchar(50)` | 权限名称 |
 | `description` | `varchar(200)` | 描述 |
 
-**全部权限码：** `patient:create`, `patient:read`, `patient:update`, `patient:delete`, `record:create`, `record:read`, `record:update`, `record:delete`, `oplog:read`, `user:manage`, `role:manage`, `herb:read`, `formula:read`, `pulse:read`, `prescription:create`, `prescription:read`, `tenant:manage`, `inventory:read`, `inventory:create`, `inventory:update`, `inventory:delete`
+**全部权限码（共 25 个）：** `patient:create`, `patient:read`, `patient:update`, `patient:delete`, `record:create`, `record:read`, `record:update`, `record:delete`, `oplog:read`, `user:manage`, `role:manage`, `herb:read`, `formula:read`, `pulse:read`, `prescription:create`, `prescription:read`, `tenant:manage`, `inventory:read`, `inventory:create`, `inventory:update`, `inventory:delete`, `billing:read`, `billing:create`, `tenant:user:manage`（诊所用户管理）, `tenant:role:manage`（诊所角色管理）
 
 #### `herbs` — 中药
 
@@ -503,6 +511,19 @@ menzhen/
 | `remark` | `text` | 备注 |
 | `shelf_no` | `varchar(20)` | 货架号（默认 H1） |
 
+#### `billings` — 收费记录（含 BaseModel 软删除）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| BaseModel | — | id, created_at, updated_at, deleted_at |
+| `prescription_id` | `uint64` | 关联处方（唯一索引，一对一） |
+| `record_id` | `uint64` | 关联诊疗记录（索引） |
+| `tenant_id` | `uint64` | 租户 ID（索引） |
+| `consultation_fee` | `decimal(10,2)` | 诊疗费（默认 100） |
+| `actual_paid` | `decimal(10,2)` | 实收金额 |
+| `stock_deducted` | `bool` | 是否已扣库存（防重复扣除） |
+| `created_by` | `uint64` | 操作人 |
+
 ---
 
 ## API 路由清单
@@ -639,6 +660,15 @@ menzhen/
 | DELETE | `/api/v1/prescriptions/:id` | `prescription:create` | 删除处方 |
 | GET | `/api/v1/records/:id/prescriptions` | `prescription:read` | 某次就诊的处方列表 |
 
+#### 收费管理（租户隔离）
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| GET | `/api/v1/prescriptions/:id/billing` | `billing:read` | 获取收费明细（含实时计算价格） |
+| POST | `/api/v1/prescriptions/:id/billing` | `billing:create` | 保存收费记录（不扣库存） |
+| POST | `/api/v1/prescriptions/:id/billing/deduct-stock` | `billing:create` | 扣库存 + 保存收费 |
+| GET | `/api/v1/records/:id/billings` | `billing:read` | 某次就诊的收费列表 |
+
 #### 操作日志
 
 | 方法 | 路径 | 权限 | 说明 |
@@ -673,6 +703,19 @@ menzhen/
 | POST | `/api/v1/tenants` | `tenant:manage` | 创建租户 |
 | PUT | `/api/v1/tenants/:id` | `tenant:manage` | 更新租户 |
 | DELETE | `/api/v1/tenants/:id` | `tenant:manage` | 删除租户 |
+
+### 租户级管理（需 tenant:user:manage 或 user:manage / tenant:role:manage 或 role:manage）
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| GET | `/api/v1/tenant/users` | `tenant:user:manage` 或 `user:manage` | 列出本诊所用户（分页） |
+| PUT | `/api/v1/tenant/users/:id` | `tenant:user:manage` 或 `user:manage` | 编辑本诊所用户 |
+| DELETE | `/api/v1/tenant/users/:id` | `tenant:user:manage` 或 `user:manage` | 禁用本诊所用户 |
+| POST | `/api/v1/tenant/users/:id/roles` | `tenant:user:manage` 或 `user:manage` | 为本诊所用户分配角色 |
+| GET | `/api/v1/tenant/roles` | `tenant:role:manage` 或 `role:manage` | 列出本诊所角色 |
+| POST | `/api/v1/tenant/roles` | `tenant:role:manage` 或 `role:manage` | 创建本诊所角色 |
+| PUT | `/api/v1/tenant/roles/:id` | `tenant:role:manage` 或 `role:manage` | 编辑本诊所角色 |
+| GET | `/api/v1/tenant/permissions` | `tenant:role:manage` 或 `role:manage` | 列出可分配权限（排除全局管理权限） |
 
 #### 库存管理（租户隔离）
 
@@ -843,7 +886,14 @@ menzhen/
 ### 种子数据
 
 启动时 `Seed()` 幂等写入：
-1. **21 个权限** — upsert 模式（逐条检查 code，不存在则创建）
+1. **25 个权限** — upsert 模式（逐条检查 code，不存在则创建）
 2. **默认租户** — code=`default`, name=`默认诊所`
 3. **管理员角色** — 关联全部权限（已存在则同步权限集）
 4. **管理员用户** — username=`admin`, password=`admin123`
+
+### 默认角色
+
+| 角色名 | 权限 | 说明 |
+|--------|------|------|
+| 管理员 | 全部 25 个权限 | 超级管理员，自动由 seed 创建 |
+| 诊所运营 | `tenant:user:manage`, `tenant:role:manage` | 可管理本诊所用户和角色，但不可跨租户操作 |

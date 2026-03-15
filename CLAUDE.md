@@ -82,7 +82,8 @@
 - **租户隔离**：patients/records/prescriptions/ai_analyses 表含 `tenant_id`
 - **全局数据**：herbs/formulas/pulses/meridian_resources/wuyun_liuqi/solar_terms 无租户隔离
 - **3D经络坐标分模型**：坐标数据按人体模型独立存储（`meridian-paths-{female|male}.ts` / `acupoint-positions-{female|male}.ts`），元数据（名称、功效等）共享，通过 `getMeridians(model)` / `getAcupoints(model)` 按模型组装
-- **权限码**：`patient:create/read/update/delete`, `record:create/read/update/delete`, `oplog:read`, `user:manage`, `role:manage`, `herb:read`, `formula:read`, `pulse:read`, `prescription:create`, `prescription:read`, `tenant:manage`, `inventory:create/read/update/delete`
+- **权限码**：`patient:create/read/update/delete`, `record:create/read/update/delete`, `oplog:read`, `user:manage`, `role:manage`, `tenant:user:manage`, `tenant:role:manage`, `herb:read`, `formula:read`, `pulse:read`, `prescription:create`, `prescription:read`, `tenant:manage`, `inventory:create/read/update/delete`, `billing:create`, `billing:read`
+- **诊所运营角色**：`tenant:user:manage` + `tenant:role:manage` 仅管理本诊所，API 端点 `/api/v1/tenant/*`，全局管理权限自动兼容
 
 ## 开发环境
 
@@ -187,4 +188,6 @@ DeepSeek AI 相关（可选）：
 - [节气功能设计](docs/plans/2026-03-14-solar-terms-design.md)
 - [节气功能实施计划](docs/plans/2026-03-14-solar-terms-plan.md)
 - [易理卦象功能设计](docs/plans/2026-03-14-yijing-hexagram-design.md)
+- [诊所运营角色设计](docs/plans/2026-03-14-tenant-operations-design.md)
+- [诊所运营角色实施计划](docs/plans/2026-03-14-tenant-operations-plan.md)
 - [Codebase 全局上下文](docs/codebase.md)
