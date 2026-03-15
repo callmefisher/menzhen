@@ -55,29 +55,57 @@ docker compose logs --tail 100 api
 
 ## 部署
 
-### 首次部署
+### 前置条件
+
+- Docker 和 Docker Compose
+- Git
+- Go 1.21+（本地构建需要）
+- Node.js 18+（本地构建需要）
+
+> **Windows 用户**：安装 [Docker Desktop for Windows](https://www.docker.com/products/docker-desktop/) 后，通过 Git Bash 或 WSL 执行相同命令即可。WSL（Windows Subsystem for Linux）是微软提供的 Windows 内置 Linux 子系统，可在 PowerShell 中运行 `wsl --install` 安装，装好后打开 WSL 终端即可像 Linux 一样操作。
+
+### 全新部署
 
 ```bash
-./deploy.sh
+# 1. 克隆代码
+git clone <repo-url> menzhen && cd menzhen
+
+# 2. 一键部署（自动生成 .env，随机密码）
+./deploy.sh --full
+
+# 3. 访问 http://localhost，用 admin / admin123 登录，立即修改密码
+
+# 4.（可选）进入「系统设置 → 软件配置」，在页面上配置：
+#    - DeepSeek API 密钥（AI 功能）
+#    - 七牛云 AK/SK/Bucket（云备份）
+#    - 备份间隔等参数
+
+# 5. 配置修改后重启生效
+docker compose restart api backup
 ```
 
-自动执行：
-1. 检查 Docker 环境
-2. 生成 `.env`（随机密码和 JWT 密钥）
-3. 构建并启动所有服务
-4. 等待 MySQL 就绪
+### 迁移部署（从旧服务器恢复数据）
 
-部署完成后：
-- 访问地址：`http://localhost`
-- 默认账号：`admin / admin123`（请立即修改密码）
+```bash
+# 1. 克隆 + 部署
+git clone <repo-url> menzhen && cd menzhen
+./deploy.sh --full
 
-### 从备份恢复部署
+# 2. 在「系统设置 → 软件配置」或 .env 中填入七牛云配置
+# 3. 重启使配置生效
+docker compose restart api backup
+
+# 4. 一键从云端恢复数据
+docker compose exec backup bash /scripts/restore.sh --auto
+```
+
+### 从本地备份恢复
 
 ```bash
 ./deploy.sh --restore ./backups/backup-2026-02-24
 ```
 
-在首次部署的基础上，额外将备份数据导入系统。适用于服务器迁移场景。
+在首次部署的基础上，额外将备份数据导入系统。
 
 ---
 
@@ -132,51 +160,9 @@ docker compose exec backup bash /scripts/restore.sh --sql /backups/20260312_1200
 
 #### 跨机器恢复（从七牛云下载）
 
-适用于新服务器部署、服务器迁移等场景。`restore.sh --auto` 在本地无备份文件时会自动从七牛云下载。
+适用于新服务器部署、服务器迁移等场景。参见上方「迁移部署」章节。
 
-**Linux / macOS：**
-
-```bash
-# 1. 克隆代码并部署
-git clone <repo-url> && cd menzhen
-./deploy.sh
-
-# 2. 确保 .env 中配置了七牛云 AK/SK/Bucket/Domain
-#    QINIU_ACCESS_KEY=xxx
-#    QINIU_SECRET_KEY=xxx
-#    QINIU_BUCKET=public
-#    QINIU_DOMAIN=public.qnlinking.com
-
-# 3. 一键恢复（自动下载 + 恢复）
-docker compose exec backup bash /scripts/restore.sh --auto
-
-# 或者分步操作：先下载，再恢复
-docker compose exec backup python3 /scripts/download_from_qiniu.py
-docker compose exec backup bash /scripts/restore.sh --auto
-```
-
-**Windows（Docker Desktop）：**
-
-Windows 通过 Docker Desktop 运行，命令完全一致，只需在 PowerShell 或 CMD 中执行：
-
-```powershell
-# 1. 克隆代码并部署
-git clone <repo-url>
-cd menzhen
-# 手动复制 .env.example 为 .env 并编辑配置（或用 deploy.sh 的 Git Bash 版本）
-copy .env.example .env
-# 编辑 .env 填入密码和七牛云配置
-docker compose up -d --build
-
-# 2. 等待服务就绪后恢复
-docker compose exec backup bash /scripts/restore.sh --auto
-```
-
-> **Windows 注意事项：**
-> - 需要安装 [Docker Desktop for Windows](https://www.docker.com/products/docker-desktop/)
-> - `deploy.sh` 是 Bash 脚本，可通过 Git Bash 或 WSL 执行，也可手动执行其中的步骤
-> - `docker compose` 命令在 PowerShell / CMD / Git Bash 中均可使用
-> - 备份文件目录 `./backups/` 会自动映射到容器内 `/backups/`
+`restore.sh --auto` 在本地无备份文件时会自动从七牛云下载。
 
 #### 仅手动下载备份（不恢复）
 
@@ -202,7 +188,7 @@ docker compose exec backup python3 /scripts/download_from_qiniu.py --type minio
 
 ## 环境变量
 
-在 `.env` 文件中配置，首次部署时由 `deploy.sh` 自动生成。
+在 `.env` 文件中配置，首次部署时由 `deploy.sh` 自动生成。部署后可通过「系统设置 → 软件配置」页面在线修改（需超级管理员权限），修改后重启容器生效。
 
 ### 数据库
 
