@@ -54,6 +54,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	tenantAdminHandler := handler.NewTenantAdminHandler(db)
 	solarTermHandler := handler.NewSolarTermHandler(db)
 	hexagramHandler := handler.NewHexagramHandler(db)
+	followUpHandler := handler.NewFollowUpHandler(db)
 
 	// ---------- Route groups ----------
 
@@ -285,6 +286,17 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			inventoryDrugs.DELETE("/:id", middleware.RequirePermission(db, "inventory:delete"), inventoryDrugHandler.Delete)
 		}
 
+		// Follow-up routes (tenant-scoped).
+		followUps := authenticated.Group("/follow-ups")
+		{
+			followUps.GET("", middleware.RequirePermission(db, "followup:read"), followUpHandler.List)
+			followUps.POST("", middleware.RequirePermission(db, "followup:create"), followUpHandler.Create)
+			followUps.GET("/stats", middleware.RequirePermission(db, "followup:read"), followUpHandler.Stats)
+			followUps.GET("/:id", middleware.RequirePermission(db, "followup:read"), followUpHandler.Detail)
+			followUps.PUT("/:id", middleware.RequirePermission(db, "followup:update"), followUpHandler.Update)
+			followUps.DELETE("/:id", middleware.RequirePermission(db, "followup:delete"), followUpHandler.Delete)
+		}
+
 		// Statistics routes (tenant-scoped).
 		statistics := authenticated.Group("/statistics")
 		{
@@ -297,6 +309,9 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 
 		// Billings list by record (nested under records).
 		records.GET("/:id/billings", middleware.RequirePermission(db, "billing:read"), billingHandler.ListByRecord)
+		// Record-level billing (consultation fee only, no prescription needed).
+		records.GET("/:id/billing-detail", middleware.RequirePermission(db, "billing:read"), billingHandler.GetRecordBillingDetail)
+		records.POST("/:id/billing", middleware.RequirePermission(db, "billing:create"), billingHandler.CreateRecordBilling)
 
 		// Cached AI analysis for a record (nested under records).
 		records.GET("/:id/ai-analysis", middleware.RequirePermission(db, "record:read"), aiAnalysisHandler.GetCached)
