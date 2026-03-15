@@ -222,6 +222,7 @@ func SeedAllPermissions(t *testing.T, db *gorm.DB) map[string]*model.Permission 
 		{"inventory:create", "库存新增"}, {"inventory:read", "库存查看"},
 		{"inventory:update", "库存修改"}, {"inventory:delete", "库存删除"},
 		{"billing:create", "收费"}, {"billing:read", "查看收费"},
+		{"tenant:user:manage", "诊所用户管理"}, {"tenant:role:manage", "诊所角色管理"},
 	}
 	result := make(map[string]*model.Permission)
 	for _, c := range codes {
