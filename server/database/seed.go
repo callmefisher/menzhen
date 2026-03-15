@@ -91,24 +91,32 @@ func seedDefaultTenant(db *gorm.DB) model.Tenant {
 }
 
 // seedAdminRole creates the admin role with all permissions if it does not
-// already exist within the default tenant.
+// already exist within the default tenant. Also syncs all "管理员" roles across
+// all tenants to the latest full permission set.
 func seedAdminRole(db *gorm.DB, tenantID uint64) model.Role {
-	var role model.Role
-	result := db.Where("name = ? AND tenant_id = ?", "管理员", tenantID).First(&role)
-
-	// Fetch all permissions to assign to the admin role.
+	// Fetch all permissions to assign to admin roles.
 	var permissions []model.Permission
 	if err := db.Find(&permissions).Error; err != nil {
 		log.Panicf("failed to fetch permissions for admin role: %v", err)
 	}
 
-	if result.Error == nil {
-		// Role already exists — sync permissions to latest full set.
-		if err := db.Model(&role).Association("Permissions").Replace(permissions); err != nil {
-			log.Printf("Warning: failed to update admin role permissions: %v", err)
-		} else {
-			log.Println("Admin role permissions synced")
+	// Sync all existing "管理员" roles across all tenants.
+	var adminRoles []model.Role
+	if err := db.Where("name = ?", "管理员").Find(&adminRoles).Error; err == nil {
+		for _, r := range adminRoles {
+			if err := db.Model(&r).Association("Permissions").Replace(permissions); err != nil {
+				log.Printf("Warning: failed to sync admin role (id=%d) permissions: %v", r.ID, err)
+			}
 		}
+		if len(adminRoles) > 0 {
+			log.Printf("Admin role permissions synced for %d tenants", len(adminRoles))
+		}
+	}
+
+	// Ensure default tenant has an admin role.
+	var role model.Role
+	result := db.Where("name = ? AND tenant_id = ?", "管理员", tenantID).First(&role)
+	if result.Error == nil {
 		return role
 	}
 

@@ -157,47 +157,38 @@ export default function PrescriptionModal({
     }
   }, [open, editData?.formula_name]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 编辑模式：补充中成药行的功效/主治信息
+  // 编辑模式：补充中成药行的功效/主治信息（使用函数式更新避免覆盖库存数据）
   useEffect(() => {
     if (!open || patentRows.length === 0) return;
-    const needsUpdate = patentRows.some((r) => r.name && !r.effects && !r.indications);
-    if (!needsUpdate) return;
+    const rowsNeedingUpdate = patentRows.filter((r) => r.name && !r.effects && !r.indications);
+    if (rowsNeedingUpdate.length === 0) return;
     (async () => {
-      const updatedRows = [...patentRows];
-      for (let i = 0; i < updatedRows.length; i++) {
-        const row = updatedRows[i];
-        if (!row.name || (row.effects && row.indications)) continue;
+      const updates: Record<number, { effects: string; indications: string }> = {};
+      for (const row of rowsNeedingUpdate) {
         try {
           const res = await listFormulas({ name: row.name, page: 1, size: 5 });
           const body = res as unknown as { data: { list: FormulaItem[] } };
           const match = (body.data.list || []).find((f) => f.name === row.name);
           if (match) {
-            updatedRows[i] = { ...row, effects: match.effects || '', indications: match.indications || '' };
+            updates[row.key] = { effects: match.effects || '', indications: match.indications || '' };
           }
         } catch { /* ignore */ }
       }
-      setPatentRows(updatedRows);
+      if (Object.keys(updates).length > 0) {
+        setPatentRows((prev) => prev.map((r) => {
+          const update = updates[r.key];
+          return update ? { ...r, ...update } : r;
+        }));
+      }
     })();
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 同步中成药库存信息（inventoryMap 加载后自动更新所有中成药行）
-  useEffect(() => {
-    if (!open || patentRows.length === 0 || Object.keys(inventoryMap).length === 0) return;
-    let changed = false;
-    const updated = patentRows.map((row) => {
-      if (!row.name?.trim()) return row;
-      const inv = inventoryMap[row.name.trim()];
-      const newStock = inv ? inv.stock : null;
-      if (row.stock !== newStock) {
-        changed = true;
-        return { ...row, stock: newStock };
-      }
-      return row;
-    });
-    if (changed) {
-      setPatentRows(updated);
-    }
-  }, [open, inventoryMap]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 渲染时从 inventoryMap 实时读取库存（消除竞态）
+  const getPatentStock = (name?: string): number | null => {
+    if (!name?.trim()) return null;
+    const inv = inventoryMap[name.trim()];
+    return inv ? inv.stock : null;
+  };
 
   const searchFormulas = useCallback(async (name: string) => {
     if (!name) return;
@@ -503,6 +494,7 @@ export default function PrescriptionModal({
       key: 'name',
       render: (_: string, record: PatentRow) => {
         const qty = record.needed_quantity ? Number(record.needed_quantity) || 0 : 0;
+        const stockVal = getPatentStock(record.name);
         return (
           <div>
             <AutoComplete
@@ -533,13 +525,13 @@ export default function PrescriptionModal({
                   <span style={{ color: '#888' }}>功效：{record.effects.length > 20 ? record.effects.slice(0, 20) + '...' : record.effects}</span>
                 )}
                 {record.name?.trim() && (
-                  record.stock != null ? (
+                  stockVal != null ? (
                     qty > 0 ? (
-                      record.stock >= qty
-                        ? <span style={{ color: '#52c41a' }}>库存充足：需{qty}盒, 库存{record.stock}盒</span>
-                        : <span style={{ color: '#ff4d4f' }}>库存不足：需{qty}盒, 库存{record.stock}盒</span>
+                      stockVal >= qty
+                        ? <span style={{ color: '#52c41a' }}>库存充足：需{qty}盒, 库存{stockVal}盒</span>
+                        : <span style={{ color: '#ff4d4f' }}>库存不足：需{qty}盒, 库存{stockVal}盒</span>
                     ) : (
-                      <span style={{ color: '#999' }}>库存：{record.stock}盒</span>
+                      <span style={{ color: '#999' }}>库存：{stockVal}盒</span>
                     )
                   ) : (
                     <span style={{ color: '#999' }}>未录入库存</span>
@@ -604,6 +596,7 @@ export default function PrescriptionModal({
   // --- Patent medicine mobile card ---
   const renderPatentMobileCard = (row: PatentRow) => {
     const qty = row.needed_quantity ? Number(row.needed_quantity) || 0 : 0;
+    const stockVal = getPatentStock(row.name);
     return (
       <div key={row.key} style={{ background: '#f0f5ff', borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6 }}>
@@ -658,13 +651,13 @@ export default function PrescriptionModal({
         </div>
         {row.name?.trim() && (
           <div style={{ marginTop: 4, fontSize: 11 }}>
-            {row.stock != null ? (
+            {stockVal != null ? (
               qty > 0 ? (
-                row.stock >= qty
-                  ? <span style={{ color: '#52c41a' }}>库存充足：需{qty}盒, 库存{row.stock}盒</span>
-                  : <span style={{ color: '#ff4d4f' }}>库存不足：需{qty}盒, 库存{row.stock}盒</span>
+                stockVal >= qty
+                  ? <span style={{ color: '#52c41a' }}>库存充足：需{qty}盒, 库存{stockVal}盒</span>
+                  : <span style={{ color: '#ff4d4f' }}>库存不足：需{qty}盒, 库存{stockVal}盒</span>
               ) : (
-                <span style={{ color: '#999' }}>库存：{row.stock}盒</span>
+                <span style={{ color: '#999' }}>库存：{stockVal}盒</span>
               )
             ) : (
               <span style={{ color: '#999' }}>未录入库存</span>
@@ -840,6 +833,10 @@ export default function PrescriptionModal({
           )}
         </div>
 
+        <Form.Item label="总付数" name="total_doses">
+          <InputNumber min={1} max={99} style={{ width: 120 }} />
+        </Form.Item>
+
         {/* Patent medicine section */}
         <div style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -879,10 +876,6 @@ export default function PrescriptionModal({
             />
           )}
         </div>
-
-        <Form.Item label="总付数" name="total_doses">
-          <InputNumber min={1} max={99} style={{ width: 120 }} />
-        </Form.Item>
 
         <Form.Item label="注意事项/医嘱" name="notes">
           <Input.TextArea rows={6} placeholder="如：饭后服用、忌辛辣等" />
