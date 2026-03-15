@@ -135,3 +135,44 @@ func (h *RoleHandler) ListPermissions(c *gin.Context) {
 		"data":    permissions,
 	})
 }
+
+// Delete handles DELETE /api/v1/roles/:id.
+func (h *RoleHandler) Delete(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "invalid role id",
+		})
+		return
+	}
+
+	svc := service.NewRoleService(h.db)
+	if err := svc.DeleteRole(tenantID, id); err != nil {
+		if errors.Is(err, service.ErrRoleNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"code":    404,
+				"message": "角色不存在",
+			})
+			return
+		}
+		if errors.Is(err, service.ErrRoleInUse) {
+			c.JSON(http.StatusConflict, gin.H{
+				"code":    409,
+				"message": "该角色仍有用户使用，无法删除",
+			})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "删除角色失败",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+	})
+}

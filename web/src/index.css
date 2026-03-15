@@ -131,6 +131,14 @@ tr.row-highlight > td {
   flex: 1;
 }
 
+/* Current user row highlight in UserList table */
+tr.current-user-row > td {
+  background-color: #fff7e6 !important;
+}
+tr.current-user-row:hover > td {
+  background-color: #ffe7ba !important;
+}
+
 /* Mobile responsive overrides */
 @media (max-width: 767px) {
   /* Section card mobile */

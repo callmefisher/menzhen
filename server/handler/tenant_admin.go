@@ -38,7 +38,8 @@ func (h *TenantAdminHandler) ListUsers(c *gin.Context) {
 	}
 
 	svc := service.NewTenantAdminService(h.db)
-	users, total, err := svc.ListUsers(tenantID, page, size)
+	currentUserID := middleware.GetUserID(c)
+	users, total, err := svc.ListUsers(tenantID, page, size, currentUserID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -86,6 +87,13 @@ func (h *TenantAdminHandler) UpdateUser(c *gin.Context) {
 	svc := service.NewTenantAdminService(h.db)
 	user, err := svc.UpdateUser(tenantID, id, &req)
 	if err != nil {
+		if errors.Is(err, service.ErrProtectedUser) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"code":    403,
+				"message": "无法修改系统管理员账号",
+			})
+			return
+		}
 		if errors.Is(err, service.ErrUserNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{
 				"code":    404,
@@ -123,6 +131,13 @@ func (h *TenantAdminHandler) DisableUser(c *gin.Context) {
 
 	svc := service.NewTenantAdminService(h.db)
 	if err := svc.DisableUser(tenantID, id); err != nil {
+		if errors.Is(err, service.ErrProtectedUser) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"code":    403,
+				"message": "无法禁用系统管理员账号",
+			})
+			return
+		}
 		if errors.Is(err, service.ErrUserNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{
 				"code":    404,
@@ -169,6 +184,13 @@ func (h *TenantAdminHandler) AssignRoles(c *gin.Context) {
 
 	svc := service.NewTenantAdminService(h.db)
 	if err := svc.AssignRoles(tenantID, id, req.RoleIDs); err != nil {
+		if errors.Is(err, service.ErrProtectedUser) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"code":    403,
+				"message": "无法修改系统管理员角色",
+			})
+			return
+		}
 		if errors.Is(err, service.ErrUserNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{
 				"code":    404,
@@ -287,6 +309,47 @@ func (h *TenantAdminHandler) UpdateRole(c *gin.Context) {
 		"code":    0,
 		"message": "success",
 		"data":    role,
+	})
+}
+
+// DeleteRole handles DELETE /tenant/roles/:id.
+func (h *TenantAdminHandler) DeleteRole(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "invalid role id",
+		})
+		return
+	}
+
+	svc := service.NewTenantAdminService(h.db)
+	if err := svc.DeleteRole(tenantID, id); err != nil {
+		if errors.Is(err, service.ErrRoleNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"code":    404,
+				"message": "角色不存在",
+			})
+			return
+		}
+		if errors.Is(err, service.ErrRoleInUse) {
+			c.JSON(http.StatusConflict, gin.H{
+				"code":    409,
+				"message": "该角色仍有用户使用，无法删除",
+			})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "删除角色失败",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
 	})
 }
 

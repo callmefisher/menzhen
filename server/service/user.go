@@ -9,6 +9,32 @@ import (
 
 // ErrUserNotFound is declared in auth.go and reused here.
 
+// ErrProtectedUser is returned when trying to modify a user with system admin privileges.
+var ErrProtectedUser = errors.New("cannot modify a system admin user")
+
+// getAdminUserIDs returns all user IDs that have the "user:manage" permission.
+func getAdminUserIDs(db *gorm.DB) []uint64 {
+	var ids []uint64
+	db.Raw(`
+		SELECT DISTINCT ur.user_id
+		FROM user_roles ur
+		JOIN role_permissions rp ON rp.role_id = ur.role_id
+		JOIN permissions p ON p.id = rp.permission_id
+		WHERE p.code = ?
+	`, "user:manage").Scan(&ids)
+	return ids
+}
+
+// isAdminUser checks whether the given user ID has "user:manage" permission.
+func isAdminUser(db *gorm.DB, userID uint64) bool {
+	for _, id := range getAdminUserIDs(db) {
+		if id == userID {
+			return true
+		}
+	}
+	return false
+}
+
 // UpdateUserRequest is the input for updating an existing user.
 // All fields are pointers so that we can distinguish between "not provided" and "zero value".
 type UpdateUserRequest struct {
@@ -36,11 +62,26 @@ func NewUserService(db *gorm.DB) *UserService {
 
 // ListUsers returns a paginated list of all users across tenants.
 // Results include preloaded Roles and Tenant, ordered by created_at DESC.
-func (s *UserService) ListUsers(page, size int) ([]model.User, int64, error) {
+// Users who have the "user:manage" permission are hidden from others
+// (only visible to themselves).
+func (s *UserService) ListUsers(page, size int, currentUserID uint64) ([]model.User, int64, error) {
+	adminUserIDs := getAdminUserIDs(s.DB)
+
+	// Exclude admin users except the current user.
+	var excludeIDs []uint64
+	for _, id := range adminUserIDs {
+		if id != currentUserID {
+			excludeIDs = append(excludeIDs, id)
+		}
+	}
+
 	var users []model.User
 	var total int64
 
 	query := s.DB.Model(&model.User{})
+	if len(excludeIDs) > 0 {
+		query = query.Where("id NOT IN ?", excludeIDs)
+	}
 
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -86,6 +127,8 @@ func (s *UserService) UpdateUser(tenantID, id uint64, req *UpdateUserRequest) (*
 	}
 	if req.TenantID != nil {
 		updates["tenant_id"] = *req.TenantID
+		// Bump token_version so the user's current JWT becomes stale.
+		updates["token_version"] = gorm.Expr("token_version + 1")
 	}
 	if req.Notes != nil {
 		updates["notes"] = *req.Notes

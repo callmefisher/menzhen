@@ -73,9 +73,10 @@ func setupBillingTestData(t *testing.T) (*BillingService, uint64, uint64, uint64
 	}
 
 	// Create inventory drugs.
+	// Herb prices are in 元/500g, patent prices in 元/盒.
 	drugs := []model.InventoryDrug{
-		{TenantID: tenant.ID, Name: "麻黄", Category: "herb", Stock: 500, SellingPrice: 0.5, PurchasePrice: 0.3},
-		{TenantID: tenant.ID, Name: "桂枝", Category: "herb", Stock: 300, SellingPrice: 0.8, PurchasePrice: 0.5},
+		{TenantID: tenant.ID, Name: "麻黄", Category: "herb", Stock: 500, SellingPrice: 80, PurchasePrice: 50},
+		{TenantID: tenant.ID, Name: "桂枝", Category: "herb", Stock: 300, SellingPrice: 100, PurchasePrice: 60},
 		{TenantID: tenant.ID, Name: "感冒灵", Category: "patent", Stock: 50, SellingPrice: 15, PurchasePrice: 10},
 	}
 	for _, drug := range drugs {
@@ -96,22 +97,28 @@ func TestGetBillingDetail(t *testing.T) {
 	assert.Equal(t, 7, detail.TotalDoses)
 	assert.Len(t, detail.Items, 3)
 
-	// 麻黄: 9 × 0.5 × 7 = 31.5
-	assert.InDelta(t, 31.5, detail.Items[0].ItemCost, 0.01)
+	// 麻黄: 9 × (80/500) × 7 = 9 × 0.16 × 7 = 10.08
+	assert.InDelta(t, 10.08, detail.Items[0].ItemCost, 0.01)
+	assert.InDelta(t, 0.16, detail.Items[0].UnitPrice, 0.001)
+	assert.Equal(t, 7, detail.Items[0].Doses)
 	assert.True(t, detail.Items[0].InStock)
 
-	// 桂枝: 6 × 0.8 × 7 = 33.6
-	assert.InDelta(t, 33.6, detail.Items[1].ItemCost, 0.01)
+	// 桂枝: 6 × (100/500) × 7 = 6 × 0.2 × 7 = 8.4
+	assert.InDelta(t, 8.4, detail.Items[1].ItemCost, 0.01)
+	assert.InDelta(t, 0.2, detail.Items[1].UnitPrice, 0.001)
+	assert.Equal(t, 7, detail.Items[1].Doses)
 
-	// 感冒灵: 2 × 15 × 7 = 210
-	assert.InDelta(t, 210, detail.Items[2].ItemCost, 0.01)
+	// 感冒灵 (patent): 2 × 15 = 30 (no dose multiplier)
+	assert.InDelta(t, 30, detail.Items[2].ItemCost, 0.01)
+	assert.InDelta(t, 15.0, detail.Items[2].UnitPrice, 0.01)
+	assert.Equal(t, 1, detail.Items[2].Doses) // patents have doses=1
 
-	// Total drug cost: 31.5 + 33.6 + 210 = 275.1
-	assert.InDelta(t, 275.1, detail.DrugCostTotal, 0.01)
+	// Total drug cost: 10.08 + 8.4 + 30 = 48.48
+	assert.InDelta(t, 48.48, detail.DrugCostTotal, 0.01)
 
-	// Default consultation fee = 100, total = 375.1
+	// Default consultation fee = 100, total = 148.48
 	assert.InDelta(t, 100, detail.ConsultationFee, 0.01)
-	assert.InDelta(t, 375.1, detail.TotalAmount, 0.01)
+	assert.InDelta(t, 148.48, detail.TotalAmount, 0.01)
 	assert.False(t, detail.StockDeducted)
 }
 
@@ -187,8 +194,8 @@ func TestDeductStockAndBill(t *testing.T) {
 
 	var ganmaoling model.InventoryDrug
 	require.NoError(t, svc.DB.Where("tenant_id = ? AND name = ?", tenantID, "感冒灵").First(&ganmaoling).Error)
-	// 50 - (2 × 7) = 36
-	assert.InDelta(t, 36, ganmaoling.Stock, 0.01)
+	// Patent: 50 - 2 = 48 (no dose multiplier for patents)
+	assert.InDelta(t, 48, ganmaoling.Stock, 0.01)
 }
 
 func TestDeductStockAndBill_PreventDuplicate(t *testing.T) {
@@ -219,7 +226,7 @@ func TestDeductStockAndBill_InsufficientStock(t *testing.T) {
 	require.NoError(t, db.Create(&item).Error)
 
 	// Only 10g in stock, but need 9 × 100 = 900.
-	drug := model.InventoryDrug{TenantID: tenant.ID, Name: "麻黄", Category: "herb", Stock: 10, SellingPrice: 0.5}
+	drug := model.InventoryDrug{TenantID: tenant.ID, Name: "麻黄", Category: "herb", Stock: 10, SellingPrice: 80}
 	require.NoError(t, db.Create(&drug).Error)
 
 	svc := NewBillingService(db)
@@ -278,4 +285,54 @@ func TestBillingTenantIsolation(t *testing.T) {
 	// Tenant 2 cannot access tenant 1's prescription.
 	_, err = svc.GetBillingDetail(tenant2.ID, presc1.ID)
 	assert.ErrorIs(t, err, ErrPrescriptionNotFound)
+}
+
+func TestGetRecordBillingDetail(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	tenant := testutil.SeedTestTenant(t, db, "test", "record-billing")
+	user, _ := testutil.SeedTestUser(t, db, tenant.ID, "doc", "pass", nil)
+	patient := testutil.SeedTestPatient(t, db, tenant.ID, user.ID, "张三")
+
+	record := model.MedicalRecord{TenantID: tenant.ID, PatientID: patient.ID, CreatedBy: user.ID, VisitDate: time.Now()}
+	require.NoError(t, db.Create(&record).Error)
+
+	svc := NewBillingService(db)
+
+	// Get detail for record with no billing yet.
+	detail, err := svc.GetRecordBillingDetail(tenant.ID, record.ID)
+	require.NoError(t, err)
+	assert.Equal(t, uint64(0), detail.PrescriptionID)
+	assert.Equal(t, record.ID, detail.RecordID)
+	assert.Empty(t, detail.Items)
+	assert.InDelta(t, 0, detail.DrugCostTotal, 0.01)
+	assert.InDelta(t, 100, detail.ConsultationFee, 0.01) // default
+	assert.InDelta(t, 100, detail.TotalAmount, 0.01)
+}
+
+func TestCreateRecordBilling(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	tenant := testutil.SeedTestTenant(t, db, "test", "record-billing-create")
+	user, _ := testutil.SeedTestUser(t, db, tenant.ID, "doc", "pass", nil)
+	patient := testutil.SeedTestPatient(t, db, tenant.ID, user.ID, "李四")
+
+	record := model.MedicalRecord{TenantID: tenant.ID, PatientID: patient.ID, CreatedBy: user.ID, VisitDate: time.Now()}
+	require.NoError(t, db.Create(&record).Error)
+
+	svc := NewBillingService(db)
+
+	// Create record-level billing.
+	req := &CreateBillingRequest{ConsultationFee: 200, ActualPaid: 200}
+	billing, err := svc.CreateRecordBilling(tenant.ID, user.ID, record.ID, req)
+	require.NoError(t, err)
+	assert.Equal(t, uint64(0), billing.PrescriptionID)
+	assert.Equal(t, record.ID, billing.RecordID)
+	assert.InDelta(t, 200, billing.ConsultationFee, 0.01)
+	assert.InDelta(t, 200, billing.ActualPaid, 0.01)
+
+	// Update existing record-level billing.
+	req2 := &CreateBillingRequest{ConsultationFee: 150, ActualPaid: 150}
+	billing2, err := svc.CreateRecordBilling(tenant.ID, user.ID, record.ID, req2)
+	require.NoError(t, err)
+	assert.Equal(t, billing.ID, billing2.ID) // Same billing record.
+	assert.InDelta(t, 150, billing2.ConsultationFee, 0.01)
 }

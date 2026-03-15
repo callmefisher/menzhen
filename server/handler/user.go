@@ -33,7 +33,8 @@ func (h *UserHandler) List(c *gin.Context) {
 	}
 
 	svc := service.NewUserService(h.db)
-	users, total, err := svc.ListUsers(page, size)
+	currentUserID := middleware.GetUserID(c)
+	users, total, err := svc.ListUsers(page, size, currentUserID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,

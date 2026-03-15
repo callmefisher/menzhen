@@ -55,7 +55,7 @@ const BillingPrint = forwardRef<BillingPrintHandle, BillingPrintProps>(
                 .billing-print .info-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; }
                 .billing-print .divider { border-top: 1px solid #000; margin: 12px 0; }
                 .billing-print table { width: 100%; border-collapse: collapse; font-size: 13px; }
-                .billing-print th, .billing-print td { border: 1px solid #999; padding: 4px 8px; text-align: left; }
+                .billing-print th, .billing-print td { border: 1px solid #999; padding: 4px 8px; text-align: center; vertical-align: middle; }
                 .billing-print th { background: #f0f0f0; font-weight: bold; }
                 .billing-print .text-right { text-align: right; }
                 .billing-print .summary { font-size: 14px; margin-top: 12px; }
@@ -96,28 +96,34 @@ const BillingPrint = forwardRef<BillingPrintHandle, BillingPrintProps>(
 
             {herbs.length > 0 && (
               <>
-                <div style={{ fontSize: 13, fontWeight: 'bold', marginBottom: 4 }}>中药明细（{detail.total_doses}付）：</div>
+                <div style={{ fontSize: 13, fontWeight: 'bold', marginBottom: 4 }}>中药明细：</div>
                 <table>
                   <thead>
                     <tr>
                       <th>药名</th>
-                      <th className="text-right">用量</th>
-                      <th className="text-right">单价(元/克)</th>
-                      <th className="text-right">小计(元)</th>
+                      <th>用量</th>
+                      <th>单价(元/克)</th>
+                      <th>小计(元)</th>
                     </tr>
                   </thead>
                   <tbody>
                     {herbs.map((item, idx) => (
                       <tr key={idx}>
                         <td>{item.herb_name}{!item.in_stock && ' *'}</td>
-                        <td className="text-right">{item.dosage_val}g × {item.doses}付</td>
-                        <td className="text-right">{item.in_stock ? item.unit_price.toFixed(2) : '-'}</td>
-                        <td className="text-right">{item.item_cost.toFixed(2)}</td>
+                        <td>{item.dosage_val}g × {item.doses}付</td>
+                        <td>{item.in_stock ? item.unit_price.toFixed(2) : '-'}</td>
+                        <td>{item.item_cost.toFixed(2)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </>
+            )}
+
+            {detail.total_doses > 0 && (
+              <div style={{ textAlign: 'right', fontSize: 13, marginTop: 6, marginBottom: 2 }}>
+                共 <b>{detail.total_doses}</b> 付
+              </div>
             )}
 
             {patents.length > 0 && (
@@ -127,18 +133,18 @@ const BillingPrint = forwardRef<BillingPrintHandle, BillingPrintProps>(
                   <thead>
                     <tr>
                       <th>药名</th>
-                      <th className="text-right">用量</th>
-                      <th className="text-right">单价(元/盒)</th>
-                      <th className="text-right">小计(元)</th>
+                      <th>用量</th>
+                      <th>单价(元/盒)</th>
+                      <th>小计(元)</th>
                     </tr>
                   </thead>
                   <tbody>
                     {patents.map((item, idx) => (
                       <tr key={idx}>
                         <td>{item.herb_name}{!item.in_stock && ' *'}</td>
-                        <td className="text-right">{item.dosage_val}盒 × {item.doses}付</td>
-                        <td className="text-right">{item.in_stock ? item.unit_price.toFixed(2) : '-'}</td>
-                        <td className="text-right">{item.item_cost.toFixed(2)}</td>
+                        <td>{item.dosage_val}盒</td>
+                        <td>{item.in_stock ? item.unit_price.toFixed(2) : '-'}</td>
+                        <td>{item.item_cost.toFixed(2)}</td>
                       </tr>
                     ))}
                   </tbody>

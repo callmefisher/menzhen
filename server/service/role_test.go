@@ -129,6 +129,43 @@ func TestUpdateRole_NotFound(t *testing.T) {
 	assert.ErrorIs(t, err, service.ErrRoleNotFound)
 }
 
+func TestDeleteRole_Success(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	tenant := testutil.SeedTestTenant(t, db, "诊所", "del-role")
+
+	svc := service.NewRoleService(db)
+	role, err := svc.CreateRole(tenant.ID, &service.CreateRoleRequest{Name: "待删除"})
+	assert.NoError(t, err)
+
+	err = svc.DeleteRole(tenant.ID, role.ID)
+	assert.NoError(t, err)
+
+	// Verify role is gone.
+	roles, err := svc.ListRoles(tenant.ID)
+	assert.NoError(t, err)
+	assert.Empty(t, roles)
+}
+
+func TestDeleteRole_InUse(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	tenant := testutil.SeedTestTenant(t, db, "诊所", "del-role-inuse")
+	role := testutil.SeedTestRole(t, db, tenant.ID, "使用中")
+	testutil.SeedTestUser(t, db, tenant.ID, "user1", "pass", role)
+
+	svc := service.NewRoleService(db)
+	err := svc.DeleteRole(tenant.ID, role.ID)
+	assert.ErrorIs(t, err, service.ErrRoleInUse)
+}
+
+func TestDeleteRole_NotFound(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	tenant := testutil.SeedTestTenant(t, db, "诊所", "del-role-nf")
+
+	svc := service.NewRoleService(db)
+	err := svc.DeleteRole(tenant.ID, 99999)
+	assert.ErrorIs(t, err, service.ErrRoleNotFound)
+}
+
 func TestListPermissions(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 

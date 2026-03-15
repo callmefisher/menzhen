@@ -145,6 +145,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			roles.GET("", middleware.RequirePermission(db, "role:manage"), roleHandler.List)
 			roles.POST("", middleware.RequirePermission(db, "role:manage"), roleHandler.Create)
 			roles.PUT("/:id", middleware.RequirePermission(db, "role:manage"), roleHandler.Update)
+			roles.DELETE("/:id", middleware.RequirePermission(db, "role:manage"), roleHandler.Delete)
 		}
 
 		// Permissions list route.
@@ -176,6 +177,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 				tenantRoles.GET("", tenantAdminHandler.ListRoles)
 				tenantRoles.POST("", tenantAdminHandler.CreateRole)
 				tenantRoles.PUT("/:id", tenantAdminHandler.UpdateRole)
+				tenantRoles.DELETE("/:id", tenantAdminHandler.DeleteRole)
 			}
 			tenantAdmin.GET("/permissions",
 				middleware.RequirePermission(db, "tenant:role:manage", "role:manage"),

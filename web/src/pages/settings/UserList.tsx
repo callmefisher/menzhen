@@ -68,7 +68,7 @@ export default function UserList() {
   const [total, setTotal] = useState(0);
   const [params, setParams] = useState<ListParams>({ page: 1, size: 20 });
   const isMobile = useIsMobile();
-  const { hasPermission } = useAuth();
+  const { hasPermission, user: currentUser } = useAuth();
   const isGlobalAdmin = hasPermission('user:manage');
 
   // Edit modal state
@@ -221,7 +221,15 @@ export default function UserList() {
       title: '用户名',
       dataIndex: 'username',
       key: 'username',
-      width: 120,
+      width: 140,
+      render: (val: string, record: UserItem) => (
+        <span>
+          {val}
+          {record.id === currentUser?.id && (
+            <Tag color="orange" style={{ marginLeft: 6, fontSize: 11 }}>当前</Tag>
+          )}
+        </span>
+      ),
     },
     {
       title: '真实姓名',
@@ -331,19 +339,23 @@ export default function UserList() {
           <Empty description="暂无用户记录" />
         ) : (
           <>
-            {data.map((record) => (
+            {data.map((record) => {
+              const isCurrentUser = record.id === currentUser?.id;
+              return (
               <div
                 key={record.id}
                 style={{
-                  background: '#fafafa',
+                  background: isCurrentUser ? '#fff7e6' : '#fafafa',
                   borderRadius: 8,
                   padding: 12,
                   marginBottom: 8,
+                  border: isCurrentUser ? '1px solid #ffd591' : '1px solid transparent',
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                   <div>
                     <span style={{ fontWeight: 600, fontSize: 15 }}>{record.username}</span>
+                    {isCurrentUser && <Tag color="orange" style={{ marginLeft: 6, fontSize: 11 }}>当前</Tag>}
                     {record.real_name && <span style={{ color: '#666', marginLeft: 8, fontSize: 13 }}>{record.real_name}</span>}
                   </div>
                   {record.status === 1 ? <Tag color="green">启用</Tag> : <Tag color="red">禁用</Tag>}
@@ -371,7 +383,8 @@ export default function UserList() {
                   </Popconfirm>
                 </div>
               </div>
-            ))}
+              );
+            })}
             {total > params.size && (
               <div style={{ textAlign: 'center', marginTop: 12 }}>
                 <Pagination
@@ -392,6 +405,9 @@ export default function UserList() {
           columns={columns}
           dataSource={data}
           loading={loading}
+          rowClassName={(record) =>
+            record.id === currentUser?.id ? 'current-user-row' : ''
+          }
           pagination={{
             current: params.page,
             pageSize: params.size,

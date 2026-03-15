@@ -5,32 +5,37 @@ import (
 	"strings"
 	"time"
 
+	"github.com/callmefisher/menzhen/server/model"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"gorm.io/gorm"
 )
 
 // Context keys used by the auth middleware.
 const (
-	CtxKeyUserID   = "user_id"
-	CtxKeyTenantID = "tenant_id"
-	CtxKeyUsername = "username"
+	CtxKeyUserID       = "user_id"
+	CtxKeyTenantID     = "tenant_id"
+	CtxKeyUsername     = "username"
+	CtxKeyTokenVersion = "token_version"
 )
 
 // Claims represents the JWT claims for an authenticated user.
 type Claims struct {
-	UserID   uint64 `json:"user_id"`
-	TenantID uint64 `json:"tenant_id"`
-	Username string `json:"username"`
+	UserID       uint64 `json:"user_id"`
+	TenantID     uint64 `json:"tenant_id"`
+	Username     string `json:"username"`
+	TokenVersion int64  `json:"token_version"`
 	jwt.RegisteredClaims
 }
 
 // GenerateToken creates a signed JWT token with user information.
 // The token expires after 24 hours.
-func GenerateToken(userID uint64, tenantID uint64, username string, secret string) (string, error) {
+func GenerateToken(userID uint64, tenantID uint64, username string, tokenVersion int64, secret string) (string, error) {
 	claims := Claims{
-		UserID:   userID,
-		TenantID: tenantID,
-		Username: username,
+		UserID:       userID,
+		TenantID:     tenantID,
+		Username:     username,
+		TokenVersion: tokenVersion,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -82,6 +87,7 @@ func AuthMiddleware(secret string) gin.HandlerFunc {
 		c.Set(CtxKeyUserID, claims.UserID)
 		c.Set(CtxKeyTenantID, claims.TenantID)
 		c.Set(CtxKeyUsername, claims.Username)
+		c.Set(CtxKeyTokenVersion, claims.TokenVersion)
 
 		c.Next()
 	}
@@ -106,4 +112,42 @@ func GetUsername(c *gin.Context) string {
 	v, _ := c.Get(CtxKeyUsername)
 	name, _ := v.(string)
 	return name
+}
+
+// GetTokenVersion extracts the token version from the Gin context.
+func GetTokenVersion(c *gin.Context) int64 {
+	v, _ := c.Get(CtxKeyTokenVersion)
+	ver, _ := v.(int64)
+	return ver
+}
+
+// TokenVersionMiddleware checks that the JWT's token_version matches the DB.
+// Returns HTTP 409 with "token_refresh_required" when mismatched, signalling
+// the frontend to call /auth/refresh.
+func TokenVersionMiddleware(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID := GetUserID(c)
+		if userID == 0 {
+			c.Next()
+			return
+		}
+
+		jwtVersion := GetTokenVersion(c)
+
+		var user model.User
+		if err := db.Select("token_version").First(&user, userID).Error; err != nil {
+			c.Next()
+			return
+		}
+
+		if jwtVersion != user.TokenVersion {
+			c.AbortWithStatusJSON(http.StatusConflict, gin.H{
+				"code":    409,
+				"message": "token_refresh_required",
+			})
+			return
+		}
+
+		c.Next()
+	}
 }

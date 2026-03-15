@@ -30,7 +30,7 @@ func setupAuthRouter() *gin.Engine {
 }
 
 func TestAuthMiddleware_ValidToken(t *testing.T) {
-	token, err := GenerateToken(1, 10, "testuser", testSecret)
+	token, err := GenerateToken(1, 10, "testuser", 0, testSecret)
 	assert.NoError(t, err)
 
 	r := setupAuthRouter()
@@ -94,7 +94,7 @@ func TestAuthMiddleware_ExpiredToken(t *testing.T) {
 }
 
 func TestAuthMiddleware_WrongSecret(t *testing.T) {
-	token, _ := GenerateToken(1, 10, "testuser", "wrong-secret")
+	token, _ := GenerateToken(1, 10, "testuser", 0, "wrong-secret")
 
 	r := setupAuthRouter()
 	req := httptest.NewRequest("GET", "/protected", nil)
@@ -116,13 +116,13 @@ func TestAuthMiddleware_MalformedJWT(t *testing.T) {
 }
 
 func TestGenerateToken_Success(t *testing.T) {
-	token, err := GenerateToken(42, 100, "admin", testSecret)
+	token, err := GenerateToken(42, 100, "admin", 0, testSecret)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, token)
 }
 
 func TestGenerateToken_ClaimsRoundTrip(t *testing.T) {
-	token, err := GenerateToken(42, 100, "admin", testSecret)
+	token, err := GenerateToken(42, 100, "admin", 5, testSecret)
 	assert.NoError(t, err)
 
 	claims := &Claims{}
@@ -134,6 +134,7 @@ func TestGenerateToken_ClaimsRoundTrip(t *testing.T) {
 	assert.Equal(t, uint64(42), claims.UserID)
 	assert.Equal(t, uint64(100), claims.TenantID)
 	assert.Equal(t, "admin", claims.Username)
+	assert.Equal(t, int64(5), claims.TokenVersion)
 }
 
 func TestGetUserID_NoContext(t *testing.T) {
@@ -160,8 +161,16 @@ func TestContextHelpers_WithValues(t *testing.T) {
 	c.Set(CtxKeyUserID, uint64(42))
 	c.Set(CtxKeyTenantID, uint64(100))
 	c.Set(CtxKeyUsername, "admin")
+	c.Set(CtxKeyTokenVersion, int64(3))
 
 	assert.Equal(t, uint64(42), GetUserID(c))
 	assert.Equal(t, uint64(100), GetTenantID(c))
 	assert.Equal(t, "admin", GetUsername(c))
+	assert.Equal(t, int64(3), GetTokenVersion(c))
+}
+
+func TestGetTokenVersion_NoContext(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	assert.Equal(t, int64(0), GetTokenVersion(c))
 }
