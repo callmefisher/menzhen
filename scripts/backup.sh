@@ -84,8 +84,8 @@ for attempt in $(seq 1 ${MYSQL_UPLOAD_MAX}); do
         break
     fi
     if [ "${attempt}" -lt "${MYSQL_UPLOAD_MAX}" ]; then
-        echo ">> Upload failed, retrying in 10s..."
-        sleep 10
+        echo ">> Upload failed, retrying in 30s..."
+        sleep 30
     fi
 done
 if [ "${MYSQL_UPLOAD_OK}" = false ]; then

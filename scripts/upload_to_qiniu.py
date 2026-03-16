@@ -15,6 +15,11 @@ import os
 import sys
 
 from qiniu import Auth, put_file_v2, etag
+from qiniu import config as qiniu_config
+
+# Default 30s timeout is too short for large files.
+# 600s per request — for resumable upload each chunk is 4MB, plenty of headroom.
+qiniu_config.set_default(connection_timeout=600)
 
 
 def main():
@@ -40,17 +45,22 @@ def main():
     filename = os.path.basename(local_file)
     key = f"{key_prefix}{filename}"
 
+    file_size = os.path.getsize(local_file)
+    threshold = qiniu_config.get_default("default_upload_threshold")
+    mode = "resumable" if file_size > threshold else "form"
+    print(f"Uploading {local_file} -> {bucket_name}/{key} ({file_size} bytes, {mode} upload) ...")
+
     # Auth and upload
     q = Auth(access_key, secret_key)
-    token = q.upload_token(bucket_name, key, 3600)
+    token = q.upload_token(bucket_name, key, 7200)
 
-    print(f"Uploading {local_file} -> {bucket_name}/{key} ...")
     ret, info = put_file_v2(token, key, local_file, version='v2')
 
     if info.status_code == 200:
-        print(f"Upload success: {key} (hash: {ret.get('hash', 'N/A')})")
+        print(f"Upload success: {key} (hash: {ret.get('hash', 'N/A')}, {file_size} bytes)")
     else:
-        print(f"Upload failed: status={info.status_code}, body={info.text_body}", file=sys.stderr)
+        exc = getattr(info, 'exception', None)
+        print(f"Upload failed: status={info.status_code}, body={info.text_body}, exception={exc}", file=sys.stderr)
         sys.exit(1)
 
 

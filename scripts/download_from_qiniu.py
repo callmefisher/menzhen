@@ -2,10 +2,14 @@
 # -*- coding: utf-8 -*-
 """Download latest backup files from Qiniu cloud storage.
 
-Usage: python3 download_from_qiniu.py [--type mysql|minio|all]
+Usage:
+  python3 download_from_qiniu.py [--type mysql|minio|all]
+  python3 download_from_qiniu.py --action list [--type mysql|minio|all]
 
 Downloads the latest MySQL .sql and/or MinIO .tar.gz backup files
 from Qiniu cloud storage to /backups/ directory.
+
+With --action list, outputs JSON file list without downloading.
 
 Environment variables:
   QINIU_ACCESS_KEY  - Qiniu Access Key (required)
@@ -17,6 +21,7 @@ Environment variables:
 """
 
 import os
+import json
 import re
 import sys
 import urllib.request
@@ -53,19 +58,76 @@ def make_download_url(auth, domain, key, use_https=True):
     return auth.private_download_url(base_url, expires=3600)
 
 
+def list_files_json(bucket_mgr, bucket_name, key_prefix, site_id, download_type):
+    """List backup files and output as JSON for API consumption."""
+    results = {"mysql": [], "minio": []}
+
+    if download_type in ("mysql", "all"):
+        # Try SITE_ID-scoped prefix first
+        site_prefix = f"{key_prefix}{site_id}/"
+        items = list_files(bucket_mgr, bucket_name, prefix=site_prefix)
+        sql_files = [
+            item for item in items
+            if item["key"].endswith(".sql")
+            and "/" not in item["key"][len(site_prefix):]
+        ]
+        # Fallback to legacy prefix
+        if not sql_files:
+            items = list_files(bucket_mgr, bucket_name, prefix=key_prefix)
+            sql_files = [
+                item for item in items
+                if item["key"].endswith(".sql")
+                and "/" not in item["key"][len(key_prefix):]
+            ]
+        for item in sql_files:
+            results["mysql"].append({
+                "filename": os.path.basename(item["key"]),
+                "key": item["key"],
+                "size": item.get("fsize", 0),
+                "modified": item.get("putTime", 0) // 10000000,
+            })
+
+    if download_type in ("minio", "all"):
+        # Try SITE_ID-scoped prefix first
+        minio_prefix = f"{key_prefix}{site_id}/minio/"
+        items = list_files(bucket_mgr, bucket_name, prefix=minio_prefix)
+        tar_files = [item for item in items if item["key"].endswith(".tar.gz")]
+        # Fallback to legacy prefix
+        if not tar_files:
+            legacy_minio_prefix = f"{key_prefix}minio/"
+            items = list_files(bucket_mgr, bucket_name, prefix=legacy_minio_prefix)
+            tar_files = [item for item in items if item["key"].endswith(".tar.gz")]
+        for item in tar_files:
+            results["minio"].append({
+                "filename": os.path.basename(item["key"]),
+                "key": item["key"],
+                "size": item.get("fsize", 0),
+                "modified": item.get("putTime", 0) // 10000000,
+            })
+
+    print(json.dumps(results))
+
+
 def main():
     # Parse args
     download_type = "all"
+    action = "download"
     i = 1
     while i < len(sys.argv):
         if sys.argv[i] == "--type" and i + 1 < len(sys.argv):
             download_type = sys.argv[i + 1]
             i += 2
+        elif sys.argv[i] == "--action" and i + 1 < len(sys.argv):
+            action = sys.argv[i + 1]
+            i += 2
         else:
             i += 1
 
     if download_type not in ("mysql", "minio", "all"):
-        print("Usage: download_from_qiniu.py [--type mysql|minio|all]", file=sys.stderr)
+        print("Usage: download_from_qiniu.py [--action download|list] [--type mysql|minio|all]", file=sys.stderr)
+        sys.exit(1)
+    if action not in ("download", "list"):
+        print("Usage: download_from_qiniu.py [--action download|list] [--type mysql|minio|all]", file=sys.stderr)
         sys.exit(1)
 
     access_key = os.environ.get("QINIU_ACCESS_KEY", "")
@@ -86,6 +148,11 @@ def main():
 
     auth = Auth(access_key, secret_key)
     bucket_mgr = BucketManager(auth)
+
+    # List mode: output JSON and exit
+    if action == "list":
+        list_files_json(bucket_mgr, bucket_name, key_prefix, site_id, download_type)
+        sys.exit(0)
 
     downloaded = {"mysql": None, "minio": None}
 
