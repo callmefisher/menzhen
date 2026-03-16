@@ -10,6 +10,8 @@ import {
   message,
   Card,
   Pagination,
+  Spin,
+  Tag,
 } from 'antd';
 import {
   PlusOutlined,
@@ -17,6 +19,8 @@ import {
   EditOutlined,
   DeleteOutlined,
   EyeOutlined,
+  MedicineBoxOutlined,
+  CalendarOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { Dayjs } from 'dayjs';
@@ -156,10 +160,15 @@ export default function RecordList() {
       title: '就诊日期',
       dataIndex: 'visit_date',
       key: 'visit_date',
-      width: 120,
+      width: 130,
       defaultSortOrder: 'descend',
       sorter: (a, b) =>
         new Date(a.visit_date).getTime() - new Date(b.visit_date).getTime(),
+      render: (val: string) => (
+        <Tag style={{ background: 'linear-gradient(135deg, #fff7e6, #ffe7ba)', border: 'none', color: '#AD6800' }}>
+          <CalendarOutlined style={{ marginRight: 4 }} />{val}
+        </Tag>
+      ),
     },
     {
       title: '诊断摘要',
@@ -211,24 +220,24 @@ export default function RecordList() {
 
   // --- Mobile record card ---
   const renderMobileRecordCard = (record: RecordListItem) => (
-    <Card
+    <div
       key={record.id}
-      size="small"
+      className="warm-list-card"
       data-record-id={record.id}
-      style={{ marginBottom: 8 }}
-      styles={{ body: { padding: '10px 12px' } }}
       onClick={() => navigate(`/records/${record.id}`)}
     >
       {/* Row 1: patient name + visit date */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-        <span style={{ fontWeight: 600, fontSize: 15 }}>{record.patient_name}</span>
-        <span style={{ fontSize: 12, color: '#999' }}>{record.visit_date}</span>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <span style={{ fontWeight: 600, fontSize: 16, color: '#5C4A32' }}>{record.patient_name}</span>
+        <Tag style={{ background: 'linear-gradient(135deg, #fff7e6, #ffe7ba)', border: 'none', color: '#AD6800', margin: 0, fontSize: 12 }}>
+          <CalendarOutlined style={{ marginRight: 3 }} />{record.visit_date}
+        </Tag>
       </div>
       {/* Row 2: diagnosis */}
-      <div style={{ fontSize: 13, color: '#666', marginBottom: 8, lineHeight: 1.4 }}>
+      <div style={{ fontSize: 13, color: '#8B7355', marginBottom: 8, lineHeight: 1.5 }}>
         {record.diagnosis
           ? (record.diagnosis.length > 60 ? record.diagnosis.slice(0, 60) + '...' : record.diagnosis)
-          : '暂无诊断'}
+          : <span style={{ color: '#BFB8A8' }}>暂无诊断</span>}
       </div>
       {/* Row 3: actions */}
       <div style={{ display: 'flex', gap: 8 }} onClick={(e) => e.stopPropagation()}>
@@ -246,14 +255,28 @@ export default function RecordList() {
           </Button>
         </Popconfirm>
       </div>
-    </Card>
+    </div>
+  );
+
+  // --- Empty state ---
+  const renderEmpty = () => (
+    <div className="warm-empty">
+      <div className="warm-empty-icon">
+        <MedicineBoxOutlined style={{ color: '#D4B896' }} />
+      </div>
+      <div className="warm-empty-text">暂无诊疗记录</div>
+      <div className="warm-empty-sub">点击「新增诊疗记录」开始记录</div>
+    </div>
   );
 
   return (
-    <Card styles={isMobile ? { body: { padding: 12 } } : undefined}>
+    <Card
+      className="warm-card"
+      styles={isMobile ? { body: { padding: 12 } } : undefined}
+    >
       {/* Search bar */}
       {isMobile ? (
-        <div style={{ marginBottom: 12 }}>
+        <div className="warm-search-bar" style={{ marginBottom: 12 }}>
           <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
             <Input
               placeholder="搜索患者姓名"
@@ -263,7 +286,7 @@ export default function RecordList() {
               allowClear
               style={{ flex: 1 }}
             />
-            <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>
+            <Button type="primary" className="warm-btn-primary" icon={<SearchOutlined />} onClick={handleSearch}>
               搜索
             </Button>
           </div>
@@ -283,52 +306,47 @@ export default function RecordList() {
             <Button size="small" onClick={handleReset}>重置</Button>
           </div>
           <div style={{ marginTop: 8 }}>
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/records/new')} block>
+            <Button type="primary" className="warm-btn-primary" icon={<PlusOutlined />} onClick={() => navigate('/records/new')} block>
               新增诊疗记录
             </Button>
           </div>
         </div>
       ) : (
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            marginBottom: 16,
-            flexWrap: 'wrap',
-            gap: 12,
-          }}
-        >
-          <Space wrap>
-            <Input
-              placeholder="搜索患者姓名"
-              value={searchName}
-              onChange={(e) => setSearchName(e.target.value)}
-              onPressEnter={handleSearch}
-              style={{ width: 200 }}
-              allowClear
-            />
-            <RangePicker
-              value={searchDateRange}
-              onChange={(dates) => {
-                if (dates && dates[0] && dates[1]) {
-                  setSearchDateRange([dates[0], dates[1]]);
-                } else {
-                  setSearchDateRange(null);
-                }
-              }}
-            />
-            <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>
-              搜索
+        <div className="warm-search-bar">
+          <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+            <Space wrap>
+              <Input
+                placeholder="搜索患者姓名"
+                value={searchName}
+                onChange={(e) => setSearchName(e.target.value)}
+                onPressEnter={handleSearch}
+                style={{ width: 200 }}
+                allowClear
+              />
+              <RangePicker
+                value={searchDateRange}
+                onChange={(dates) => {
+                  if (dates && dates[0] && dates[1]) {
+                    setSearchDateRange([dates[0], dates[1]]);
+                  } else {
+                    setSearchDateRange(null);
+                  }
+                }}
+              />
+              <Button type="primary" className="warm-btn-primary" icon={<SearchOutlined />} onClick={handleSearch}>
+                搜索
+              </Button>
+              <Button onClick={handleReset}>重置</Button>
+            </Space>
+            <Button
+              type="primary"
+              className="warm-btn-primary"
+              icon={<PlusOutlined />}
+              onClick={() => navigate('/records/new')}
+            >
+              新增诊疗记录
             </Button>
-            <Button onClick={handleReset}>重置</Button>
-          </Space>
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => navigate('/records/new')}
-          >
-            新增诊疗记录
-          </Button>
+          </div>
         </div>
       )}
 
@@ -336,9 +354,9 @@ export default function RecordList() {
       {isMobile ? (
         <>
           {loading ? (
-            <div style={{ textAlign: 'center', padding: 32, color: '#999' }}>加载中...</div>
+            <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
           ) : data.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 32, color: '#999' }}>暂无诊疗记录</div>
+            renderEmpty()
           ) : (
             data.map(renderMobileRecordCard)
           )}
@@ -375,7 +393,7 @@ export default function RecordList() {
             },
           }}
           locale={{
-            emptyText: '暂无诊疗记录',
+            emptyText: renderEmpty(),
           }}
         />
       )}

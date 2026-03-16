@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UI 配色方案预览</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f0f0; padding: 16px; }
+  h1 { text-align: center; color: #333; margin-bottom: 4px; font-size: 18px; }
+  .subtitle { text-align: center; color: #999; font-size: 13px; margin-bottom: 16px; }
+
+  .sidebar-tabs { display: flex; gap: 6px; justify-content: center; margin-bottom: 20px; flex-wrap: wrap; }
+  .sidebar-tabs .label { font-size: 13px; color: #999; line-height: 30px; }
+  .tab { padding: 4px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; border: 1px solid #ddd; background: #fff; color: #666; transition: all 0.2s; display: inline-block; }
+  .tab.active { background: #52C41A; color: #fff; border-color: #52C41A; }
+
+  .section-title { font-size: 16px; font-weight: 700; color: #333; margin: 24px 0 12px; padding-left: 10px; border-left: 4px solid #52C41A; }
+
+  .scheme { margin-bottom: 20px; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+  .scheme-label { padding: 10px 16px; font-weight: 600; font-size: 14px; color: #444; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 8px; }
+  .scheme-label .stag { font-size: 11px; padding: 2px 8px; border-radius: 10px; color: #fff; }
+
+  /* Table styles */
+  .table-area { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 500px; }
+  th { padding: 10px 12px; text-align: left; font-weight: 600; font-size: 13px; white-space: nowrap; }
+  td { padding: 10px 12px; border-bottom: 1px solid #f5f5f5; color: #555; white-space: nowrap; }
+  .tag-male { background: linear-gradient(135deg, #e6f4ff, #bae0ff); color: #1677ff; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  .tag-female { background: linear-gradient(135deg, #fff0f6, #ffadd2); color: #c41d7f; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  .action { color: #52C41A; font-size: 12px; margin-right: 8px; cursor: default; }
+  .action.danger { color: #ff4d4f; }
+
+  /* Search bar */
+  .search-bar-preview { padding: 12px 16px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .search-bar-preview input { padding: 6px 12px; border: 1px solid #d9d9d9; border-radius: 8px; font-size: 13px; width: 160px; }
+  .search-bar-preview .btn { padding: 6px 14px; border-radius: 8px; font-size: 13px; border: none; cursor: default; }
+  .search-bar-preview .btn-search { background: linear-gradient(135deg, #52C41A, #73D13D); color: #fff; }
+  .search-bar-preview .btn-reset { background: #fff; border: 1px solid #d9d9d9; color: #666; }
+  .search-bar-preview .btn-add { background: linear-gradient(135deg, #52C41A, #73D13D); color: #fff; margin-left: auto; }
+
+  /* Button preview area */
+  .btn-preview-area { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+  .btn-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .btn-row .label { font-size: 12px; color: #999; min-width: 60px; }
+
+  /* Header bar mock */
+  .header-mock { height: 48px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; border-bottom: 1px solid #eee; }
+  .header-mock .left { font-size: 16px; color: #999; }
+  .header-mock .right { display: flex; align-items: center; gap: 8px; }
+
+  @media (max-width: 640px) {
+    .search-bar-preview input { width: 100%; }
+    .search-bar-preview { flex-direction: column; }
+    .search-bar-preview .btn-add { margin-left: 0; width: 100%; text-align: center; }
+    .btn-row { flex-wrap: wrap; }
+    table { font-size: 12px; }
+    th, td { padding: 8px; }
+  }
+</style>
+</head>
+<body>
+
+<h1>UI 配色方案预览</h1>
+<p class="subtitle">切换侧边栏查看搭配效果 · 含表头、搜索栏、切换按钮</p>
+
+<div class="sidebar-tabs" id="tabs"></div>
+
+<div class="section-title">一、表头 & 搜索栏</div>
+<div id="table-schemes"></div>
+
+<div class="section-title">二、主题切换按钮</div>
+<div id="btn-schemes"></div>
+
+<script>
+const sidebars = {
+  mogreen: { label: '墨绿', bg: '#1A2E1A', title: '#95DE64' },
+  warmgray: { label: '暖灰蓝', bg: '#1F2937', title: '#D4B896' },
+  navy: { label: '藏青', bg: '#0F1B2D', title: '#7EC8E3' },
+};
+
+const tableSchemes = [
+  {
+    id: 'A', name: '当前暖米色', tag: '当前', tagColor: '#8B7355',
+    searchBg: 'linear-gradient(135deg, #FFFEF9, #F9F5ED)', searchBorder: '#EDE8DC',
+    thBg: '#F9F5ED', thColor: '#5C4A32', thBorder: '#EDE8DC',
+  },
+  {
+    id: 'B', name: '侧边栏同色极浅', tag: '推荐', tagColor: '#52C41A', dynamic: true,
+    map: {
+      mogreen: { searchBg: 'linear-gradient(135deg, rgba(26,46,26,0.04), rgba(26,46,26,0.01))', searchBorder: 'rgba(26,46,26,0.1)', thBg: 'rgba(26,46,26,0.06)', thColor: '#2d4a2d', thBorder: 'rgba(26,46,26,0.1)' },
+      warmgray: { searchBg: 'linear-gradient(135deg, rgba(31,41,55,0.04), rgba(31,41,55,0.01))', searchBorder: 'rgba(31,41,55,0.1)', thBg: 'rgba(31,41,55,0.06)', thColor: '#374151', thBorder: 'rgba(31,41,55,0.1)' },
+      navy: { searchBg: 'linear-gradient(135deg, rgba(15,27,45,0.04), rgba(15,27,45,0.01))', searchBorder: 'rgba(15,27,45,0.1)', thBg: 'rgba(15,27,45,0.06)', thColor: '#1a2d47', thBorder: 'rgba(15,27,45,0.1)' },
+    },
+  },
+  {
+    id: 'C', name: '纯白极简', tag: '极简', tagColor: '#1677FF',
+    searchBg: '#FFFFFF', searchBorder: '#f0f0f0', thBg: '#FFFFFF', thColor: '#333', thBorder: '#e0e0e0',
+  },
+  {
+    id: 'D', name: '侧边栏深色表头', tag: '醒目', tagColor: '#FA541C', dynamic: true,
+    map: {
+      mogreen: { searchBg: 'linear-gradient(135deg, #f0f9e8, #e8f5e0)', searchBorder: '#c5e8a7', thBg: 'linear-gradient(90deg, #1A2E1A, #2d4a2d)', thColor: '#fff', thBorder: '#1A2E1A' },
+      warmgray: { searchBg: 'linear-gradient(135deg, #f5f0e8, #ede6da)', searchBorder: '#d4c4a8', thBg: 'linear-gradient(90deg, #1F2937, #374151)', thColor: '#fff', thBorder: '#1F2937' },
+      navy: { searchBg: 'linear-gradient(135deg, #e8f4f8, #dceef5)', searchBorder: '#a8d8ea', thBg: 'linear-gradient(90deg, #0F1B2D, #1a2d47)', thColor: '#fff', thBorder: '#0F1B2D' },
+    },
+  },
+];
+
+let cur = 'mogreen';
+const rows = [['test2','male',5,'-','150****3440','-'],['胡小八','female',1,'2025-02-13','150****3448','江苏苏州'],['夏延吉','male',38,'1987-12-25','180****7845','江苏苏州']];
+
+function renderTables() {
+  const sb = sidebars[cur];
+  let html = '';
+  for (const s of tableSchemes) {
+    const cfg = s.dynamic ? s.map[cur] : s;
+    html += `<div class="scheme">`;
+    html += `<div class="scheme-label">方案 ${s.id}: ${s.name} <span class="stag" style="background:${s.tagColor}">${s.tag}</span></div>`;
+    html += `<div class="table-area">`;
+    html += `<div class="search-bar-preview" style="background:${cfg.searchBg};border-bottom:1px solid ${cfg.searchBorder}"><input placeholder="搜索患者姓名"><div class="btn btn-search">搜索</div><div class="btn btn-reset">重置</div><div class="btn btn-add">+ 新增</div></div>`;
+    html += `<table><thead><tr>`;
+    for (const c of ['姓名','性别','年龄','出生日期','联系电话','现居住地','操作']) html += `<th style="background:${cfg.thBg};color:${cfg.thColor};border-bottom:2px solid ${cfg.thBorder}">${c}</th>`;
+    html += `</tr></thead><tbody>`;
+    for (const r of rows) {
+      html += `<tr><td>${r[0]}</td><td><span class="${r[1]==='male'?'tag-male':'tag-female'}">${r[1]==='male'?'♂ 男':'♀ 女'}</span></td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]}</td><td>${r[5]}</td><td><span class="action">查看</span><span class="action">编辑</span><span class="action danger">删除</span></td></tr>`;
+    }
+    html += `</tbody></table></div></div>`;
+  }
+  document.getElementById('table-schemes').innerHTML = html;
+}
+
+function renderButtons() {
+  const sb = sidebars[cur];
+  let html = '';
+
+  // Scheme 1: 当前（图标+小色块）
+  html += `<div class="scheme"><div class="scheme-label">按钮 1: 图标+小色块 <span class="stag" style="background:#8B7355">当前</span></div>`;
+  html += `<div class="header-mock"><div class="left">☰</div><div class="right">`;
+  html += `<div style="display:flex;align-items:center;gap:6px;padding:4px 8px;cursor:pointer;border-radius:6px;border:1px solid #e0e0e0;background:#fafafa"><span style="font-size:14px">🎨</span><span style="width:14px;height:14px;border-radius:4px;background:${sb.bg};border:1.5px solid #d9d9d9"></span></div>`;
+  html += `<span style="font-size:13px;color:#555">👤 管理员</span></div></div></div>`;
+
+  // Scheme 2: 三色块直接展示
+  html += `<div class="scheme"><div class="scheme-label">按钮 2: 三色块直排 <span class="stag" style="background:#52C41A">推荐</span></div>`;
+  html += `<div class="header-mock"><div class="left">☰</div><div class="right">`;
+  html += `<div style="display:flex;align-items:center;gap:4px">`;
+  for (const [k,v] of Object.entries(sidebars)) {
+    const isActive = k===cur;
+    html += `<div onclick="switchSB('${k}')" style="width:24px;height:24px;border-radius:6px;background:${v.bg};cursor:pointer;border:${isActive?'2.5px solid #52C41A':'2px solid transparent'};box-shadow:${isActive?'0 0 0 2px rgba(82,196,26,0.25)':'none'};transition:all 0.2s"></div>`;
+  }
+  html += `</div>`;
+  html += `<span style="font-size:13px;color:#555;margin-left:8px">👤 管理员</span></div></div></div>`;
+
+  // Scheme 3: 下拉选择器样式
+  html += `<div class="scheme"><div class="scheme-label">按钮 3: 下拉卡片选择 <span class="stag" style="background:#722ED1">精致</span></div>`;
+  html += `<div class="header-mock"><div class="left">☰</div><div class="right">`;
+  html += `<div style="display:flex;align-items:center;gap:6px;padding:4px 12px;border-radius:8px;border:1px solid #e0e0e0;background:#fafafa;cursor:pointer">`;
+  html += `<span style="width:16px;height:16px;border-radius:4px;background:${sb.bg}"></span>`;
+  html += `<span style="font-size:12px;color:#666">${sb.label}</span>`;
+  html += `<span style="font-size:10px;color:#bbb">▼</span>`;
+  html += `</div>`;
+  html += `<span style="font-size:13px;color:#555">👤 管理员</span></div></div>`;
+  // simulated dropdown
+  html += `<div style="padding:8px 16px 16px;display:flex;gap:10px">`;
+  for (const [k,v] of Object.entries(sidebars)) {
+    const isActive = k===cur;
+    html += `<div onclick="switchSB('${k}')" style="flex:1;padding:10px;border-radius:10px;background:${v.bg};cursor:pointer;text-align:center;border:${isActive?'3px solid #52C41A':'3px solid transparent'};box-shadow:${isActive?'0 0 0 3px rgba(82,196,26,0.2)':'0 1px 4px rgba(0,0,0,0.1)'};transition:all 0.2s">`;
+    html += `<div style="width:20px;height:20px;border-radius:50%;background:${v.title};margin:0 auto 6px;opacity:0.8"></div>`;
+    html += `<div style="font-size:12px;color:${v.title};font-weight:${isActive?600:400}">${v.label}</div>`;
+    html += `${isActive?'<div style="font-size:14px;margin-top:2px">✓</div>':''}`;
+    html += `</div>`;
+  }
+  html += `</div></div>`;
+
+  // Scheme 4: 胶囊切换
+  html += `<div class="scheme"><div class="scheme-label">按钮 4: 胶囊切换 <span class="stag" style="background:#FA8C16">紧凑</span></div>`;
+  html += `<div class="header-mock"><div class="left">☰</div><div class="right">`;
+  html += `<div style="display:flex;align-items:center;background:#f0f0f0;border-radius:20px;padding:3px">`;
+  for (const [k,v] of Object.entries(sidebars)) {
+    const isActive = k===cur;
+    html += `<div onclick="switchSB('${k}')" style="display:flex;align-items:center;gap:4px;padding:4px 12px;border-radius:16px;cursor:pointer;background:${isActive?'#fff':'transparent'};box-shadow:${isActive?'0 1px 3px rgba(0,0,0,0.15)':'none'};transition:all 0.2s">`;
+    html += `<span style="width:12px;height:12px;border-radius:3px;background:${v.bg}"></span>`;
+    html += `<span style="font-size:11px;color:${isActive?'#333':'#999'};font-weight:${isActive?600:400}">${v.label}</span>`;
+    html += `</div>`;
+  }
+  html += `</div>`;
+  html += `<span style="font-size:13px;color:#555;margin-left:8px">👤 管理员</span></div></div></div>`;
+
+  document.getElementById('btn-schemes').innerHTML = html;
+}
+
+function render() {
+  let tabsHtml = '<span class="label">侧边栏：</span>';
+  for (const [k,v] of Object.entries(sidebars)) {
+    tabsHtml += `<div class="tab ${k===cur?'active':''}" onclick="switchSB('${k}')">${v.label}</div>`;
+  }
+  document.getElementById('tabs').innerHTML = tabsHtml;
+  renderTables();
+  renderButtons();
+}
+
+function switchSB(k) { cur = k; render(); }
+render();
+</script>
+</body>
+</html>

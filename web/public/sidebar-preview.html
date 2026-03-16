@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>侧边栏配色预览</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #FAFAF5; padding: 20px; }
+h1 { text-align: center; color: #5C4A32; margin-bottom: 24px; font-size: 22px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; max-width: 1200px; margin: 0 auto; }
+.preview-card {
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: 3px solid transparent;
+}
+.preview-card:hover { transform: translateY(-4px); box-shadow: 0 8px 24px rgba(0,0,0,0.15); }
+.preview-card.selected { border-color: #52C41A; }
+.preview-frame { display: flex; height: 420px; }
+.sidebar {
+  width: 200px;
+  padding: 16px 0;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+.sidebar-title {
+  text-align: center;
+  font-weight: bold;
+  font-size: 16px;
+  padding: 8px 16px;
+  margin-bottom: 12px;
+  letter-spacing: 2px;
+}
+.menu-item {
+  padding: 10px 24px;
+  font-size: 14px;
+  color: rgba(255,255,255,0.65);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s;
+}
+.menu-item.active {
+  color: #fff;
+  font-weight: 500;
+}
+.menu-item .icon { width: 16px; text-align: center; }
+.menu-group { padding: 10px 24px; font-size: 13px; color: rgba(255,255,255,0.45); }
+.content-area {
+  flex: 1;
+  background: #FAFAF5;
+  display: flex;
+  flex-direction: column;
+}
+.header-bar {
+  height: 48px;
+  background: linear-gradient(90deg, #FAFAF5, #F5EFE6);
+  border-bottom: 1px solid #EDE8DC;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  font-size: 13px;
+  color: #8B7355;
+}
+.main-content {
+  flex: 1;
+  padding: 12px;
+}
+.fake-card {
+  background: #FFFEF9;
+  border-radius: 12px;
+  border: 1px solid #EDE8DC;
+  padding: 12px;
+  margin-bottom: 8px;
+  box-shadow: 0 1px 4px rgba(44,24,16,0.06);
+}
+.fake-card-title { font-weight: 600; font-size: 13px; color: #5C4A32; margin-bottom: 4px; }
+.fake-card-text { font-size: 11px; color: #8B7355; }
+.fake-tag { display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; margin-left: 6px; }
+.label {
+  text-align: center;
+  padding: 12px;
+  font-weight: 600;
+  font-size: 15px;
+  color: #5C4A32;
+  background: #FFFEF9;
+}
+.label small { display: block; font-weight: 400; font-size: 12px; color: #8B7355; margin-top: 4px; }
+</style>
+</head>
+<body>
+<h1>侧边栏配色方案对比</h1>
+<p style="text-align:center;color:#8B7355;margin-bottom:20px;">点击选中你喜欢的方案，然后告诉我编号即可</p>
+<div class="grid" id="grid"></div>
+
+<script>
+const schemes = [
+  {
+    name: 'A. 深木棕（当前）',
+    desc: '#2C1810 沉稳木质',
+    bg: '#2C1810',
+    title: '#D4B896',
+    active: 'rgba(82,196,26,0.2)',
+    hover: 'rgba(212,184,150,0.15)',
+    sub: 'rgba(0,0,0,0.25)',
+  },
+  {
+    name: 'B. 墨绿',
+    desc: '#1A2E1A 深林绿，草药气质',
+    bg: '#1A2E1A',
+    title: '#95DE64',
+    active: 'rgba(82,196,26,0.25)',
+    hover: 'rgba(149,222,100,0.12)',
+    sub: 'rgba(0,0,0,0.2)',
+  },
+  {
+    name: 'C. 暖灰蓝',
+    desc: '#1F2937 现代温和，百搭',
+    bg: '#1F2937',
+    title: '#D4B896',
+    active: 'rgba(82,196,26,0.2)',
+    hover: 'rgba(255,255,255,0.08)',
+    sub: 'rgba(0,0,0,0.15)',
+  },
+  {
+    name: 'D. 紫檀',
+    desc: '#2D1B33 高贵典雅，中式',
+    bg: '#2D1B33',
+    title: '#D4B896',
+    active: 'rgba(82,196,26,0.2)',
+    hover: 'rgba(212,184,150,0.12)',
+    sub: 'rgba(0,0,0,0.2)',
+  },
+  {
+    name: 'E. 藏青',
+    desc: '#0F1B2D 深海蓝，沉稳专业',
+    bg: '#0F1B2D',
+    title: '#7EC8E3',
+    active: 'rgba(82,196,26,0.2)',
+    hover: 'rgba(126,200,227,0.1)',
+    sub: 'rgba(0,0,0,0.2)',
+  },
+  {
+    name: 'F. 黛绿棕',
+    desc: '#1C2A22 茶绿+棕调，古朴',
+    bg: '#1C2A22',
+    title: '#C9B37E',
+    active: 'rgba(82,196,26,0.22)',
+    hover: 'rgba(201,179,126,0.12)',
+    sub: 'rgba(0,0,0,0.2)',
+  },
+];
+
+const grid = document.getElementById('grid');
+schemes.forEach((s, i) => {
+  const card = document.createElement('div');
+  card.className = 'preview-card';
+  card.onclick = () => {
+    document.querySelectorAll('.preview-card').forEach(c => c.classList.remove('selected'));
+    card.classList.add('selected');
+  };
+  card.innerHTML = `
+    <div class="preview-frame">
+      <div class="sidebar" style="background:${s.bg}">
+        <div class="sidebar-title" style="color:${s.title}">门诊管理系统</div>
+        <div class="menu-item active" style="background:${s.active}"><span class="icon">👤</span> 患者管理</div>
+        <div class="menu-item" onmouseenter="this.style.background='${s.hover}'" onmouseleave="this.style.background='transparent'"><span class="icon">💊</span> 病历列表</div>
+        <div class="menu-group">中医药</div>
+        <div class="menu-item" style="background:${s.sub};padding-left:36px" onmouseenter="this.style.background='${s.hover}'" onmouseleave="this.style.background='${s.sub}'"><span class="icon">🌿</span> 中药查询</div>
+        <div class="menu-item" style="background:${s.sub};padding-left:36px" onmouseenter="this.style.background='${s.hover}'" onmouseleave="this.style.background='${s.sub}'"><span class="icon">📖</span> 方剂查询</div>
+        <div class="menu-item" onmouseenter="this.style.background='${s.hover}'" onmouseleave="this.style.background='transparent'"><span class="icon">📋</span> 经络穴位</div>
+        <div class="menu-group">系统</div>
+        <div class="menu-item" onmouseenter="this.style.background='${s.hover}'" onmouseleave="this.style.background='transparent'"><span class="icon">⚙️</span> 系统设置</div>
+      </div>
+      <div class="content-area">
+        <div class="header-bar">☰ &nbsp;&nbsp;患者管理 <span style="margin-left:auto">admin ▾</span></div>
+        <div class="main-content">
+          <div class="fake-card">
+            <div class="fake-card-title">张三 <span class="fake-tag" style="background:linear-gradient(135deg,#e6f4ff,#bae0ff);color:#1677ff">♂ 45岁</span></div>
+            <div class="fake-card-text">北京市朝阳区 · 腰痛3月</div>
+          </div>
+          <div class="fake-card">
+            <div class="fake-card-title">李四 <span class="fake-tag" style="background:linear-gradient(135deg,#fff0f6,#ffadd2);color:#c41d7f">♀ 32岁</span></div>
+            <div class="fake-card-text">上海市浦东 · 失眠多梦</div>
+          </div>
+          <div class="fake-card">
+            <div class="fake-card-title">王五 <span class="fake-tag" style="background:linear-gradient(135deg,#e6f4ff,#bae0ff);color:#1677ff">♂ 58岁</span></div>
+            <div class="fake-card-text">广州市天河 · 咳嗽痰多</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="label">${s.name}<small>${s.desc}</small></div>
+  `;
+  grid.appendChild(card);
+});
+</script>
+</body>
+</html>

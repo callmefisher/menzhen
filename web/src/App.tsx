@@ -1,7 +1,8 @@
 import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { Spin } from 'antd';
+import { Spin, ConfigProvider } from 'antd';
 import { AuthProvider, useAuth } from './store/auth';
+import { ThemeProvider } from './store/theme';
 import AppLayout from './components/Layout';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -98,12 +99,54 @@ function AppRoutes() {
   );
 }
 
+const warmTheme = {
+  token: {
+    colorPrimary: '#52C41A',
+    colorBgLayout: '#FAFAF5',
+    colorBgContainer: '#FFFEF9',
+    borderRadius: 12,
+    colorLink: '#52C41A',
+    colorLinkHover: '#73D13D',
+    fontFamily: `-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif`,
+  },
+  components: {
+    Table: {
+      rowHoverBg: '#FFFEF0',
+    },
+    Card: {
+      colorBgContainer: '#FFFEF9',
+    },
+    Button: {
+      colorPrimary: '#52C41A',
+      colorPrimaryHover: '#73D13D',
+      colorPrimaryActive: '#389E0D',
+      borderRadius: 8,
+    },
+    Input: {
+      borderRadius: 8,
+    },
+    Select: {
+      borderRadius: 8,
+    },
+    Tag: {
+      borderRadiusSM: 10,
+    },
+    Pagination: {
+      colorPrimary: '#52C41A',
+    },
+  },
+};
+
 export default function App() {
   return (
-    <BrowserRouter>
-      <AuthProvider>
-        <AppRoutes />
-      </AuthProvider>
-    </BrowserRouter>
+    <ConfigProvider theme={warmTheme}>
+      <ThemeProvider>
+        <BrowserRouter>
+          <AuthProvider>
+            <AppRoutes />
+          </AuthProvider>
+        </BrowserRouter>
+      </ThemeProvider>
+    </ConfigProvider>
   );
 }

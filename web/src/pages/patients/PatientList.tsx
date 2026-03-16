@@ -10,6 +10,7 @@ import {
   Card,
   Tag,
   Pagination,
+  Spin,
 } from 'antd';
 import {
   PlusOutlined,
@@ -20,6 +21,7 @@ import {
   PhoneOutlined,
   ManOutlined,
   WomanOutlined,
+  TeamOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
@@ -135,7 +137,10 @@ export default function PatientList() {
       dataIndex: 'gender',
       key: 'gender',
       width: 80,
-      render: (val: number) => (val === 1 ? '男' : val === 2 ? '女' : '-'),
+      render: (val: number) =>
+        val === 1 ? <Tag className="warm-tag-male"><ManOutlined /> 男</Tag>
+        : val === 2 ? <Tag className="warm-tag-female"><WomanOutlined /> 女</Tag>
+        : '-',
     },
     {
       title: '年龄',
@@ -233,39 +238,37 @@ export default function PatientList() {
   // --- Mobile patient card ---
   const renderMobilePatientCard = (patient: PatientItem) => {
     const genderIcon = patient.gender === 1
-      ? <ManOutlined style={{ color: '#1890ff' }} />
+      ? <ManOutlined style={{ color: '#69B1FF' }} />
       : patient.gender === 2
-      ? <WomanOutlined style={{ color: '#eb2f96' }} />
+      ? <WomanOutlined style={{ color: '#FF85C0' }} />
       : null;
     return (
-      <Card
+      <div
         key={patient.id}
-        size="small"
-        style={{ marginBottom: 8 }}
-        styles={{ body: { padding: '10px 12px' } }}
+        className="warm-list-card"
         onClick={() => navigate(`/patients/${patient.id}`)}
       >
         {/* Row 1: name + gender/age */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontWeight: 600, fontSize: 15 }}>{patient.name}</span>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontWeight: 600, fontSize: 16, color: '#5C4A32' }}>{patient.name}</span>
             {genderIcon}
-            <Tag color={patient.gender === 1 ? 'blue' : patient.gender === 2 ? 'pink' : 'default'} style={{ margin: 0 }}>
+            <Tag className={patient.gender === 1 ? 'warm-tag-male' : patient.gender === 2 ? 'warm-tag-female' : ''} style={{ margin: 0 }}>
               {patient.age}岁
             </Tag>
           </div>
           {patient.phone && (
-            <span style={{ fontSize: 12, color: '#888' }}>
-              <PhoneOutlined style={{ marginRight: 2 }} />{patient.phone}
+            <span style={{ fontSize: 12, color: '#8B7355' }}>
+              <PhoneOutlined style={{ marginRight: 3 }} />{patient.phone}
             </span>
           )}
         </div>
         {/* Row 2: extra info */}
-        <div style={{ fontSize: 12, color: '#999', marginBottom: 6 }}>
+        <div style={{ fontSize: 13, color: '#8B7355', marginBottom: 8, lineHeight: 1.5 }}>
           {patient.address && <span>{patient.address}</span>}
           {patient.address && patient.notes && <span> · </span>}
           {patient.notes && <span>{patient.notes.length > 20 ? patient.notes.slice(0, 20) + '...' : patient.notes}</span>}
-          {!patient.address && !patient.notes && <span>暂无备注</span>}
+          {!patient.address && !patient.notes && <span style={{ color: '#BFB8A8' }}>暂无备注</span>}
         </div>
         {/* Row 3: actions */}
         <div style={{ display: 'flex', gap: 8 }} onClick={(e) => e.stopPropagation()}>
@@ -286,15 +289,29 @@ export default function PatientList() {
             </Button>
           </Popconfirm>
         </div>
-      </Card>
+      </div>
     );
   };
 
+  // --- Empty state ---
+  const renderEmpty = () => (
+    <div className="warm-empty">
+      <div className="warm-empty-icon">
+        <TeamOutlined style={{ color: '#D4B896' }} />
+      </div>
+      <div className="warm-empty-text">暂无患者记录</div>
+      <div className="warm-empty-sub">点击「新增」添加第一位患者</div>
+    </div>
+  );
+
   return (
-    <Card styles={isMobile ? { body: { padding: 12 } } : undefined}>
+    <Card
+      className="warm-card"
+      styles={isMobile ? { body: { padding: 12 } } : undefined}
+    >
       {/* Search bar */}
       {isMobile ? (
-        <div style={{ marginBottom: 12 }}>
+        <div className="warm-search-bar" style={{ marginBottom: 12 }}>
           <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
             <Input
               placeholder="搜索患者姓名"
@@ -304,49 +321,44 @@ export default function PatientList() {
               allowClear
               style={{ flex: 1 }}
             />
-            <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>
+            <Button type="primary" className="warm-btn-primary" icon={<SearchOutlined />} onClick={handleSearch}>
               搜索
             </Button>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <Button onClick={handleReset}>重置</Button>
             <div style={{ flex: 1 }} />
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/patients/new')}>
+            <Button type="primary" className="warm-btn-primary" icon={<PlusOutlined />} onClick={() => navigate('/patients/new')}>
               新增
             </Button>
           </div>
         </div>
       ) : (
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            marginBottom: 16,
-            flexWrap: 'wrap',
-            gap: 12,
-          }}
-        >
-          <Space wrap>
-            <Input
-              placeholder="搜索患者姓名"
-              value={searchName}
-              onChange={(e) => setSearchName(e.target.value)}
-              onPressEnter={handleSearch}
-              style={{ width: 200 }}
-              allowClear
-            />
-            <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>
-              搜索
+        <div className="warm-search-bar">
+          <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+            <Space wrap>
+              <Input
+                placeholder="搜索患者姓名"
+                value={searchName}
+                onChange={(e) => setSearchName(e.target.value)}
+                onPressEnter={handleSearch}
+                style={{ width: 200 }}
+                allowClear
+              />
+              <Button type="primary" className="warm-btn-primary" icon={<SearchOutlined />} onClick={handleSearch}>
+                搜索
+              </Button>
+              <Button onClick={handleReset}>重置</Button>
+            </Space>
+            <Button
+              type="primary"
+              className="warm-btn-primary"
+              icon={<PlusOutlined />}
+              onClick={() => navigate('/patients/new')}
+            >
+              新增患者
             </Button>
-            <Button onClick={handleReset}>重置</Button>
-          </Space>
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => navigate('/patients/new')}
-          >
-            新增患者
-          </Button>
+          </div>
         </div>
       )}
 
@@ -354,9 +366,9 @@ export default function PatientList() {
       {isMobile ? (
         <>
           {loading ? (
-            <div style={{ textAlign: 'center', padding: 32, color: '#999' }}>加载中...</div>
+            <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
           ) : data.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 32, color: '#999' }}>暂无患者记录</div>
+            renderEmpty()
           ) : (
             data.map(renderMobilePatientCard)
           )}
@@ -393,7 +405,7 @@ export default function PatientList() {
             },
           }}
           locale={{
-            emptyText: '暂无患者记录',
+            emptyText: renderEmpty(),
           }}
         />
       )}
