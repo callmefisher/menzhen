@@ -1,37 +1,205 @@
-/* Global styles - minimal, Ant Design handles most styling */
+/* ===== Warm Natural Theme Variables ===== */
+:root {
+  --warm-primary: #52C41A;
+  --warm-primary-light: #95DE64;
+  --warm-orange: #FA8C16;
+  --warm-wood: #D4B896;
+  --warm-bg: #FAFAF5;
+  --warm-card-bg: #FFFEF9;
+  --warm-sidebar: #1A2E1A;
+  --warm-sidebar-title: #95DE64;
+  --warm-sidebar-selected: rgba(82, 196, 26, 0.2);
+  --warm-sidebar-hover: rgba(149, 222, 100, 0.15);
+  --warm-sidebar-submenu: rgba(0, 0, 0, 0.2);
+  --warm-table-header-bg: rgba(26, 46, 26, 0.06);
+  --warm-table-header-color: #2d4a2d;
+  --warm-table-header-border: rgba(26, 46, 26, 0.1);
+  --warm-search-bar-bg: linear-gradient(135deg, rgba(26,46,26,0.04), rgba(26,46,26,0.01));
+  --warm-search-bar-border: rgba(26, 46, 26, 0.1);
+  --warm-text: #5C4A32;
+  --warm-text-light: #8B7355;
+  --warm-border: #EDE8DC;
+  --warm-hover-bg: #FFFEF0;
+  --warm-shadow: 0 2px 8px rgba(44, 24, 16, 0.08);
+  --warm-shadow-hover: 0 6px 16px rgba(44, 24, 16, 0.12);
+  --warm-male: #69B1FF;
+  --warm-female: #FF85C0;
+  --warm-ai-gradient: linear-gradient(135deg, #667eea, #764ba2);
+  --warm-card-radius: 16px;
+  --warm-transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Global styles - Warm Natural Theme */
 body {
   margin: 0;
   padding: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
     'Helvetica Neue', Arial, sans-serif;
+  background: var(--warm-bg);
 }
 
 #root {
   min-height: 100vh;
 }
 
+/* ===== Warm Card Styles ===== */
+.warm-card {
+  background: var(--warm-card-bg) !important;
+  border-radius: var(--warm-card-radius) !important;
+  border: 1px solid var(--warm-border) !important;
+  box-shadow: var(--warm-shadow) !important;
+  transition: var(--warm-transition) !important;
+}
+.warm-card:hover {
+  box-shadow: var(--warm-shadow-hover) !important;
+  transform: translateY(-2px);
+}
+
+/* ===== Warm Mobile List Card ===== */
+.warm-list-card {
+  background: var(--warm-card-bg);
+  border-radius: 14px;
+  border: 1px solid var(--warm-border);
+  box-shadow: var(--warm-shadow);
+  transition: var(--warm-transition);
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+.warm-list-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: linear-gradient(180deg, var(--warm-primary), var(--warm-primary-light));
+  border-radius: 0 4px 4px 0;
+}
+.warm-list-card:hover {
+  box-shadow: var(--warm-shadow-hover);
+  transform: translateY(-1px);
+}
+.warm-list-card:active {
+  transform: translateY(0);
+}
+
+/* ===== Warm Tags ===== */
+.warm-tag-male {
+  background: linear-gradient(135deg, #e6f4ff, #bae0ff) !important;
+  color: #1677ff !important;
+  border: none !important;
+  font-weight: 500;
+}
+.warm-tag-female {
+  background: linear-gradient(135deg, #fff0f6, #ffadd2) !important;
+  color: #c41d7f !important;
+  border: none !important;
+  font-weight: 500;
+}
+.warm-tag-ai {
+  background: var(--warm-ai-gradient) !important;
+  color: #fff !important;
+  border: none !important;
+  font-weight: 500;
+}
+.warm-tag-local {
+  background: linear-gradient(135deg, #f6ffed, #d9f7be) !important;
+  color: #389e0d !important;
+  border: none !important;
+  font-weight: 500;
+}
+
+/* ===== Warm Search Bar ===== */
+.warm-search-bar {
+  background: var(--warm-search-bar-bg, linear-gradient(135deg, #FFFEF9, #F9F5ED));
+  border-radius: 14px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+  border: 1px solid var(--warm-search-bar-border, #EDE8DC);
+}
+
+/* ===== Warm Empty State ===== */
+.warm-empty {
+  text-align: center;
+  padding: 48px 24px;
+}
+.warm-empty-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+  opacity: 0.6;
+}
+.warm-empty-text {
+  color: var(--warm-text-light);
+  font-size: 15px;
+}
+.warm-empty-sub {
+  color: #bfb8a8;
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+/* ===== Warm Button Enhancements ===== */
+.warm-btn-primary {
+  background: linear-gradient(135deg, #52C41A, #73D13D) !important;
+  border: none !important;
+  box-shadow: 0 2px 6px rgba(82, 196, 26, 0.3) !important;
+  transition: var(--warm-transition) !important;
+}
+.warm-btn-primary:hover {
+  box-shadow: 0 4px 12px rgba(82, 196, 26, 0.4) !important;
+  transform: translateY(-1px);
+}
+
+/* ===== Sidebar warm dark theme override (CSS variables) ===== */
+.ant-layout-sider {
+  background: var(--warm-sidebar) !important;
+}
+.ant-menu-dark {
+  background: var(--warm-sidebar) !important;
+}
+.ant-menu-dark .ant-menu-item-selected {
+  background: var(--warm-sidebar-selected) !important;
+}
+.ant-menu-dark .ant-menu-item:hover {
+  background: var(--warm-sidebar-hover) !important;
+}
+.ant-menu-dark .ant-menu-sub {
+  background: var(--warm-sidebar-submenu) !important;
+}
+
+/* ===== Table header dynamic theme ===== */
+.ant-table-thead > tr > th,
+.ant-table-thead > tr > td {
+  background: var(--warm-table-header-bg, #F9F5ED) !important;
+  color: var(--warm-table-header-color, #5C4A32) !important;
+  border-bottom-color: var(--warm-table-header-border, #EDE8DC) !important;
+}
+
 /* Highlight row after edit — pulse breathing effect, 15s total */
 /* 9 pulses (~1.1s each) over first 67%, hold 13%, fade out 20% */
 @keyframes row-flash {
-  0%   { background-color: #91caff; }
-  3.5% { background-color: #e6f4ff; }
-  7%   { background-color: #91caff; }
-  10.5%{ background-color: #e6f4ff; }
-  14%  { background-color: #91caff; }
-  17.5%{ background-color: #e6f4ff; }
-  21%  { background-color: #91caff; }
-  24.5%{ background-color: #e6f4ff; }
-  28%  { background-color: #91caff; }
-  31.5%{ background-color: #e6f4ff; }
-  35%  { background-color: #91caff; }
-  38.5%{ background-color: #e6f4ff; }
-  42%  { background-color: #91caff; }
-  45.5%{ background-color: #e6f4ff; }
-  49%  { background-color: #91caff; }
-  52.5%{ background-color: #e6f4ff; }
-  56%  { background-color: #91caff; }
-  62%  { background-color: #e6f4ff; }
-  80%  { background-color: #e6f4ff; }
+  0%   { background-color: #d9f7be; }
+  3.5% { background-color: #f6ffed; }
+  7%   { background-color: #d9f7be; }
+  10.5%{ background-color: #f6ffed; }
+  14%  { background-color: #d9f7be; }
+  17.5%{ background-color: #f6ffed; }
+  21%  { background-color: #d9f7be; }
+  24.5%{ background-color: #f6ffed; }
+  28%  { background-color: #d9f7be; }
+  31.5%{ background-color: #f6ffed; }
+  35%  { background-color: #d9f7be; }
+  38.5%{ background-color: #f6ffed; }
+  42%  { background-color: #d9f7be; }
+  45.5%{ background-color: #f6ffed; }
+  49%  { background-color: #d9f7be; }
+  52.5%{ background-color: #f6ffed; }
+  56%  { background-color: #d9f7be; }
+  62%  { background-color: #f6ffed; }
+  80%  { background-color: #f6ffed; }
   100% { background-color: transparent; }
 }
 tr.row-highlight > td {
@@ -185,5 +353,41 @@ tr.current-user-row:hover > td {
   .wuyun-content table {
     display: block;
     overflow-x: auto;
+  }
+
+  /* ===== Warm Theme Mobile Adaptations ===== */
+  /* Disable hover float on touch devices */
+  .warm-card:hover,
+  .warm-list-card:hover {
+    transform: none;
+    box-shadow: var(--warm-shadow);
+  }
+  .warm-btn-primary:hover {
+    transform: none;
+  }
+  /* Smaller card radius on mobile */
+  .warm-card {
+    border-radius: 12px !important;
+  }
+  .warm-list-card {
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+  }
+  .warm-list-card::before {
+    display: none;
+  }
+  /* Compact search bar */
+  .warm-search-bar {
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+  }
+  /* Smaller empty state */
+  .warm-empty {
+    padding: 32px 16px;
+  }
+  .warm-empty-icon {
+    font-size: 48px;
   }
 }

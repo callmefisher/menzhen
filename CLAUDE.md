@@ -41,6 +41,9 @@
 ### 8. Codebase 文档同步
 每次项目变更后必须检查并更新 `docs/codebase.md`，确保文档与代码同步。该文档作为任务执行前的上下文扫描入口。
 
+### 9. 任务汇报，review,测试，优化，代码性能优化，简化
+任务开始后，需周期性的汇报进度。全部完成后，对任务涉及的方案，代码，变更等进行全面review,覆盖，单元和回归测试，并对自行review的意见进行优化修复，代码性能优化，简化等操作
+
 ### 经验教训（持续更新）
 - 前端测试需要在 `src/test/setup.ts` 中 polyfill `ResizeObserver` 和 `window.matchMedia`（antd 组件依赖）
 - `tsconfig.app.json` 需要 exclude 测试目录，避免 `global` 等 Node 类型在 build 时报错

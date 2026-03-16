@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Layout as AntLayout, Menu, Button, theme, Dropdown, Modal, Form, Input, message, Drawer } from 'antd';
+import { Layout as AntLayout, Menu, Button, theme, Dropdown, Modal, Form, Input, message, Drawer, Popover } from 'antd';
 import {
   MedicineBoxOutlined,
   UserOutlined,
@@ -26,14 +26,16 @@ import {
   FileTextOutlined,
   BarChartOutlined,
   ToolOutlined,
+  PhoneOutlined,
 } from '@ant-design/icons';
 import type { MenuProps as AntMenuProps } from 'antd';
 import { useAuth } from '../store/auth';
+import { useTheme } from '../store/theme';
+import { sidebarThemes } from '../theme/sidebarThemes';
 import { changePassword } from '../api/auth';
 import { listInventoryDrugs } from '../api/inventory';
 import type { InventoryDrug } from '../api/inventory';
 import { getFollowUpStats } from '../api/followUp';
-import { PhoneOutlined } from '@ant-design/icons';
 import useIsMobile from '../hooks/useIsMobile';
 
 const { Header, Sider, Content } = AntLayout;
@@ -47,11 +49,12 @@ export default function AppLayout() {
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [passwordForm] = Form.useForm();
   const { user, logout, hasPermission } = useAuth();
+  const { themeKey, themeConfig, setTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
   const isMobile = useIsMobile();
   const {
-    token: { colorBgContainer, borderRadiusLG },
+    token: { borderRadiusLG },
   } = theme.useToken();
 
   const [alertCount, setAlertCount] = useState(0);
@@ -378,13 +381,14 @@ export default function AppLayout() {
         style={{
           height: 32,
           margin: 16,
-          color: '#fff',
+          color: themeConfig.titleColor,
           fontSize: isMobile ? 18 : collapsed ? 14 : 18,
           fontWeight: 'bold',
           textAlign: 'center',
           lineHeight: '32px',
           overflow: 'hidden',
           whiteSpace: 'nowrap',
+          letterSpacing: 2,
         }}
       >
         {!isMobile && collapsed ? '门诊' : '门诊管理系统'}
@@ -396,19 +400,48 @@ export default function AppLayout() {
         defaultOpenKeys={openKeys}
         items={menuItems}
         onClick={handleMenuClick}
+        style={{ background: themeConfig.sidebarBg, borderRight: 0 }}
       />
     </>
   );
 
+  const themePickerContent = (
+    <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+      {Object.values(sidebarThemes).map((t) => {
+        const isActive = themeKey === t.key;
+        return (
+          <div key={t.key} onClick={() => setTheme(t.key)} style={{ textAlign: 'center', cursor: 'pointer' }}>
+            <div style={{
+              width: 44,
+              height: 44,
+              borderRadius: '50%',
+              background: t.sidebarBg,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: isActive ? '3px solid #52C41A' : '3px solid transparent',
+              boxShadow: isActive ? '0 0 0 2px rgba(82,196,26,0.2)' : '0 1px 4px rgba(0,0,0,0.1)',
+              transition: 'all 0.2s',
+              margin: '0 auto 4px',
+            }}>
+              <span style={{ width: 18, height: 18, borderRadius: '50%', background: t.titleColor, display: 'block' }} />
+            </div>
+            <span style={{ fontSize: 11, color: isActive ? '#52C41A' : '#999', fontWeight: isActive ? 600 : 400 }}>{t.label}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+
   return (
-    <AntLayout style={{ minHeight: '100vh' }}>
+    <AntLayout style={{ minHeight: '100vh', background: '#FAFAF5' }}>
       {isMobile ? (
         <Drawer
           placement="left"
           open={drawerOpen}
           onClose={() => setDrawerOpen(false)}
           width={220}
-          styles={{ body: { padding: 0, background: '#001529' }, header: { display: 'none' } }}
+          styles={{ body: { padding: 0, background: themeConfig.sidebarBg }, header: { display: 'none' } }}
         >
           {siderContent}
         </Drawer>
@@ -421,6 +454,7 @@ export default function AppLayout() {
           onBreakpoint={(broken) => {
             if (broken) setCollapsed(true);
           }}
+          style={{ background: themeConfig.sidebarBg }}
         >
           {siderContent}
         </Sider>
@@ -429,10 +463,11 @@ export default function AppLayout() {
         <Header
           style={{
             padding: '0 16px',
-            background: colorBgContainer,
+            background: themeConfig.headerBg,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
+            borderBottom: `1px solid ${themeConfig.headerBorder}`,
           }}
         >
           <Button
@@ -441,19 +476,37 @@ export default function AppLayout() {
             onClick={() => isMobile ? setDrawerOpen(true) : setCollapsed(!collapsed)}
             style={{ fontSize: 16, width: 48, height: 48 }}
           />
-          <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
-            <Button type="text" icon={<UserOutlined />}>
-              {user?.real_name || user?.username || '用户'}
-            </Button>
-          </Dropdown>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <Popover content={themePickerContent} trigger="click" placement="bottomRight">
+              <div style={{
+                width: 22,
+                height: 22,
+                borderRadius: '50%',
+                background: themeConfig.sidebarBg,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
+              }}>
+                <span style={{ width: 9, height: 9, borderRadius: '50%', background: themeConfig.titleColor, display: 'block' }} />
+              </div>
+            </Popover>
+            <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
+              <Button type="text" icon={<UserOutlined />}>
+                {user?.real_name || user?.username || '用户'}
+              </Button>
+            </Dropdown>
+          </div>
         </Header>
         <Content
           style={{
             margin: '16px',
             padding: 24,
-            background: colorBgContainer,
+            background: '#FFFEF9',
             borderRadius: borderRadiusLG,
             minHeight: 280,
+            boxShadow: '0 2px 8px rgba(44, 24, 16, 0.06)',
           }}
         >
           <Outlet />

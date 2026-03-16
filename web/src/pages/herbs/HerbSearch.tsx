@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Input, Table, Tag, message, Button, Popconfirm, Select, Space, Pagination, Spin, Empty } from 'antd';
-import { SearchOutlined, RobotOutlined, DeleteOutlined, EditOutlined, SaveOutlined, CloseOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { Input, Table, Tag, message, Button, Popconfirm, Select, Space, Pagination, Spin } from 'antd';
+import { SearchOutlined, RobotOutlined, DeleteOutlined, EditOutlined, SaveOutlined, CloseOutlined, ThunderboltOutlined, ExperimentOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { listHerbs, deleteHerb, listHerbCategories, updateHerb, aiRefreshHerb } from '../../api/herb';
 import type { HerbItem } from '../../api/herb';
@@ -193,11 +193,11 @@ export default function HerbSearch() {
       responsive: ['md'] as any,
       render: (source: string) =>
         source === 'deepseek' ? (
-          <Tag icon={<RobotOutlined />} color="blue">
+          <Tag className="warm-tag-ai" icon={<RobotOutlined />}>
             AI
           </Tag>
         ) : (
-          <Tag color="green">本地</Tag>
+          <Tag className="warm-tag-local">本地</Tag>
         ),
     },
     ...(hasPermission('role:manage')
@@ -233,9 +233,20 @@ export default function HerbSearch() {
       : []),
   ];
 
+  // --- Empty state ---
+  const renderEmpty = () => (
+    <div className="warm-empty">
+      <div className="warm-empty-icon">
+        <ExperimentOutlined style={{ color: '#52C41A' }} />
+      </div>
+      <div className="warm-empty-text">暂无中药数据</div>
+      <div className="warm-empty-sub">输入药名搜索，支持 AI 智能查询</div>
+    </div>
+  );
+
   return (
     <div>
-      <div style={{ marginBottom: 16, display: 'flex', gap: 12, flexDirection: isMobile ? 'column' : 'row' }}>
+      <div className="warm-search-bar" style={{ display: 'flex', gap: 12, flexDirection: isMobile ? 'column' : 'row' }}>
         <Input.Search
           placeholder="输入中药名称搜索（支持AI查询）"
           allowClear
@@ -259,21 +270,21 @@ export default function HerbSearch() {
         loading ? (
           <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
         ) : herbs.length === 0 ? (
-          <Empty description="暂无数据" />
+          renderEmpty()
         ) : (
           <>
             {herbs.map((herb) => {
               const isExpanded = expandedRowKeys.includes(herb.id);
               const isEditing = editingId === herb.id;
               return (
-                <div key={herb.id} style={{ background: '#fafafa', borderRadius: 8, padding: 12, marginBottom: 8 }}>
+                <div key={herb.id} className="warm-list-card" style={{ cursor: 'default' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <span style={{ fontWeight: 'bold', fontSize: 15 }}>{herb.name}</span>
+                    <span style={{ fontWeight: 'bold', fontSize: 16, color: '#5C4A32' }}>{herb.name}</span>
                     <Space size="small">
                       {herb.source === 'deepseek' ? (
-                        <Tag icon={<RobotOutlined />} color="blue">AI</Tag>
+                        <Tag className="warm-tag-ai" icon={<RobotOutlined />}>AI</Tag>
                       ) : (
-                        <Tag color="green">本地</Tag>
+                        <Tag className="warm-tag-local">本地</Tag>
                       )}
                       {hasPermission('role:manage') && (
                         <>
@@ -290,13 +301,12 @@ export default function HerbSearch() {
                       )}
                     </Space>
                   </div>
-                  <div style={{ fontSize: 13, color: '#666', marginBottom: 6 }}>
-                    {herb.category && <span>{herb.category}</span>}
-                    {herb.category && herb.properties && <span> · </span>}
-                    {herb.properties && <span>{herb.properties}</span>}
+                  <div style={{ fontSize: 13, color: '#8B7355', marginBottom: 6 }}>
+                    {herb.category && <Tag style={{ background: '#F6FFED', border: '1px solid #B7EB8F', color: '#389E0D', fontSize: 12 }}>{herb.category}</Tag>}
+                    {herb.properties && <span style={{ marginLeft: herb.category ? 4 : 0 }}>{herb.properties}</span>}
                   </div>
                   <div
-                    style={{ fontSize: 13, color: '#1677ff', cursor: 'pointer', userSelect: 'none' }}
+                    style={{ fontSize: 13, color: '#52C41A', cursor: 'pointer', userSelect: 'none', fontWeight: 500 }}
                     onClick={() =>
                       setExpandedRowKeys((keys) =>
                         keys.includes(herb.id) ? keys.filter((k) => k !== herb.id) : [...keys, herb.id]
@@ -306,7 +316,7 @@ export default function HerbSearch() {
                     {isExpanded ? '收起 ▲' : '展开详情 ▼'}
                   </div>
                   {isExpanded && (
-                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #eee' }}>
+                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #EDE8DC', background: 'linear-gradient(180deg, #FAFAF5, transparent)', borderRadius: 8, padding: 10 }}>
                       {isEditing ? (
                         <>
                           <div style={{ marginBottom: 8 }}>
@@ -350,7 +360,7 @@ export default function HerbSearch() {
                           <p style={{ margin: '4px 0' }}><strong>主治：</strong>{herb.indications || '无'}</p>
                           <p style={{ margin: '4px 0' }}><strong>道地产区：</strong>{herb.origin || '无'}</p>
                           {herb.source === 'deepseek' && (
-                            <Tag icon={<RobotOutlined />} color="blue" style={{ marginTop: 4 }}>
+                            <Tag className="warm-tag-ai" icon={<RobotOutlined />} style={{ marginTop: 4 }}>
                               数据来源：DeepSeek AI（仅供参考，请结合临床经验）
                             </Tag>
                           )}
@@ -435,7 +445,7 @@ export default function HerbSearch() {
                     <p><strong>主治：</strong>{record.indications || '无'}</p>
                     <p><strong>道地产区：</strong>{record.origin || '无'}</p>
                     {record.source === 'deepseek' && (
-                      <Tag icon={<RobotOutlined />} color="blue">
+                      <Tag className="warm-tag-ai" icon={<RobotOutlined />}>
                         数据来源：DeepSeek AI（仅供参考，请结合临床经验）
                       </Tag>
                     )}

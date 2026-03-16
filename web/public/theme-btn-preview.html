@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>主题切换按钮方案</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f0f0; padding: 16px; }
+  h1 { text-align: center; color: #333; margin-bottom: 4px; font-size: 18px; }
+  .sub { text-align: center; color: #999; font-size: 13px; margin-bottom: 20px; }
+
+  .tabs { display: flex; gap: 6px; justify-content: center; margin-bottom: 20px; flex-wrap: wrap; }
+  .tabs .label { font-size: 13px; color: #999; line-height: 30px; }
+  .tab { padding: 4px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; border: 1px solid #ddd; background: #fff; color: #666; }
+  .tab.active { background: #52C41A; color: #fff; border-color: #52C41A; }
+
+  .card { background: #fff; border-radius: 12px; margin-bottom: 24px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+  .card-title { padding: 12px 16px; font-weight: 600; font-size: 14px; color: #444; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 8px; }
+  .card-title .stag { font-size: 11px; padding: 2px 8px; border-radius: 10px; color: #fff; }
+
+  /* Header mock */
+  .header-bar { height: 52px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; border-bottom: 1px solid #eee; }
+  .header-bar .left { font-size: 18px; color: #aaa; }
+  .header-bar .right { display: flex; align-items: center; gap: 10px; }
+  .user-btn { font-size: 13px; color: #555; display: flex; align-items: center; gap: 4px; }
+
+  /* Popover simulation */
+  .popover-demo { padding: 16px; background: #fafafa; border-top: 1px solid #f0f0f0; }
+  .popover-label { font-size: 11px; color: #bbb; margin-bottom: 10px; }
+
+  @media (max-width: 500px) {
+    .header-bar { padding: 0 10px; }
+  }
+</style>
+</head>
+<body>
+
+<h1>主题切换按钮方案（基于方案3优化）</h1>
+<p class="sub">点击色块可切换侧边栏预览搭配</p>
+
+<div class="tabs" id="tabs"></div>
+<div id="app"></div>
+
+<script>
+const sbs = {
+  mogreen: { label: '墨绿', bg: '#1A2E1A', title: '#95DE64', accent: '#52C41A' },
+  warmgray: { label: '暖灰蓝', bg: '#1F2937', title: '#D4B896', accent: '#D4B896' },
+  navy: { label: '藏青', bg: '#0F1B2D', title: '#7EC8E3', accent: '#7EC8E3' },
+};
+let cur = 'mogreen';
+
+function dot(k, size=16) {
+  const v = sbs[k];
+  return `<span style="width:${size}px;height:${size}px;border-radius:${size*0.25}px;background:${v.bg};display:inline-block;flex-shrink:0"></span>`;
+}
+
+function checkMark() {
+  return `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="7" fill="#52C41A"/><path d="M4 7l2 2 4-4" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+
+function render() {
+  const sb = sbs[cur];
+
+  // tabs
+  let t = '<span class="label">当前侧边栏：</span>';
+  for (const [k,v] of Object.entries(sbs)) t += `<div class="tab ${k===cur?'active':''}" onclick="sw('${k}')">${v.label}</div>`;
+  document.getElementById('tabs').innerHTML = t;
+
+  let h = '';
+
+  // ===== 3A: 圆角卡片 + 侧边栏色圆点 + 文字 =====
+  h += `<div class="card"><div class="card-title">3A: 色块标签按钮 + 卡片弹出 <span class="stag" style="background:#52C41A">推荐</span></div>`;
+  h += `<div class="header-bar" style="background:linear-gradient(90deg, rgba(${hexToRgb(sb.bg)},0.06), rgba(${hexToRgb(sb.bg)},0.02))">`;
+  h += `<div class="left">☰</div><div class="right">`;
+  // 按钮本体：色块+文字+箭头，带轻背景
+  h += `<div style="display:flex;align-items:center;gap:6px;padding:5px 12px;border-radius:8px;background:rgba(${hexToRgb(sb.bg)},0.08);cursor:pointer;transition:all 0.2s">`;
+  h += `${dot(cur, 14)}<span style="font-size:12px;color:#555;font-weight:500">${sb.label}</span>`;
+  h += `<span style="font-size:9px;color:#bbb;margin-left:2px">▾</span></div>`;
+  h += `<div class="user-btn">👤 管理员</div></div></div>`;
+  // popover
+  h += `<div class="popover-demo"><div class="popover-label">选择主题配色</div>`;
+  h += `<div style="display:flex;gap:10px">`;
+  for (const [k,v] of Object.entries(sbs)) {
+    const active = k===cur;
+    h += `<div onclick="sw('${k}')" style="flex:1;padding:12px 8px;border-radius:10px;background:${v.bg};cursor:pointer;text-align:center;border:${active?'2.5px solid #52C41A':'2.5px solid transparent'};box-shadow:${active?'0 0 0 3px rgba(82,196,26,0.15)':'0 1px 6px rgba(0,0,0,0.12)'};transition:all 0.2s">`;
+    h += `<div style="font-size:13px;color:${v.title};font-weight:${active?700:400};margin-bottom:4px">${v.label}</div>`;
+    h += `<div style="display:flex;justify-content:center;gap:4px">`;
+    h += `<span style="width:18px;height:4px;border-radius:2px;background:${v.title};opacity:0.7"></span>`;
+    h += `<span style="width:12px;height:4px;border-radius:2px;background:rgba(255,255,255,0.25)"></span>`;
+    h += `</div>`;
+    h += `${active?'<div style="margin-top:6px">'+checkMark()+'</div>':''}`;
+    h += `</div>`;
+  }
+  h += `</div></div></div>`;
+
+  // ===== 3B: 简洁双色圆 + 悬浮卡片 =====
+  h += `<div class="card"><div class="card-title">3B: 双色圆按钮 + 浮层 <span class="stag" style="background:#1677FF">简约</span></div>`;
+  h += `<div class="header-bar" style="background:linear-gradient(90deg, rgba(${hexToRgb(sb.bg)},0.06), rgba(${hexToRgb(sb.bg)},0.02))">`;
+  h += `<div class="left">☰</div><div class="right">`;
+  // 按钮：双层圆环（外=sidebarBg, 内=titleColor）
+  h += `<div style="width:32px;height:32px;border-radius:50%;background:${sb.bg};display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.15)">`;
+  h += `<span style="width:14px;height:14px;border-radius:50%;background:${sb.title}"></span>`;
+  h += `</div>`;
+  h += `<div class="user-btn">👤 管理员</div></div></div>`;
+  h += `<div class="popover-demo"><div class="popover-label">主题</div>`;
+  h += `<div style="display:flex;gap:12px;justify-content:center">`;
+  for (const [k,v] of Object.entries(sbs)) {
+    const active = k===cur;
+    h += `<div onclick="sw('${k}')" style="text-align:center;cursor:pointer">`;
+    h += `<div style="width:44px;height:44px;border-radius:50%;background:${v.bg};display:flex;align-items:center;justify-content:center;border:${active?'3px solid #52C41A':'3px solid transparent'};box-shadow:${active?'0 0 0 2px rgba(82,196,26,0.2)':'0 1px 4px rgba(0,0,0,0.1)'};transition:all 0.2s;margin:0 auto 4px">`;
+    h += `<span style="width:18px;height:18px;border-radius:50%;background:${v.title}"></span>`;
+    h += `</div>`;
+    h += `<span style="font-size:11px;color:${active?'#52C41A':'#999'};font-weight:${active?600:400}">${v.label}</span>`;
+    h += `</div>`;
+  }
+  h += `</div></div></div>`;
+
+  // ===== 3C: 迷你侧边栏预览 =====
+  h += `<div class="card"><div class="card-title">3C: 迷你侧边栏预览 + 弹出 <span class="stag" style="background:#722ED1">直观</span></div>`;
+  h += `<div class="header-bar" style="background:linear-gradient(90deg, rgba(${hexToRgb(sb.bg)},0.06), rgba(${hexToRgb(sb.bg)},0.02))">`;
+  h += `<div class="left">☰</div><div class="right">`;
+  // 按钮：迷你侧边栏形状
+  h += `<div style="display:flex;border-radius:6px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.12);cursor:pointer;height:28px">`;
+  h += `<div style="width:10px;background:${sb.bg}"></div>`;
+  h += `<div style="width:22px;background:#f5f5f5;display:flex;align-items:center;justify-content:center"><span style="width:10px;height:2px;background:#ddd;border-radius:1px"></span></div>`;
+  h += `</div>`;
+  h += `<div class="user-btn">👤 管理员</div></div></div>`;
+  h += `<div class="popover-demo"><div class="popover-label">选择侧边栏配色</div>`;
+  h += `<div style="display:flex;gap:12px">`;
+  for (const [k,v] of Object.entries(sbs)) {
+    const active = k===cur;
+    h += `<div onclick="sw('${k}')" style="cursor:pointer;text-align:center">`;
+    h += `<div style="width:56px;height:72px;border-radius:8px;overflow:hidden;display:flex;border:${active?'2.5px solid #52C41A':'2.5px solid #e0e0e0'};box-shadow:${active?'0 0 0 2px rgba(82,196,26,0.15)':'none'};transition:all 0.2s;margin-bottom:4px">`;
+    h += `<div style="width:16px;background:${v.bg};display:flex;flex-direction:column;align-items:center;padding-top:8px;gap:4px">`;
+    h += `<span style="width:8px;height:2px;border-radius:1px;background:${v.title}"></span>`;
+    h += `<span style="width:8px;height:2px;border-radius:1px;background:rgba(255,255,255,0.2)"></span>`;
+    h += `<span style="width:8px;height:2px;border-radius:1px;background:rgba(255,255,255,0.2)"></span>`;
+    h += `</div>`;
+    h += `<div style="flex:1;background:#fafafa;padding-top:6px;padding-left:3px">`;
+    h += `<div style="width:24px;height:3px;background:#e8e8e8;border-radius:1px;margin-bottom:4px"></div>`;
+    h += `<div style="width:18px;height:3px;background:#f0f0f0;border-radius:1px"></div>`;
+    h += `</div></div>`;
+    h += `<span style="font-size:11px;color:${active?'#52C41A':'#999'};font-weight:${active?600:400}">${v.label}</span>`;
+    h += `</div>`;
+  }
+  h += `</div></div></div>`;
+
+  // ===== 3D: 水平色带条 =====
+  h += `<div class="card"><div class="card-title">3D: 色带按钮 + 横排选择 <span class="stag" style="background:#FA8C16">醒目</span></div>`;
+  h += `<div class="header-bar" style="background:linear-gradient(90deg, rgba(${hexToRgb(sb.bg)},0.06), rgba(${hexToRgb(sb.bg)},0.02))">`;
+  h += `<div class="left">☰</div><div class="right">`;
+  // 按钮：渐变色带
+  h += `<div style="display:flex;align-items:center;gap:6px;padding:4px 12px;border-radius:20px;background:linear-gradient(135deg, ${sb.bg}, ${adjustColor(sb.bg, 40)});cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.15)">`;
+  h += `<span style="font-size:12px;color:${sb.title};font-weight:500">${sb.label}</span>`;
+  h += `<span style="font-size:10px;color:${sb.title};opacity:0.6">▾</span>`;
+  h += `</div>`;
+  h += `<div class="user-btn">👤 管理员</div></div></div>`;
+  h += `<div class="popover-demo"><div class="popover-label">选择配色</div>`;
+  h += `<div style="display:flex;flex-direction:column;gap:8px">`;
+  for (const [k,v] of Object.entries(sbs)) {
+    const active = k===cur;
+    h += `<div onclick="sw('${k}')" style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:10px;cursor:pointer;background:${active?'rgba(82,196,26,0.06)':'#fff'};border:1px solid ${active?'#52C41A':'#eee'};transition:all 0.2s">`;
+    h += `<div style="width:36px;height:24px;border-radius:6px;background:linear-gradient(135deg, ${v.bg}, ${adjustColor(v.bg,40)})"></div>`;
+    h += `<div style="flex:1"><div style="font-size:13px;color:#333;font-weight:${active?600:400}">${v.label}</div></div>`;
+    h += `${active?checkMark():''}`;
+    h += `</div>`;
+  }
+  h += `</div></div></div>`;
+
+  document.getElementById('app').innerHTML = h;
+}
+
+function hexToRgb(hex) {
+  hex = hex.replace('#','');
+  return [parseInt(hex.slice(0,2),16), parseInt(hex.slice(2,4),16), parseInt(hex.slice(4,6),16)].join(',');
+}
+
+function adjustColor(hex, amount) {
+  hex = hex.replace('#','');
+  let r = Math.min(255, parseInt(hex.slice(0,2),16) + amount);
+  let g = Math.min(255, parseInt(hex.slice(2,4),16) + amount);
+  let b = Math.min(255, parseInt(hex.slice(4,6),16) + amount);
+  return `rgb(${r},${g},${b})`;
+}
+
+function sw(k) { cur = k; render(); }
+render();
+</script>
+</body>
+</html>

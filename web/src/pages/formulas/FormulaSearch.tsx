@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Input, Table, Tag, message, Button, Popconfirm, Space, Pagination, Spin, Empty } from 'antd';
-import { SearchOutlined, RobotOutlined, DeleteOutlined, EditOutlined, PlusOutlined, MinusCircleOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { Input, Table, Tag, message, Button, Popconfirm, Space, Pagination, Spin } from 'antd';
+import { SearchOutlined, RobotOutlined, DeleteOutlined, EditOutlined, PlusOutlined, MinusCircleOutlined, InfoCircleOutlined, ReadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { listFormulas, deleteFormula, updateFormulaComposition, updateFormulaName, updateFormulaNotes } from '../../api/formula';
 import type { FormulaItem, FormulaCompositionItem } from '../../api/formula';
@@ -221,11 +221,11 @@ export default function FormulaSearch() {
       responsive: ['md'] as any,
       render: (source: string) =>
         source === 'deepseek' ? (
-          <Tag icon={<RobotOutlined />} color="blue">
+          <Tag className="warm-tag-ai" icon={<RobotOutlined />}>
             AI
           </Tag>
         ) : (
-          <Tag color="green">本地</Tag>
+          <Tag className="warm-tag-local">本地</Tag>
         ),
     },
     ...(hasPermission('role:manage')
@@ -251,9 +251,20 @@ export default function FormulaSearch() {
       : []),
   ];
 
+  // --- Empty state ---
+  const renderEmpty = () => (
+    <div className="warm-empty">
+      <div className="warm-empty-icon">
+        <ReadOutlined style={{ color: '#D4B896' }} />
+      </div>
+      <div className="warm-empty-text">暂无方剂数据</div>
+      <div className="warm-empty-sub">输入方剂名搜索，支持 AI 智能查询</div>
+    </div>
+  );
+
   return (
     <div>
-      <div style={{ marginBottom: 16 }}>
+      <div className="warm-search-bar">
         <Input.Search
           placeholder="输入方剂名称搜索（支持AI查询）"
           allowClear
@@ -271,7 +282,7 @@ export default function FormulaSearch() {
               <Spin />
             </div>
           ) : formulas.length === 0 ? (
-            <Empty description="暂无数据" />
+            renderEmpty()
           ) : (
             formulas.map((record) => {
               const isExpanded = mobileExpanded.includes(record.id);
@@ -282,7 +293,8 @@ export default function FormulaSearch() {
               return (
                 <div
                   key={record.id}
-                  style={{ background: '#fafafa', borderRadius: 8, padding: 12, marginBottom: 8 }}
+                  className="warm-list-card"
+                  style={{ cursor: 'default' }}
                 >
                   {/* Title row */}
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -295,24 +307,24 @@ export default function FormulaSearch() {
                           onBlur={() => handleSaveName(record.id)}
                           onPressEnter={() => handleSaveName(record.id)}
                           autoFocus
-                          style={{ fontWeight: 'bold', fontSize: 15 }}
+                          style={{ fontWeight: 'bold', fontSize: 16 }}
                         />
                       ) : hasPermission('role:manage') ? (
                         <a
                           onClick={() => { setEditingNameId(record.id); setEditingNameValue(record.name); }}
-                          style={{ fontWeight: 'bold', fontSize: 15 }}
+                          style={{ fontWeight: 'bold', fontSize: 16, color: '#5C4A32' }}
                         >
                           {record.name}
                         </a>
                       ) : (
-                        <span style={{ fontWeight: 'bold', fontSize: 15 }}>{record.name}</span>
+                        <span style={{ fontWeight: 'bold', fontSize: 16, color: '#5C4A32' }}>{record.name}</span>
                       )}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                       {record.source === 'deepseek' ? (
-                        <Tag icon={<RobotOutlined />} color="blue">AI</Tag>
+                        <Tag className="warm-tag-ai" icon={<RobotOutlined />}>AI</Tag>
                       ) : (
-                        <Tag color="green">本地</Tag>
+                        <Tag className="warm-tag-local">本地</Tag>
                       )}
                       {hasPermission('role:manage') && (
                         <Popconfirm
@@ -328,13 +340,13 @@ export default function FormulaSearch() {
                   </div>
 
                   {/* Summary */}
-                  <div style={{ color: '#888', fontSize: 13, marginBottom: 6 }}>
+                  <div style={{ color: '#8B7355', fontSize: 13, marginBottom: 6 }}>
                     {(record.composition || []).length}味药
                   </div>
 
                   {/* Expand toggle */}
                   <div
-                    style={{ color: '#1677ff', fontSize: 13, cursor: 'pointer', marginBottom: isExpanded ? 8 : 0 }}
+                    style={{ color: '#52C41A', fontSize: 13, cursor: 'pointer', fontWeight: 500, marginBottom: isExpanded ? 8 : 0 }}
                     onClick={() =>
                       setMobileExpanded((prev) =>
                         prev.includes(record.id)
@@ -348,7 +360,7 @@ export default function FormulaSearch() {
 
                   {/* Expanded content */}
                   {isExpanded && (
-                    <div style={{ marginTop: 4 }}>
+                    <div style={{ marginTop: 4, background: 'linear-gradient(180deg, #FAFAF5, transparent)', borderRadius: 8, padding: 10, borderTop: '1px solid #EDE8DC' }}>
                       <p style={{ margin: '4px 0' }}><strong>功效：</strong>{record.effects || '无'}</p>
                       <p style={{ margin: '4px 0' }}><strong>主治：</strong>{record.indications || '无'}</p>
                       <p style={{ margin: '4px 0' }}>
@@ -429,21 +441,18 @@ export default function FormulaSearch() {
                           </Space>
                         </div>
                       ) : (
-                        <div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                           {comp.length === 0 ? (
-                            <span style={{ color: '#888' }}>无组成信息</span>
+                            <span style={{ color: '#BFB8A8' }}>无组成信息</span>
                           ) : (
                             comp.map((c: FormulaCompositionItem, index: number) => (
-                              <div key={index} style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
-                                <span>{c.herb_name}</span>
-                                {c.default_dosage && <span style={{ color: '#888' }}>{c.default_dosage}</span>}
-                                <Button
-                                  type="text"
-                                  size="small"
-                                  icon={<InfoCircleOutlined />}
-                                  onClick={() => openHerbDetail(c.herb_name)}
-                                />
-                              </div>
+                              <Tag
+                                key={index}
+                                style={{ background: '#F6FFED', border: '1px solid #B7EB8F', color: '#389E0D', cursor: 'pointer', margin: 0 }}
+                                onClick={() => openHerbDetail(c.herb_name)}
+                              >
+                                {c.herb_name}{c.default_dosage ? ` ${c.default_dosage}` : ''}
+                              </Tag>
                             ))
                           )}
                           {hasPermission('role:manage') && (
@@ -615,7 +624,7 @@ export default function FormulaSearch() {
                   )}
                   <Space style={{ marginTop: 8 }}>
                     {record.source === 'deepseek' && (
-                      <Tag icon={<RobotOutlined />} color="blue">
+                      <Tag className="warm-tag-ai" icon={<RobotOutlined />}>
                         数据来源：DeepSeek AI（仅供参考，请结合临床经验）
                       </Tag>
                     )}
