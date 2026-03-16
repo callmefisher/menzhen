@@ -147,7 +147,7 @@ export default function RevenueTrendChart({
     if (!instance || !onBrushSelect || !rawDates?.length) return;
     const opt = instance.getOption() as any;
     const dz = opt.dataZoom?.[0];
-    if (!dz) return;
+    if (!dz || dz.start == null || dz.end == null) return;
     // 使用百分比 start/end 计算索引（startValue/endValue 在百分比模式下可能不存在）
     const len = rawDates.length;
     const startIdx = Math.round((dz.start / 100) * (len - 1));
