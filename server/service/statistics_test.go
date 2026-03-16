@@ -8,11 +8,20 @@ import (
 	"github.com/callmefisher/menzhen/server/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 // statsDay returns midnight of the given date in local time.
 func statsDay(year int, month time.Month, day int) time.Time {
 	return time.Date(year, month, day, 0, 0, 0, 0, time.Local)
+}
+
+// createBillingAt creates a billing and forces its created_at to the given date.
+// This is needed because GORM auto-sets created_at to time.Now().
+func createBillingAt(t *testing.T, db *gorm.DB, bill *model.Billing, at time.Time) {
+	t.Helper()
+	require.NoError(t, db.Create(bill).Error)
+	require.NoError(t, db.Model(bill).UpdateColumn("created_at", at).Error)
 }
 
 func TestRefreshDailyStats_Basic(t *testing.T) {
@@ -32,7 +41,7 @@ func TestRefreshDailyStats_Basic(t *testing.T) {
 	presc1 := model.Prescription{RecordID: r1.ID, TenantID: tenant.ID, TotalDoses: 7, CreatedBy: user.ID}
 	require.NoError(t, db.Create(&presc1).Error)
 	bill1 := model.Billing{PrescriptionID: presc1.ID, RecordID: r1.ID, TenantID: tenant.ID, ConsultationFee: 100, ActualPaid: 350, CreatedBy: user.ID}
-	require.NoError(t, db.Create(&bill1).Error)
+	createBillingAt(t, db, &bill1, today)
 
 	// Record 2 → Prescription 2 → Billing 2 (patient p2, consultation=100, paid=500)
 	r2 := model.MedicalRecord{TenantID: tenant.ID, PatientID: p2.ID, CreatedBy: user.ID, VisitDate: today, Diagnosis: "头痛"}
@@ -40,7 +49,7 @@ func TestRefreshDailyStats_Basic(t *testing.T) {
 	presc2 := model.Prescription{RecordID: r2.ID, TenantID: tenant.ID, TotalDoses: 5, CreatedBy: user.ID}
 	require.NoError(t, db.Create(&presc2).Error)
 	bill2 := model.Billing{PrescriptionID: presc2.ID, RecordID: r2.ID, TenantID: tenant.ID, ConsultationFee: 100, ActualPaid: 500, CreatedBy: user.ID}
-	require.NoError(t, db.Create(&bill2).Error)
+	createBillingAt(t, db, &bill2, today)
 
 	require.NoError(t, svc.RefreshDailyStats(tenant.ID, today))
 
@@ -72,7 +81,7 @@ func TestRefreshDailyStats_ReturningPatient(t *testing.T) {
 	presc1 := model.Prescription{RecordID: r1.ID, TenantID: tenant.ID, TotalDoses: 3, CreatedBy: user.ID}
 	require.NoError(t, db.Create(&presc1).Error)
 	bill1 := model.Billing{PrescriptionID: presc1.ID, RecordID: r1.ID, TenantID: tenant.ID, ConsultationFee: 100, ActualPaid: 200, CreatedBy: user.ID}
-	require.NoError(t, db.Create(&bill1).Error)
+	createBillingAt(t, db, &bill1, yesterday)
 
 	// Second visit: today (returning patient)
 	r2 := model.MedicalRecord{TenantID: tenant.ID, PatientID: patient.ID, CreatedBy: user.ID, VisitDate: today, Diagnosis: "复诊"}
@@ -80,7 +89,7 @@ func TestRefreshDailyStats_ReturningPatient(t *testing.T) {
 	presc2 := model.Prescription{RecordID: r2.ID, TenantID: tenant.ID, TotalDoses: 3, CreatedBy: user.ID}
 	require.NoError(t, db.Create(&presc2).Error)
 	bill2 := model.Billing{PrescriptionID: presc2.ID, RecordID: r2.ID, TenantID: tenant.ID, ConsultationFee: 100, ActualPaid: 300, CreatedBy: user.ID}
-	require.NoError(t, db.Create(&bill2).Error)
+	createBillingAt(t, db, &bill2, today)
 
 	require.NoError(t, svc.RefreshDailyStats(tenant.ID, today))
 
@@ -132,7 +141,7 @@ func TestRefreshDailyStats_TenantIsolation(t *testing.T) {
 	presc1 := model.Prescription{RecordID: r1.ID, TenantID: tenant1.ID, TotalDoses: 5, CreatedBy: user1.ID}
 	require.NoError(t, db.Create(&presc1).Error)
 	bill1 := model.Billing{PrescriptionID: presc1.ID, RecordID: r1.ID, TenantID: tenant1.ID, ConsultationFee: 100, ActualPaid: 400, CreatedBy: user1.ID}
-	require.NoError(t, db.Create(&bill1).Error)
+	createBillingAt(t, db, &bill1, targetDate)
 
 	// Tenant 2: 1 record, revenue=9999 — should NOT appear in tenant 1 stats
 	r2 := model.MedicalRecord{TenantID: tenant2.ID, PatientID: p2.ID, CreatedBy: user2.ID, VisitDate: targetDate, Diagnosis: "发烧"}
@@ -140,7 +149,7 @@ func TestRefreshDailyStats_TenantIsolation(t *testing.T) {
 	presc2 := model.Prescription{RecordID: r2.ID, TenantID: tenant2.ID, TotalDoses: 5, CreatedBy: user2.ID}
 	require.NoError(t, db.Create(&presc2).Error)
 	bill2 := model.Billing{PrescriptionID: presc2.ID, RecordID: r2.ID, TenantID: tenant2.ID, ConsultationFee: 100, ActualPaid: 9999, CreatedBy: user2.ID}
-	require.NoError(t, db.Create(&bill2).Error)
+	createBillingAt(t, db, &bill2, targetDate)
 
 	// Refresh only tenant 1
 	require.NoError(t, svc.RefreshDailyStats(tenant1.ID, targetDate))
@@ -175,7 +184,7 @@ func TestRebuildAllDailyStats(t *testing.T) {
 	p1 := model.Prescription{RecordID: r1.ID, TenantID: tenant.ID, TotalDoses: 3, CreatedBy: user.ID}
 	require.NoError(t, db.Create(&p1).Error)
 	b1 := model.Billing{PrescriptionID: p1.ID, RecordID: r1.ID, TenantID: tenant.ID, ConsultationFee: 80, ActualPaid: 200, CreatedBy: user.ID}
-	require.NoError(t, db.Create(&b1).Error)
+	createBillingAt(t, db, &b1, day1)
 
 	// Day 2: same patient returns (returning)
 	r2 := model.MedicalRecord{TenantID: tenant.ID, PatientID: patient.ID, CreatedBy: user.ID, VisitDate: day2}
@@ -183,7 +192,7 @@ func TestRebuildAllDailyStats(t *testing.T) {
 	p2 := model.Prescription{RecordID: r2.ID, TenantID: tenant.ID, TotalDoses: 3, CreatedBy: user.ID}
 	require.NoError(t, db.Create(&p2).Error)
 	b2 := model.Billing{PrescriptionID: p2.ID, RecordID: r2.ID, TenantID: tenant.ID, ConsultationFee: 80, ActualPaid: 150, CreatedBy: user.ID}
-	require.NoError(t, db.Create(&b2).Error)
+	createBillingAt(t, db, &b2, day2)
 
 	require.NoError(t, svc.RebuildAllDailyStats(tenant.ID))
 
@@ -218,7 +227,7 @@ func TestRefreshDailyStats_ActualPaidLessThanConsultation(t *testing.T) {
 	presc1 := model.Prescription{RecordID: r1.ID, TenantID: tenant.ID, TotalDoses: 7, CreatedBy: user.ID}
 	require.NoError(t, db.Create(&presc1).Error)
 	bill1 := model.Billing{PrescriptionID: presc1.ID, RecordID: r1.ID, TenantID: tenant.ID, ConsultationFee: 100, ActualPaid: 30, CreatedBy: user.ID}
-	require.NoError(t, db.Create(&bill1).Error)
+	createBillingAt(t, db, &bill1, today)
 
 	require.NoError(t, svc.RefreshDailyStats(tenant.ID, today))
 
@@ -249,7 +258,7 @@ func TestRefreshDailyStats_MixedBillings(t *testing.T) {
 	presc1 := model.Prescription{RecordID: r1.ID, TenantID: tenant.ID, TotalDoses: 7, CreatedBy: user.ID}
 	require.NoError(t, db.Create(&presc1).Error)
 	bill1 := model.Billing{PrescriptionID: presc1.ID, RecordID: r1.ID, TenantID: tenant.ID, ConsultationFee: 100, ActualPaid: 500, CreatedBy: user.ID}
-	require.NoError(t, db.Create(&bill1).Error)
+	createBillingAt(t, db, &bill1, today)
 
 	// 患者2：诊金100，实收50（优惠）
 	r2 := model.MedicalRecord{TenantID: tenant.ID, PatientID: p2.ID, CreatedBy: user.ID, VisitDate: today, Diagnosis: "腰痛"}
@@ -257,7 +266,7 @@ func TestRefreshDailyStats_MixedBillings(t *testing.T) {
 	presc2 := model.Prescription{RecordID: r2.ID, TenantID: tenant.ID, TotalDoses: 3, CreatedBy: user.ID}
 	require.NoError(t, db.Create(&presc2).Error)
 	bill2 := model.Billing{PrescriptionID: presc2.ID, RecordID: r2.ID, TenantID: tenant.ID, ConsultationFee: 100, ActualPaid: 50, CreatedBy: user.ID}
-	require.NoError(t, db.Create(&bill2).Error)
+	createBillingAt(t, db, &bill2, today)
 
 	require.NoError(t, svc.RefreshDailyStats(tenant.ID, today))
 
@@ -269,6 +278,86 @@ func TestRefreshDailyStats_MixedBillings(t *testing.T) {
 	assert.InDelta(t, 150, stats.ConsultationFee, 0.01)
 	assert.InDelta(t, 400, stats.DrugFee, 0.01)
 	assert.Equal(t, 2, stats.RecordCount)
+}
+
+// TestRefreshDailyStats_BillingDateDiffersFromVisitDate verifies that revenue
+// is aggregated by billing created_at, not by visit_date.
+// Scenario: record visit_date=3/1, billing created on 3/5.
+// Expected: 3/5 has revenue, 3/1 has records but no revenue.
+func TestRefreshDailyStats_BillingDateDiffersFromVisitDate(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	svc := NewStatisticsService(db)
+
+	tenant := testutil.SeedTestTenant(t, db, "clinic-crossdate", "cross")
+	user, _ := testutil.SeedTestUser(t, db, tenant.ID, "doc", "pass", nil)
+	patient := testutil.SeedTestPatient(t, db, tenant.ID, user.ID, "跨日患者")
+
+	visitDay := statsDay(2026, 3, 1)
+	billingDay := statsDay(2026, 3, 5)
+
+	// Record on 3/1
+	r1 := model.MedicalRecord{TenantID: tenant.ID, PatientID: patient.ID, CreatedBy: user.ID, VisitDate: visitDay, Diagnosis: "感冒"}
+	require.NoError(t, db.Create(&r1).Error)
+	presc1 := model.Prescription{RecordID: r1.ID, TenantID: tenant.ID, TotalDoses: 7, CreatedBy: user.ID}
+	require.NoError(t, db.Create(&presc1).Error)
+
+	// Billing created on 3/5 (different from visit_date)
+	bill1 := model.Billing{PrescriptionID: presc1.ID, RecordID: r1.ID, TenantID: tenant.ID, ConsultationFee: 100, ActualPaid: 500, CreatedBy: user.ID}
+	createBillingAt(t, db, &bill1, billingDay)
+
+	// Refresh both days
+	require.NoError(t, svc.RefreshDailyStats(tenant.ID, visitDay))
+	require.NoError(t, svc.RefreshDailyStats(tenant.ID, billingDay))
+
+	// 3/1: has record and patient, but NO revenue (billing was created on 3/5)
+	var statsVisit model.DailyStats
+	require.NoError(t, db.Where("tenant_id = ? AND stat_date = ?", tenant.ID, visitDay.Format("2006-01-02")).First(&statsVisit).Error)
+	assert.Equal(t, 1, statsVisit.RecordCount)
+	assert.Equal(t, 1, statsVisit.NewPatientCount)
+	assert.InDelta(t, 0, statsVisit.Revenue, 0.01) // no revenue on visit day
+
+	// 3/5: has revenue but NO records (no visit_date on 3/5)
+	var statsBilling model.DailyStats
+	require.NoError(t, db.Where("tenant_id = ? AND stat_date = ?", tenant.ID, billingDay.Format("2006-01-02")).First(&statsBilling).Error)
+	assert.Equal(t, 0, statsBilling.RecordCount)
+	assert.InDelta(t, 500, statsBilling.Revenue, 0.01) // revenue on billing day
+	assert.InDelta(t, 100, statsBilling.ConsultationFee, 0.01)
+	assert.InDelta(t, 400, statsBilling.DrugFee, 0.01)
+}
+
+// TestRebuildAllDailyStats_CrossDate verifies that RebuildAll correctly
+// discovers both visit dates and billing dates when they differ.
+func TestRebuildAllDailyStats_CrossDate(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	svc := NewStatisticsService(db)
+
+	tenant := testutil.SeedTestTenant(t, db, "clinic-rebuild-cross", "rbcross")
+	user, _ := testutil.SeedTestUser(t, db, tenant.ID, "doc", "pass", nil)
+	patient := testutil.SeedTestPatient(t, db, tenant.ID, user.ID, "跨日重建患者")
+
+	visitDay := statsDay(2026, 2, 16)
+	billingDay := statsDay(2026, 3, 16)
+
+	// Record on 2/16, billing on 3/16 (one month later)
+	r1 := model.MedicalRecord{TenantID: tenant.ID, PatientID: patient.ID, CreatedBy: user.ID, VisitDate: visitDay, Diagnosis: "腰痛"}
+	require.NoError(t, db.Create(&r1).Error)
+	presc1 := model.Prescription{RecordID: r1.ID, TenantID: tenant.ID, TotalDoses: 5, CreatedBy: user.ID}
+	require.NoError(t, db.Create(&presc1).Error)
+	bill1 := model.Billing{PrescriptionID: presc1.ID, RecordID: r1.ID, TenantID: tenant.ID, ConsultationFee: 80, ActualPaid: 300, CreatedBy: user.ID}
+	createBillingAt(t, db, &bill1, billingDay)
+
+	require.NoError(t, svc.RebuildAllDailyStats(tenant.ID))
+
+	// Both dates should have stats rows
+	var statsVisit model.DailyStats
+	require.NoError(t, db.Where("tenant_id = ? AND stat_date = ?", tenant.ID, visitDay.Format("2006-01-02")).First(&statsVisit).Error)
+	assert.Equal(t, 1, statsVisit.RecordCount)
+	assert.InDelta(t, 0, statsVisit.Revenue, 0.01) // no revenue on visit day
+
+	var statsBilling model.DailyStats
+	require.NoError(t, db.Where("tenant_id = ? AND stat_date = ?", tenant.ID, billingDay.Format("2006-01-02")).First(&statsBilling).Error)
+	assert.Equal(t, 0, statsBilling.RecordCount)
+	assert.InDelta(t, 300, statsBilling.Revenue, 0.01) // revenue on billing day
 }
 
 func TestGetDashboard_Basic(t *testing.T) {
@@ -503,7 +592,7 @@ func TestRefreshDailyStats_ManyPatients(t *testing.T) {
 		presc := model.Prescription{RecordID: rToday.ID, TenantID: tenant.ID, TotalDoses: 3, CreatedBy: user.ID}
 		require.NoError(t, db.Create(&presc).Error)
 		bill := model.Billing{PrescriptionID: presc.ID, RecordID: rToday.ID, TenantID: tenant.ID, ConsultationFee: 50, ActualPaid: 100, CreatedBy: user.ID}
-		require.NoError(t, db.Create(&bill).Error)
+		createBillingAt(t, db, &bill, today)
 	}
 
 	require.NoError(t, svc.RefreshDailyStats(tenant.ID, today))

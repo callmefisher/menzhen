@@ -18,7 +18,7 @@ import {
   Drawer,
   Tooltip,
 } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, RobotOutlined, ReloadOutlined, MedicineBoxOutlined, InboxOutlined, SearchOutlined, DownOutlined, RightOutlined, DollarOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, RobotOutlined, ReloadOutlined, MedicineBoxOutlined, InboxOutlined, SearchOutlined, DownOutlined, RightOutlined, DollarOutlined, CheckOutlined, PrinterOutlined, LeftOutlined, ScheduleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import Markdown from 'react-markdown';
@@ -32,6 +32,7 @@ import { listPatients, createPatient, getPatient } from '../../api/patient';
 import {
   listPrescriptionsByRecord,
   deletePrescription,
+  createPrescription,
 } from '../../api/prescription';
 import type { PrescriptionData } from '../../api/prescription';
 import FileUpload from '../../components/FileUpload';
@@ -39,6 +40,8 @@ import type { AttachmentInfo } from '../../components/FileUpload';
 import PrescriptionModal from '../../components/PrescriptionModal';
 import PrescriptionPrint from '../../components/PrescriptionPrint';
 import BillingDrawer from '../../components/BillingDrawer';
+import PrintCenterDrawer from '../../components/PrintCenterDrawer';
+import FollowUpDrawer from '../../components/FollowUpDrawer';
 import { listRecordBillings } from '../../api/billing';
 import type { BillingRecord } from '../../api/billing';
 import { useAuth } from '../../store/auth';
@@ -96,6 +99,7 @@ export default function RecordForm() {
 
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [returnSaving, setReturnSaving] = useState(false);
   const [patients, setPatients] = useState<PatientOption[]>([]);
   const [patientLoading, setPatientLoading] = useState(false);
   const [patientModalOpen, setPatientModalOpen] = useState(false);
@@ -108,11 +112,32 @@ export default function RecordForm() {
 
   // Billing state
   const [billingDrawerOpen, setBillingDrawerOpen] = useState(false);
+  const [billingPrintOnly, setBillingPrintOnly] = useState(false);
   const [billingPrescriptionId, setBillingPrescriptionId] = useState<number>(0);
   const [billingMap, setBillingMap] = useState<Record<number, BillingRecord>>({});
 
+  // Follow-up drawer state
+  const [followUpDrawerOpen, setFollowUpDrawerOpen] = useState(false);
+
+  // Print center (mobile combined print+billing)
+  const [printCenterOpen, setPrintCenterOpen] = useState(false);
+  const [printCenterPrescription, setPrintCenterPrescription] = useState<PrescriptionData | null>(null);
+
   // Record data for prescription print
   const [recordPatient, setRecordPatient] = useState<PatientOption | null>(null);
+
+  // Return-to-patient navigation state
+  const fromPatient = searchParams.get('from') === 'patient';
+  const [lastSavedPrescriptionId, setLastSavedPrescriptionId] = useState<number | null>(null);
+
+  // Build edit URL preserving from=patient params
+  const buildEditUrl = (recordId: number) => {
+    const patientId = searchParams.get('patient_id');
+    if (fromPatient && patientId) {
+      return `/records/${recordId}?from=patient&patient_id=${patientId}`;
+    }
+    return `/records/${recordId}`;
+  };
 
   // Debounce timer ref for patient search
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -132,6 +157,7 @@ export default function RecordForm() {
   const [selectedPulse, setSelectedPulse] = useState<PulseItem | null>(null);
   const [pulseAiQuerying, setPulseAiQuerying] = useState(false);
   const [pulseSearchText, setPulseSearchText] = useState('');
+  const [pulseSearched, setPulseSearched] = useState(false);
 
   // Tongue analysis state
   const [tongueAnalyzing, setTongueAnalyzing] = useState(false);
@@ -209,6 +235,22 @@ export default function RecordForm() {
       // handled
     }
   }, [id]);
+
+  // Scroll to and highlight the newly saved prescription
+  useEffect(() => {
+    if (!lastSavedPrescriptionId || prescriptions.length === 0) return;
+    if (!prescriptions.some((p) => p.id === lastSavedPrescriptionId)) return;
+    const el = document.querySelector(`[data-prescription-id="${lastSavedPrescriptionId}"]`);
+    if (el) {
+      setTimeout(() => {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 100);
+    }
+    const timer = setTimeout(() => {
+      setLastSavedPrescriptionId(null);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [lastSavedPrescriptionId, prescriptions]);
 
   const loadBillings = useCallback(async () => {
     if (!id) return;
@@ -330,7 +372,13 @@ export default function RecordForm() {
             const pList = pulseBody.data.list || [];
             setPulseOptions(pList);
             const found = pList.find((p: PulseItem) => p.id === record.pulse_id);
-            if (found) setSelectedPulse(found);
+            if (found) {
+              setSelectedPulse(found);
+            } else {
+              // Free-text pulse name not in DB — show as directly saved
+              setSelectedPulse({ id: 0, name: record.pulse_name, category: '', description: '', clinical_meaning: '', common_conditions: '', created_at: '' });
+              setPulseSearchText(record.pulse_name);
+            }
           } catch { /* ignore */ }
         }
         if (record.tongue_image) {
@@ -391,9 +439,11 @@ export default function RecordForm() {
   const searchPulses = useCallback(async (name: string) => {
     if (!name.trim()) {
       setPulseOptions([]);
+      setPulseSearched(false);
       return;
     }
     setPulseLoading(true);
+    setPulseSearched(false);
     try {
       const res = await listPulses({ name, page: 1, size: 10 });
       const body = res as unknown as { data: { list: PulseItem[]; total: number } };
@@ -402,6 +452,7 @@ export default function RecordForm() {
       // handled
     } finally {
       setPulseLoading(false);
+      setPulseSearched(true);
     }
   }, []);
 
@@ -409,7 +460,7 @@ export default function RecordForm() {
     if (!pulseSearchText.trim()) return;
     setPulseAiQuerying(true);
     try {
-      const res = await listPulses({ name: pulseSearchText, page: 1, size: 10 });
+      const res = await listPulses({ name: pulseSearchText, page: 1, size: 10, ai: true });
       const body = res as unknown as { data: { list: PulseItem[]; total: number } };
       const list = dedupPulses(body.data.list || []);
       setPulseOptions(list);
@@ -497,7 +548,7 @@ export default function RecordForm() {
         const body = res as unknown as { data: { id: number } };
         if (body.data?.id) {
           recordId = body.data.id;
-          navigate(`/records/${recordId}`, { replace: true });
+          navigate(buildEditUrl(recordId), { replace: true });
         }
       }
       message.success('诊疗记录已自动保存');
@@ -610,7 +661,7 @@ export default function RecordForm() {
         }
         // Redirect to edit page so user can immediately add prescriptions
         if (body.data?.id) {
-          navigate(`/records/${body.data.id}`);
+          navigate(buildEditUrl(body.data.id));
         } else {
           navigate('/records');
         }
@@ -627,8 +678,9 @@ export default function RecordForm() {
       await deletePrescription(prescriptionId);
       message.success('处方已删除');
       loadPrescriptions();
+      loadBillings();
     } catch {
-      // handled
+      message.error('删除处方失败');
     }
   };
 
@@ -740,6 +792,20 @@ export default function RecordForm() {
     setPrescriptionModalOpen(true);
   };
 
+  // 快速创建仅诊疗费空处方并打开收费
+  const handleQuickConsultationFee = async () => {
+    if (!id) return;
+    try {
+      const res = await createPrescription({ record_id: Number(id), items: [] });
+      const body = res as unknown as { code: number; data: { id: number } };
+      await loadPrescriptions();
+      setBillingPrescriptionId(body.data.id);
+      setBillingDrawerOpen(true);
+    } catch {
+      message.error('创建失败');
+    }
+  };
+
   if (loading) {
     return (
       <div
@@ -755,8 +821,104 @@ export default function RecordForm() {
     );
   }
 
+  // Compute patient info for return bar
+  const returnPatientId = recordPatient?.id || Number(searchParams.get('patient_id')) || null;
+  const returnPatientName = recordPatient?.name || patients.find(p => p.id === returnPatientId)?.name || '';
+
   return (
     <div style={{ background: '#f0f2f5', minHeight: '100%' }}>
+      {/* Return-to-patient navigation bar – sticky on scroll */}
+      {returnPatientId && (isEdit || fromPatient) && (
+        <div
+          style={{
+            position: 'sticky',
+            top: 0,
+            zIndex: 100,
+            background: 'linear-gradient(90deg, #e6f4ff 0%, #f0f5ff 100%)',
+            border: '1px solid #69b1ff',
+            borderRadius: 8,
+            padding: isMobile ? '8px 12px' : '10px 16px',
+            marginBottom: 12,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 8,
+            boxShadow: '0 2px 8px rgba(22, 119, 255, 0.18)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+            <div style={{
+              width: isMobile ? 24 : 28,
+              height: isMobile ? 24 : 28,
+              borderRadius: '50%',
+              background: '#1677ff',
+              color: '#fff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: isMobile ? 11 : 12,
+              fontWeight: 700,
+              flexShrink: 0,
+            }}>
+              {returnPatientName?.charAt(0) || '?'}
+            </div>
+            <span style={{ fontSize: isMobile ? 12 : 13, color: '#1677ff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              患者 <span style={{ fontWeight: 600, color: '#1a1a2e' }}>{returnPatientName}</span>
+            </span>
+          </div>
+          <Button
+            type={lastSavedPrescriptionId ? 'primary' : 'default'}
+            icon={<LeftOutlined />}
+            size={isMobile ? 'small' : 'middle'}
+            loading={returnSaving}
+            className={lastSavedPrescriptionId ? 'return-btn-pulse' : ''}
+            style={lastSavedPrescriptionId ? undefined : { borderColor: '#1677ff', color: '#1677ff', fontWeight: 500 }}
+            onClick={async () => {
+              try {
+                const values = await form.validateFields();
+                setReturnSaving(true);
+                const payload = {
+                  chief_complaint: values.chief_complaint || '',
+                  pulse_id: values.pulse_id || null,
+                  pulse_name: values.pulse_name || '',
+                  tongue_image: values.tongue_image || '',
+                  tongue_description: values.tongue_description || '',
+                  tongue_analysis: values.tongue_analysis || '',
+                  diagnosis: values.diagnosis || '',
+                  treatment: values.treatment || '',
+                  notes: values.notes || '',
+                  visit_date: values.visit_date.format('YYYY-MM-DD'),
+                  attachments: values.attachments || [],
+                };
+                let navRecordId = id ? Number(id) : undefined;
+                if (isEdit) {
+                  await updateRecord(Number(id), payload);
+                } else {
+                  const res = await createRecord({ ...payload, patient_id: values.patient_id });
+                  const body = res as unknown as { data: { id: number } };
+                  navRecordId = body.data?.id;
+                  if (navRecordId && aiResult) {
+                    try { await saveAiAnalysis(navRecordId, values.diagnosis || '', aiResult); } catch { /* ignore */ }
+                  }
+                }
+                message.success('诊疗记录已保存');
+                navigate(`/patients/${returnPatientId}`, {
+                  state: {
+                    highlightRecordId: navRecordId,
+                    highlightPrescriptionId: lastSavedPrescriptionId || undefined,
+                  },
+                });
+              } catch {
+                // Validation failed or save error – stay on page
+              } finally {
+                setReturnSaving(false);
+              }
+            }}
+          >
+            {isMobile ? '返回' : '返回患者详情'}
+          </Button>
+        </div>
+      )}
       <div style={{
         background: '#fff',
         borderRadius: 8,
@@ -874,13 +1036,15 @@ export default function RecordForm() {
             <Tag
               closable
               onClose={() => {
+                const prevName = selectedPulse?.name || '';
                 setSelectedPulse(null);
-                setPulseSearchText('');
+                setPulseSearchText(prevName);
                 setPulseOptions([]);
+                setPulseSearched(false);
                 form.setFieldsValue({ pulse_id: undefined, pulse_name: '' });
               }}
               color="blue"
-              style={{ fontSize: 14, padding: '4px 10px', lineHeight: '22px' }}
+              style={{ fontSize: 14, padding: '4px 10px', lineHeight: '22px', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
             >
               {selectedPulse.name}
               {selectedPulse.category && ` (${selectedPulse.category})`}
@@ -893,7 +1057,7 @@ export default function RecordForm() {
                   <Tag
                     key={p.id}
                     color="processing"
-                    style={{ cursor: 'pointer', fontSize: 13, padding: '2px 10px' }}
+                    style={{ cursor: 'pointer', fontSize: 13, padding: '2px 10px', maxWidth: isMobile ? 'calc(100% - 80px)' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                     onClick={() => {
                       setSelectedPulse(p);
                       setPulseSearchText(p.name);
@@ -908,7 +1072,7 @@ export default function RecordForm() {
                   type="default"
                   size="small"
                   icon={<SearchOutlined />}
-                  onClick={() => { setPulseOptions([]); setPulseSearchText(''); }}
+                  onClick={() => { setPulseOptions([]); setPulseSearchText(''); setPulseSearched(false); }}
                   style={{ fontSize: 14, marginLeft: 8, borderStyle: 'dashed', color: '#fa8c16', borderColor: '#fa8c16' }}
                 >
                   重新搜索
@@ -918,30 +1082,48 @@ export default function RecordForm() {
           ) : (
             /* 状态1: 初始/无结果 — 显示搜索输入框 */
             <>
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
                 <Input
                   value={pulseSearchText}
                   onChange={(e) => setPulseSearchText(e.target.value)}
                   onPressEnter={() => pulseSearchText.trim() && searchPulses(pulseSearchText)}
-                  placeholder="输入脉象名称后点击查询"
+                  placeholder={isMobile ? '输入脉象名称' : '输入脉象名称，可查询或直接保存'}
                   allowClear
-                  style={{ flex: 1 }}
+                  style={{ flex: 1, minWidth: 0 }}
                 />
-                <Button
-                  icon={<SearchOutlined />}
-                  loading={pulseLoading}
-                  onClick={() => searchPulses(pulseSearchText)}
-                  disabled={!pulseSearchText.trim()}
-                >
-                  查询
-                </Button>
+                <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                  <Button
+                    icon={<SearchOutlined />}
+                    loading={pulseLoading}
+                    onClick={() => searchPulses(pulseSearchText)}
+                    disabled={!pulseSearchText.trim()}
+                  >
+                    查询
+                  </Button>
+                  <Button
+                    icon={<CheckOutlined />}
+                    type="primary"
+                    ghost
+                    onClick={() => {
+                      const text = pulseSearchText.trim();
+                      if (!text) return;
+                      setSelectedPulse({ id: 0, name: text, category: '', description: '', clinical_meaning: '', common_conditions: '', created_at: '' });
+                      form.setFieldsValue({ pulse_id: undefined, pulse_name: text });
+                      setPulseOptions([]);
+                      setPulseSearched(false);
+                    }}
+                    disabled={!pulseSearchText.trim()}
+                  >
+                    保存
+                  </Button>
+                </div>
               </div>
-              {pulseSearchText && !pulseLoading && (
+              {pulseSearched && pulseOptions.length === 0 && pulseSearchText && !pulseLoading && (
                 <div style={{ textAlign: 'center', padding: '8px 0' }}>
-                  <div style={{ color: '#999', marginBottom: 8 }}>未找到匹配脉象</div>
+                  <div style={{ color: '#999', fontSize: isMobile ? 12 : 14, marginBottom: 4 }}>未找到匹配，可直接保存或从 AI 查询</div>
                   <Button
                     type="link"
-                    icon={<SearchOutlined />}
+                    icon={<RobotOutlined />}
                     loading={pulseAiQuerying}
                     onClick={handlePulseAiQuery}
                   >
@@ -956,17 +1138,18 @@ export default function RecordForm() {
         <Form.Item name="pulse_name" hidden>
           <Input />
         </Form.Item>
-        {selectedPulse && (
+        {selectedPulse && (selectedPulse.description || selectedPulse.clinical_meaning || selectedPulse.common_conditions) && (
           <div style={{
             marginTop: -8,
             marginBottom: 16,
-            padding: '12px 16px',
+            padding: isMobile ? '8px 12px' : '12px 16px',
             background: '#f6f8fa',
             borderRadius: 8,
             border: '1px solid #e8e8e8',
-            fontSize: 13,
+            fontSize: isMobile ? 12 : 13,
             lineHeight: 1.8,
             color: '#555',
+            wordBreak: 'break-word',
           }}>
             {selectedPulse.description && <div><span style={{ color: '#888' }}>特征：</span>{selectedPulse.description}</div>}
             {selectedPulse.clinical_meaning && <div><span style={{ color: '#888' }}>临床意义：</span>{selectedPulse.clinical_meaning}</div>}
@@ -1182,7 +1365,7 @@ export default function RecordForm() {
                         }
                       }
                       if (body.data?.id) {
-                        navigate(`/records/${body.data.id}`);
+                        navigate(buildEditUrl(body.data.id));
                       }
                     } catch {
                       // validation error
@@ -1198,6 +1381,14 @@ export default function RecordForm() {
                 开方
               </Button>
             )}
+            {isEdit && hasPermission('followup:create') && (
+              <Button
+                icon={<ScheduleOutlined />}
+                onClick={() => setFollowUpDrawerOpen(true)}
+              >
+                {isMobile ? '回访' : '创建回访'}
+              </Button>
+            )}
             {!isMobile && <Button onClick={() => navigate('/records')}>取消</Button>}
             </Space>
           </div>
@@ -1209,7 +1400,7 @@ export default function RecordForm() {
         <>
           <Divider />
           <div style={{
-            background: '#fafafa',
+            background: 'linear-gradient(180deg, #fafafa 0%, #f5f5f5 100%)',
             borderRadius: 8,
             padding: '20px 24px',
             border: '1px solid #f0f0f0',
@@ -1223,83 +1414,132 @@ export default function RecordForm() {
               }}
             >
               <h3 style={{ margin: 0 }}>处方</h3>
-              {hasPermission('prescription:create') && (
+              <Space>
                 <Button
-                  type="primary"
-                  icon={<PlusOutlined />}
-                  onClick={() => handleOpenPrescriptionModal()}
+                  icon={<DollarOutlined />}
+                  size={isMobile ? 'small' : 'middle'}
+                  onClick={handleQuickConsultationFee}
+                  style={{
+                    background: '#fffbe6',
+                    color: '#d48806',
+                    borderColor: '#ffe58f',
+                    fontWeight: 500,
+                  }}
                 >
-                  开方
+                  {isMobile ? '诊疗费' : '仅收诊疗费'}
                 </Button>
-              )}
+                {hasPermission('prescription:create') && (
+                  <Button
+                    type="primary"
+                    size={isMobile ? 'small' : 'middle'}
+                    icon={<PlusOutlined />}
+                    onClick={() => handleOpenPrescriptionModal()}
+                  >
+                    开方
+                  </Button>
+                )}
+              </Space>
             </div>
 
             {prescriptions.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {/* 仅诊疗费卡片（record-level billing） */}
-                {billingMap[0] && (() => {
-                  const b = billingMap[0];
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                {prescriptions.map((item) => {
+                  const isEmpty = (item.items || []).length === 0;
+                  const isHighlighted = item.id === lastSavedPrescriptionId;
                   return (
-                    <Card
-                      size="small"
-                      style={{ borderRadius: 8, borderColor: '#ffe58f', background: '#fffbe6' }}
-                      title={
-                        <Space size={8}>
-                          <DollarOutlined style={{ color: '#faad14' }} />
-                          <span style={{ fontWeight: 500 }}>仅诊疗费</span>
-                        </Space>
-                      }
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-                        <div style={{ display: 'flex', gap: 16, fontSize: 13, color: '#888', flexWrap: 'wrap' }}>
-                          <span>诊疗费 <span style={{ color: '#333' }}>¥{b.consultation_fee.toFixed(2)}</span></span>
-                          <span>实收 <span style={{ color: '#389e0d', fontWeight: 600 }}>¥{b.actual_paid.toFixed(2)}</span></span>
-                        </div>
-                        <Button
-                          type="link"
-                          size="small"
-                          icon={<EditOutlined />}
-                          onClick={() => {
-                            setBillingPrescriptionId(0);
-                            setBillingDrawerOpen(true);
-                          }}
-                          style={{ color: '#faad14', padding: 0 }}
-                        >
-                          修改
-                        </Button>
-                      </div>
-                    </Card>
-                  );
-                })()}
-                {prescriptions.map((item) => (
+                  <div key={item.id} data-prescription-id={item.id} style={{ position: 'relative' }}>
+                    {isHighlighted && (
+                      <span className="prescription-saved-badge">&#10003; 已保存</span>
+                    )}
                   <Card
-                    key={item.id}
                     size="small"
-                    style={{ borderRadius: 8 }}
+                    className={isHighlighted ? 'prescription-saved-highlight' : undefined}
+                    style={isEmpty
+                      ? { borderRadius: 8, borderColor: '#ffe58f', background: '#fffbe6' }
+                      : { borderRadius: 8, background: 'linear-gradient(135deg, #ffffff 0%, #f8fbff 100%)', borderColor: '#d6e4ff' }
+                    }
                     title={
                       <Space size={8}>
-                        <MedicineBoxOutlined style={{ color: (item.items || []).length === 0 ? '#faad14' : '#1677ff' }} />
-                        <span style={{ fontWeight: 500 }}>{(item.items || []).length === 0 ? '仅诊疗费' : (item.formula_name || '自定义处方')}</span>
-                        {(item.items || []).length > 0 && <Tag color="blue" style={{ marginLeft: 4 }}>{item.total_doses} 付</Tag>}
+                        {isEmpty
+                          ? <DollarOutlined style={{ color: '#faad14' }} />
+                          : <MedicineBoxOutlined style={{ color: '#1677ff' }} />
+                        }
+                        <span style={{ fontWeight: 500 }}>{isEmpty ? '仅诊疗费' : (item.formula_name || '自定义处方')}</span>
+                        {!isEmpty && <Tag color="blue" style={{ marginLeft: 4 }}>{item.total_doses} 付</Tag>}
+                        {item.created_at && <span style={{ fontSize: 12, color: '#999', marginLeft: 8 }}>{dayjs(item.created_at).format('YYYY-MM-DD HH:mm')}</span>}
                       </Space>
                     }
-                    extra={
-                      (item.items || []).length > 0 && (
-                        <PrescriptionPrint
-                          prescription={item}
-                          patientName={recordPatient?.name}
-                          patientAge={recordPatient?.age}
-                          chiefComplaint={form.getFieldValue('chief_complaint')}
-                          treatment={form.getFieldValue('treatment')}
-                          iconOnly
-                        />
-                      )
-                    }
                   >
-                    {(item.items || []).length === 0 ? (
-                      <div style={{ color: '#999', textAlign: 'center', padding: '8px 0' }}>
-                        仅收取诊疗费（无药品）
-                      </div>
+                    {isEmpty ? (
+                      <>
+                        <div style={{ display: 'flex', gap: 16, fontSize: 13, color: '#888', flexWrap: 'wrap' }}>
+                          {billingMap[item.id] ? (() => {
+                            const b = billingMap[item.id];
+                            return (
+                              <>
+                                <span>诊疗费 <span style={{ color: '#333' }}>¥{(b.consultation_fee ?? 0).toFixed(2)}</span></span>
+                                <span>实收 <span style={{ color: '#389e0d', fontWeight: 600 }}>¥{(b.actual_paid ?? 0).toFixed(2)}</span></span>
+                              </>
+                            );
+                          })() : (
+                            <span style={{ color: '#999' }}>仅收取诊疗费（无药品）</span>
+                          )}
+                        </div>
+                        <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                          <Button
+                            size="small"
+                            icon={<PrinterOutlined />}
+                            onClick={() => {
+                              setBillingPrescriptionId(item.id);
+                              setBillingPrintOnly(true);
+                              setBillingDrawerOpen(true);
+                            }}
+                            style={{ background: '#fff7e6', color: '#d48806', borderColor: '#ffd591', fontWeight: 500 }}
+                          >
+                            {isMobile ? '打印' : '打印收费'}
+                          </Button>
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            <Button
+                              type="link"
+                              size="small"
+                              icon={<DollarOutlined />}
+                              onClick={() => {
+                                setBillingPrescriptionId(item.id);
+                                setBillingPrintOnly(false);
+                                setBillingDrawerOpen(true);
+                              }}
+                              style={{ color: '#faad14', padding: 0 }}
+                            >
+                              收费
+                            </Button>
+                            {hasPermission('prescription:create') && (
+                              <>
+                                <span style={{ color: '#e0e0e0' }}>|</span>
+                                <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleOpenPrescriptionModal(item)} style={{ padding: 0 }}>编辑</Button>
+                                <Button
+                                  type="link"
+                                  size="small"
+                                  icon={<DeleteOutlined />}
+                                  danger
+                                  style={{ padding: 0 }}
+                                  onClick={() => {
+                                    Modal.confirm({
+                                      title: '确定删除此处方？',
+                                      content: '删除后不可恢复',
+                                      okText: '删除',
+                                      okButtonProps: { danger: true },
+                                      cancelText: '取消',
+                                      onOk: () => handleDeletePrescription(item.id),
+                                    });
+                                  }}
+                                >
+                                  删除
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </>
                     ) : (
                     <>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px', lineHeight: '26px' }}>
@@ -1326,7 +1566,7 @@ export default function RecordForm() {
                     )}
                     </>
                     )}
-                    {item.notes && (
+                    {!isEmpty && item.notes && (
                       <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed #f0f0f0', color: '#666', fontSize: 13 }}>
                         <div style={{ marginBottom: 2 }}>医嘱：</div>
                         {item.notes.split('\n').map((line, idx) => (
@@ -1334,67 +1574,119 @@ export default function RecordForm() {
                         ))}
                       </div>
                     )}
-                    {item.creator?.real_name && (
+                    {!isEmpty && item.creator?.real_name && (
                       <div style={{ marginTop: 6, fontSize: 12, color: '#999', textAlign: 'right' }}>
                         开方医师：{item.creator.real_name}
                       </div>
                     )}
-                    {billingMap[item.id] && (() => {
+                    {!isEmpty && billingMap[item.id] && (() => {
                       const b = billingMap[item.id];
                       return (
                         <div style={{
                           marginTop: 8, paddingTop: 8, borderTop: '1px dashed #e8e8e8',
                           display: 'flex', gap: 16, fontSize: 12, color: '#888', flexWrap: 'wrap', alignItems: 'center',
                         }}>
-                          <span>诊疗费 <span style={{ color: '#333' }}>¥{b.consultation_fee.toFixed(2)}</span></span>
-                          {b.drug_cost_total > 0 && <span>药费 <span style={{ color: '#333' }}>¥{b.drug_cost_total.toFixed(2)}</span></span>}
-                          <span>应收 <span style={{ color: '#cf1322', fontWeight: 600 }}>¥{b.total_amount.toFixed(2)}</span></span>
-                          <span>实收 <span style={{ color: '#389e0d', fontWeight: 600 }}>¥{b.actual_paid.toFixed(2)}</span></span>
+                          <span>诊疗费 <span style={{ color: '#333' }}>¥{(b.consultation_fee ?? 0).toFixed(2)}</span></span>
+                          {b.drug_cost_total > 0 && <span>药费 <span style={{ color: '#333' }}>¥{(b.drug_cost_total ?? 0).toFixed(2)}</span></span>}
+                          <span>应收 <span style={{ color: '#cf1322', fontWeight: 600 }}>¥{(b.total_amount ?? 0).toFixed(2)}</span></span>
+                          <span>实收 <span style={{ color: '#389e0d', fontWeight: 600 }}>¥{(b.actual_paid ?? 0).toFixed(2)}</span></span>
                           {b.stock_deducted && <Tag color="green" style={{ fontSize: 11 }}>已扣库存</Tag>}
                         </div>
                       );
                     })()}
-                    {/* 操作栏 */}
-                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #f0f0f0', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                      <Button
-                        type="link"
-                        size="small"
-                        icon={<DollarOutlined />}
-                        onClick={() => {
-                          setBillingPrescriptionId(item.id);
-                          setBillingDrawerOpen(true);
-                        }}
-                        style={{ color: '#faad14', padding: 0 }}
-                      >
-                        收费
-                      </Button>
-                      {hasPermission('prescription:create') && (
-                        <>
-                          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleOpenPrescriptionModal(item)} style={{ padding: 0 }}>编辑</Button>
+                    {/* 操作栏 — 仅非空处方 */}
+                    {!isEmpty && (
+                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        {isMobile ? (
+                          /* 移动端：合并入口 */
                           <Button
-                            type="link"
                             size="small"
-                            icon={<DeleteOutlined />}
-                            danger
-                            style={{ padding: 0 }}
+                            type="primary"
+                            icon={<PrinterOutlined />}
                             onClick={() => {
-                              Modal.confirm({
-                                title: '确定删除此处方？',
-                                content: '删除后不可恢复',
-                                okText: '删除',
-                                okButtonProps: { danger: true },
-                                cancelText: '取消',
-                                onOk: () => handleDeletePrescription(item.id),
-                              });
+                              setPrintCenterPrescription(item);
+                              setPrintCenterOpen(true);
+                            }}
+                            style={{
+                              background: 'linear-gradient(135deg, #1677ff 0%, #0958d9 100%)',
+                              fontWeight: 500,
                             }}
                           >
-                            删除
+                            打印
                           </Button>
-                        </>
-                      )}
+                        ) : (
+                          /* 桌面端：保持分开的按钮 */
+                          <>
+                            <Button
+                              size="small"
+                              icon={<PrinterOutlined />}
+                              onClick={() => {
+                                setBillingPrescriptionId(item.id);
+                                setBillingPrintOnly(true);
+                                setBillingDrawerOpen(true);
+                              }}
+                              style={{ background: '#fff7e6', color: '#d48806', borderColor: '#ffd591', fontWeight: 500 }}
+                            >
+                              打印收费
+                            </Button>
+                            <PrescriptionPrint
+                              prescription={item}
+                              patientName={recordPatient?.name}
+                              patientAge={recordPatient?.age}
+                              chiefComplaint={form.getFieldValue('chief_complaint')}
+                              treatment={form.getFieldValue('treatment')}
+                              iconOnly
+                            />
+                          </>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        <Button
+                          type="link"
+                          size="small"
+                          icon={<DollarOutlined />}
+                          onClick={() => {
+                            setBillingPrescriptionId(item.id);
+                            setBillingPrintOnly(false);
+                            setBillingDrawerOpen(true);
+                          }}
+                          style={{ color: '#faad14', padding: 0 }}
+                        >
+                          收费
+                        </Button>
+                        {hasPermission('prescription:create') && (
+                          <>
+                            <span style={{ color: '#e0e0e0' }}>|</span>
+                            <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleOpenPrescriptionModal(item)} style={{ padding: 0 }}>编辑</Button>
+                            <Button
+                              type="link"
+                              size="small"
+                              icon={<DeleteOutlined />}
+                              danger
+                              style={{ padding: 0 }}
+                              onClick={() => {
+                                Modal.confirm({
+                                  title: '确定删除此处方？',
+                                  content: '删除后不可恢复',
+                                  okText: '删除',
+                                  okButtonProps: { danger: true },
+                                  cancelText: '取消',
+                                  onOk: () => handleDeletePrescription(item.id),
+                                });
+                              }}
+                            >
+                              删除
+                            </Button>
+                          </>
+                        )}
+                      </div>
                     </div>
+                    )}
                   </Card>
-                ))}
+                  </div>
+                  );
+                })}
               </div>
             ) : (
               <div style={{
@@ -1411,10 +1703,7 @@ export default function RecordForm() {
                   <Button
                     type="primary"
                     icon={<DollarOutlined />}
-                    onClick={() => {
-                      setBillingPrescriptionId(0);
-                      setBillingDrawerOpen(true);
-                    }}
+                    onClick={handleQuickConsultationFee}
                     style={{
                       background: 'linear-gradient(135deg, #faad14 0%, #d48806 100%)',
                       borderColor: '#d48806',
@@ -1425,18 +1714,6 @@ export default function RecordForm() {
                     仅收诊疗费
                   </Button>
                 </div>
-                {billingMap[0] && (() => {
-                  const b = billingMap[0];
-                  return (
-                    <div style={{
-                      marginTop: 16, paddingTop: 12, borderTop: '1px dashed #e8e8e8',
-                      display: 'flex', gap: 16, fontSize: 13, color: '#888', justifyContent: 'center', flexWrap: 'wrap',
-                    }}>
-                      <span>诊疗费 <span style={{ color: '#333' }}>¥{b.consultation_fee.toFixed(2)}</span></span>
-                      <span>实收 <span style={{ color: '#389e0d', fontWeight: 600 }}>¥{b.actual_paid.toFixed(2)}</span></span>
-                    </div>
-                  );
-                })()}
               </div>
             )}
           </div>
@@ -1453,7 +1730,10 @@ export default function RecordForm() {
             setPrescriptionModalOpen(false);
             setEditingPrescription(null);
           }}
-          onSuccess={loadPrescriptions}
+          onSuccess={(rxId: number) => {
+            setLastSavedPrescriptionId(rxId);
+            loadPrescriptions();
+          }}
         />
       )}
 
@@ -1465,11 +1745,47 @@ export default function RecordForm() {
         patientName={recordPatient?.name}
         patientAge={recordPatient?.age}
         doctorName={user?.real_name || user?.username}
+        printOnly={billingPrintOnly}
         onClose={() => {
           setBillingDrawerOpen(false);
+          setBillingPrintOnly(false);
+          setBillingPrescriptionId(0);
           loadBillings();
         }}
       />
+
+      {/* 移动端打印中心 */}
+      {printCenterPrescription && (
+        <PrintCenterDrawer
+          open={printCenterOpen}
+          prescription={printCenterPrescription}
+          prescriptionId={printCenterPrescription.id}
+          recordId={Number(id)}
+          patientName={recordPatient?.name}
+          patientAge={recordPatient?.age}
+          chiefComplaint={form.getFieldValue('chief_complaint')}
+          treatment={form.getFieldValue('treatment')}
+          doctorName={user?.real_name || user?.username}
+          onClose={() => {
+            setPrintCenterOpen(false);
+            setPrintCenterPrescription(null);
+            loadBillings();
+          }}
+        />
+      )}
+
+      {/* 快速创建回访抽屉 */}
+      {isEdit && (
+        <FollowUpDrawer
+          open={followUpDrawerOpen}
+          recordId={Number(id)}
+          patientId={recordPatient?.id ?? 0}
+          patientName={recordPatient?.name || ''}
+          visitDate={form.getFieldValue('visit_date')?.format?.('YYYY-MM-DD') || dayjs().format('YYYY-MM-DD')}
+          diagnosis={form.getFieldValue('diagnosis')}
+          onClose={() => setFollowUpDrawerOpen(false)}
+        />
+      )}
 
       {/* 新建患者弹窗 */}
       <Modal

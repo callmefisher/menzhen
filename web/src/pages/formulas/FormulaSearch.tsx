@@ -77,7 +77,17 @@ export default function FormulaSearch() {
     try {
       await deleteFormula(id);
       message.success('删除成功');
-      fetchFormulas(searchName, page, size);
+      // Remove from local state to avoid re-fetching which triggers AI fallback
+      // (AI would re-create the just-deleted formula if search name matches)
+      const newFormulas = formulas.filter(f => f.id !== id);
+      setFormulas(newFormulas);
+      setTotal(prev => Math.max(0, prev - 1));
+      // If current page is empty and not on first page, go to previous page
+      if (newFormulas.length === 0 && page > 1) {
+        const newPage = page - 1;
+        setPage(newPage);
+        fetchFormulas(searchName, newPage, size);
+      }
     } catch {
       // Error handled by interceptor
     }

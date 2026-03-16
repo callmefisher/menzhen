@@ -33,8 +33,9 @@ func (h *PulseHandler) List(c *gin.Context) {
 		size = 20
 	}
 
+	useAI := c.Query("ai") == "true"
 	svc := service.NewPulseService(h.db, h.deepSeek)
-	pulses, total, err := svc.Search(name, category, page, size)
+	pulses, total, err := svc.Search(name, category, page, size, useAI)
 	if err != nil {
 		Error(c, http.StatusInternalServerError, "failed to search pulses")
 		return

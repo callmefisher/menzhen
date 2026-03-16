@@ -115,26 +115,30 @@ docker compose exec backup bash /scripts/restore.sh --auto
 
 `backup` 服务自动执行双重备份：
 
-- **MySQL 备份**：默认每 2 小时，文件名 `YYYYMMDD_HHMMSS.sql`，存放于 `./backups/`
-- **MinIO 备份**：默认每 12 小时，文件名 `minio_YYYYMMDD_HHMMSS.tar.gz`，存放于 `./backups/minio/`
+- **MySQL 备份**：默认每 2 小时，文件名 `{SITE_ID}_YYYYMMDD_HHMMSS.sql`，存放于 `./backups/`
+- **MinIO 备份**：默认每 12 小时，文件名 `{SITE_ID}_minio_YYYYMMDD_HHMMSS.tar.gz`，存放于 `./backups/minio/`
+- **多服务器隔离**：`SITE_ID` 注入到文件名和七牛云路径中，不同服务器的备份互不干扰
 
-可通过 `.env` 配置备份间隔（秒）：
+可通过 `.env` 配置：
 
 ```bash
-BACKUP_INTERVAL_MYSQL=7200    # MySQL 备份间隔，默认 2 小时
-BACKUP_INTERVAL_MINIO=43200   # MinIO 备份间隔，默认 12 小时
+SITE_ID=clinic-bj              # 站点标识，默认 default
+BACKUP_INTERVAL_MYSQL=7200     # MySQL 备份间隔，默认 2 小时
+BACKUP_INTERVAL_MINIO=43200    # MinIO 备份间隔，默认 12 小时
 ```
 
-备份文件结构：
+备份文件结构（以 `SITE_ID=clinic-bj` 为例）：
 
 ```
 backups/
-├── 20260312_120000.sql              # MySQL 备份
-├── 20260312_140000.sql
+├── clinic-bj_20260312_120000.sql              # MySQL 备份
+├── clinic-bj_20260312_140000.sql
 ├── minio/
-│   ├── minio_20260312_060000.tar.gz # MinIO 备份
-│   └── minio_20260312_180000.tar.gz
+│   ├── clinic-bj_minio_20260312_060000.tar.gz # MinIO 备份
+│   └── clinic-bj_minio_20260312_180000.tar.gz
 ```
+
+七牛云路径：`menzhen-backup/clinic-bj/` 和 `menzhen-backup/clinic-bj/minio/`
 
 ### 手动触发备份
 
@@ -237,6 +241,7 @@ docker compose exec backup python3 /scripts/download_from_qiniu.py --type minio
 
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
+| `SITE_ID` | 站点标识（多服务器隔离备份） | `default` |
 | `BACKUP_INTERVAL_MYSQL` | MySQL 备份间隔（秒） | `7200`（2小时） |
 | `BACKUP_INTERVAL_MINIO` | MinIO 备份间隔（秒） | `43200`（12小时） |
 

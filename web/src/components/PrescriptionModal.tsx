@@ -34,7 +34,7 @@ interface PrescriptionModalProps {
   recordId: number;
   editData?: PrescriptionData | null;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (prescriptionId: number) => void;
 }
 
 interface HerbRow {
@@ -61,6 +61,56 @@ const DEFAULT_PRESCRIPTION_NOTES = `注意事项：
 4. 如果不小心熬干了，中间加开水，后续适当调节加水量。
 5. 服药期间，忌酒、烟，饮食上减少过于油腻食物。`;
 
+/** 解析剂量字符串：支持阿拉伯数字 + 中文数字+古代单位(经方: 1两≈3g, 1钱≈3g, 1分≈0.3g) */
+function parseDosage(raw: string): string {
+  if (!raw) return '';
+  // 优先提取阿拉伯数字
+  const m = raw.match(/[\d.]+/);
+  if (m) return m[0];
+  // 中文数字映射
+  const CN: Record<string, number> = {
+    '一': 1, '二': 2, '三': 3, '四': 4, '五': 5,
+    '六': 6, '七': 7, '八': 8, '九': 9, '十': 10,
+  };
+  // 单位换算 (经方常用临床换算)
+  const UNIT: Record<string, number> = {
+    '两': 3, '钱': 3, '分': 0.3,
+    '克': 1, '枚': 1, '个': 1, '升': 200, '合': 20,
+  };
+  // 查找单位
+  let factor = 1;
+  let numPart = raw.trim();
+  for (const [u, f] of Object.entries(UNIT)) {
+    const idx = numPart.lastIndexOf(u);
+    if (idx > 0) { // 单位不在首位
+      factor = f;
+      const after = numPart.slice(idx + 1);
+      numPart = numPart.slice(0, idx);
+      if (after.includes('半')) numPart += '半'; // "一两半" → numPart="一半"
+      break;
+    }
+    if (idx === 0 && u !== '两') continue; // "分寸" 等不处理
+    if (idx === 0 && numPart.length === 1) { // 独立 "两" = 不明确，跳过
+      continue;
+    }
+  }
+  // 解析中文数字
+  let num = 0;
+  for (const c of numPart) {
+    if (c === '十') {
+      num = num === 0 ? 10 : num * 10;
+    } else if (c === '半') {
+      num += 0.5;
+    } else if (c in CN) {
+      if (num >= 10 && num % 10 === 0) num += CN[c]; // 十二 = 12
+      else num = CN[c];
+    }
+  }
+  if (num <= 0) return '';
+  const result = Math.round(num * factor * 10) / 10;
+  return String(result);
+}
+
 function initHerbRows(editData?: PrescriptionData | null): HerbRow[] {
   if (!editData?.items) return [{ key: 0, herb_name: '', dosage: '', notes: '' }];
   const herbItems = editData.items.filter((i) => !i.category || i.category === 'herb');
@@ -68,7 +118,7 @@ function initHerbRows(editData?: PrescriptionData | null): HerbRow[] {
   return herbItems.map((item, idx) => ({
     key: idx,
     herb_name: item.herb_name,
-    dosage: item.dosage ? item.dosage.replace(/[^\d.]/g, '') : '',
+    dosage: parseDosage(item.dosage),
     notes: item.notes || '',
   }));
 }
@@ -82,7 +132,7 @@ function initPatentRows(editData?: PrescriptionData | null): PatentRow[] {
     effects: '',
     indications: '',
     stock: null,
-    needed_quantity: item.dosage ? item.dosage.replace(/[^\d.]/g, '') : '',
+    needed_quantity: parseDosage(item.dosage),
     notes: item.notes || '',
   }));
 }
@@ -231,7 +281,7 @@ export default function PrescriptionModal({
       (c: FormulaCompositionItem, idx: number) => ({
         key: idx,
         herb_name: c.herb_name,
-        dosage: c.default_dosage ? c.default_dosage.replace(/[^\d.]/g, '') : '',
+        dosage: parseDosage(c.default_dosage),
         notes: '',
       })
     );
@@ -261,7 +311,7 @@ export default function PrescriptionModal({
   const [patentSearchOptions, setPatentSearchOptions] = useState<{ value: string; label: string; effects?: string; indications?: string; stockVal?: number | null }[]>([]);
 
   const addPatentRow = () => {
-    setPatentRows([...patentRows, { key: patentNextKey, name: '', effects: '', indications: '', stock: null, needed_quantity: '', notes: '' }]);
+    setPatentRows([...patentRows, { key: patentNextKey, name: '', effects: '', indications: '', stock: null, needed_quantity: '1', notes: '' }]);
     setPatentNextKey(patentNextKey + 1);
   };
 
@@ -368,6 +418,8 @@ export default function PrescriptionModal({
 
       const items = [...herbItems, ...patentItems];
 
+      let savedPrescriptionId: number;
+
       if (editData) {
         await updatePrescription(editData.id, {
           formula_name: values.formula_name || '',
@@ -375,19 +427,22 @@ export default function PrescriptionModal({
           notes: values.notes || '',
           items,
         });
+        savedPrescriptionId = editData.id;
         message.success('处方更新成功');
       } else {
-        await createPrescription({
+        const res = await createPrescription({
           record_id: recordId,
           formula_name: values.formula_name || '',
           total_doses: values.total_doses || 7,
           notes: values.notes || '',
           items,
         });
+        const body = res as unknown as { data: { id: number } };
+        savedPrescriptionId = body.data?.id || 0;
         message.success('处方创建成功');
       }
 
-      onSuccess();
+      onSuccess(savedPrescriptionId);
       onClose();
     } catch {
       // validation error

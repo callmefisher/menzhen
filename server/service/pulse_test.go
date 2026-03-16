@@ -32,7 +32,7 @@ func TestPulseService_Search_Success(t *testing.T) {
 	svc := setupPulseService(t)
 	seedPulses(t, svc)
 
-	pulses, total, err := svc.Search("", "", 1, 10)
+	pulses, total, err := svc.Search("", "", 1, 10, false)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(4), total)
 	assert.Len(t, pulses, 4)
@@ -43,7 +43,7 @@ func TestPulseService_Search_WithSuffix(t *testing.T) {
 	seedPulses(t, svc)
 
 	// Search "紧" should find "紧脉" due to suffix trimming logic
-	pulses, total, err := svc.Search("紧", "", 1, 10)
+	pulses, total, err := svc.Search("紧", "", 1, 10, false)
 	assert.NoError(t, err)
 	assert.True(t, total >= 1)
 	found := false
@@ -60,7 +60,7 @@ func TestPulseService_Search_ByCategory(t *testing.T) {
 	svc := setupPulseService(t)
 	seedPulses(t, svc)
 
-	pulses, total, err := svc.Search("", "寒证类", 1, 10)
+	pulses, total, err := svc.Search("", "寒证类", 1, 10, false)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), total)
 	assert.Len(t, pulses, 1)

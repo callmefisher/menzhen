@@ -118,9 +118,11 @@ git clone <repo-url> && cd menzhen
 - **MySQL 备份**：每 2 小时自动快照
 - **文件备份**：每 12 小时自动打包
 - **云端同步**：自动上传至七牛云对象存储（可选）
+- **多服务器隔离**：通过 `SITE_ID` 区分不同服务器的备份，互不干扰
 - **配置热加载**：备份相关配置（七牛云、备份间隔）修改后自动生效，无需重启
 - **一键恢复**：`./deploy.sh --restore /path/to/backup`，一条命令恢复全部数据
 - **本地+云端双清理**：默认各保留最新 5 份，不占多余空间
+- **存储清理**：删除/更新病历自动清理 MinIO 旧文件，支持孤立文件扫描与批量清理
 
 ---
 
@@ -205,6 +207,7 @@ menzhen/
 | `DEEPSEEK_API_KEY` | DeepSeek AI 密钥（可选） | — |
 | `DEEPSEEK_BASE_URL` | DeepSeek API 地址 | `https://api.qnaigc.com/v1/messages` |
 | `DEEPSEEK_MODEL` | AI 模型名称 | `deepseek/deepseek-v3.2-251201` |
+| `SITE_ID` | 站点标识（多服务器隔离备份） | `default` |
 | `QINIU_ACCESS_KEY` | 七牛云 AK（可选，备份用） | — |
 | `QINIU_SECRET_KEY` | 七牛云 SK | — |
 | `QINIU_BUCKET` | 七牛云存储空间 | — |

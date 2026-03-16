@@ -109,10 +109,10 @@ describe('BillingDrawer', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('扣除库存并打印')).toBeInTheDocument();
+      expect(screen.getByText('收费并出库')).toBeInTheDocument();
     });
 
-    const deductBtn = screen.getByText('扣除库存并打印').closest('button');
+    const deductBtn = screen.getByText('收费并出库').closest('button');
     expect(deductBtn).not.toBeDisabled();
   });
 

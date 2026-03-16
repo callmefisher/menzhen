@@ -5,6 +5,7 @@ export interface PulseListParams {
   category?: string;
   page?: number;
   size?: number;
+  ai?: boolean;
 }
 
 export interface PulseItem {

@@ -6,6 +6,13 @@
 
 ## 开发原则
 
+### 0 review, 全面测试，代码自审,部署,总结
+
+- 本条最重要
+- 任务开始后，需周期性的用中文汇报进度。全部完成后，对任务涉及的方案，代码，变更等进行全面review, 覆盖测试，单元和回归测试，并对review的意见进行优化修复，代码性能优化，代码简化等操作，然后部署直接执行deploy.sh，最后中文总结本次task改动变化，review，测试，部署结果
+- 检查逻辑、边界条件、错误处理
+- 编写测试覆盖正常流程、边界、错误场景
+
 ### 1. 先设计后编码
 - 清晰描述实现方案后再编码
 - 需求不明确时**先澄清**，不基于猜测编码
@@ -13,131 +20,35 @@
 ### 2. 任务分解
 - 涉及 >3 个文件时，必须分解为子任务
 - 按顺序逐个完成，避免大范围同时修改
-
-### 3. 代码自审
-- 检查逻辑、边界条件、错误处理
-- 编写测试覆盖正常流程、边界、错误场景
-
-### 4. Bug 修复（TDD）
+- 
+### 3. Bug 修复（TDD）
 1. 先写能重现 Bug 的测试
 2. 确认测试失败
 3. 修复代码
 4. 确认测试通过
 5. 确保不破坏其他测试
 
-### 5. 持续学习规则
+### 4. 持续学习规则
 
 每次用户纠正 Claude 的错误后，需要：
 - 在本章节下方的「经验教训」中添加新规则
 - 规则应具体、可执行，防止类似问题再次发生
 
-### 6. 自动更新文档
-每次新开发的服务，代码，文档，等需要及时总结更新CLAUDE.md和README
+### 5. 自动更新文档
 
-### 7. 文档精简高效
+每次新开发的服务，代码，文档，等需要及时总结更新CLAUDE.md和README,保持CLAUDE.md的行数在合理范围内，如果涉及更长篇幅的文档，需要作为子md文档，外链到CLAUDE.md中
 
-保持CLAUDE.md的行数在合理范围内，如果涉及更长篇幅的文档，需要作为子md文档，外链到CLAUDE.md中
 
-### 8. Codebase 文档同步
-每次项目变更后必须检查并更新 `docs/codebase.md`，确保文档与代码同步。该文档作为任务执行前的上下文扫描入口。
-
-### 9. 任务汇报，review,测试，优化，代码性能优化，简化
-任务开始后，需周期性的汇报进度。全部完成后，对任务涉及的方案，代码，变更等进行全面review,覆盖，单元和回归测试，并对自行review的意见进行优化修复，代码性能优化，简化等操作
-
-### 经验教训（持续更新）
+### 经验教训
 - 前端测试需要在 `src/test/setup.ts` 中 polyfill `ResizeObserver` 和 `window.matchMedia`（antd 组件依赖）
 - `tsconfig.app.json` 需要 exclude 测试目录，避免 `global` 等 Node 类型在 build 时报错
-- seed.go 中权限使用 upsert 模式（逐条检查），避免新增权限时因表非空而跳过
-- **每次功能开发完成后，必须在同一 session 内更新 `docs/codebase.md`、`README.md` 和 `CLAUDE.md` 三个文档**，缺一不可，不要等用户提醒
-- AI 分析 Markdown 渲染需要 `rehype-raw` 插件才能正确处理 `<br>` 等 HTML 标签
-- 移动端布局要注意 position:absolute 元素与系统 Header 菜单按钮的位置冲突
-- 移动端固定宽度面板（如 420px NotesPanel）必须用 `useIsMobile` 做响应式适配，否则会超出屏幕
-- Ant Design `Timeline mode="left"` 在窄屏会导致 icon 与文字重叠，移动端应去掉 mode 改为默认单栏
-- 移动端表格优化统一模式：`isMobile ? 卡片列表 : Table`，分页用 `<Pagination size="small" simple />`
-- Modal 在移动端宽度应设为 `calc(100vw - 32px)` 防止溢出
-- **每次新增功能必须同步编写单元测试**：后端用 `testutil.SetupTestDB` + testify（middleware/service/handler 三层），前端用 vitest + testing-library（API service + store + page 组件），测试必须基于实际业务逻辑、覆盖正常流程/边界/错误场景，且全量测试通过（`go test ./...` + `npm test`）后才算完成
+- **每次新增功能必须同步review，编写单元测试**：后端用 `testutil.SetupTestDB` + testify（middleware/service/handler 三层），前端用 vitest + testing-library（API service + store + page 组件），测试必须基于实际业务逻辑、覆盖正常流程/边界/错误场景，且全量测试通过（`go test ./...` + `npm test`）后才算完成
 - 及时用中文报告进度和总结
 - GORM AutoMigrate 遇到已有 FK 约束阻塞 drop index 时，需启用 `DisableForeignKeyConstraintWhenMigrating: true` 或手动删除 FK
-- dayjs 使用 `.quarter()` 等扩展方法前必须先 `import quarterOfYear from 'dayjs/plugin/quarterOfYear'` 并 `dayjs.extend(quarterOfYear)`，否则 TS 编译报错
 
 ---
 
-## 项目概述
-
-患者病历管理系统，支持中小诊所局域网部署和多诊所云端共享（多租户架构）。包含中医药查询（对接 DeepSeek AI）、AI 辅助辩证论治分析和开方功能。
-
-## 技术栈
-
-| 层 | 技术 |
-|---|------|
-| 前端 | React 19 + TypeScript + Ant Design 6 + React Router 7 |
-| 3D可视化 | Three.js + @react-three/fiber + @react-three/drei + three-mesh-bvh |
-| 后端 | Go + Gin + GORM |
-| 数据库 | MySQL 8.0 |
-| 文件存储 | MinIO |
-| 认证 | JWT（Token Version 机制）+ RBAC |
-| AI | DeepSeek API（中药/方剂查询回退 + AI辅助辩证论治 + 五运六气流式分析） |
-| 测试 | Go test (后端) + Vitest + Testing Library (前端) |
-| 部署 | Docker Compose + Nginx |
-
-## 项目结构 · 数据模型 · API 路由
-
-> 详见 [Codebase 全局上下文](docs/codebase.md)，包含文件级结构、逐字段数据模型、完整 API 路由清单。
-
-### 关键架构要点
-- **租户隔离**：patients/records/prescriptions/ai_analyses/follow_ups 表含 `tenant_id`
-- **全局数据**：herbs/formulas/pulses/meridian_resources/wuyun_liuqi/solar_terms 无租户隔离
-- **3D经络坐标分模型**：坐标数据按人体模型独立存储（`meridian-paths-{female|male}.ts` / `acupoint-positions-{female|male}.ts`），元数据（名称、功效等）共享，通过 `getMeridians(model)` / `getAcupoints(model)` 按模型组装
-- **权限码**：`patient:create/read/update/delete`, `record:create/read/update/delete`, `oplog:read`, `user:manage`, `role:manage`, `tenant:user:manage`, `tenant:role:manage`, `herb:read`, `formula:read`, `pulse:read`, `prescription:create`, `prescription:read`, `tenant:manage`, `inventory:create/read/update/delete`, `billing:create`, `billing:read`, `followup:create/read/update/delete`
-- **诊所运营角色**：`tenant:user:manage` + `tenant:role:manage` 仅管理本诊所，API 端点 `/api/v1/tenant/*`，全局管理权限自动兼容
-- **Token Version**：用户 `token_version` 字段，租户切换时 +1，`TokenVersionMiddleware` 校验 JWT 版本不匹配返回 409，前端自动刷新 Token + 重载，`/auth/refresh` 绕过版本检查
-- **管理员隐藏**：`user:manage` 权限用户在用户列表中对其他人不可见，租户级管理操作对管理员返回 403（`ErrProtectedUser`）
-- **统计仪表盘**：`daily_stats` 每日汇总表，billing 写时聚合更新，`tenant:manage` 权限可查看，ECharts 可视化
-
-## 开发环境
-
-```bash
-# 后端
-cd server && go build ./...
-cd server && go test ./...
-
-# 前端
-cd web && npm install && npm run dev
-cd web && npm run test        # 运行测试
-cd web && npm run build       # 构建
-
-# 部署
-./deploy.sh                          # 首次部署
-./deploy.sh --restore /path/to/backup  # 从备份恢复
-```
-
-### 环境变量
-DeepSeek AI 相关（可选）：
-- `DEEPSEEK_API_KEY` — API密钥
-- `DEEPSEEK_BASE_URL` — API地址（默认 `https://api.qnaigc.com/v1/messages`）
-- `DEEPSEEK_MODEL` — 模型名（默认 `deepseek/deepseek-v3.2-251201`）
-
-七牛云备份上传（可选）：
-- `QINIU_ACCESS_KEY` — 七牛 Access Key
-- `QINIU_SECRET_KEY` — 七牛 Secret Key
-- `QINIU_BUCKET` — 七牛存储空间名
-- `QINIU_KEY_PREFIX` — 上传路径前缀（默认 `menzhen-backup/`）
-- `QINIU_DOMAIN` — 下载域名（默认 `public.qnlinking.com`）
-- `QINIU_RETAIN_MYSQL` — 七牛云保留 MySQL 备份数（默认 `5`）
-- `QINIU_RETAIN_MINIO` — 七牛云保留 MinIO 备份数（默认 `5`）
-
-备份间隔配置（可选）：
-- `BACKUP_INTERVAL_MYSQL` — MySQL 备份间隔秒数（默认 `7200`，即 2 小时）
-- `BACKUP_INTERVAL_MINIO` — MinIO 备份间隔秒数（默认 `43200`，即 12 小时）
-
-### 备份策略
-- **MySQL**：每 2 小时自动备份（可通过 `BACKUP_INTERVAL_MYSQL` 配置），`YYYYMMDD_HHMMSS.sql` 存放于 `backups/`
-- **MinIO**：每 12 小时自动备份（可通过 `BACKUP_INTERVAL_MINIO` 配置），`minio_YYYYMMDD_HHMMSS.tar.gz` 存放于 `backups/minio/`
-- **配置热加载**：backup 容器挂载 `.env` 文件，每次备份执行前重新 `source /app/.env`，备份间隔和七牛云配置修改后自动生效，无需重启容器
-- **本地清理**：本地和云端保留策略一致，默认各保留最新 5 个（`QINIU_RETAIN_MYSQL`/`QINIU_RETAIN_MINIO`）
-- **七牛云清理**：上传后自动清理云端旧备份，保留数与本地一致
-- 启动时检测：若最近备份超过配置间隔则立即触发
-- 备份完成后自动上传至七牛云对象存储（需配置 AK/SK）
+> 项目概述、技术栈、数据模型、API 路由详见 [docs/codebase.md](docs/codebase.md)
 
 ## Claude Code 工具链
 

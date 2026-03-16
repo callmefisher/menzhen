@@ -107,6 +107,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
     <div class="actions">
       <button class="btn" onclick="undoAction()" title="Ctrl+Z">撤销</button>
       <button class="btn" onclick="snapToSurface()">贴合表面</button>
+      <button class="btn" onclick="autoGenPath()" style="background:#0abde3;border-color:#0abde3;color:#fff" title="根据穴位位置自动生成平滑路径">从穴位生成路径</button>
       <button class="btn danger" onclick="clearPoints()">清空</button>
       <button class="btn primary" onclick="exportCurrent()">导出当前</button>
       <button class="btn primary" onclick="exportAll()">导出全部</button>
@@ -214,6 +215,9 @@ let selectedAcupointCode = null;
 let undoStack = [];
 let isDraggingAcupoint = false;
 let acuDragUndoPushed = false;
+let isDraggingPathPoint = false;
+let pathDragUndoPushed = false;
+let pathDragIndex = -1;
 
 // Working data (deep copy from original, or loaded from localStorage)
 let workingPaths = {};
@@ -373,10 +377,10 @@ function updateVisualization() {
     // Control point spheres (small)
     pathData.forEach((p, i) => {
       const isSelected = i === selectedPointIndex;
-      const geo = new THREE.SphereGeometry(isSelected ? 0.004 : 0.003, 8, 8);
+      const geo = new THREE.SphereGeometry(isSelected ? 0.007 : 0.005, 10, 10);
       const mat = new THREE.MeshBasicMaterial({
         color: isSelected ? 0xffffff : color,
-        emissive: isSelected ? color : undefined,
+        depthTest: false,
       });
       const sphere = new THREE.Mesh(geo, mat);
       sphere.position.set(p[0], p[1], p[2]);
@@ -438,16 +442,39 @@ renderer.domElement.addEventListener('mousedown', (e) => {
   isDragging = false;
   isDraggingAcupoint = false;
   acuDragUndoPushed = false;
+  isDraggingPathPoint = false;
+  pathDragUndoPushed = false;
 
-  // In acupoint edit mode, check if mousedown on a selected acupoint to start drag
-  if (e.button === 0 && interactMode === 'edit' && editMode === 'acupoint' && selectedAcupointCode) {
-    const ndc = getMouseNDC(e);
-    mouse.set(ndc.x, ndc.y);
-    raycaster.setFromCamera(mouse, camera);
-    const acuHits = raycaster.intersectObjects(acupointMarkers, false);
-    if (acuHits.length > 0 && acuHits[0].object.userData.code === selectedAcupointCode) {
-      isDraggingAcupoint = true;
-      controls.enabled = false; // Disable orbit while dragging acupoint
+  if (e.button !== 0 || interactMode === 'drag') return;
+
+  const ndc = getMouseNDC(e);
+  mouse.set(ndc.x, ndc.y);
+  raycaster.setFromCamera(mouse, camera);
+
+  if (editMode === 'path') {
+    // Path point: click any point to start drag
+    if (pathPoints.length > 0) {
+      const pointHits = raycaster.intersectObjects(pathPoints, false);
+      if (pointHits.length > 0) {
+        pathDragIndex = pointHits[0].object.userData.index;
+        selectedPointIndex = pathDragIndex;
+        isDraggingPathPoint = true;
+        controls.enabled = false;
+        updateVisualization();
+        return;
+      }
+    }
+  } else {
+    // Acupoint: click any acupoint to start drag (no need to pre-select)
+    if (acupointMarkers.length > 0) {
+      const acuHits = raycaster.intersectObjects(acupointMarkers, false);
+      if (acuHits.length > 0) {
+        selectedAcupointCode = acuHits[0].object.userData.code;
+        isDraggingAcupoint = true;
+        controls.enabled = false;
+        updateVisualization();
+        return;
+      }
     }
   }
 });
@@ -469,7 +496,7 @@ renderer.domElement.addEventListener('mousemove', (e) => {
   raycaster.setFromCamera(mouse, camera);
 
   // Dragging an acupoint: move it to mouse position on model surface
-  if (isDraggingAcupoint && selectedAcupointCode) {
+  if (isDraggingAcupoint && selectedAcupointCode && isDragging) {
     const modelHits = raycaster.intersectObjects(modelMeshes, true);
     if (modelHits.length > 0) {
       if (!acuDragUndoPushed) {
@@ -505,6 +532,42 @@ renderer.domElement.addEventListener('mousemove', (e) => {
     return;
   }
 
+  // Dragging a path point: move it to mouse position on model surface
+  if (isDraggingPathPoint && pathDragIndex >= 0 && isDragging) {
+    const modelHits = raycaster.intersectObjects(modelMeshes, true);
+    if (modelHits.length > 0) {
+      if (!pathDragUndoPushed) {
+        pushUndo();
+        pathDragUndoPushed = true;
+      }
+      const p = modelHits[0].point;
+      const newCoord = mergedBVH
+        ? projectPointToSurface([p.x, p.y, p.z])
+        : [round3(p.x), round3(p.y), round3(p.z)];
+      const mid = currentMeridianId;
+      if (workingPaths[mid]?.path && workingPaths[mid].path[pathDragIndex]) {
+        workingPaths[mid].path[pathDragIndex] = newCoord;
+      }
+      // Update sphere position directly for smooth drag
+      const sphere = pathPoints.find(s => s.userData.index === pathDragIndex);
+      if (sphere) sphere.position.set(newCoord[0], newCoord[1], newCoord[2]);
+      cursorMarker.position.copy(modelHits[0].point);
+      cursorMarker.visible = true;
+      document.getElementById('status-coords').textContent =
+        `X: ${newCoord[0].toFixed(3)}  Y: ${newCoord[1].toFixed(3)}  Z: ${newCoord[2].toFixed(3)}`;
+    }
+    return;
+  }
+
+  // Hover cursor feedback
+  if (editMode === 'path' && pathPoints.length > 0) {
+    const pointHits = raycaster.intersectObjects(pathPoints, false);
+    renderer.domElement.style.cursor = pointHits.length > 0 ? 'grab' : 'crosshair';
+  } else if (editMode === 'acupoint' && acupointMarkers.length > 0) {
+    const acuHits = raycaster.intersectObjects(acupointMarkers, false);
+    renderer.domElement.style.cursor = acuHits.length > 0 ? 'grab' : 'crosshair';
+  }
+
   const hits = raycaster.intersectObjects(modelMeshes, true);
   if (hits.length > 0) {
     const p = hits[0].point;
@@ -524,8 +587,24 @@ renderer.domElement.addEventListener('mouseup', (e) => {
     isDraggingAcupoint = false;
     controls.enabled = true;
     if (acuDragUndoPushed) {
-      // Drag completed, do a full visualization rebuild
       updateVisualization();
+    } else {
+      // Click (no drag): keep selection, update hint
+      updateVisualization();
+      updateStatusHint();
+    }
+    return;
+  }
+  // End path point drag
+  if (isDraggingPathPoint) {
+    isDraggingPathPoint = false;
+    controls.enabled = true;
+    if (pathDragUndoPushed) {
+      updateVisualization();
+    } else {
+      // Click (no drag): toggle selection
+      updateVisualization();
+      updateStatusHint();
     }
     return;
   }
@@ -779,6 +858,51 @@ function snapToSurface() {
   showToast('贴合表面完成');
 }
 
+function generatePathFromAcupoints(density = 4) {
+  const mid = currentMeridianId;
+  const codes = ACUPOINT_CODES[mid] || [];
+
+  // Get positioned acupoints in order
+  const positions = [];
+  for (const code of codes) {
+    const pos = workingAcupoints[code];
+    if (pos) positions.push(new THREE.Vector3(pos[0], pos[1], pos[2]));
+  }
+
+  if (positions.length < 2) {
+    showToast('至少需要2个已定位穴位才能生成路径');
+    return;
+  }
+
+  pushUndo();
+
+  // Create smooth Catmull-Rom curve through acupoints
+  const curve = new THREE.CatmullRomCurve3(positions, false, 'centripetal', 0.5);
+
+  // Sample: density points between each pair of acupoints
+  const numPoints = Math.max(20, (positions.length - 1) * density + 1);
+  const sampled = curve.getPoints(numPoints - 1);
+
+  // Convert to arrays and project to model surface
+  const newPath = sampled.map(p => {
+    const coord = [round3(p.x), round3(p.y), round3(p.z)];
+    return mergedBVH ? projectPointToSurface(coord) : coord;
+  });
+
+  if (!workingPaths[mid]) workingPaths[mid] = {};
+  workingPaths[mid].path = newPath;
+
+  // Switch to path mode to see the result
+  editMode = 'path';
+  document.querySelectorAll('.mode-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === 'path');
+  });
+
+  updateVisualization();
+  updateStatusHint();
+  showToast(`从 ${positions.length} 个穴位生成了 ${newPath.length} 点路径`);
+}
+
 // ==================== UNDO ====================
 function pushUndo() {
   undoStack.push({
@@ -846,16 +970,16 @@ function updateStatusHint() {
   if (editMode === 'path') {
     mode.textContent = '编辑: 路径';
     if (selectedPointIndex >= 0) {
-      hint.textContent = '点击模型移动选中点 | Shift+点击插入 | 右键删除 | ESC取消选择';
+      hint.textContent = '拖拽移动选中点 | Shift+点击插入 | 右键删除 | ESC取消选择';
     } else {
-      hint.textContent = '点击模型表面添加路径点 | 点击已有点选中';
+      hint.textContent = '拖拽路径点移动 | 点击模型添加点 | 「从穴位生成路径」自动连线';
     }
   } else {
     mode.textContent = '编辑: 穴位';
     if (selectedAcupointCode) {
-      hint.textContent = `拖拽移动 ${selectedAcupointCode} ${ACUPOINT_NAMES[selectedAcupointCode] || ''} | 点击模型放置 | ESC取消`;
+      hint.textContent = `拖拽移动 ${selectedAcupointCode} ${ACUPOINT_NAMES[selectedAcupointCode] || ''} | ESC取消`;
     } else {
-      hint.textContent = '点击穴位球体选中，或在列表选择穴位';
+      hint.textContent = '直接拖拽任意穴位移动 | 在列表选择穴位后点击模型放置';
     }
   }
 }
@@ -937,6 +1061,12 @@ window.deletePathPoint = function(i) {
     if (selectedPointIndex >= i) selectedPointIndex = Math.max(-1, selectedPointIndex - 1);
     updateVisualization();
   }
+};
+
+window.snapToSurface = snapToSurface;
+
+window.autoGenPath = function() {
+  generatePathFromAcupoints();
 };
 
 window.undoAction = function() {

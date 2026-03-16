@@ -17,6 +17,7 @@ Environment variables:
 """
 
 import os
+import re
 import sys
 import urllib.request
 
@@ -71,8 +72,13 @@ def main():
     secret_key = os.environ.get("QINIU_SECRET_KEY", "")
     bucket_name = os.environ.get("QINIU_BUCKET", "")
     key_prefix = os.environ.get("QINIU_KEY_PREFIX", "menzhen-backup/")
+    site_id = os.environ.get("SITE_ID", "default")
     domain = os.environ.get("QINIU_DOMAIN", "public.qnlinking.com")
     backup_dir = os.environ.get("BACKUP_DIR", "/backups")
+
+    if not re.match(r'^[A-Za-z0-9_-]+$', site_id):
+        print(f"Error: SITE_ID contains invalid characters: {site_id}", file=sys.stderr)
+        sys.exit(1)
 
     if not access_key or not secret_key or not bucket_name:
         print("Error: QINIU_ACCESS_KEY, QINIU_SECRET_KEY, QINIU_BUCKET must be set", file=sys.stderr)
@@ -85,14 +91,24 @@ def main():
 
     # --- Download latest MySQL backup ---
     if download_type in ("mysql", "all"):
-        print(">> Looking for latest MySQL backup...")
-        items = list_files(bucket_mgr, bucket_name, prefix=key_prefix)
-        # Filter: direct children .sql files (not in minio/ subfolder)
+        print(f">> Looking for latest MySQL backup (SITE_ID={site_id})...")
+        # Try SITE_ID-scoped prefix first
+        site_prefix = f"{key_prefix}{site_id}/"
+        items = list_files(bucket_mgr, bucket_name, prefix=site_prefix)
         sql_files = [
             item for item in items
             if item["key"].endswith(".sql")
-            and "/" not in item["key"][len(key_prefix):]
+            and "/" not in item["key"][len(site_prefix):]
         ]
+        # Fallback: try legacy prefix (no SITE_ID subdirectory)
+        if not sql_files:
+            print(f">> No MySQL backup in {site_prefix}, trying legacy prefix {key_prefix}...")
+            items = list_files(bucket_mgr, bucket_name, prefix=key_prefix)
+            sql_files = [
+                item for item in items
+                if item["key"].endswith(".sql")
+                and "/" not in item["key"][len(key_prefix):]
+            ]
         if sql_files:
             latest = sql_files[0]
             filename = os.path.basename(latest["key"])
@@ -109,10 +125,17 @@ def main():
 
     # --- Download latest MinIO backup ---
     if download_type in ("minio", "all"):
-        print(">> Looking for latest MinIO backup...")
-        minio_prefix = f"{key_prefix}minio/"
+        print(f">> Looking for latest MinIO backup (SITE_ID={site_id})...")
+        # Try SITE_ID-scoped prefix first
+        minio_prefix = f"{key_prefix}{site_id}/minio/"
         items = list_files(bucket_mgr, bucket_name, prefix=minio_prefix)
         tar_files = [item for item in items if item["key"].endswith(".tar.gz")]
+        # Fallback: try legacy prefix (no SITE_ID subdirectory)
+        if not tar_files:
+            legacy_minio_prefix = f"{key_prefix}minio/"
+            print(f">> No MinIO backup in {minio_prefix}, trying legacy prefix {legacy_minio_prefix}...")
+            items = list_files(bucket_mgr, bucket_name, prefix=legacy_minio_prefix)
+            tar_files = [item for item in items if item["key"].endswith(".tar.gz")]
         if tar_files:
             latest = tar_files[0]
             filename = os.path.basename(latest["key"])

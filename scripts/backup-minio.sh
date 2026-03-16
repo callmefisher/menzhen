@@ -12,11 +12,18 @@ MINIO_ENDPOINT="${MINIO_ENDPOINT:-minio:9000}"
 MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-minioadmin}"
 MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-minioadmin}"
 MINIO_BUCKET="${MINIO_BUCKET:-menzhen}"
+SITE_ID="${SITE_ID:-default}"
+
+# Validate SITE_ID: only allow alphanumeric, dash, underscore
+if ! echo "${SITE_ID}" | grep -qE '^[A-Za-z0-9_-]+$'; then
+    echo ">> ERROR: SITE_ID contains invalid characters (only A-Z, a-z, 0-9, -, _ allowed): ${SITE_ID}"
+    exit 1
+fi
 
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 MINIO_BACKUP_DIR="${BACKUP_DIR}/minio"
 TMP_DIR="${BACKUP_DIR}/.minio_tmp_${TIMESTAMP}"
-BACKUP_FILE="${MINIO_BACKUP_DIR}/minio_${TIMESTAMP}.tar.gz"
+BACKUP_FILE="${MINIO_BACKUP_DIR}/${SITE_ID}_minio_${TIMESTAMP}.tar.gz"
 
 mkdir -p "${MINIO_BACKUP_DIR}" "${TMP_DIR}"
 
@@ -46,18 +53,21 @@ echo "[$(date)] MinIO backup: ${BACKUP_FILE} ($(wc -c < "${BACKUP_FILE}") bytes,
 
 # 4. Clean old local MinIO backups, keep latest N (same as cloud retention)
 LOCAL_RETAIN="${QINIU_RETAIN_MINIO:-5}"
-echo ">> Cleaning local MinIO backups, keeping latest ${LOCAL_RETAIN}..."
-BACKUP_FILES=$(find "${MINIO_BACKUP_DIR}" -name "minio_*.tar.gz" -type f | sort -r)
-REMAINING=$(echo "${BACKUP_FILES}" | wc -l | tr -d ' ')
-if [ "${REMAINING}" -gt "${LOCAL_RETAIN}" ]; then
-    echo "${BACKUP_FILES}" | tail -n +$((LOCAL_RETAIN + 1)) | xargs rm -f
+echo ">> Cleaning local MinIO backups (SITE_ID=${SITE_ID}), keeping latest ${LOCAL_RETAIN}..."
+BACKUP_FILES=$(find "${MINIO_BACKUP_DIR}" -name "${SITE_ID}_minio_*.tar.gz" -type f | sort -r)
+if [ -n "${BACKUP_FILES}" ]; then
+    REMAINING=$(echo "${BACKUP_FILES}" | wc -l | tr -d ' ')
+    if [ "${REMAINING}" -gt "${LOCAL_RETAIN}" ]; then
+        echo "${BACKUP_FILES}" | tail -n +$((LOCAL_RETAIN + 1)) | xargs rm -f
+    fi
 fi
-REMAINING=$(find "${MINIO_BACKUP_DIR}" -name "minio_*.tar.gz" -type f | wc -l)
+REMAINING=$(find "${MINIO_BACKUP_DIR}" -name "${SITE_ID}_minio_*.tar.gz" -type f | wc -l)
 echo ">> Remaining MinIO backup files: ${REMAINING}"
 
 # 5. Upload to Qiniu with retry up to 10 times (reuse upload_to_qiniu.py with minio/ sub-prefix)
 ORIG_PREFIX="${QINIU_KEY_PREFIX}"
-export QINIU_KEY_PREFIX="${QINIU_KEY_PREFIX:-menzhen-backup/}minio/"
+export QINIU_KEY_PREFIX="${QINIU_KEY_PREFIX:-menzhen-backup/}${SITE_ID}/minio/"
+trap 'export QINIU_KEY_PREFIX="${ORIG_PREFIX}"' EXIT
 MINIO_UPLOAD_MAX=10
 MINIO_UPLOAD_OK=false
 for attempt in $(seq 1 ${MINIO_UPLOAD_MAX}); do
@@ -78,6 +88,5 @@ fi
 
 # 6. Always clean up old backups on Qiniu (regardless of upload result)
 python3 /scripts/cleanup_qiniu.py --type minio || echo ">> WARNING: Qiniu cleanup failed (non-fatal)"
-export QINIU_KEY_PREFIX="${ORIG_PREFIX}"
 
 echo "[$(date)] MinIO backup completed: ${BACKUP_FILE}"

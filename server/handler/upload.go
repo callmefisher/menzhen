@@ -8,10 +8,12 @@ import (
 	"strings"
 
 	"github.com/callmefisher/menzhen/server/middleware"
+	"github.com/callmefisher/menzhen/server/service"
 	"github.com/callmefisher/menzhen/server/storage"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
+	"gorm.io/gorm"
 )
 
 // Allowed file extensions grouped by resource type.
@@ -52,13 +54,15 @@ var extContentType = map[string]string{
 type UploadHandler struct {
 	minioClient *minio.Client
 	bucket      string
+	db          *gorm.DB
 }
 
 // NewUploadHandler creates a new UploadHandler.
-func NewUploadHandler(minioClient *minio.Client, bucket string) *UploadHandler {
+func NewUploadHandler(minioClient *minio.Client, bucket string, db *gorm.DB) *UploadHandler {
 	return &UploadHandler{
 		minioClient: minioClient,
 		bucket:      bucket,
+		db:          db,
 	}
 }
 
@@ -125,6 +129,38 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 			"file_size": fileHeader.Size,
 			"file_type": resourceType,
 		},
+	})
+}
+
+// CleanupOrphanFiles handles POST /api/v1/storage/cleanup.
+// It scans MinIO for files not referenced in the database and optionally deletes them.
+// Query param dry_run=false triggers actual deletion; default is dry_run=true (scan only).
+func (h *UploadHandler) CleanupOrphanFiles(c *gin.Context) {
+	dryRun := c.DefaultQuery("dry_run", "true") != "false"
+
+	svc := service.NewStorageCleanupService(h.db, h.minioClient, h.bucket)
+
+	var result *service.CleanupResult
+	var err error
+
+	if dryRun {
+		result, err = svc.ScanOrphanFiles()
+	} else {
+		result, err = svc.CleanupOrphanFiles()
+	}
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "cleanup failed: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    result,
 	})
 }
 

@@ -23,7 +23,7 @@ func setupTestRouter(db *gorm.DB) *gin.Engine {
 	authService := service.NewAuthService(db)
 	authHandler := NewAuthHandler(authService, cfg.JWTSecret, db)
 	patientHandler := NewPatientHandler(db)
-	recordHandler := NewRecordHandler(db)
+	recordHandler := NewRecordHandler(db, nil, "")
 	oplogHandler := NewOpLogHandler(db)
 	userHandler := NewUserHandler(db)
 	roleHandler := NewRoleHandler(db)

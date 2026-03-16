@@ -43,6 +43,7 @@ export interface FollowUpListParams {
   status?: string;
   planned_date_from?: string;
   planned_date_to?: string;
+  sort_order?: 'asc' | 'desc';
   page?: number;
   size?: number;
 }

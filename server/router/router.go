@@ -32,8 +32,8 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	authService := service.NewAuthService(db)
 	authHandler := handler.NewAuthHandler(authService, cfg.JWTSecret, db)
 	patientHandler := handler.NewPatientHandler(db)
-	recordHandler := handler.NewRecordHandler(db)
-	uploadHandler := handler.NewUploadHandler(minioClient, cfg.MinIOBucket)
+	recordHandler := handler.NewRecordHandler(db, minioClient, cfg.MinIOBucket)
+	uploadHandler := handler.NewUploadHandler(minioClient, cfg.MinIOBucket, db)
 	oplogHandler := handler.NewOpLogHandler(db)
 	userHandler := handler.NewUserHandler(db)
 	roleHandler := handler.NewRoleHandler(db)
@@ -307,6 +307,9 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			configRoutes.PUT("", middleware.RequirePermission(db, "user:manage"), configHandler.Update)
 			configRoutes.POST("/restart", middleware.RequirePermission(db, "user:manage"), configHandler.Restart)
 		}
+
+		// Storage cleanup route (super admin only).
+		authenticated.POST("/storage/cleanup", middleware.RequirePermission(db, "user:manage"), uploadHandler.CleanupOrphanFiles)
 
 		// Statistics routes (tenant-scoped).
 		statistics := authenticated.Group("/statistics")

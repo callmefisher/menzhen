@@ -62,6 +62,14 @@ func InitDB(cfg *config.Config) *gorm.DB {
 		log.Panicf("failed to auto-migrate database: %v", err)
 	}
 
+	// Composite index for billing stats aggregation by created_at (revenue by billing date).
+	// Handles 5M+ rows efficiently with (tenant_id, created_at) range scan.
+	if !db.Migrator().HasIndex(&model.Billing{}, "idx_billing_tenant_created") {
+		if result := db.Exec("CREATE INDEX idx_billing_tenant_created ON billings (tenant_id, created_at)"); result.Error != nil {
+			log.Panicf("failed to create billing stats index: %v", result.Error)
+		}
+	}
+
 	log.Println("Database migration completed")
 
 	return db

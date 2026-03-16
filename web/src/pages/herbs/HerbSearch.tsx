@@ -76,7 +76,17 @@ export default function HerbSearch() {
     try {
       await deleteHerb(id);
       message.success('删除成功');
-      fetchHerbs(searchName, selectedCategory, page, size);
+      // Remove from local state to avoid re-fetching which triggers AI fallback
+      // (AI would re-create the just-deleted herb if search name matches)
+      const newHerbs = herbs.filter(h => h.id !== id);
+      setHerbs(newHerbs);
+      setTotal(prev => Math.max(0, prev - 1));
+      // If current page is empty and not on first page, go to previous page
+      if (newHerbs.length === 0 && page > 1) {
+        const newPage = page - 1;
+        setPage(newPage);
+        fetchHerbs(searchName, selectedCategory, newPage, size);
+      }
     } catch {
       // Error handled by interceptor
     }

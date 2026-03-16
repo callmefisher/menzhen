@@ -206,8 +206,87 @@ tr.row-highlight > td {
   animation: row-flash 15s ease-in-out;
 }
 /* Mobile card highlight after edit */
-.ant-card.row-highlight {
+.ant-card.row-highlight,
+.warm-list-card.row-highlight {
   animation: row-flash 15s ease-in-out;
+}
+
+/* ===== PatientDetail: Record highlight (blue) ===== */
+@keyframes record-flash {
+  0%   { background-color: rgba(22,119,255,0.25); box-shadow: 0 0 0 4px rgba(22,119,255,0.12); }
+  10%  { background-color: rgba(22,119,255,0.12); box-shadow: none; }
+  20%  { background-color: rgba(22,119,255,0.20); }
+  30%  { background-color: rgba(22,119,255,0.10); }
+  60%  { background-color: rgba(22,119,255,0.10); }
+  100% { background-color: transparent; }
+}
+.record-highlight {
+  border-left: 4px solid #1677ff !important;
+  border-radius: 8px;
+  animation: record-flash 15s ease-in-out;
+}
+
+/* ===== PatientDetail: Prescription highlight (orange) ===== */
+@keyframes prescription-flash {
+  0%   { background-color: rgba(250,140,22,0.25); box-shadow: 0 0 0 3px rgba(250,140,22,0.15); }
+  10%  { background-color: rgba(250,140,22,0.12); box-shadow: none; }
+  20%  { background-color: rgba(250,140,22,0.20); }
+  30%  { background-color: rgba(250,140,22,0.10); }
+  60%  { background-color: rgba(250,140,22,0.10); }
+  100% { background-color: transparent; }
+}
+.prescription-highlight {
+  border-left: 4px solid #fa8c16 !important;
+  border-radius: 6px;
+  animation: prescription-flash 15s ease-in-out;
+}
+
+/* ===== RecordForm: Prescription saved highlight (green) ===== */
+@keyframes prescription-saved-flash {
+  0%   { border-color: #52c41a; background: linear-gradient(135deg, #fff 0%, #f6ffed 100%); }
+  70%  { border-color: #52c41a; background: linear-gradient(135deg, #fff 0%, #f6ffed 100%); }
+  100% { border-color: #d6e4ff; background: linear-gradient(135deg, #fff 0%, #f8fbff 100%); }
+}
+.prescription-saved-highlight {
+  border: 2px solid #52c41a !important;
+  border-radius: 8px;
+  animation: prescription-saved-flash 5s ease-in-out forwards;
+  position: relative;
+}
+.prescription-saved-badge {
+  position: absolute;
+  top: -10px;
+  right: 12px;
+  background: #52c41a;
+  color: #fff;
+  font-size: 12px;
+  padding: 1px 10px;
+  border-radius: 10px;
+  z-index: 1;
+  white-space: nowrap;
+  animation: prescription-saved-badge-fade 5s ease-in-out forwards;
+}
+@keyframes prescription-saved-badge-fade {
+  0%   { opacity: 1; }
+  70%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+@media (max-width: 768px) {
+  .prescription-saved-badge {
+    font-size: 11px;
+    padding: 0 8px;
+    top: -9px;
+    right: 8px;
+  }
+}
+
+/* ===== RecordForm: Return button pulse ===== */
+@keyframes return-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(22,119,255,0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(22,119,255,0); }
+}
+.return-btn-pulse {
+  animation: return-pulse 1.5s ease-in-out infinite;
 }
 
 /* ===== Record Form Section Card Layout ===== */

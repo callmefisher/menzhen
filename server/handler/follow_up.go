@@ -45,8 +45,13 @@ func (h *FollowUpHandler) List(c *gin.Context) {
 		size = 20
 	}
 
+	sortOrder := c.DefaultQuery("sort_order", "asc")
+	if sortOrder != "asc" && sortOrder != "desc" {
+		sortOrder = "asc"
+	}
+
 	svc := service.NewFollowUpService(h.db)
-	items, total, err := svc.List(tenantID, patientID, patientName, status, plannedFrom, plannedTo, page, size)
+	items, total, err := svc.List(tenantID, patientID, patientName, status, plannedFrom, plannedTo, page, size, sortOrder)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,

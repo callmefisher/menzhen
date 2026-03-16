@@ -74,7 +74,7 @@ func NewFollowUpService(db *gorm.DB) *FollowUpService {
 }
 
 // List returns a paginated, filtered list of follow-ups with denormalized patient/record info.
-func (s *FollowUpService) List(tenantID uint64, patientID uint64, patientName, status string, plannedFrom, plannedTo string, page, size int) ([]FollowUpListItem, int64, error) {
+func (s *FollowUpService) List(tenantID uint64, patientID uint64, patientName, status string, plannedFrom, plannedTo string, page, size int, sortOrder string) ([]FollowUpListItem, int64, error) {
 	query := s.DB.Table("follow_ups AS f").
 		Select(`f.id, f.tenant_id, f.patient_id,
 			COALESCE(p.name, '已删除') AS patient_name,
@@ -119,8 +119,13 @@ func (s *FollowUpService) List(tenantID uint64, patientID uint64, patientName, s
 		return nil, 0, err
 	}
 
+	orderClause := "f.planned_date ASC"
+	if sortOrder == "desc" {
+		orderClause = "f.planned_date DESC"
+	}
+
 	var items []FollowUpListItem
-	if err := query.Order("f.planned_date ASC").
+	if err := query.Order(orderClause).
 		Offset((page - 1) * size).Limit(size).
 		Find(&items).Error; err != nil {
 		return nil, 0, err

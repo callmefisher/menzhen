@@ -23,16 +23,24 @@ function getDateRange(range: QuickRange): [Dayjs, Dayjs] {
   switch (range) {
     case 'today':
       return [now.startOf('day'), now.endOf('day')];
-    case 'week':
-      return [now.startOf('week'), now.endOf('day')];
+    case 'week': {
+      // 显式计算本周一~周日，不依赖 locale startOf('week')
+      const day = now.day(); // 0=周日, 1=周一, ..., 6=周六
+      const diffToMonday = day === 0 ? 6 : day - 1;
+      const monday = now.subtract(diffToMonday, 'day').startOf('day');
+      const sunday = monday.add(6, 'day').endOf('day');
+      return [monday, sunday];
+    }
     case 'month':
-      return [now.startOf('month'), now.endOf('day')];
+      return [now.startOf('month'), now.endOf('month')];
     case 'quarter': {
       const quarterMonth = Math.floor(now.month() / 3) * 3;
-      return [now.month(quarterMonth).startOf('month'), now.endOf('day')];
+      const quarterStart = now.month(quarterMonth).startOf('month');
+      const quarterEnd = quarterStart.add(2, 'month').endOf('month');
+      return [quarterStart, quarterEnd];
     }
     case 'year':
-      return [now.startOf('year'), now.endOf('day')];
+      return [now.startOf('year'), now.endOf('year')];
     default:
       return [now.startOf('month'), now.endOf('day')];
   }
@@ -149,7 +157,7 @@ export default function StatsDashboard() {
         </Radio.Group>
         <RangePicker
           size={isMobile ? 'small' : 'middle'}
-          value={quickRange === 'custom' ? dateRange : undefined}
+          value={dateRange}
           onChange={handleRangeChange}
           style={{ minWidth: isMobile ? 200 : 240 }}
         />

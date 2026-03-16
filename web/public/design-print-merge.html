@@ -1,0 +1,1200 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>处方 · 收费 合并打印 — 移动端方案对比</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #2c1810;
+    --ink-light: #5a4a42;
+    --ink-muted: #8a7a72;
+    --cream: #faf6f0;
+    --cream-deep: #f0e8dc;
+    --cream-warm: #f7f0e6;
+    --amber: #d4853a;
+    --amber-light: #f0c78a;
+    --amber-glow: #fff3e0;
+    --jade: #4a8c6f;
+    --jade-light: #e8f5ee;
+    --coral: #c0392b;
+    --coral-light: #fde8e6;
+    --paper: #fffef9;
+    --shadow-sm: 0 1px 3px rgba(44,24,16,0.06);
+    --shadow-md: 0 4px 16px rgba(44,24,16,0.08);
+    --shadow-lg: 0 8px 32px rgba(44,24,16,0.12);
+    --radius: 14px;
+    --radius-sm: 8px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--cream);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  /* ====== HERO ====== */
+  .hero {
+    background: linear-gradient(165deg, #2c1810 0%, #4a2e1f 40%, #6b3d28 100%);
+    padding: 48px 20px 32px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(ellipse at 30% 50%, rgba(212,133,58,0.15) 0%, transparent 60%),
+                radial-gradient(ellipse at 70% 30%, rgba(74,140,111,0.1) 0%, transparent 50%);
+    animation: aurora 12s ease-in-out infinite alternate;
+  }
+  @keyframes aurora {
+    0% { transform: translate(0, 0) rotate(0deg); }
+    100% { transform: translate(-5%, 3%) rotate(2deg); }
+  }
+  .hero h1 {
+    font-family: 'Noto Serif SC', serif;
+    font-size: 26px;
+    font-weight: 700;
+    color: #fff;
+    position: relative;
+    letter-spacing: 2px;
+    margin-bottom: 8px;
+  }
+  .hero p {
+    font-size: 13px;
+    color: rgba(255,255,255,0.55);
+    position: relative;
+    letter-spacing: 1px;
+  }
+  .hero .badge {
+    display: inline-block;
+    margin-top: 16px;
+    padding: 5px 14px;
+    background: rgba(212,133,58,0.2);
+    border: 1px solid rgba(212,133,58,0.3);
+    border-radius: 20px;
+    font-size: 11px;
+    color: var(--amber-light);
+    letter-spacing: 1px;
+    position: relative;
+  }
+
+  /* ====== NAV TABS ====== */
+  .nav-wrap {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(250,246,240,0.92);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid rgba(44,24,16,0.06);
+    padding: 0 16px;
+  }
+  .nav-tabs {
+    display: flex;
+    gap: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .nav-tabs::-webkit-scrollbar { display: none; }
+  .nav-tab {
+    flex: 1;
+    min-width: 0;
+    padding: 14px 8px 12px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink-muted);
+    text-align: center;
+    border: none;
+    background: none;
+    cursor: pointer;
+    position: relative;
+    transition: color 0.25s;
+    white-space: nowrap;
+  }
+  .nav-tab.active {
+    color: var(--amber);
+    font-weight: 600;
+  }
+  .nav-tab.active::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 20%;
+    right: 20%;
+    height: 2.5px;
+    background: var(--amber);
+    border-radius: 2px;
+  }
+  .nav-tab .tag {
+    display: inline-block;
+    margin-left: 4px;
+    padding: 1px 5px;
+    font-size: 9px;
+    border-radius: 4px;
+    vertical-align: middle;
+    font-weight: 600;
+  }
+  .nav-tab .tag.rec { background: var(--jade-light); color: var(--jade); }
+  .nav-tab .tag.bold { background: var(--amber-glow); color: var(--amber); }
+
+  /* ====== SECTIONS ====== */
+  .section {
+    display: none;
+    padding: 20px 16px 40px;
+    animation: fadeUp 0.35s ease-out;
+  }
+  .section.active { display: block; }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .section-desc {
+    background: var(--paper);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    margin-bottom: 20px;
+    border: 1px solid rgba(44,24,16,0.05);
+    box-shadow: var(--shadow-sm);
+  }
+  .section-desc h3 {
+    font-family: 'Noto Serif SC', serif;
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: var(--ink);
+  }
+  .section-desc p {
+    font-size: 12.5px;
+    color: var(--ink-light);
+    line-height: 1.7;
+  }
+  .section-desc .pros-cons {
+    display: flex;
+    gap: 12px;
+    margin-top: 12px;
+  }
+  .section-desc .pros, .section-desc .cons {
+    flex: 1;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 11.5px;
+    line-height: 1.6;
+  }
+  .section-desc .pros { background: var(--jade-light); }
+  .section-desc .cons { background: var(--coral-light); }
+  .section-desc .pros strong { color: var(--jade); }
+  .section-desc .cons strong { color: var(--coral); }
+
+  /* ====== PHONE MOCK ====== */
+  .phone-frame {
+    width: 100%;
+    max-width: 375px;
+    margin: 0 auto;
+    background: #1a1a1a;
+    border-radius: 36px;
+    padding: 12px;
+    box-shadow: var(--shadow-lg), 0 0 0 1px rgba(255,255,255,0.08) inset;
+  }
+  .phone-screen {
+    background: var(--cream);
+    border-radius: 26px;
+    overflow: hidden;
+    min-height: 620px;
+    position: relative;
+  }
+  .phone-notch {
+    width: 120px;
+    height: 28px;
+    background: #1a1a1a;
+    border-radius: 0 0 18px 18px;
+    margin: 0 auto;
+    position: relative;
+    z-index: 10;
+  }
+
+  /* ====== SCHEME A: Tabbed ====== */
+  .app-header-a {
+    background: linear-gradient(135deg, #2c1810, #4a2e1f);
+    padding: 12px 16px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .app-header-a .back {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255,255,255,0.7);
+    font-size: 18px;
+  }
+  .app-header-a .title {
+    font-family: 'Noto Serif SC', serif;
+    color: #fff;
+    font-size: 16px;
+    font-weight: 600;
+    flex: 1;
+  }
+  .app-header-a .action-btn {
+    padding: 6px 14px;
+    background: linear-gradient(135deg, var(--amber), #c67a2e);
+    border: none;
+    border-radius: 18px;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    box-shadow: 0 2px 8px rgba(212,133,58,0.3);
+  }
+
+  .tab-bar-a {
+    display: flex;
+    background: var(--paper);
+    border-bottom: 1px solid rgba(44,24,16,0.06);
+  }
+  .tab-a {
+    flex: 1;
+    padding: 11px 0;
+    text-align: center;
+    font-size: 13px;
+    color: var(--ink-muted);
+    border: none;
+    background: none;
+    position: relative;
+    font-weight: 400;
+  }
+  .tab-a.active {
+    color: var(--amber);
+    font-weight: 600;
+  }
+  .tab-a.active::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 25%;
+    right: 25%;
+    height: 2px;
+    background: var(--amber);
+    border-radius: 2px;
+  }
+
+  .content-a {
+    padding: 14px 14px 80px;
+  }
+
+  .rx-header {
+    text-align: center;
+    padding: 14px 0 10px;
+    border-bottom: 2px solid var(--ink);
+    margin-bottom: 12px;
+  }
+  .rx-header h2 {
+    font-family: 'Noto Serif SC', serif;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 3px;
+  }
+  .rx-header .clinic {
+    font-size: 11px;
+    color: var(--ink-muted);
+    margin-top: 2px;
+  }
+
+  .rx-info {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 12px;
+    font-size: 12px;
+    color: var(--ink-light);
+    padding: 10px 0;
+    border-bottom: 1px dashed rgba(44,24,16,0.12);
+    margin-bottom: 12px;
+  }
+  .rx-info span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .rx-label {
+    font-size: 11px;
+    color: var(--ink-muted);
+    margin-bottom: 6px;
+    letter-spacing: 1px;
+    font-weight: 500;
+  }
+
+  .herb-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 16px;
+    font-size: 13px;
+    padding: 8px 0;
+    margin-bottom: 12px;
+  }
+  .herb-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 3px 0;
+    border-bottom: 1px dotted rgba(44,24,16,0.08);
+  }
+  .herb-item .name { color: var(--ink); }
+  .herb-item .dose { color: var(--amber); font-weight: 500; font-size: 12px; }
+
+  .rx-footer {
+    font-size: 11.5px;
+    color: var(--ink-light);
+    padding: 10px 0;
+    border-top: 1px dashed rgba(44,24,16,0.12);
+    line-height: 1.7;
+  }
+
+  /* Billing tab content */
+  .bill-summary {
+    background: linear-gradient(135deg, var(--amber-glow) 0%, #fff7e0 100%);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    margin-bottom: 14px;
+    border: 1px solid rgba(212,133,58,0.15);
+  }
+  .bill-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 5px 0;
+    font-size: 12.5px;
+    color: var(--ink-light);
+  }
+  .bill-row.total {
+    border-top: 1px solid rgba(212,133,58,0.2);
+    margin-top: 6px;
+    padding-top: 10px;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--coral);
+  }
+
+  .bill-items { margin-top: 12px; }
+  .bill-item-card {
+    background: var(--paper);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    border: 1px solid rgba(44,24,16,0.04);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .bill-item-card .info .drug-name { font-size: 13px; font-weight: 500; }
+  .bill-item-card .info .drug-detail { font-size: 11px; color: var(--ink-muted); margin-top: 2px; }
+  .bill-item-card .price { font-size: 13px; font-weight: 600; color: var(--amber); }
+
+  /* FAB for scheme A */
+  .fab-a {
+    position: absolute;
+    bottom: 16px;
+    left: 14px;
+    right: 14px;
+    display: flex;
+    gap: 10px;
+  }
+  .fab-a button {
+    flex: 1;
+    padding: 13px 0;
+    border: none;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .fab-a .btn-secondary {
+    background: var(--paper);
+    color: var(--ink);
+    border: 1px solid rgba(44,24,16,0.1);
+  }
+  .fab-a .btn-primary {
+    background: linear-gradient(135deg, var(--amber), #c67a2e);
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(212,133,58,0.3);
+  }
+
+  /* ====== SCHEME B: Single Page Combined ====== */
+  .app-header-b {
+    background: var(--paper);
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid rgba(44,24,16,0.06);
+  }
+  .app-header-b .back { color: var(--ink-muted); font-size: 18px; width: 28px; }
+  .app-header-b .title {
+    font-family: 'Noto Serif SC', serif;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ink);
+    flex: 1;
+  }
+
+  .content-b {
+    padding: 12px 14px 86px;
+  }
+
+  .combined-card {
+    background: var(--paper);
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+    margin-bottom: 12px;
+  }
+  .combined-card .card-label {
+    padding: 10px 16px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    color: var(--ink-muted);
+    background: var(--cream-warm);
+    border-bottom: 1px solid rgba(44,24,16,0.04);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .combined-card .card-label .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+  }
+  .combined-card .card-body { padding: 12px 16px; }
+
+  .patient-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    background: var(--paper);
+    border-radius: var(--radius);
+    margin-bottom: 12px;
+    box-shadow: var(--shadow-sm);
+  }
+  .patient-avatar {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--jade), #3a7a5f);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-family: 'Noto Serif SC', serif;
+    font-size: 16px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .patient-info { flex: 1; min-width: 0; }
+  .patient-info .name { font-size: 14px; font-weight: 600; }
+  .patient-info .meta { font-size: 11px; color: var(--ink-muted); margin-top: 1px; }
+  .patient-date { font-size: 11px; color: var(--ink-muted); text-align: right; }
+
+  .herb-list-b {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 0;
+  }
+  .herb-tag {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 3px;
+    padding: 3px 0;
+    font-size: 13px;
+    margin-right: 12px;
+  }
+  .herb-tag .h-name { color: var(--ink); }
+  .herb-tag .h-dose { color: var(--amber); font-size: 11.5px; }
+  .herb-tag::after {
+    content: '·';
+    color: rgba(44,24,16,0.15);
+    margin-left: 8px;
+  }
+  .herb-tag:last-child::after { content: ''; margin: 0; }
+
+  .bill-table-b {
+    width: 100%;
+    font-size: 12px;
+  }
+  .bill-table-b th {
+    text-align: left;
+    font-weight: 500;
+    color: var(--ink-muted);
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(44,24,16,0.08);
+    font-size: 11px;
+  }
+  .bill-table-b th:last-child,
+  .bill-table-b td:last-child { text-align: right; }
+  .bill-table-b td {
+    padding: 7px 0;
+    border-bottom: 1px dotted rgba(44,24,16,0.05);
+    color: var(--ink-light);
+  }
+
+  .total-bar-b {
+    background: linear-gradient(135deg, #2c1810, #4a2e1f);
+    margin: 0 -16px -12px;
+    padding: 14px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .total-bar-b .label { color: rgba(255,255,255,0.6); font-size: 12px; }
+  .total-bar-b .amount {
+    color: var(--amber-light);
+    font-size: 22px;
+    font-weight: 700;
+    font-family: 'Noto Serif SC', serif;
+  }
+  .total-bar-b .amount small { font-size: 13px; font-weight: 400; margin-right: 2px; }
+
+  .fab-b {
+    position: absolute;
+    bottom: 16px;
+    left: 14px;
+    right: 14px;
+  }
+  .fab-b button {
+    width: 100%;
+    padding: 14px 0;
+    border: none;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    background: linear-gradient(135deg, var(--amber), #c67a2e);
+    color: #fff;
+    box-shadow: 0 4px 16px rgba(212,133,58,0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    cursor: pointer;
+  }
+
+  /* ====== SCHEME C: Checkbox Accordion ====== */
+  .app-header-c {
+    background: linear-gradient(135deg, var(--jade), #3a7a5f);
+    padding: 12px 16px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .app-header-c .back { color: rgba(255,255,255,0.7); font-size: 18px; width: 28px; }
+  .app-header-c .title {
+    font-family: 'Noto Serif SC', serif;
+    color: #fff;
+    font-size: 16px;
+    font-weight: 600;
+    flex: 1;
+  }
+  .app-header-c .status-pill {
+    padding: 4px 10px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 12px;
+    font-size: 11px;
+    color: rgba(255,255,255,0.8);
+  }
+
+  .content-c { padding: 12px 14px 86px; }
+
+  .selector-card {
+    background: var(--paper);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    box-shadow: var(--shadow-sm);
+  }
+  .selector-label {
+    font-size: 12px;
+    color: var(--ink-muted);
+    margin-bottom: 10px;
+    font-weight: 500;
+  }
+  .selector-options {
+    display: flex;
+    gap: 8px;
+  }
+  .selector-opt {
+    flex: 1;
+    padding: 10px 8px;
+    border-radius: var(--radius-sm);
+    border: 1.5px solid rgba(44,24,16,0.08);
+    background: var(--cream-warm);
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+  }
+  .selector-opt.selected {
+    border-color: var(--jade);
+    background: var(--jade-light);
+  }
+  .selector-opt .opt-icon { font-size: 20px; margin-bottom: 4px; }
+  .selector-opt .opt-text { font-size: 11.5px; font-weight: 500; color: var(--ink-light); }
+  .selector-opt.selected .opt-text { color: var(--jade); font-weight: 600; }
+  .selector-opt .check {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--jade);
+    color: #fff;
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transform: scale(0.5);
+    transition: all 0.2s;
+  }
+  .selector-opt.selected .check { opacity: 1; transform: scale(1); }
+
+  .accordion {
+    background: var(--paper);
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+    margin-bottom: 12px;
+  }
+  .accordion-header {
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid rgba(44,24,16,0.04);
+    cursor: pointer;
+  }
+  .accordion-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+  .accordion-header .acc-title { font-size: 13.5px; font-weight: 600; flex: 1; }
+  .accordion-header .acc-count {
+    font-size: 11px;
+    color: var(--ink-muted);
+    background: var(--cream-deep);
+    padding: 2px 8px;
+    border-radius: 10px;
+  }
+  .accordion-header .chevron {
+    color: var(--ink-muted);
+    font-size: 12px;
+    transition: transform 0.25s;
+  }
+  .accordion.open .chevron { transform: rotate(180deg); }
+  .accordion-body { padding: 0 16px 14px; }
+
+  .preview-strip {
+    background: var(--cream-warm);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    font-size: 12px;
+    color: var(--ink-light);
+    line-height: 1.6;
+    margin-top: 8px;
+  }
+
+  .fab-c {
+    position: absolute;
+    bottom: 16px;
+    left: 14px;
+    right: 14px;
+    display: flex;
+    gap: 10px;
+  }
+  .fab-c button {
+    flex: 1;
+    padding: 13px 0;
+    border: none;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .fab-c .btn-print {
+    background: linear-gradient(135deg, var(--jade), #3a7a5f);
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(74,140,111,0.3);
+  }
+  .fab-c .btn-charge {
+    background: linear-gradient(135deg, var(--amber), #c67a2e);
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(212,133,58,0.3);
+  }
+
+  /* ====== UTILITIES ====== */
+  .divider {
+    height: 1px;
+    background: rgba(44,24,16,0.06);
+    margin: 10px 0;
+  }
+
+  .note-text {
+    font-size: 11.5px;
+    color: var(--ink-muted);
+    line-height: 1.6;
+    margin-top: 6px;
+  }
+
+  .dose-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    background: var(--amber-glow);
+    border-radius: 4px;
+    font-size: 11px;
+    color: var(--amber);
+    font-weight: 600;
+    margin-left: 4px;
+  }
+
+  /* comparison table at top */
+  .comparison-table {
+    margin: 20px 16px;
+    background: var(--paper);
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: var(--shadow-md);
+  }
+  .comparison-table table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11.5px;
+  }
+  .comparison-table th {
+    background: var(--cream-deep);
+    padding: 10px 10px;
+    text-align: center;
+    font-weight: 600;
+    color: var(--ink-light);
+    font-size: 11px;
+    border-bottom: 1px solid rgba(44,24,16,0.08);
+  }
+  .comparison-table th:first-child { text-align: left; width: 70px; }
+  .comparison-table td {
+    padding: 9px 10px;
+    text-align: center;
+    border-bottom: 1px solid rgba(44,24,16,0.04);
+    color: var(--ink-light);
+    line-height: 1.5;
+  }
+  .comparison-table td:first-child {
+    text-align: left;
+    font-weight: 500;
+    color: var(--ink);
+    font-size: 11px;
+  }
+  .comparison-table tr:last-child td { border: none; }
+  .check-icon { color: var(--jade); font-weight: 700; }
+  .cross-icon { color: var(--ink-muted); }
+
+  /* footer */
+  .page-footer {
+    text-align: center;
+    padding: 32px 20px 48px;
+    font-size: 11px;
+    color: var(--ink-muted);
+    line-height: 1.7;
+  }
+</style>
+</head>
+<body>
+
+<!-- HERO -->
+<div class="hero">
+  <h1>处方 · 收费 合并打印</h1>
+  <p>移动端交互方案对比</p>
+  <div class="badge">3 种方案 · 点击切换预览</div>
+</div>
+
+<!-- COMPARISON TABLE -->
+<div class="comparison-table">
+  <table>
+    <tr>
+      <th></th>
+      <th>方案 A<br>标签切换</th>
+      <th>方案 B<br>单页合并</th>
+      <th>方案 C<br>勾选组合</th>
+    </tr>
+    <tr>
+      <td>操作步数</td>
+      <td>2步（切Tab+打印）</td>
+      <td>1步（直接打印）</td>
+      <td>2步（勾选+打印）</td>
+    </tr>
+    <tr>
+      <td>信息密度</td>
+      <td>低（分页展示）</td>
+      <td>高（全部可见）</td>
+      <td>中（折叠展示）</td>
+    </tr>
+    <tr>
+      <td>灵活性</td>
+      <td>可分别查看</td>
+      <td>固定合并</td>
+      <td>自由组合 ✦</td>
+    </tr>
+    <tr>
+      <td>打印输出</td>
+      <td>一张纸两部分</td>
+      <td>一张纸两部分</td>
+      <td>按勾选输出</td>
+    </tr>
+    <tr>
+      <td>学习成本</td>
+      <td>低</td>
+      <td>极低 ✦</td>
+      <td>中</td>
+    </tr>
+    <tr>
+      <td>推荐场景</td>
+      <td>需频繁单独查看</td>
+      <td>快速出单优先</td>
+      <td>需定制输出内容</td>
+    </tr>
+  </table>
+</div>
+
+<!-- NAV TABS -->
+<div class="nav-wrap">
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="switchTab(0)">方案A · 标签切换</button>
+    <button class="nav-tab" onclick="switchTab(1)">方案B · 单页<span class="tag rec">推荐</span></button>
+    <button class="nav-tab" onclick="switchTab(2)">方案C · 勾选</button>
+  </div>
+</div>
+
+<!-- ====== SCHEME A ====== -->
+<div class="section active" id="sec-0">
+  <div class="section-desc">
+    <h3>方案 A — 标签页切换</h3>
+    <p>处方内容和收费明细通过顶部 Tab 切换查看，打印时合并输出到一张纸上。保持两者逻辑独立，但统一入口。</p>
+    <div class="pros-cons">
+      <div class="pros">
+        <strong>✓ 优点</strong><br>
+        · 信息分离清晰<br>
+        · 沿用熟悉的 Tab 模式<br>
+        · 可单独查看处方/费用
+      </div>
+      <div class="cons">
+        <strong>✗ 缺点</strong><br>
+        · 需多次切换<br>
+        · 无法同时看到两者<br>
+        · 操作步骤较多
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-frame">
+    <div class="phone-screen">
+      <div class="phone-notch"></div>
+      <div class="app-header-a">
+        <div class="back">‹</div>
+        <div class="title">处方详情</div>
+        <button class="action-btn">打印全部</button>
+      </div>
+      <div class="tab-bar-a">
+        <button class="tab-a active">处方笺</button>
+        <button class="tab-a">收费明细</button>
+      </div>
+      <div class="content-a">
+        <div class="rx-header">
+          <h2>处 方 笺</h2>
+          <div class="clinic">仁心中医诊所</div>
+        </div>
+        <div class="rx-info">
+          <span>姓名：张三丰</span>
+          <span>年龄：52岁</span>
+          <span>日期：2026-03-16</span>
+          <span>剂数：<span class="dose-badge">7剂</span></span>
+        </div>
+        <div class="rx-label">Rp.</div>
+        <div class="herb-grid">
+          <div class="herb-item"><span class="name">黄芪</span><span class="dose">30g</span></div>
+          <div class="herb-item"><span class="name">党参</span><span class="dose">15g</span></div>
+          <div class="herb-item"><span class="name">白术</span><span class="dose">12g</span></div>
+          <div class="herb-item"><span class="name">茯苓</span><span class="dose">15g</span></div>
+          <div class="herb-item"><span class="name">当归</span><span class="dose">10g</span></div>
+          <div class="herb-item"><span class="name">川芎</span><span class="dose">10g</span></div>
+          <div class="herb-item"><span class="name">熟地黄</span><span class="dose">15g</span></div>
+          <div class="herb-item"><span class="name">白芍</span><span class="dose">12g</span></div>
+          <div class="herb-item"><span class="name">陈皮</span><span class="dose">6g</span></div>
+          <div class="herb-item"><span class="name">甘草</span><span class="dose">6g</span></div>
+        </div>
+        <div class="rx-footer">
+          用法：水煎服，日一剂，分早晚温服<br>
+          医师：李春阳
+        </div>
+      </div>
+      <div class="fab-a">
+        <button class="btn-secondary">仅打印处方</button>
+        <button class="btn-primary">打印全部 ↗</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== SCHEME B ====== -->
+<div class="section" id="sec-1">
+  <div class="section-desc">
+    <h3>方案 B — 单页合并（推荐）</h3>
+    <p>将处方和收费信息合并到同一页面，一次滚动即可看全。按卡片分区，打印时输出完整的处方收费单。最少操作步数，效率最高。</p>
+    <div class="pros-cons">
+      <div class="pros">
+        <strong>✓ 优点</strong><br>
+        · 一览全部信息<br>
+        · 操作步数最少<br>
+        · 打印输出即所见<br>
+        · 学习成本极低
+      </div>
+      <div class="cons">
+        <strong>✗ 缺点</strong><br>
+        · 页面较长需滚动<br>
+        · 无法单独打印处方<br>
+        · 信息密度较高
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-frame">
+    <div class="phone-screen">
+      <div class="phone-notch"></div>
+      <div class="app-header-b">
+        <div class="back">‹</div>
+        <div class="title">处方收费单</div>
+      </div>
+      <div class="content-b">
+        <!-- Patient bar -->
+        <div class="patient-bar">
+          <div class="patient-avatar">张</div>
+          <div class="patient-info">
+            <div class="name">张三丰 <span style="font-size:11px;color:var(--ink-muted);font-weight:400">男 · 52岁</span></div>
+            <div class="meta">主诉：气短乏力，食欲不振月余</div>
+          </div>
+          <div class="patient-date">03-16</div>
+        </div>
+
+        <!-- Prescription card -->
+        <div class="combined-card">
+          <div class="card-label">
+            <span class="dot" style="background:var(--jade)"></span>
+            处方内容
+            <span style="margin-left:auto;" class="dose-badge">7剂</span>
+          </div>
+          <div class="card-body">
+            <div style="font-size:12px;color:var(--ink-muted);margin-bottom:4px;">方名：补中益气汤加减</div>
+            <div class="herb-list-b">
+              <span class="herb-tag"><span class="h-name">黄芪</span><span class="h-dose">30g</span></span>
+              <span class="herb-tag"><span class="h-name">党参</span><span class="h-dose">15g</span></span>
+              <span class="herb-tag"><span class="h-name">白术</span><span class="h-dose">12g</span></span>
+              <span class="herb-tag"><span class="h-name">茯苓</span><span class="h-dose">15g</span></span>
+              <span class="herb-tag"><span class="h-name">当归</span><span class="h-dose">10g</span></span>
+              <span class="herb-tag"><span class="h-name">川芎</span><span class="h-dose">10g</span></span>
+              <span class="herb-tag"><span class="h-name">熟地黄</span><span class="h-dose">15g</span></span>
+              <span class="herb-tag"><span class="h-name">白芍</span><span class="h-dose">12g</span></span>
+              <span class="herb-tag"><span class="h-name">陈皮</span><span class="h-dose">6g</span></span>
+              <span class="herb-tag"><span class="h-name">甘草</span><span class="h-dose">6g</span></span>
+            </div>
+            <div class="note-text">用法：水煎服，日一剂，分早晚温服</div>
+          </div>
+        </div>
+
+        <!-- Billing card -->
+        <div class="combined-card">
+          <div class="card-label">
+            <span class="dot" style="background:var(--amber)"></span>
+            收费明细
+          </div>
+          <div class="card-body">
+            <table class="bill-table-b">
+              <tr><th>药名</th><th>用量×剂</th><th>小计</th></tr>
+              <tr><td>黄芪</td><td>30g × 7</td><td>¥28.0</td></tr>
+              <tr><td>党参</td><td>15g × 7</td><td>¥31.5</td></tr>
+              <tr><td>白术</td><td>12g × 7</td><td>¥16.8</td></tr>
+              <tr><td>茯苓</td><td>15g × 7</td><td>¥14.7</td></tr>
+              <tr><td>当归</td><td>10g × 7</td><td>¥21.0</td></tr>
+              <tr><td>其他 5 味</td><td></td><td>¥42.0</td></tr>
+            </table>
+            <div class="total-bar-b">
+              <div>
+                <div class="label">药费 ¥154.0 + 诊费 ¥30.0</div>
+              </div>
+              <div class="amount"><small>¥</small>184.0</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="text-align:center;padding:8px 0;">
+          <span style="font-size:11px;color:var(--ink-muted)">医师：李春阳 · 仁心中医诊所</span>
+        </div>
+      </div>
+
+      <div class="fab-b">
+        <button>🖨 打印处方收费单</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== SCHEME C ====== -->
+<div class="section" id="sec-2">
+  <div class="section-desc">
+    <h3>方案 C — 勾选组合打印</h3>
+    <p>提供三种打印选项（仅处方、仅收费、合并打印），用户勾选后预览并打印。灵活性最高，适合需要定制输出的场景。</p>
+    <div class="pros-cons">
+      <div class="pros">
+        <strong>✓ 优点</strong><br>
+        · 灵活选择输出内容<br>
+        · 折叠面板节省空间<br>
+        · 满足各种打印需求<br>
+        · 可预览打印效果
+      </div>
+      <div class="cons">
+        <strong>✗ 缺点</strong><br>
+        · 操作稍复杂<br>
+        · 需要理解选项含义<br>
+        · 对新用户不够直观
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-frame">
+    <div class="phone-screen">
+      <div class="phone-notch"></div>
+      <div class="app-header-c">
+        <div class="back">‹</div>
+        <div class="title">打印中心</div>
+        <div class="status-pill">已收费</div>
+      </div>
+      <div class="content-c">
+        <!-- Print selector -->
+        <div class="selector-card">
+          <div class="selector-label">选择打印内容</div>
+          <div class="selector-options">
+            <div class="selector-opt" onclick="toggleOpt(this)">
+              <div class="check">✓</div>
+              <div class="opt-icon">📋</div>
+              <div class="opt-text">仅处方</div>
+            </div>
+            <div class="selector-opt" onclick="toggleOpt(this)">
+              <div class="check">✓</div>
+              <div class="opt-icon">🧾</div>
+              <div class="opt-text">仅收费</div>
+            </div>
+            <div class="selector-opt selected" onclick="toggleOpt(this)">
+              <div class="check">✓</div>
+              <div class="opt-icon">📄</div>
+              <div class="opt-text">合并打印</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Prescription accordion -->
+        <div class="accordion open">
+          <div class="accordion-header" onclick="toggleAccordion(this)">
+            <div class="accordion-icon" style="background:var(--jade-light);color:var(--jade)">℞</div>
+            <span class="acc-title">处方笺</span>
+            <span class="acc-count">10味药 · 7剂</span>
+            <span class="chevron">▾</span>
+          </div>
+          <div class="accordion-body">
+            <div class="preview-strip">
+              <strong>补中益气汤加减</strong><br>
+              黄芪30g 党参15g 白术12g 茯苓15g 当归10g 川芎10g 熟地黄15g 白芍12g 陈皮6g 甘草6g<br>
+              <span style="color:var(--amber)">用法：水煎服，日一剂，早晚温服</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Billing accordion -->
+        <div class="accordion open">
+          <div class="accordion-header" onclick="toggleAccordion(this)">
+            <div class="accordion-icon" style="background:var(--amber-glow);color:var(--amber)">¥</div>
+            <span class="acc-title">收费明细</span>
+            <span class="acc-count">¥184.0</span>
+            <span class="chevron">▾</span>
+          </div>
+          <div class="accordion-body">
+            <div class="preview-strip">
+              药费小计：¥154.0（10味 × 7剂）<br>
+              诊疗费用：¥30.0<br>
+              <strong style="color:var(--coral)">应收合计：¥184.0</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- Patient info mini -->
+        <div style="padding:8px 4px;font-size:11.5px;color:var(--ink-muted);display:flex;justify-content:space-between">
+          <span>患者：张三丰 · 男 · 52岁</span>
+          <span>2026-03-16</span>
+        </div>
+      </div>
+
+      <div class="fab-c">
+        <button class="btn-print">🖨 预览打印</button>
+        <button class="btn-charge">收费出库</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<div class="page-footer">
+  滑动上方 Tab 切换方案 · 点击选择你喜欢的方向<br>
+  确定后我将直接实现到项目代码中
+</div>
+
+<script>
+  // Tab switching
+  function switchTab(idx) {
+    document.querySelectorAll('.nav-tab').forEach((t, i) => t.classList.toggle('active', i === idx));
+    document.querySelectorAll('.section').forEach((s, i) => s.classList.toggle('active', i === idx));
+  }
+
+  // Scheme C: selector toggle
+  function toggleOpt(el) {
+    el.closest('.selector-options').querySelectorAll('.selector-opt').forEach(o => o.classList.remove('selected'));
+    el.classList.add('selected');
+  }
+
+  // Scheme C: accordion
+  function toggleAccordion(header) {
+    const acc = header.closest('.accordion');
+    const body = acc.querySelector('.accordion-body');
+    if (acc.classList.contains('open')) {
+      acc.classList.remove('open');
+      body.style.display = 'none';
+    } else {
+      acc.classList.add('open');
+      body.style.display = 'block';
+    }
+  }
+</script>
+</body>
+</html>

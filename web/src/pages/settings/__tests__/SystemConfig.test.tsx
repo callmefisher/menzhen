@@ -9,6 +9,10 @@ vi.mock('../../../api/config', () => ({
   restartService: vi.fn(),
 }));
 
+vi.mock('../../../api/storage', () => ({
+  cleanupOrphanFiles: vi.fn(),
+}));
+
 vi.mock('../../../hooks/useIsMobile', () => ({
   default: () => false,
 }));
@@ -19,6 +23,7 @@ vi.mock('antd', async () => {
 });
 
 import { getConfig, updateConfig, restartService } from '../../../api/config';
+import { cleanupOrphanFiles } from '../../../api/storage';
 
 const mockConfig = {
   data: {
@@ -44,6 +49,7 @@ const mockConfig = {
       QINIU_DOMAIN: 'public.qnlinking.com',
       QINIU_RETAIN_MYSQL: '5',
       QINIU_RETAIN_MINIO: '5',
+      SITE_ID: '',
       BACKUP_INTERVAL_MYSQL: '7200',
       BACKUP_INTERVAL_MINIO: '43200',
     },
@@ -61,6 +67,7 @@ const INFO_SECTION_KEYS = [
   'DEEPSEEK_API_KEY', 'DEEPSEEK_BASE_URL', 'DEEPSEEK_MODEL',
 ];
 const SUCCESS_SECTION_KEYS = [
+  'SITE_ID',
   'QINIU_ACCESS_KEY', 'QINIU_SECRET_KEY', 'QINIU_BUCKET',
   'QINIU_KEY_PREFIX', 'QINIU_DOMAIN', 'QINIU_RETAIN_MYSQL', 'QINIU_RETAIN_MINIO',
   'BACKUP_INTERVAL_MYSQL', 'BACKUP_INTERVAL_MINIO',
@@ -81,14 +88,14 @@ describe('SystemConfig', () => {
 
   // ==================== 数据一致性 ====================
 
-  it('section keys cover all 22 mockConfig keys without gaps or duplicates', () => {
+  it('section keys cover all 23 mockConfig keys without gaps or duplicates', () => {
     const allSectionKeys = [...WARNING_SECTION_KEYS, ...INFO_SECTION_KEYS, ...SUCCESS_SECTION_KEYS].sort();
     const mockKeys = Object.keys(mockConfig.data.config).sort();
     expect(allSectionKeys).toEqual(mockKeys);
     expect(new Set(allSectionKeys).size).toBe(allSectionKeys.length);
   });
 
-  it('round-trip: save preserves all 22 config keys and values', async () => {
+  it('round-trip: save preserves all 23 config keys and values', async () => {
     const user = userEvent.setup();
     render(<SystemConfig />);
     await waitFor(() => {
@@ -131,16 +138,17 @@ describe('SystemConfig', () => {
     });
   });
 
-  it('renders all 22 form field labels (19 unique + 2 shared×2)', async () => {
+  it('renders all 23 form field labels (20 unique + 2 shared×2)', async () => {
     render(<SystemConfig />);
     await waitFor(() => {
       expect(screen.getByLabelText('数据库地址')).toBeInTheDocument();
     });
-    // 19 unique labels
+    // 20 unique labels
     const uniqueLabels = [
       '服务端口', '数据库地址', '数据库端口', '数据库用户名', '数据库密码', '数据库名',
       'JWT 密钥', 'MinIO 地址', '存储桶名',
       'API 密钥', 'API 地址', '模型名称',
+      '站点标识 (SITE_ID)',
       '存储空间名', '上传路径前缀', '下载域名',
       'MySQL 备份保留数', 'MinIO 备份保留数',
       'MySQL 备份间隔(秒)', 'MinIO 备份间隔(秒)',
@@ -417,7 +425,7 @@ describe('SystemConfig', () => {
     });
   });
 
-  it('drawer lists all 22 config keys matching form fields', async () => {
+  it('drawer lists all 23 config keys matching form fields', async () => {
     const user = userEvent.setup();
     render(<SystemConfig />);
     const link = await screen.findByText(/查看配置影响说明/);
@@ -428,6 +436,121 @@ describe('SystemConfig', () => {
         // Each key appears as <code> text in the drawer
         expect(screen.getAllByText(key).length).toBeGreaterThanOrEqual(1);
       }
+    });
+  });
+
+  // ==================== 存储清理 ====================
+
+  it('renders storage cleanup section', async () => {
+    render(<SystemConfig />);
+    await waitFor(() => {
+      expect(screen.getByText('存储清理')).toBeInTheDocument();
+      expect(screen.getByText('扫描孤立文件')).toBeInTheDocument();
+    });
+  });
+
+  it('scans orphan files and shows results', async () => {
+    (cleanupOrphanFiles as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: {
+        total_files: 10,
+        referenced_count: 7,
+        orphan_count: 3,
+        orphan_files: ['1/image/orphan1.jpg', '1/image/orphan2.jpg', '1/audio/orphan3.mp3'],
+      },
+    });
+    const user = userEvent.setup();
+    render(<SystemConfig />);
+    await waitFor(() => {
+      expect(screen.getByText('扫描孤立文件')).toBeInTheDocument();
+    });
+    await user.click(screen.getByText('扫描孤立文件'));
+    await waitFor(() => {
+      expect(cleanupOrphanFiles).toHaveBeenCalledWith(true);
+      expect(screen.getByText('10')).toBeInTheDocument(); // total
+      expect(screen.getByText('7')).toBeInTheDocument(); // referenced
+      expect(screen.getByText('3')).toBeInTheDocument(); // orphan count
+    });
+    // Should show cleanup button
+    expect(screen.getByText(/清理 3 个文件/)).toBeInTheDocument();
+  });
+
+  it('shows no orphan message when scan finds none', async () => {
+    (cleanupOrphanFiles as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: {
+        total_files: 5,
+        referenced_count: 5,
+        orphan_count: 0,
+        orphan_files: [],
+      },
+    });
+    const user = userEvent.setup();
+    render(<SystemConfig />);
+    await waitFor(() => {
+      expect(screen.getByText('扫描孤立文件')).toBeInTheDocument();
+    });
+    await user.click(screen.getByText('扫描孤立文件'));
+    await waitFor(() => {
+      expect(cleanupOrphanFiles).toHaveBeenCalledWith(true);
+    });
+    // No cleanup button should appear
+    expect(screen.queryByText(/清理.*个文件/)).not.toBeInTheDocument();
+  });
+
+  it('handles scan failure gracefully', async () => {
+    (cleanupOrphanFiles as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Network error'));
+    const user = userEvent.setup();
+    render(<SystemConfig />);
+    await waitFor(() => {
+      expect(screen.getByText('扫描孤立文件')).toBeInTheDocument();
+    });
+    await user.click(screen.getByText('扫描孤立文件'));
+    await waitFor(() => {
+      expect(cleanupOrphanFiles).toHaveBeenCalledWith(true);
+    });
+  });
+
+  it('shows confirm dialog and cleans orphan files', async () => {
+    // First scan
+    (cleanupOrphanFiles as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      data: {
+        total_files: 10,
+        referenced_count: 8,
+        orphan_count: 2,
+        orphan_files: ['1/image/orphan1.jpg', '1/image/orphan2.jpg'],
+      },
+    });
+    // Then cleanup
+    (cleanupOrphanFiles as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      data: {
+        total_files: 10,
+        referenced_count: 8,
+        orphan_count: 2,
+        orphan_files: ['1/image/orphan1.jpg', '1/image/orphan2.jpg'],
+        deleted_files: ['1/image/orphan1.jpg', '1/image/orphan2.jpg'],
+        failed_files: [],
+      },
+    });
+    const user = userEvent.setup();
+    render(<SystemConfig />);
+    await waitFor(() => {
+      expect(screen.getByText('扫描孤立文件')).toBeInTheDocument();
+    });
+    // Scan first
+    await user.click(screen.getByText('扫描孤立文件'));
+    await waitFor(() => {
+      expect(screen.getByText(/清理 2 个文件/)).toBeInTheDocument();
+    });
+    // Click cleanup button
+    await user.click(screen.getByText(/清理 2 个文件/));
+    // Confirm dialog should appear
+    await waitFor(() => {
+      expect(screen.getAllByText(/确认清理/).length).toBeGreaterThanOrEqual(1);
+    });
+    // Click confirm button in the modal
+    const confirmBtns = screen.getAllByText('确认清理');
+    await user.click(confirmBtns[confirmBtns.length - 1]);
+    await waitFor(() => {
+      expect(cleanupOrphanFiles).toHaveBeenCalledWith(false);
     });
   });
 });

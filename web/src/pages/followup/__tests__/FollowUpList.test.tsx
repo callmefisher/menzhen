@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import FollowUpList from '../FollowUpList';
 
@@ -24,6 +25,7 @@ vi.mock('../../../api/followUp', () => ({
 // Mock patient/record API for select dropdowns
 vi.mock('../../../api/patient', () => ({
   listPatients: vi.fn(),
+  getPatient: vi.fn().mockResolvedValue({ data: { phone: '' } }),
 }));
 vi.mock('../../../api/record', () => ({
   listRecords: vi.fn(),
@@ -38,9 +40,10 @@ vi.mock('../../../store/auth', () => ({
   }),
 }));
 
-// Mock useIsMobile
+// Mock useIsMobile — configurable per test
+let mockIsMobile = false;
 vi.mock('../../../hooks/useIsMobile', () => ({
-  default: () => false,
+  default: () => mockIsMobile,
 }));
 
 import { listFollowUps, getFollowUpStats } from '../../../api/followUp';
@@ -51,6 +54,7 @@ const mockGetStats = getFollowUpStats as ReturnType<typeof vi.fn>;
 describe('FollowUpList', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockIsMobile = false;
     mockGetStats.mockResolvedValue({ data: { pending_count: 2, overdue_count: 1, today_count: 1, completed_count: 5 } });
   });
 
@@ -163,6 +167,154 @@ describe('FollowUpList', () => {
 
     await waitFor(() => {
       expect(screen.getByText('未康复')).toBeInTheDocument();
+    });
+  });
+
+  it('renders quick time range buttons and sort indicator', async () => {
+    mockListFollowUps.mockResolvedValue({
+      data: { list: [], total: 0, page: 1, size: 20 },
+    });
+
+    const { container } = render(<MemoryRouter><FollowUpList /></MemoryRouter>);
+
+    await waitFor(() => {
+      expect(mockListFollowUps).toHaveBeenCalled();
+    });
+
+    // Quick range buttons exist in compact group
+    const buttons = container.querySelectorAll('.ant-space-compact button');
+    expect(buttons.length).toBe(3);
+
+    // Sort indicator in column header
+    expect(screen.getByText('计划日期')).toBeInTheDocument();
+
+    // Default sort_order=asc
+    expect(mockListFollowUps).toHaveBeenCalledWith(
+      expect.objectContaining({ sort_order: 'asc' }),
+    );
+  });
+
+  it('toggles sort order on column header click', async () => {
+    const user = userEvent.setup();
+    mockListFollowUps.mockResolvedValue({
+      data: { list: [], total: 0, page: 1, size: 20 },
+    });
+
+    render(<MemoryRouter><FollowUpList /></MemoryRouter>);
+
+    await waitFor(() => {
+      expect(mockListFollowUps).toHaveBeenCalled();
+    });
+
+    // Click sort toggle
+    await user.click(screen.getByText('计划日期'));
+
+    await waitFor(() => {
+      expect(mockListFollowUps).toHaveBeenCalledWith(
+        expect.objectContaining({ sort_order: 'desc' }),
+      );
+    });
+  });
+
+  it('sets date range when clicking quick range button', async () => {
+    const user = userEvent.setup();
+    mockListFollowUps.mockResolvedValue({
+      data: { list: [], total: 0, page: 1, size: 20 },
+    });
+
+    const { container } = render(<MemoryRouter><FollowUpList /></MemoryRouter>);
+
+    await waitFor(() => {
+      expect(mockListFollowUps).toHaveBeenCalled();
+    });
+
+    // Click first quick range button (今日)
+    const quickButtons = container.querySelectorAll('.ant-space-compact button');
+    await user.click(quickButtons[0]);
+
+    await waitFor(() => {
+      expect(mockListFollowUps).toHaveBeenCalledWith(
+        expect.objectContaining({
+          planned_date_from: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+          planned_date_to: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        }),
+      );
+    });
+  });
+
+  describe('mobile mode', () => {
+    beforeEach(() => {
+      mockIsMobile = true;
+    });
+
+    it('renders two separate DatePickers instead of RangePicker on mobile', async () => {
+      mockListFollowUps.mockResolvedValue({
+        data: { list: [], total: 0, page: 1, size: 20 },
+      });
+
+      render(<MemoryRouter><FollowUpList /></MemoryRouter>);
+
+      await waitFor(() => {
+        expect(mockListFollowUps).toHaveBeenCalled();
+      });
+
+      // Two separate date pickers with placeholders
+      expect(screen.getByPlaceholderText('开始日期')).toBeInTheDocument();
+      expect(screen.getByPlaceholderText('结束日期')).toBeInTheDocument();
+    });
+
+    it('renders mobile card layout with patient data', async () => {
+      mockListFollowUps.mockResolvedValue({
+        data: {
+          list: [
+            {
+              id: 1, patient_id: 10, patient_name: '张三', patient_phone: '13800001111',
+              record_id: 5, record_diagnosis: '感冒', record_visit_date: '2026-03-10',
+              planned_date: '2026-03-20', actual_date: null,
+              status: 'pending', method: '电话', content: '',
+              is_recovered: false,
+              created_by: 1, created_by_name: '李医生',
+              created_at: '2026-03-15', updated_at: '2026-03-15',
+            },
+          ],
+          total: 1, page: 1, size: 20,
+        },
+      });
+
+      render(<MemoryRouter><FollowUpList /></MemoryRouter>);
+
+      await waitFor(() => {
+        expect(screen.getByText('张三')).toBeInTheDocument();
+      });
+
+      // Mobile sort bar
+      expect(screen.getByText(/共 1 条/)).toBeInTheDocument();
+    });
+
+    it('renders mobile sort bar and toggles sort order', async () => {
+      const user = userEvent.setup();
+      mockListFollowUps.mockResolvedValue({
+        data: { list: [], total: 0, page: 1, size: 20 },
+      });
+
+      render(<MemoryRouter><FollowUpList /></MemoryRouter>);
+
+      await waitFor(() => {
+        expect(mockListFollowUps).toHaveBeenCalled();
+      });
+
+      // Default sort label
+      const sortBtn = screen.getByText(/计划日期升序/);
+      expect(sortBtn).toBeInTheDocument();
+
+      // Toggle sort
+      await user.click(sortBtn);
+
+      await waitFor(() => {
+        expect(mockListFollowUps).toHaveBeenCalledWith(
+          expect.objectContaining({ sort_order: 'desc' }),
+        );
+      });
     });
   });
 });
