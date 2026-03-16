@@ -44,6 +44,7 @@ describe('RevenueTrendChart', () => {
     const dz = lastEChartsProps.option.dataZoom;
     expect(dz).toHaveLength(2);
     expect(dz[0].type).toBe('slider');
+    expect(dz[0].height).toBe(40);
     expect(dz[1].type).toBe('inside');
     expect(dz[1].zoomOnMouseWheel).toBe('shift');
   });
@@ -97,7 +98,7 @@ describe('RevenueTrendChart', () => {
         onBrushSelect={vi.fn()}
       />,
     );
-    expect(lastEChartsProps.option.grid.bottom).toBe(56);
+    expect(lastEChartsProps.option.grid.bottom).toBe(64);
 
     // Without dataZoom
     render(
