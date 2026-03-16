@@ -32,15 +32,6 @@ vi.mock('../../../api/statistics', () => ({
           new_patient_count: 2,
           returning_patient_count: 4,
         },
-        {
-          date: '2026-03-02',
-          revenue: 2100,
-          consultation_fee: 600,
-          drug_fee: 1500,
-          record_count: 8,
-          new_patient_count: 3,
-          returning_patient_count: 5,
-        },
       ],
       revenue_breakdown: { consultation_fee_total: 15600, drug_fee_total: 33000 },
       patient_breakdown: { new_patients: 34, returning_patients: 55 },
@@ -52,14 +43,8 @@ vi.mock('../../../hooks/useIsMobile', () => ({
   default: vi.fn().mockReturnValue(false),
 }));
 
-// Capture props passed to the revenue trend chart's ECharts instance
-let capturedEChartsProps: Record<string, any>[] = [];
-
 vi.mock('echarts-for-react', () => ({
-  default: vi.fn((props: any) => {
-    capturedEChartsProps.push(props);
-    return <div data-testid="echarts-mock" />;
-  }),
+  default: ({ option: _option, ...props }: any) => <div data-testid="echarts-mock" {...props} />,
 }));
 
 function renderWithRouter() {
@@ -73,7 +58,6 @@ function renderWithRouter() {
 describe('StatsDashboard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    capturedEChartsProps = [];
   });
 
   it('renders summary cards with data', async () => {
@@ -134,54 +118,6 @@ describe('StatsDashboard', () => {
     renderWithRouter();
     await waitFor(() => {
       expect(screen.getByText('暂无统计数据')).toBeInTheDocument();
-    });
-  });
-
-  it('passes dataZoom props to RevenueTrendChart on desktop with month range', async () => {
-    renderWithRouter();
-    await waitFor(() => {
-      expect(screen.getByText('¥48,600')).toBeInTheDocument();
-    });
-    // First echarts instance is RevenueTrendChart (rendered first)
-    const revenueTrendProps = capturedEChartsProps[0];
-    expect(revenueTrendProps).toBeDefined();
-    // dataZoom should be enabled (desktop + month range)
-    const dz = revenueTrendProps.option.dataZoom;
-    expect(dz).toHaveLength(2);
-    expect(dz[0].type).toBe('slider');
-    // onEvents should have datazoom handler
-    expect(revenueTrendProps.onEvents).toHaveProperty('datazoom');
-  });
-
-  it('disables dataZoom in quarter mode', async () => {
-    renderWithRouter();
-    await waitFor(() => {
-      expect(screen.getByText('¥48,600')).toBeInTheDocument();
-    });
-    capturedEChartsProps = [];
-
-    const quarterBtn = screen.getByText('本季');
-    await userEvent.click(quarterBtn);
-    await waitFor(() => {
-      const revenueTrendProps = capturedEChartsProps[0];
-      expect(revenueTrendProps).toBeDefined();
-      expect(revenueTrendProps.option.dataZoom).toEqual([]);
-    });
-  });
-
-  it('disables dataZoom in year mode', async () => {
-    renderWithRouter();
-    await waitFor(() => {
-      expect(screen.getByText('¥48,600')).toBeInTheDocument();
-    });
-    capturedEChartsProps = [];
-
-    const yearBtn = screen.getByText('本年');
-    await userEvent.click(yearBtn);
-    await waitFor(() => {
-      const revenueTrendProps = capturedEChartsProps[0];
-      expect(revenueTrendProps).toBeDefined();
-      expect(revenueTrendProps.option.dataZoom).toEqual([]);
     });
   });
 });

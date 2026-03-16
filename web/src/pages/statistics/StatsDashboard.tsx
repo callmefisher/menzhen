@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Radio, DatePicker, Spin, Empty } from 'antd';
 import dayjs from 'dayjs';
 import 'dayjs/locale/zh-cn';
@@ -122,29 +122,6 @@ export default function StatsDashboard() {
     [data, quickRange],
   );
 
-  const rawDates = useMemo(
-    () => data?.daily_trend.map((d) => d.date) ?? [],
-    [data],
-  );
-
-  const enableDataZoom = quickRange !== 'quarter' && quickRange !== 'year';
-
-  const lastQuickRangeRef = useRef<QuickRange>(quickRange);
-  if (quickRange !== 'custom') {
-    lastQuickRangeRef.current = quickRange;
-  }
-
-  const handleBrushSelect = useCallback((startDate: string, endDate: string) => {
-    setQuickRange('custom');
-    setDateRange([dayjs(startDate), dayjs(endDate)]);
-  }, []);
-
-  const handleBrushReset = useCallback(() => {
-    const range = lastQuickRangeRef.current;
-    setQuickRange(range);
-    setDateRange(getDateRange(range));
-  }, []);
-
   return (
     <div style={{ padding: isMobile ? 12 : 24 }}>
       <div
@@ -182,14 +159,7 @@ export default function StatsDashboard() {
         {data ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <SummaryCards summary={data.summary} />
-            <RevenueTrendChart
-              data={chartData}
-              rawDates={rawDates}
-              onBrushSelect={handleBrushSelect}
-              onReset={handleBrushReset}
-              isMobile={isMobile}
-              enableDataZoom={enableDataZoom}
-            />
+            <RevenueTrendChart data={chartData} />
             <div
               style={{
                 display: isMobile ? 'flex' : 'grid',
