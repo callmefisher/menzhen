@@ -13,6 +13,54 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
+// DeleteFile deletes a single object from MinIO.
+func DeleteFile(client *minio.Client, bucket, objectName string) error {
+	ctx := context.Background()
+	if err := client.RemoveObject(ctx, bucket, objectName, minio.RemoveObjectOptions{}); err != nil {
+		return fmt.Errorf("failed to delete object %s: %w", objectName, err)
+	}
+	return nil
+}
+
+// DeleteFiles deletes multiple objects from MinIO using batch removal.
+// It returns the list of object names that failed to delete.
+func DeleteFiles(client *minio.Client, bucket string, objectNames []string) []string {
+	if len(objectNames) == 0 {
+		return nil
+	}
+	ctx := context.Background()
+	objectsCh := make(chan minio.ObjectInfo, len(objectNames))
+	go func() {
+		defer close(objectsCh)
+		for _, name := range objectNames {
+			objectsCh <- minio.ObjectInfo{Key: name}
+		}
+	}()
+
+	var failed []string
+	for err := range client.RemoveObjects(ctx, bucket, objectsCh, minio.RemoveObjectsOptions{}) {
+		log.Printf("failed to delete object %s: %v", err.ObjectName, err.Err)
+		failed = append(failed, err.ObjectName)
+	}
+	return failed
+}
+
+// ListAllObjects lists all object keys in a bucket with the given prefix.
+func ListAllObjects(client *minio.Client, bucket, prefix string) ([]string, error) {
+	ctx := context.Background()
+	var keys []string
+	for obj := range client.ListObjects(ctx, bucket, minio.ListObjectsOptions{
+		Prefix:    prefix,
+		Recursive: true,
+	}) {
+		if obj.Err != nil {
+			return nil, fmt.Errorf("failed to list objects: %w", obj.Err)
+		}
+		keys = append(keys, obj.Key)
+	}
+	return keys, nil
+}
+
 // InitMinIO creates a MinIO client and ensures the configured bucket exists.
 // It uses SSL = false since the MinIO server runs on the internal network.
 func InitMinIO(cfg *config.Config) *minio.Client {

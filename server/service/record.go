@@ -2,10 +2,13 @@ package service
 
 import (
 	"errors"
+	"log"
 	"strings"
 	"time"
 
 	"github.com/callmefisher/menzhen/server/model"
+	"github.com/callmefisher/menzhen/server/storage"
+	"github.com/minio/minio-go/v7"
 	"gorm.io/gorm"
 )
 
@@ -69,12 +72,37 @@ type RecordListItem struct {
 
 // RecordService handles medical-record-related business logic.
 type RecordService struct {
-	DB *gorm.DB
+	DB          *gorm.DB
+	MinIOClient *minio.Client
+	MinIOBucket string
 }
 
 // NewRecordService creates a new RecordService.
-func NewRecordService(db *gorm.DB) *RecordService {
-	return &RecordService{DB: db}
+func NewRecordService(db *gorm.DB, minioClient ...*minio.Client) *RecordService {
+	s := &RecordService{DB: db}
+	if len(minioClient) > 0 {
+		s.MinIOClient = minioClient[0]
+	}
+	return s
+}
+
+// SetMinIO sets the MinIO client and bucket for file cleanup operations.
+func (s *RecordService) SetMinIO(client *minio.Client, bucket string) {
+	s.MinIOClient = client
+	s.MinIOBucket = bucket
+}
+
+// cleanupFiles deletes files from MinIO in the background. Best-effort: logs errors but does not fail.
+func (s *RecordService) cleanupFiles(filePaths []string) {
+	if s.MinIOClient == nil || s.MinIOBucket == "" || len(filePaths) == 0 {
+		return
+	}
+	go func() {
+		failed := storage.DeleteFiles(s.MinIOClient, s.MinIOBucket, filePaths)
+		if len(failed) > 0 {
+			log.Printf("[RecordService] failed to cleanup %d files: %v", len(failed), failed)
+		}
+	}()
 }
 
 // CreateRecord creates a new medical record, optionally with attachments.
@@ -280,6 +308,28 @@ func (s *RecordService) UpdateRecord(tenantID uint64, id uint64, req *UpdateReco
 		updates["tongue_analysis"] = *req.TongueAnalysis
 	}
 
+	// Collect old file paths that should be cleaned up after transaction.
+	var filesToCleanup []string
+
+	// If attachments are being replaced, collect old attachment file paths
+	// that are not present in the new attachment list.
+	if req.Attachments != nil {
+		newPaths := make(map[string]bool, len(req.Attachments))
+		for _, a := range req.Attachments {
+			newPaths[a.FilePath] = true
+		}
+		for _, a := range record.Attachments {
+			if !newPaths[a.FilePath] {
+				filesToCleanup = append(filesToCleanup, a.FilePath)
+			}
+		}
+	}
+
+	// If tongue image is being changed, collect old tongue image path.
+	if req.TongueImage != nil && record.TongueImage != "" && *req.TongueImage != record.TongueImage {
+		filesToCleanup = append(filesToCleanup, record.TongueImage)
+	}
+
 	err := s.DB.Transaction(func(tx *gorm.DB) error {
 		if len(updates) > 0 {
 			if err := tx.Model(&record).Updates(updates).Error; err != nil {
@@ -318,6 +368,9 @@ func (s *RecordService) UpdateRecord(tenantID uint64, id uint64, req *UpdateReco
 		return nil, nil, err
 	}
 
+	// Clean up old files from MinIO after successful transaction.
+	s.cleanupFiles(filesToCleanup)
+
 	// Reload to get the updated record with attachments.
 	if err := s.DB.Where("tenant_id = ?", tenantID).Preload("Attachments").Preload("Patient").First(&record, id).Error; err != nil {
 		return nil, nil, err
@@ -340,6 +393,15 @@ func (s *RecordService) DeleteRecord(tenantID uint64, id uint64) (*model.Medical
 			return nil, ErrRecordNotFound
 		}
 		return nil, err
+	}
+
+	// Collect file paths to clean up after transaction.
+	var filesToCleanup []string
+	for _, a := range record.Attachments {
+		filesToCleanup = append(filesToCleanup, a.FilePath)
+	}
+	if record.TongueImage != "" {
+		filesToCleanup = append(filesToCleanup, record.TongueImage)
 	}
 
 	err := s.DB.Transaction(func(tx *gorm.DB) error {
@@ -384,6 +446,25 @@ func (s *RecordService) DeleteRecord(tenantID uint64, id uint64) (*model.Medical
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	// Clean up files from MinIO after successful transaction.
+	s.cleanupFiles(filesToCleanup)
+
+	// Refresh daily stats: visit date (record/patient counts) and billing dates (revenue).
+	statsSvc := NewStatisticsService(s.DB)
+	_ = statsSvc.RefreshDailyStats(tenantID, record.VisitDate)
+	// Also refresh any billing dates that differ from visit date.
+	var billingDates []time.Time
+	s.DB.Unscoped().Model(&model.Billing{}).
+		Select("DATE(created_at) AS billing_date").
+		Where("record_id = ? AND tenant_id = ?", id, tenantID).
+		Group("DATE(created_at)").
+		Pluck("billing_date", &billingDates)
+	for _, bd := range billingDates {
+		if !sameDay(bd, record.VisitDate) {
+			_ = statsSvc.RefreshDailyStats(tenantID, bd)
+		}
 	}
 
 	return &record, nil

@@ -158,10 +158,6 @@ const BillingPrint = forwardRef<BillingPrintHandle, BillingPrintProps>(
                 <span>¥{detail.consultation_fee.toFixed(2)}</span>
               </div>
               <div className="row" style={{ fontWeight: 'bold', fontSize: 16 }}>
-                <span>应收：</span>
-                <span>¥{detail.total_amount.toFixed(2)}</span>
-              </div>
-              <div className="row" style={{ fontWeight: 'bold', fontSize: 16 }}>
                 <span>实收：</span>
                 <span>¥{detail.actual_paid.toFixed(2)}</span>
               </div>

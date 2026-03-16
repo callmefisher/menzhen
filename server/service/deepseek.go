@@ -158,10 +158,11 @@ JSON格式如下:
   "effects": "功效",
   "indications": "主治",
   "composition": [
-    {"herb_name": "药物名称", "default_dosage": "默认用量如9g"},
+    {"herb_name": "药物名称", "default_dosage": "用量，必须用阿拉伯数字+g格式如9g"},
     ...
   ]
 }
+重要：default_dosage必须使用现代临床克数（阿拉伯数字+g），不要使用古代单位如"一两"、"二钱"。经方古方请按常用临床剂量换算为克数。
 如果你不确定该方剂信息，请返回你最了解的内容，不要编造。`
 
 	userPrompt := fmt.Sprintf("请提供方剂「%s」的详细信息，包括所有组成药物及其用量。", name)

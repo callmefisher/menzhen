@@ -1,7 +1,7 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Table, Button, Space, Input, Select, Modal, Form, DatePicker, message, Tag, Statistic, Row, Col, Popconfirm, Pagination, Switch } from 'antd';
-import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
+import { PlusOutlined, SearchOutlined, CaretUpOutlined, CaretDownOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { useAuth } from '../../store/auth';
 import useIsMobile from '../../hooks/useIsMobile';
@@ -30,7 +30,7 @@ export default function FollowUpList() {
   const [data, setData] = useState<FollowUpListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
-  const [params, setParams] = useState({ page: 1, size: 20, patient_name: '', status: '', planned_date_from: '', planned_date_to: '' });
+  const [params, setParams] = useState({ page: 1, size: 20, patient_name: '', status: '', planned_date_from: '', planned_date_to: '', sort_order: 'asc' as 'asc' | 'desc' });
   const [stats, setStats] = useState<FollowUpStats>({ pending_count: 0, overdue_count: 0, today_count: 0, completed_count: 0 });
 
   // Modal state
@@ -203,7 +203,8 @@ export default function FollowUpList() {
   };
 
   // Table columns (desktop)
-  const columns: ColumnsType<FollowUpListItem> = [
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const columns: ColumnsType<FollowUpListItem> = useMemo(() => [
     {
       title: '患者姓名', dataIndex: 'patient_name', key: 'patient_name', width: 100,
       render: (name: string, record) => (
@@ -239,7 +240,21 @@ export default function FollowUpList() {
         );
       },
     },
-    { title: '计划日期', dataIndex: 'planned_date', key: 'planned_date', width: 110 },
+    {
+      title: (
+        <span
+          style={{ cursor: 'pointer', userSelect: 'none', display: 'inline-flex', alignItems: 'center', gap: 2 }}
+          onClick={() => setParams((p) => ({ ...p, sort_order: p.sort_order === 'asc' ? 'desc' : 'asc', page: 1 }))}
+        >
+          计划日期
+          <span style={{ display: 'inline-flex', flexDirection: 'column', fontSize: 10, lineHeight: 1 }}>
+            <CaretUpOutlined style={{ color: params.sort_order === 'asc' ? '#1677ff' : '#bbb' }} />
+            <CaretDownOutlined style={{ color: params.sort_order === 'desc' ? '#1677ff' : '#bbb', marginTop: -2 }} />
+          </span>
+        </span>
+      ),
+      dataIndex: 'planned_date', key: 'planned_date', width: 110,
+    },
     {
       title: '实际日期', dataIndex: 'actual_date', key: 'actual_date', width: 110,
       render: (v: string | null) => v || '—',
@@ -274,7 +289,22 @@ export default function FollowUpList() {
         </Space>
       ),
     },
-  ];
+  ], [params.sort_order]);
+
+  // Mobile sort toggle
+  const renderMobileSortBar = () => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+      <span style={{ color: '#666', fontSize: 13 }}>共 {total} 条</span>
+      <Button
+        size="small"
+        type="text"
+        onClick={() => setParams((p) => ({ ...p, sort_order: p.sort_order === 'asc' ? 'desc' : 'asc', page: 1 }))}
+        icon={params.sort_order === 'asc' ? <CaretUpOutlined /> : <CaretDownOutlined />}
+      >
+        计划日期{params.sort_order === 'asc' ? '升序' : '降序'}
+      </Button>
+    </div>
+  );
 
   // Mobile card
   const renderMobileCard = (item: FollowUpListItem) => {
@@ -317,9 +347,50 @@ export default function FollowUpList() {
     );
   };
 
+  // Quick date range helpers
+  type QuickRangeKey = 'today' | 'week' | 'month';
+
+  const getQuickRange = (key: QuickRangeKey): [string, string] => {
+    const today = dayjs();
+    switch (key) {
+      case 'today':
+        return [today.format('YYYY-MM-DD'), today.format('YYYY-MM-DD')];
+      case 'week': {
+        // 显式计算本周一~周日，不依赖 locale startOf('week')
+        const d = today.day(); // 0=周日, 1=周一, ..., 6=周六
+        const diffToMonday = d === 0 ? 6 : d - 1;
+        const monday = today.subtract(diffToMonday, 'day');
+        const sunday = monday.add(6, 'day');
+        return [monday.format('YYYY-MM-DD'), sunday.format('YYYY-MM-DD')];
+      }
+      case 'month':
+        return [today.startOf('month').format('YYYY-MM-DD'), today.endOf('month').format('YYYY-MM-DD')];
+    }
+  };
+
+  const activeQuickRange = useMemo(() => {
+    const { planned_date_from: from, planned_date_to: to } = params;
+    if (!from && !to) return '';
+    for (const key of ['today', 'week', 'month'] as const) {
+      const [qf, qt] = getQuickRange(key);
+      if (from === qf && to === qt) return key;
+    }
+    return 'custom';
+  }, [params.planned_date_from, params.planned_date_to]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleQuickRange = (key: QuickRangeKey) => {
+    if (activeQuickRange === key) {
+      // 取消选中
+      setParams({ ...params, planned_date_from: '', planned_date_to: '', page: 1 });
+    } else {
+      const [from, to] = getQuickRange(key);
+      setParams({ ...params, planned_date_from: from, planned_date_to: to, page: 1 });
+    }
+  };
+
   // Search bar
   const renderSearchBar = () => (
-    <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+    <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center', ...(isMobile ? { overflow: 'hidden' } : {}) }}>
       <Input
         placeholder="患者姓名"
         prefix={<SearchOutlined />}
@@ -332,15 +403,69 @@ export default function FollowUpList() {
         value={params.status || undefined}
         placeholder="状态"
         onChange={(v) => setParams({ ...params, status: v || '', page: 1 })}
-        style={{ width: isMobile ? '100%' : 120 }}
+        style={{ width: isMobile ? 'calc(50% - 4px)' : 120 }}
         allowClear
       >
         <Option value="pending">待回访</Option>
         <Option value="overdue">逾期</Option>
         <Option value="completed">已完成</Option>
       </Select>
-      {!isMobile && (
+      {isMobile && hasPermission('followup:create') && (
+        <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} style={{ width: 'calc(50% - 4px)' }} aria-label="新增回访" />
+      )}
+      <Space.Compact size={isMobile ? 'small' : 'middle'}>
+        {([
+          { key: 'today' as const, label: '今日' },
+          { key: 'week' as const, label: '本周' },
+          { key: 'month' as const, label: '本月' },
+        ]).map(({ key, label }) => (
+          <Button
+            key={key}
+            type={activeQuickRange === key ? 'primary' : 'default'}
+            onClick={() => handleQuickRange(key)}
+          >
+            {label}
+          </Button>
+        ))}
+      </Space.Compact>
+      {isMobile ? (
+        <div style={{ display: 'flex', gap: 4, width: '100%' }}>
+          <DatePicker
+            size="small"
+            placeholder="开始日期"
+            value={params.planned_date_from ? dayjs(params.planned_date_from) : undefined}
+            onChange={(d) => {
+              const from = d?.format('YYYY-MM-DD') || '';
+              // 如果开始日期晚于结束日期，清空结束日期
+              const to = from && params.planned_date_to && from > params.planned_date_to ? '' : params.planned_date_to;
+              setParams({ ...params, planned_date_from: from, planned_date_to: to, page: 1 });
+            }}
+            disabledDate={params.planned_date_to ? (d) => d.isAfter(dayjs(params.planned_date_to), 'day') : undefined}
+            style={{ flex: 1, minWidth: 0 }}
+            allowClear
+          />
+          <DatePicker
+            size="small"
+            placeholder="结束日期"
+            value={params.planned_date_to ? dayjs(params.planned_date_to) : undefined}
+            onChange={(d) => {
+              const to = d?.format('YYYY-MM-DD') || '';
+              // 如果结束日期早于开始日期，清空开始日期
+              const from = to && params.planned_date_from && to < params.planned_date_from ? '' : params.planned_date_from;
+              setParams({ ...params, planned_date_from: from, planned_date_to: to, page: 1 });
+            }}
+            disabledDate={params.planned_date_from ? (d) => d.isBefore(dayjs(params.planned_date_from), 'day') : undefined}
+            style={{ flex: 1, minWidth: 0 }}
+            allowClear
+          />
+        </div>
+      ) : (
         <RangePicker
+          value={
+            params.planned_date_from && params.planned_date_to
+              ? [dayjs(params.planned_date_from), dayjs(params.planned_date_to)]
+              : undefined
+          }
           onChange={(dates) => {
             setParams({
               ...params,
@@ -351,9 +476,9 @@ export default function FollowUpList() {
           }}
         />
       )}
-      {hasPermission('followup:create') && (
+      {!isMobile && hasPermission('followup:create') && (
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-          {isMobile ? '' : '新增回访'}
+          新增回访
         </Button>
       )}
     </div>
@@ -443,6 +568,7 @@ export default function FollowUpList() {
       {renderStats()}
       {isMobile ? (
         <>
+          {renderMobileSortBar()}
           {data.map(renderMobileCard)}
           <div style={{ textAlign: 'center', marginTop: 16 }}>
             <Pagination

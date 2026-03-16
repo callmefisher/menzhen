@@ -6,11 +6,20 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/callmefisher/menzhen/server/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+// sameDay returns true if a and b fall on the same calendar date (local time).
+func sameDay(a, b time.Time) bool {
+	a, b = a.Local(), b.Local()
+	y1, m1, d1 := a.Date()
+	y2, m2, d2 := b.Date()
+	return y1 == y2 && m1 == m2 && d1 == d2
+}
 
 var (
 	ErrBillingNotFound      = errors.New("billing not found")
@@ -218,11 +227,14 @@ func (s *BillingService) CreateBilling(tenantID, userID, prescriptionID uint64, 
 		}
 	}
 
-	// 同步刷新当天统计（汇总表查单天数据，很快）
+	// 刷新收费日期的收入统计 + 就诊日的记录/患者统计
 	statsSvc := NewStatisticsService(s.DB)
+	_ = statsSvc.RefreshDailyStats(tenantID, billing.CreatedAt)
 	var record model.MedicalRecord
 	if err := s.DB.First(&record, billing.RecordID).Error; err == nil {
-		_ = statsSvc.RefreshDailyStats(tenantID, record.VisitDate)
+		if !sameDay(billing.CreatedAt, record.VisitDate) {
+			_ = statsSvc.RefreshDailyStats(tenantID, record.VisitDate)
+		}
 	}
 
 	return &billing, nil
@@ -342,9 +354,12 @@ func (s *BillingService) DeductStockAndBill(tenantID, userID, prescriptionID uin
 	}
 
 	statsSvc := NewStatisticsService(s.DB)
+	_ = statsSvc.RefreshDailyStats(tenantID, result.CreatedAt)
 	var record model.MedicalRecord
 	if err := s.DB.First(&record, result.RecordID).Error; err == nil {
-		_ = statsSvc.RefreshDailyStats(tenantID, record.VisitDate)
+		if !sameDay(result.CreatedAt, record.VisitDate) {
+			_ = statsSvc.RefreshDailyStats(tenantID, record.VisitDate)
+		}
 	}
 
 	return result, nil
@@ -426,9 +441,12 @@ func (s *BillingService) CreateRecordBilling(tenantID, userID, recordID uint64, 
 		}
 	}
 
-	// Refresh daily stats.
+	// 刷新收费日期的收入统计 + 就诊日的记录/患者统计
 	statsSvc := NewStatisticsService(s.DB)
-	_ = statsSvc.RefreshDailyStats(tenantID, record.VisitDate)
+	_ = statsSvc.RefreshDailyStats(tenantID, billing.CreatedAt)
+	if !sameDay(billing.CreatedAt, record.VisitDate) {
+		_ = statsSvc.RefreshDailyStats(tenantID, record.VisitDate)
+	}
 
 	return &billing, nil
 }

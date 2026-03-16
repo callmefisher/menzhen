@@ -29,7 +29,7 @@ vi.mock('antd', async () => {
   };
 });
 
-import { listFormulas } from '../../../api/formula';
+import { listFormulas, deleteFormula } from '../../../api/formula';
 
 describe('FormulaSearch', () => {
   beforeEach(() => {

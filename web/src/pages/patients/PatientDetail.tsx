@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import {
   Card,
   Descriptions,
@@ -84,8 +84,15 @@ interface PatientData {
 
 export default function PatientDetail() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { id } = useParams<{ id: string }>();
   const isMobile = useIsMobile();
+
+  // Highlight state from RecordForm return navigation
+  const highlightState = location.state as { highlightRecordId?: number; highlightPrescriptionId?: number } | null;
+  const highlightRecordId = highlightState?.highlightRecordId;
+  const highlightPrescriptionId = highlightState?.highlightPrescriptionId;
+  const highlightAppliedRef = useRef(false);
 
   const [patient, setPatient] = useState<PatientData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -134,6 +141,34 @@ export default function PatientDetail() {
     fetchPatient();
     fetchFollowUps();
   }, [fetchPatient, fetchFollowUps]);
+
+  // Highlight record and prescription when returning from RecordForm (keep collapsed)
+  useEffect(() => {
+    if (!highlightRecordId || !patient || highlightAppliedRef.current) return;
+    highlightAppliedRef.current = true;
+
+    // Scroll + highlight after DOM update
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const t1 = setTimeout(() => {
+      const recordEl = document.querySelector(`[data-record-id="${highlightRecordId}"]`);
+      if (recordEl) {
+        recordEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        recordEl.classList.add('record-highlight');
+
+        // Remove highlight after 15s
+        const t2 = setTimeout(() => {
+          recordEl.classList.remove('record-highlight');
+          window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        }, 15000);
+        timers.push(t2);
+      }
+    }, 150);
+    timers.push(t1);
+
+    return () => {
+      timers.forEach(clearTimeout);
+    };
+  }, [highlightRecordId, highlightPrescriptionId, patient]);
 
   const toggleExpand = (recordId: number) => {
     setExpandedRecords((prev) => {
@@ -306,7 +341,7 @@ export default function PatientDetail() {
             <Button
               type="primary"
               icon={<PlusOutlined />}
-              onClick={() => navigate(`/records/new?patient_id=${patient.id}`)}
+              onClick={() => navigate(`/records/new?patient_id=${patient.id}&from=patient`)}
             >
               新增就诊记录
             </Button>
@@ -376,7 +411,7 @@ export default function PatientDetail() {
                   ),
                 }),
                 children: (
-                  <div>
+                  <div data-record-id={record.id}>
                     {/* Mobile: show date at top */}
                     {isMobile && (
                       <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>
@@ -410,16 +445,21 @@ export default function PatientDetail() {
                     {/* Prescription summary - always visible */}
                     {prescriptions.length > 0 && (
                       <div style={{ marginBottom: 8 }}>
-                        {prescriptions.map((rx) => (
-                          <Tag key={rx.id} color="geekblue" style={{ marginBottom: 4 }}>
-                            {rx.formula_name || '自定义处方'} {rx.total_doses}付
-                            {rx.items && rx.items.length > 0 && (
-                              <span style={{ marginLeft: 4, fontSize: 12, opacity: 0.8 }}>
-                                ({rx.items.slice(0, 3).map(i => i.herb_name).join('、')}{rx.items.length > 3 ? '...' : ''})
-                              </span>
-                            )}
-                          </Tag>
-                        ))}
+                        {prescriptions.map((rx) => {
+                          const isChargeOnly = !rx.items || rx.items.length === 0;
+                          return (
+                            <Tag key={rx.id} color={isChargeOnly ? 'orange' : 'geekblue'} style={{ marginBottom: 4 }}>
+                              {isChargeOnly
+                                ? '仅收诊疗费'
+                                : <>{rx.formula_name || '自定义处方'} {rx.total_doses}付
+                                    <span style={{ marginLeft: 4, fontSize: 12, opacity: 0.8 }}>
+                                      ({rx.items.slice(0, 3).map(i => i.herb_name).join('、')}{rx.items.length > 3 ? '...' : ''})
+                                    </span>
+                                  </>
+                              }
+                            </Tag>
+                          );
+                        })}
                       </div>
                     )}
 
@@ -438,7 +478,7 @@ export default function PatientDetail() {
                         type="link"
                         size="small"
                         icon={<EditOutlined />}
-                        onClick={() => navigate(`/records/${record.id}`)}
+                        onClick={() => navigate(`/records/${record.id}?from=patient&patient_id=${patient.id}`)}
                       >
                         编辑
                       </Button>
@@ -599,22 +639,31 @@ export default function PatientDetail() {
                           <div style={{ marginBottom: 8 }}>
                             <Text strong>处方：</Text>
                             <div style={{ marginTop: 4 }}>
-                              {prescriptions.map((rx) => (
-                                <div key={rx.id} style={{ marginBottom: 8, padding: 8, background: '#fff', borderRadius: 4, border: '1px solid #e8e8e8' }}>
-                                  <Space wrap>
-                                    <Text strong>{rx.formula_name || '自定义处方'}</Text>
-                                    <Tag color="blue">{rx.total_doses} 付</Tag>
-                                  </Space>
-                                  <div style={{ marginTop: 4, fontSize: 13 }}>
-                                    {(rx.items || []).map((item) => `${item.herb_name} ${item.dosage}`).join('、')}
+                              {prescriptions.map((rx) => {
+                                const isChargeOnly = !rx.items || rx.items.length === 0;
+                                return (
+                                  <div key={rx.id} data-prescription-id={rx.id} style={{ marginBottom: 8, padding: 8, background: '#fff', borderRadius: 4, border: '1px solid #e8e8e8' }}>
+                                    {isChargeOnly ? (
+                                      <Text type="secondary">仅收诊疗费处方</Text>
+                                    ) : (
+                                      <>
+                                        <Space wrap>
+                                          <Text strong>{rx.formula_name || '自定义处方'}</Text>
+                                          <Tag color="blue">{rx.total_doses} 付</Tag>
+                                        </Space>
+                                        <div style={{ marginTop: 4, fontSize: 13 }}>
+                                          {(rx.items || []).map((item) => `${item.herb_name} ${item.dosage}`).join('、')}
+                                        </div>
+                                      </>
+                                    )}
+                                    {rx.notes && (
+                                      <div style={{ marginTop: 4, color: '#666', fontSize: 12 }}>
+                                        医嘱：{rx.notes}
+                                      </div>
+                                    )}
                                   </div>
-                                  {rx.notes && (
-                                    <div style={{ marginTop: 4, color: '#666', fontSize: 12 }}>
-                                      医嘱：{rx.notes}
-                                    </div>
-                                  )}
-                                </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           </div>
                         )}

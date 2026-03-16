@@ -73,17 +73,18 @@ func (s *StatisticsService) RefreshDailyStats(tenantID uint64, date time.Time) e
 		Where("tenant_id = ? AND visit_date >= ? AND visit_date < ?", tenantID, statDate, nextDate).
 		Count(&recordCount)
 
-	// 2. Aggregate billing amounts joined through medical_records.visit_date.
+	// 2. Aggregate billing amounts by billings.created_at (revenue reflects actual billing date).
 	type billingSummary struct {
 		Revenue         float64
 		ConsultationFee float64
 	}
 	var summary billingSummary
 	// 以实收为准：每笔诊金不超过该笔实收，避免药费为负
+	// Uses idx_billing_tenant_created composite index for efficient range scan on 5M+ rows.
 	s.DB.Model(&model.Billing{}).
 		Select("COALESCE(SUM(billings.actual_paid), 0) AS revenue, COALESCE(SUM(LEAST(billings.consultation_fee, billings.actual_paid)), 0) AS consultation_fee").
 		Joins("JOIN medical_records ON medical_records.id = billings.record_id AND medical_records.deleted_at IS NULL").
-		Where("billings.tenant_id = ? AND medical_records.visit_date >= ? AND medical_records.visit_date < ? AND billings.deleted_at IS NULL", tenantID, statDate, nextDate).
+		Where("billings.tenant_id = ? AND billings.created_at >= ? AND billings.created_at < ? AND billings.deleted_at IS NULL", tenantID, statDate, nextDate).
 		Scan(&summary)
 
 	drugFee := summary.Revenue - summary.ConsultationFee
@@ -149,15 +150,41 @@ func (s *StatisticsService) RebuildAllDailyStats(tenantID uint64) error {
 		return err
 	}
 
-	// Collect all distinct visit dates for this tenant.
-	var dates []time.Time
+	// Collect all distinct visit dates (for record/patient stats).
+	var visitDates []time.Time
 	s.DB.Model(&model.MedicalRecord{}).
-		Select("MIN(visit_date) AS visit_date").
+		Select("DATE(visit_date) AS visit_date").
 		Where("tenant_id = ?", tenantID).
-		Group("visit_date").
-		Pluck("visit_date", &dates)
+		Group("DATE(visit_date)").
+		Pluck("visit_date", &visitDates)
 
-	for _, d := range dates {
+	// Collect all distinct billing dates (for revenue stats).
+	var billingDates []time.Time
+	s.DB.Model(&model.Billing{}).
+		Select("DATE(created_at) AS billing_date").
+		Where("tenant_id = ? AND deleted_at IS NULL", tenantID).
+		Group("DATE(created_at)").
+		Pluck("billing_date", &billingDates)
+
+	// Merge and deduplicate dates.
+	seen := make(map[string]bool, len(visitDates)+len(billingDates))
+	var allDates []time.Time
+	for _, d := range visitDates {
+		key := d.Format("2006-01-02")
+		if !seen[key] {
+			seen[key] = true
+			allDates = append(allDates, d)
+		}
+	}
+	for _, d := range billingDates {
+		key := d.Format("2006-01-02")
+		if !seen[key] {
+			seen[key] = true
+			allDates = append(allDates, d)
+		}
+	}
+
+	for _, d := range allDates {
 		if err := s.RefreshDailyStats(tenantID, d); err != nil {
 			return err
 		}

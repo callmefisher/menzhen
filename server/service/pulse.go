@@ -21,7 +21,7 @@ func NewPulseService(db *gorm.DB, ds *DeepSeekService) *PulseService {
 	return &PulseService{DB: db, DeepSeek: ds}
 }
 
-func (s *PulseService) Search(name, category string, page, size int) ([]model.Pulse, int64, error) {
+func (s *PulseService) Search(name, category string, page, size int, useAI bool) ([]model.Pulse, int64, error) {
 	var pulses []model.Pulse
 	var total int64
 
@@ -43,35 +43,37 @@ func (s *PulseService) Search(name, category string, page, size int) ([]model.Pu
 		return nil, 0, err
 	}
 
-	// Check if there is an exact match in the DB results (with/without 脉 suffix)
-	hasExactMatch := false
-	trimmedName := strings.TrimSuffix(name, "脉")
-	for _, p := range pulses {
-		pTrimmed := strings.TrimSuffix(p.Name, "脉")
-		if p.Name == name || pTrimmed == trimmedName {
-			hasExactMatch = true
-			break
-		}
-	}
-
-	// If no exact match and DeepSeek is enabled, query AI and merge results
-	if !hasExactMatch && name != "" && category == "" && s.DeepSeek != nil && s.DeepSeek.IsEnabled() {
-		pulse, err := s.queryAndSaveFromAI(name)
-		if err != nil {
-			log.Printf("DeepSeek pulse query failed for %q: %v", name, err)
-			return pulses, total, nil
-		}
-		// Avoid duplicating if AI result already in DB results
-		isDup := false
+	// Only query AI when explicitly requested via useAI parameter
+	if useAI && name != "" && category == "" && s.DeepSeek != nil && s.DeepSeek.IsEnabled() {
+		// Check if there is an exact match in the DB results (with/without 脉 suffix)
+		hasExactMatch := false
+		trimmedName := strings.TrimSuffix(name, "脉")
 		for _, p := range pulses {
-			if p.Name == pulse.Name {
-				isDup = true
+			pTrimmed := strings.TrimSuffix(p.Name, "脉")
+			if p.Name == name || pTrimmed == trimmedName {
+				hasExactMatch = true
 				break
 			}
 		}
-		if !isDup {
-			pulses = append([]model.Pulse{*pulse}, pulses...)
-			total++
+
+		if !hasExactMatch {
+			pulse, err := s.queryAndSaveFromAI(name)
+			if err != nil {
+				log.Printf("DeepSeek pulse query failed for %q: %v", name, err)
+				return pulses, total, nil
+			}
+			// Avoid duplicating if AI result already in DB results
+			isDup := false
+			for _, p := range pulses {
+				if p.Name == pulse.Name {
+					isDup = true
+					break
+				}
+			}
+			if !isDup {
+				pulses = append([]model.Pulse{*pulse}, pulses...)
+				total++
+			}
 		}
 	}
 

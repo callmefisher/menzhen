@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import RecordForm from '../RecordForm';
 
 const mockNavigate = vi.fn();
+let mockSearchParams = new URLSearchParams();
 
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual('react-router-dom');
@@ -11,7 +12,7 @@ vi.mock('react-router-dom', async () => {
     ...actual,
     useNavigate: () => mockNavigate,
     useParams: () => ({}),
-    useSearchParams: () => [new URLSearchParams(), vi.fn()],
+    useSearchParams: () => [mockSearchParams, vi.fn()],
   };
 });
 
@@ -31,10 +32,11 @@ vi.mock('../../../store/auth', () => ({
 }));
 
 const mockListPatients = vi.fn();
+const mockGetPatient = vi.fn();
 vi.mock('../../../api/patient', () => ({
   listPatients: (...args: unknown[]) => mockListPatients(...args),
   createPatient: vi.fn(),
-  getPatient: vi.fn(),
+  getPatient: (...args: unknown[]) => mockGetPatient(...args),
 }));
 
 vi.mock('../../../api/record', () => ({
@@ -109,6 +111,7 @@ const mockPulseResult = {
 describe('RecordForm', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockSearchParams = new URLSearchParams();
     mockListPatients.mockResolvedValue({
       data: {
         list: [
@@ -118,9 +121,8 @@ describe('RecordForm', () => {
       },
     });
     mockListPulses.mockResolvedValue({ data: { list: [], total: 0 } });
-  });
-
-  const renderComponent = () =>
+    mockGetPatient.mockResolvedValue({ data: null });
+  });  const renderComponent = () =>
     render(
       <MemoryRouter>
         <RecordForm />
@@ -144,7 +146,7 @@ describe('RecordForm', () => {
     });
 
     // Type pulse name — should NOT trigger API call
-    const pulseInput = screen.getByPlaceholderText('输入脉象名称后点击查询');
+    const pulseInput = screen.getByPlaceholderText('输入脉象名称，可查询或直接保存');
     await user.type(pulseInput, '弦脉');
     expect(mockListPulses).not.toHaveBeenCalled();
 
@@ -170,7 +172,7 @@ describe('RecordForm', () => {
     });
 
     // Type and search
-    const pulseInput = screen.getByPlaceholderText('输入脉象名称后点击查询');
+    const pulseInput = screen.getByPlaceholderText('输入脉象名称，可查询或直接保存');
     await user.type(pulseInput, '弦脉');
     // Click the search button next to the pulse input
     const searchBtns2 = screen.getAllByRole('button', { name: /查询/ });
@@ -179,7 +181,7 @@ describe('RecordForm', () => {
     // Result tags appear, input hidden
     await waitFor(() => {
       expect(screen.getByText('弦脉 (弦脉类)')).toBeInTheDocument();
-      expect(screen.queryByPlaceholderText('输入脉象名称后点击查询')).not.toBeInTheDocument();
+      expect(screen.queryByPlaceholderText('输入脉象名称，可查询或直接保存')).not.toBeInTheDocument();
     });
 
     // Click result tag to select
@@ -201,7 +203,7 @@ describe('RecordForm', () => {
     });
 
     // Search and select
-    const pulseInput = screen.getByPlaceholderText('输入脉象名称后点击查询');
+    const pulseInput = screen.getByPlaceholderText('输入脉象名称，可查询或直接保存');
     await user.type(pulseInput, '弦脉');
     const searchBtns3 = screen.getAllByRole('button', { name: /查询/ });
     await user.click(searchBtns3.find(btn => !btn.hasAttribute('disabled'))!);
@@ -221,8 +223,88 @@ describe('RecordForm', () => {
 
     // Search input should reappear
     await waitFor(() => {
-      expect(screen.getByPlaceholderText('输入脉象名称后点击查询')).toBeInTheDocument();
+      expect(screen.getByPlaceholderText('输入脉象名称，可查询或直接保存')).toBeInTheDocument();
     });
     expect(screen.queryByText(/脉管紧张如琴弦/)).not.toBeInTheDocument();
+  });
+
+  it('saves pulse directly as free text without DB query', { timeout: 15000 }, async () => {
+    const user = userEvent.setup();
+    renderComponent();
+
+    await waitFor(() => {
+      expect(screen.getByText('新增诊疗记录')).toBeInTheDocument();
+    });
+
+    // Type pulse name
+    const pulseInput = screen.getByPlaceholderText('输入脉象名称，可查询或直接保存');
+    await user.type(pulseInput, '滑数脉');
+
+    // Click the "保存" button
+    const saveBtn = screen.getByRole('button', { name: /保存/ });
+    await user.click(saveBtn);
+
+    // Should show selected tag with typed text, no API call
+    await waitFor(() => {
+      expect(screen.getByText('滑数脉')).toBeInTheDocument();
+    });
+    expect(mockListPulses).not.toHaveBeenCalled();
+
+    // No detail panel (no description/clinical_meaning)
+    expect(screen.queryByText(/特征：/)).not.toBeInTheDocument();
+  });
+
+  it('does NOT show return bar without from=patient param', { timeout: 15000 }, async () => {
+    renderComponent();
+
+    await waitFor(() => {
+      expect(screen.getByText('新增诊疗记录')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText('返回患者详情')).not.toBeInTheDocument();
+  });
+});
+
+describe('RecordForm return navigation bar', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSearchParams = new URLSearchParams('patient_id=42&from=patient');
+    mockListPatients.mockResolvedValue({
+      data: {
+        list: [
+          { id: 42, name: '张三丰', gender: 1, age: 68, phone: '13800138000', birthday: '1958-01-01' },
+        ],
+        total: 1,
+      },
+    });
+    mockListPulses.mockResolvedValue({ data: { list: [], total: 0 } });
+    mockGetPatient.mockResolvedValue({
+      data: { id: 42, name: '张三丰', gender: 1, age: 68, phone: '13800138000', birthday: '1958-01-01' },
+    });
+  });
+
+  afterEach(() => {
+    mockSearchParams = new URLSearchParams();
+  });
+
+  const renderWithPatientParams = () =>
+    render(
+      <MemoryRouter>
+        <RecordForm />
+      </MemoryRouter>
+    );
+
+  it('shows return bar when from=patient is in URL', { timeout: 15000 }, async () => {
+    renderWithPatientParams();
+
+    await waitFor(() => {
+      expect(screen.getByText('新增诊疗记录')).toBeInTheDocument();
+    });
+
+    // Return bar should show patient name and return button
+    await waitFor(() => {
+      expect(screen.getByText('张三丰')).toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: /返回/ })).toBeInTheDocument();
   });
 });

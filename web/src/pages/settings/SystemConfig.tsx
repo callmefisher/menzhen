@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Card, Form, Input, InputNumber, Button, message, Spin, Modal, Typography, Drawer, Alert, Divider } from 'antd';
-import { ReloadOutlined, QuestionCircleOutlined } from '@ant-design/icons';
+import { Card, Form, Input, InputNumber, Button, message, Spin, Modal, Typography, Drawer, Alert, Divider, Statistic, List } from 'antd';
+import { ReloadOutlined, QuestionCircleOutlined, DeleteOutlined, SearchOutlined } from '@ant-design/icons';
 import { getConfig, updateConfig, restartService } from '../../api/config';
+import { cleanupOrphanFiles, type CleanupResult } from '../../api/storage';
 import useIsMobile from '../../hooks/useIsMobile';
 
 interface ConfigField {
@@ -9,6 +10,8 @@ interface ConfigField {
   label: string;
   type: 'input' | 'password' | 'number';
   placeholder?: string;
+  min?: number;
+  rules?: Array<{ pattern: RegExp; message: string }>;
 }
 
 interface ConfigGroup {
@@ -89,6 +92,7 @@ const CONFIG_SECTIONS: ConfigSection[] = [
       {
         title: '七牛云备份',
         fields: [
+          { key: 'SITE_ID', label: '站点标识 (SITE_ID)', type: 'input', placeholder: 'default（多服务器部署时区分备份）', rules: [{ pattern: /^[A-Za-z0-9_-]*$/, message: '仅允许字母、数字、-、_' }] },
           { key: 'QINIU_ACCESS_KEY', label: 'Access Key', type: 'password', placeholder: '（选填）' },
           { key: 'QINIU_SECRET_KEY', label: 'Secret Key', type: 'password', placeholder: '（选填）' },
           { key: 'QINIU_BUCKET', label: '存储空间名', type: 'input', placeholder: '（选填）' },
@@ -101,8 +105,8 @@ const CONFIG_SECTIONS: ConfigSection[] = [
       {
         title: '备份间隔',
         fields: [
-          { key: 'BACKUP_INTERVAL_MYSQL', label: 'MySQL 备份间隔(秒)', type: 'number', placeholder: '7200' },
-          { key: 'BACKUP_INTERVAL_MINIO', label: 'MinIO 备份间隔(秒)', type: 'number', placeholder: '43200' },
+          { key: 'BACKUP_INTERVAL_MYSQL', label: 'MySQL 备份间隔(秒)', type: 'number', placeholder: '7200', min: 60 },
+          { key: 'BACKUP_INTERVAL_MINIO', label: 'MinIO 备份间隔(秒)', type: 'number', placeholder: '43200', min: 60 },
         ],
       },
     ],
@@ -131,6 +135,15 @@ export default function SystemConfig() {
   const isMobile = useIsMobile();
   // Store initial config to detect changes
   const initialConfig = useRef<Record<string, string>>({});
+  // Storage cleanup state
+  const [scanning, setScanning] = useState(false);
+  const [cleaning, setCleaning] = useState(false);
+  const [cleanupResult, setCleanupResult] = useState<CleanupResult | null>(null);
+
+  // Collect all number-type field keys for type conversion
+  const numberFields = new Set(
+    CONFIG_SECTIONS.flatMap(s => s.groups.flatMap(g => g.fields.filter(f => f.type === 'number').map(f => f.key)))
+  );
 
   const fetchConfig = useCallback(async () => {
     setLoading(true);
@@ -138,13 +151,25 @@ export default function SystemConfig() {
       const res = (await getConfig()) as unknown as {
         data: { config: Record<string, string>; sensitive_set: string[] };
       };
-      form.setFieldsValue(res.data.config);
+      // Convert number fields from string to number for InputNumber compatibility
+      const config = { ...res.data.config };
+      for (const key of numberFields) {
+        const val = config[key];
+        if (val != null && val !== '') {
+          const num = Number(val);
+          if (!isNaN(num)) {
+            (config as Record<string, unknown>)[key] = num;
+          }
+        }
+      }
+      form.setFieldsValue(config);
       initialConfig.current = { ...res.data.config };
     } catch {
       message.error('加载配置失败');
     } finally {
       setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form]);
 
   useEffect(() => {
@@ -226,12 +251,57 @@ export default function SystemConfig() {
     });
   };
 
+  const handleScanOrphans = async () => {
+    setScanning(true);
+    setCleanupResult(null);
+    try {
+      const res = (await cleanupOrphanFiles(true)) as unknown as { data: CleanupResult };
+      setCleanupResult(res.data);
+      if (res.data.orphan_count === 0) {
+        message.success('未发现孤立文件');
+      }
+    } catch {
+      message.error('扫描失败');
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const handleCleanOrphans = () => {
+    if (!cleanupResult || cleanupResult.orphan_count === 0) return;
+    Modal.confirm({
+      title: '确认清理孤立文件',
+      content: `将删除 ${cleanupResult.orphan_count} 个无引用文件，此操作不可撤销，确定要清理吗？`,
+      okText: '确认清理',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        setCleaning(true);
+        try {
+          const res = (await cleanupOrphanFiles(false)) as unknown as { data: CleanupResult };
+          setCleanupResult(res.data);
+          const deletedCount = res.data.deleted_files?.length ?? 0;
+          const failedCount = res.data.failed_files?.length ?? 0;
+          if (failedCount > 0) {
+            message.warning(`已清理 ${deletedCount} 个文件，${failedCount} 个失败`);
+          } else {
+            message.success(`已清理 ${deletedCount} 个孤立文件`);
+          }
+        } catch {
+          message.error('清理失败');
+        } finally {
+          setCleaning(false);
+        }
+      },
+    });
+  };
+
   const renderField = (field: ConfigField) => {
     switch (field.type) {
       case 'password':
         return <Input.Password placeholder={field.placeholder} />;
       case 'number':
-        return <InputNumber placeholder={field.placeholder} style={{ width: '100%' }} />;
+        return <InputNumber placeholder={field.placeholder} min={field.min} style={{ width: '100%' }} />;
       default:
         return <Input placeholder={field.placeholder} />;
     }
@@ -284,7 +354,7 @@ export default function SystemConfig() {
                     {group.title}
                   </Typography.Text>
                   {group.fields.map((field) => (
-                    <Form.Item key={field.key} name={field.key} label={field.label} style={{ marginBottom: 16 }}>
+                    <Form.Item key={field.key} name={field.key} label={field.label} rules={field.rules} style={{ marginBottom: 16 }}>
                       {renderField(field)}
                     </Form.Item>
                   ))}
@@ -335,6 +405,63 @@ export default function SystemConfig() {
             {restarting ? '重启中...' : '重启服务'}
           </Button>
         </div>
+      </Card>
+
+      <Card
+        size={isMobile ? 'small' : 'default'}
+        style={{ marginBottom: 24 }}
+      >
+        <div style={{ marginBottom: 12 }}>
+          <Typography.Text strong>存储清理</Typography.Text>
+          <br />
+          <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+            扫描并清理 MinIO 中无数据库引用的孤立文件（如已删除病历的附件、替换后的旧文件等）
+          </Typography.Text>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: cleanupResult ? 16 : 0 }}>
+          <Button
+            icon={<SearchOutlined />}
+            loading={scanning}
+            onClick={handleScanOrphans}
+          >
+            扫描孤立文件
+          </Button>
+          {cleanupResult && cleanupResult.orphan_count > 0 && !cleanupResult.deleted_files && (
+            <Button
+              danger
+              icon={<DeleteOutlined />}
+              loading={cleaning}
+              onClick={handleCleanOrphans}
+            >
+              清理 {cleanupResult.orphan_count} 个文件
+            </Button>
+          )}
+        </div>
+        {cleanupResult && (
+          <div>
+            <div style={{ display: 'flex', gap: isMobile ? 16 : 32, flexWrap: 'wrap', marginBottom: 12 }}>
+              <Statistic title="存储文件总数" value={cleanupResult.total_files} />
+              <Statistic title="有引用" value={cleanupResult.referenced_count} />
+              <Statistic title="孤立文件" value={cleanupResult.orphan_count} valueStyle={cleanupResult.orphan_count > 0 ? { color: '#cf1322' } : undefined} />
+              {cleanupResult.deleted_files && (
+                <Statistic title="已清理" value={cleanupResult.deleted_files.length} valueStyle={{ color: '#3f8600' }} />
+              )}
+            </div>
+            {cleanupResult.orphan_files && cleanupResult.orphan_files.length > 0 && !cleanupResult.deleted_files && (
+              <List
+                size="small"
+                bordered
+                dataSource={cleanupResult.orphan_files.slice(0, 50)}
+                style={{ maxHeight: 200, overflow: 'auto' }}
+                header={<Typography.Text type="secondary" style={{ fontSize: 12 }}>孤立文件列表{cleanupResult.orphan_files.length > 50 ? `（显示前 50 个，共 ${cleanupResult.orphan_files.length} 个）` : ''}</Typography.Text>}
+                renderItem={(item: string) => <List.Item style={{ padding: '4px 12px', fontSize: 12 }}><Typography.Text code ellipsis style={{ maxWidth: '100%' }}>{item}</Typography.Text></List.Item>}
+              />
+            )}
+            {cleanupResult.failed_files && cleanupResult.failed_files.length > 0 && (
+              <Alert type="warning" showIcon message={`${cleanupResult.failed_files.length} 个文件删除失败`} style={{ marginTop: 8 }} />
+            )}
+          </div>
+        )}
       </Card>
 
       <Drawer
@@ -402,6 +529,7 @@ export default function SystemConfig() {
         <div style={{ background: '#f6ffed', borderRadius: 8, padding: '12px 16px', marginBottom: 24, border: '1px solid #b7eb8f' }}>
           <Typography.Text strong style={{ fontSize: 13, color: '#389e0d' }}>七牛云备份</Typography.Text>
           <div style={{ marginTop: 8 }}>
+            {renderConfigItem('SITE_ID', '站点标识（多服务器部署时区分备份，默认 default）')}
             {renderConfigItem('QINIU_ACCESS_KEY', '七牛 Access Key')}
             {renderConfigItem('QINIU_SECRET_KEY', '七牛 Secret Key')}
             {renderConfigItem('QINIU_BUCKET', '存储空间名')}

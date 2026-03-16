@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-03-15（软件配置增强：备份脚本热加载 .env、保存风险提示、配置影响说明抽屉）
+> 最后更新：2026-03-16（MinIO 文件清理：删除/更新病历自动清理旧文件，孤立文件扫描清理 API）
 
 ---
 
@@ -39,7 +39,7 @@ menzhen/
 │   │   ├── auth.go                  # Login/Register/Logout/Me/ChangePassword/RefreshToken
 │   │   ├── patient.go               # List/Create/Detail/Update/Delete
 │   │   ├── record.go                # List/Create/Detail/Update/Delete
-│   │   ├── upload.go                # Upload/GetFile（MinIO）
+│   │   ├── upload.go                # Upload/GetFile/CleanupOrphanFiles（MinIO 文件管理+孤立文件清理）
 │   │   ├── herb.go                  # List/Detail/Delete/Categories/Update/AIRefresh
 │   │   ├── formula.go               # List/Detail/Delete/UpdateComposition/UpdateName/UpdateNotes
 │   │   ├── prescription.go          # Create/Detail/Update/Delete/ListByRecord
@@ -71,7 +71,7 @@ menzhen/
 │   ├── service/
 │   │   ├── auth.go                  # 登录/注册逻辑
 │   │   ├── patient.go               # 患者 CRUD（GetPatient Preload 最近 100 条就诊记录）
-│   │   ├── record.go                # 诊疗记录 CRUD（含主诉/脉象/舌象字段，列表含 chief_complaint+pulse_name，详情 Preload Pulse）
+│   │   ├── record.go                # 诊疗记录 CRUD（含主诉/脉象/舌象字段，删除/更新时自动清理 MinIO 旧文件）
 │   │   ├── herb.go                  # 中药查询（DB + AI 回退 + 自动入库 + 分类列表）
 │   │   ├── formula.go               # 方剂查询（DB + AI 回退 + 自动入库）
 │   │   ├── prescription.go          # 处方 CRUD
@@ -82,6 +82,7 @@ menzhen/
 │   │   ├── inventory_drug.go      # 库存药物 List/Create/Update/Delete/StockIn/BatchStockIn（租户隔离，BatchStockIn 批量查询+批量创建）
 │   │   ├── billing.go              # 收费 GetBillingDetail/CreateBilling/DeductStockAndBill/ListBillingsByRecord/GetRecordBillingDetail/CreateRecordBilling（含实时价格计算：中药 元/500g→元/g 转换 + 中成药不乘付数 + 事务库存扣除 + 写时刷新daily_stats + 按处方药品名称定向查库存避免全表扫描）
 │   │   ├── statistics.go           # 统计服务 RefreshDailyStats/GetDashboard/RebuildAllDailyStats（每日汇总表聚合，批量查首诊日期替代N+1，范围查询替代DATE()函数确保索引生效）
+│   │   ├── storage_cleanup.go     # 孤立文件扫描清理服务 ScanOrphanFiles/CleanupOrphanFiles（比对 MinIO 对象与 DB 引用，找出并删除孤立文件）
 │   │   ├── follow_up.go           # 回访 List/Create/Get/Update/Delete/Stats（租户隔离，含患者/记录名称关联+逾期状态自动标记，Stats单条聚合SQL替代4次COUNT）
 │   │   ├── tenant_admin.go         # 租户级用户/角色管理服务（ListTenantUsers 隐藏 user:manage 用户，UpdateUser/DisableUser/AssignRoles 返回 ErrProtectedUser）
 │   │   ├── hexagram.go              # 卦象 Search/GetByID/Create/Update/DeleteByID/ListTrigrams
@@ -94,7 +95,7 @@ menzhen/
 │   │   ├── role.go                  # 角色管理
 │   │   └── tenant.go                # 租户管理
 │   └── storage/
-│       └── minio.go                 # InitMinIO 客户端初始化
+│       └── minio.go                 # InitMinIO/UploadFile/GetObject/DeleteFile/DeleteFiles/ListAllObjects
 ├── web/                             # React 前端
 │   └── src/
 │       ├── main.tsx                 # React 入口
@@ -115,6 +116,7 @@ menzhen/
 │       │   ├── statistics.ts       # 统计 API（getDashboard）
 │       │   ├── followUp.ts        # 回访 API（listFollowUps/createFollowUp/getFollowUp/updateFollowUp/deleteFollowUp/getFollowUpStats）
 │       │   ├── config.ts          # 配置 API（getSystemConfig/updateSystemConfig）
+│       │   ├── storage.ts         # 存储清理 API（cleanupOrphanFiles）
 │       │   ├── wuyunLiuqi.ts        # 五运六气缓存获取/更新/删除
 │       │   ├── clinicalExperience.ts # 临床经验集 CRUD + 分类列表
 │       │   ├── yijing.ts            # 卦象 CRUD + 八卦分类列表
@@ -801,6 +803,12 @@ menzhen/
 | GET | `/api/v1/config` | `user:manage` | 读取系统配置（敏感字段掩码） |
 | PUT | `/api/v1/config` | `user:manage` | 更新系统配置（写入 .env） |
 
+### 存储管理
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| POST | `/api/v1/storage/cleanup?dry_run=true` | `user:manage` | 扫描孤立文件（dry_run=true 仅扫描，false 执行删除） |
+
 ---
 
 ## 核心业务流程
@@ -914,6 +922,7 @@ menzhen/
 | `QINIU_DOMAIN` | `public.qnlinking.com` | 七牛云下载域名 |
 | `BACKUP_INTERVAL_MYSQL` | `7200` | MySQL 备份间隔（秒），默认 2 小时 |
 | `BACKUP_INTERVAL_MINIO` | `43200` | MinIO 备份间隔（秒），默认 12 小时 |
+| `SITE_ID` | `default` | 站点标识（多服务器部署时隔离备份文件名和七牛云路径） |
 | `QINIU_RETAIN_MYSQL` | `5` | 七牛云保留 MySQL 备份数 |
 | `QINIU_RETAIN_MINIO` | `5` | 七牛云保留 MinIO 备份数 |
 
@@ -936,12 +945,12 @@ menzhen/
 
 | 脚本 | 用途 |
 |------|------|
-| `scripts/backup.sh` | MySQL 备份：dump + 清理 3 月前 oplog + 清理 3 天前备份 + 上传七牛云 + 清理云端旧备份 |
-| `scripts/backup-minio.sh` | MinIO 备份：mc mirror → tar.gz → 上传七牛云 → 清理云端旧备份 → 清理 3 天前本地备份 |
-| `scripts/backup-loop.sh` | 定时备份守护：双循环（MySQL + MinIO），每次循环 source /app/.env 热加载配置 |
-| `scripts/restore.sh` | 恢复：支持旧格式目录 / --auto 自动检测 / --sql + --minio-tar 指定文件 |
-| `scripts/upload_to_qiniu.py` | 七牛云上传：备份完成后自动上传 SQL 文件，AK/SK 从环境变量读取 |
-| `scripts/download_from_qiniu.py` | 七牛云下载：列出并下载最新的 MySQL/MinIO 备份文件，支持 --type 过滤 |
+| `scripts/backup.sh` | MySQL 备份：dump + 清理 3 月前 oplog + 清理本地旧备份 + 上传七牛云（SITE_ID 子目录）+ 清理云端旧备份 |
+| `scripts/backup-minio.sh` | MinIO 备份：mc mirror → tar.gz → 上传七牛云（SITE_ID 子目录）→ 清理云端旧备份 → 清理本地旧备份 |
+| `scripts/backup-loop.sh` | 定时备份守护：双循环（MySQL + MinIO），每次循环 source /app/.env 热加载配置，按 SITE_ID 匹配备份文件 |
+| `scripts/restore.sh` | 恢复：支持旧格式目录 / --auto 自动检测（优先 SITE_ID 匹配，fallback 旧格式）/ --sql + --minio-tar 指定文件 |
+| `scripts/upload_to_qiniu.py` | 七牛云上传：备份完成后自动上传，AK/SK 从环境变量读取，路径由调用方通过 QINIU_KEY_PREFIX 控制 |
+| `scripts/download_from_qiniu.py` | 七牛云下载：按 SITE_ID 子目录查找最新备份，fallback 旧路径兼容迁移 |
 | `scripts/cleanup_qiniu.py` | 七牛云清理：上传后自动删除旧备份，按 `--type mysql\|minio` 分类，各保留最新 N 个（由 `QINIU_RETAIN_*` 配置） |
 | `scripts/seed-herbs-formulas.sh` | 中药/方剂数据播种：通过 API 逐条搜索触发 DeepSeek 回退自动入库，支持进度恢复、dry-run |
 | `scripts/Dockerfile.backup` | 备份容器镜像：alpine + mysql-client + MinIO Client (mc) + python3 + qiniu SDK |

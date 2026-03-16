@@ -2,12 +2,12 @@ import { useRef } from 'react';
 import { Button } from 'antd';
 import { PrinterOutlined } from '@ant-design/icons';
 import type { PrescriptionData } from '../api/prescription';
+import useIsMobile from '../hooks/useIsMobile';
 
 interface PrescriptionPrintProps {
   prescription: PrescriptionData;
   patientName?: string;
   patientAge?: number;
-  visitDate?: string;
   chiefComplaint?: string;
   treatment?: string;
   /** Render as icon-only button (for card header placement). */
@@ -39,6 +39,7 @@ export default function PrescriptionPrint({
   treatment,
   iconOnly,
 }: PrescriptionPrintProps) {
+  const isMobile = useIsMobile();
   const printRef = useRef<HTMLDivElement>(null);
 
   const handlePrint = () => {
@@ -101,12 +102,12 @@ export default function PrescriptionPrint({
       {iconOnly ? (
         <Button
           type="primary"
-          icon={<PrinterOutlined style={{ fontSize: 16 }} />}
+          icon={<PrinterOutlined />}
           onClick={handlePrint}
           title="打印处方"
           size="small"
         >
-          打印
+          {isMobile ? '处方' : '打印处方'}
         </Button>
       ) : (
         <Button icon={<PrinterOutlined />} size="small" onClick={handlePrint}>

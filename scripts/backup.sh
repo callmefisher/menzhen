@@ -15,9 +15,16 @@ DB_PORT="${DB_PORT:-3306}"
 DB_USER="${DB_USER:-menzhen}"
 DB_PASSWORD="${DB_PASSWORD:-menzhen123}"
 DB_NAME="${DB_NAME:-menzhen}"
+SITE_ID="${SITE_ID:-default}"
+
+# Validate SITE_ID: only allow alphanumeric, dash, underscore
+if ! echo "${SITE_ID}" | grep -qE '^[A-Za-z0-9_-]+$'; then
+    echo ">> ERROR: SITE_ID contains invalid characters (only A-Z, a-z, 0-9, -, _ allowed): ${SITE_ID}"
+    exit 1
+fi
 
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_FILE="${BACKUP_DIR}/${TIMESTAMP}.sql"
+BACKUP_FILE="${BACKUP_DIR}/${SITE_ID}_${TIMESTAMP}.sql"
 
 echo "[$(date)] Starting backup..."
 
@@ -51,16 +58,22 @@ mysql -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASSWORD}" "${DB_N
 
 # 3. Clean old local backups, keep latest N (same as cloud retention)
 LOCAL_RETAIN="${QINIU_RETAIN_MYSQL:-5}"
-echo ">> Cleaning local MySQL backups, keeping latest ${LOCAL_RETAIN}..."
-BACKUP_FILES=$(find "${BACKUP_DIR}" -maxdepth 1 -name "*.sql" -type f | sort -r)
-REMAINING=$(echo "${BACKUP_FILES}" | wc -l | tr -d ' ')
-if [ "${REMAINING}" -gt "${LOCAL_RETAIN}" ]; then
-    echo "${BACKUP_FILES}" | tail -n +$((LOCAL_RETAIN + 1)) | xargs rm -f
+echo ">> Cleaning local MySQL backups (SITE_ID=${SITE_ID}), keeping latest ${LOCAL_RETAIN}..."
+BACKUP_FILES=$(find "${BACKUP_DIR}" -maxdepth 1 -name "${SITE_ID}_*.sql" -type f | sort -r)
+if [ -n "${BACKUP_FILES}" ]; then
+    REMAINING=$(echo "${BACKUP_FILES}" | wc -l | tr -d ' ')
+    if [ "${REMAINING}" -gt "${LOCAL_RETAIN}" ]; then
+        echo "${BACKUP_FILES}" | tail -n +$((LOCAL_RETAIN + 1)) | xargs rm -f
+    fi
 fi
-REMAINING=$(find "${BACKUP_DIR}" -maxdepth 1 -name "*.sql" -type f | wc -l)
+REMAINING=$(find "${BACKUP_DIR}" -maxdepth 1 -name "${SITE_ID}_*.sql" -type f | wc -l)
 echo ">> Remaining backup files: ${REMAINING}"
 
 # 4. Upload to Qiniu cloud storage (retry up to 10 times)
+# Set Qiniu prefix to include SITE_ID subdirectory
+ORIG_PREFIX="${QINIU_KEY_PREFIX}"
+export QINIU_KEY_PREFIX="${QINIU_KEY_PREFIX:-menzhen-backup/}${SITE_ID}/"
+trap 'export QINIU_KEY_PREFIX="${ORIG_PREFIX}"' EXIT
 MYSQL_UPLOAD_MAX=10
 MYSQL_UPLOAD_OK=false
 for attempt in $(seq 1 ${MYSQL_UPLOAD_MAX}); do

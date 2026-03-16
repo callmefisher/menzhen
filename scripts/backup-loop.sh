@@ -14,8 +14,9 @@ reload_env
 
 BACKUP_DIR="${BACKUP_DIR:-/backups}"
 POLL_INTERVAL=60
+SITE_ID="${SITE_ID:-default}"
 
-echo "[$(date)] Backup daemon started"
+echo "[$(date)] Backup daemon started (SITE_ID=${SITE_ID})"
 echo "  Poll interval: ${POLL_INTERVAL}s"
 
 # Get age (in seconds) of the most recent backup file
@@ -32,10 +33,17 @@ get_backup_age() {
 
 # --- MySQL backup loop ---
 mysql_loop() {
+    local prev_interval=""
     while true; do
         reload_env
+        SITE_ID="${SITE_ID:-default}"
         MYSQL_INTERVAL="${BACKUP_INTERVAL_MYSQL:-7200}"
-        age=$(get_backup_age "${BACKUP_DIR}" "*.sql")
+        # Log when interval changes (config hot-reload)
+        if [ "${MYSQL_INTERVAL}" != "${prev_interval}" ]; then
+            echo "[$(date)] MySQL: interval changed: ${prev_interval:-<init>} -> ${MYSQL_INTERVAL}s"
+            prev_interval="${MYSQL_INTERVAL}"
+        fi
+        age=$(get_backup_age "${BACKUP_DIR}" "${SITE_ID}_*.sql")
         if [ -z "${age}" ]; then
             echo "[$(date)] MySQL: no backup found, triggering immediate..."
             /scripts/backup.sh
@@ -50,10 +58,17 @@ mysql_loop() {
 # --- MinIO backup loop ---
 minio_loop() {
     MINIO_BACKUP_DIR="${BACKUP_DIR}/minio"
+    local prev_interval=""
     while true; do
         reload_env
+        SITE_ID="${SITE_ID:-default}"
         MINIO_INTERVAL="${BACKUP_INTERVAL_MINIO:-43200}"
-        age=$(get_backup_age "${MINIO_BACKUP_DIR}" "minio_*.tar.gz")
+        # Log when interval changes (config hot-reload)
+        if [ "${MINIO_INTERVAL}" != "${prev_interval}" ]; then
+            echo "[$(date)] MinIO: interval changed: ${prev_interval:-<init>} -> ${MINIO_INTERVAL}s"
+            prev_interval="${MINIO_INTERVAL}"
+        fi
+        age=$(get_backup_age "${MINIO_BACKUP_DIR}" "${SITE_ID}_minio_*.tar.gz")
         if [ -z "${age}" ]; then
             echo "[$(date)] MinIO: no backup found, triggering immediate..."
             /scripts/backup-minio.sh

@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"time"
 
 	"github.com/callmefisher/menzhen/server/model"
 	"gorm.io/gorm"
@@ -60,7 +61,7 @@ func (s *PrescriptionService) Create(tenantID, createdBy uint64, req *CreatePres
 	}
 
 	totalDoses := req.TotalDoses
-	if totalDoses <= 0 {
+	if totalDoses <= 0 && len(req.Items) > 0 {
 		totalDoses = 7
 	}
 
@@ -74,7 +75,8 @@ func (s *PrescriptionService) Create(tenantID, createdBy uint64, req *CreatePres
 	}
 
 	err := s.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&prescription).Error; err != nil {
+		// Use Select to force GORM to write zero-value TotalDoses (overriding DB default:7).
+		if err := tx.Select("RecordID", "TenantID", "FormulaName", "TotalDoses", "Notes", "CreatedBy").Create(&prescription).Error; err != nil {
 			return err
 		}
 
@@ -233,8 +235,39 @@ func (s *PrescriptionService) Delete(tenantID, id uint64) (*model.Prescription, 
 		return nil, err
 	}
 
-	if err := s.DB.Delete(&prescription).Error; err != nil {
+	// Collect billing dates before deletion for stats refresh.
+	var billingDates []time.Time
+	s.DB.Model(&model.Billing{}).
+		Select("DATE(created_at) AS billing_date").
+		Where("prescription_id = ? AND tenant_id = ?", id, tenantID).
+		Group("DATE(created_at)").
+		Pluck("billing_date", &billingDates)
+
+	err := s.DB.Transaction(func(tx *gorm.DB) error {
+		// Delete associated billing records.
+		if err := tx.Where("prescription_id = ? AND tenant_id = ?", id, tenantID).
+			Delete(&model.Billing{}).Error; err != nil {
+			return err
+		}
+		// Delete the prescription.
+		if err := tx.Delete(&prescription).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
+	}
+
+	// Refresh daily stats for affected dates.
+	statsSvc := NewStatisticsService(s.DB)
+	for _, bd := range billingDates {
+		_ = statsSvc.RefreshDailyStats(tenantID, bd)
+	}
+	// Also refresh the record's visit date (patient/visit counts).
+	var record model.MedicalRecord
+	if s.DB.Unscoped().First(&record, prescription.RecordID).Error == nil {
+		_ = statsSvc.RefreshDailyStats(tenantID, record.VisitDate)
 	}
 
 	return &prescription, nil

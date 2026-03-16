@@ -17,6 +17,13 @@ MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-minioadmin}"
 MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-minioadmin}"
 MINIO_BUCKET="${MINIO_BUCKET:-menzhen}"
 BACKUP_DIR="${BACKUP_DIR:-/backups}"
+SITE_ID="${SITE_ID:-default}"
+
+# Validate SITE_ID
+if ! echo "${SITE_ID}" | grep -qE '^[A-Za-z0-9_-]+$'; then
+    echo ">> ERROR: SITE_ID contains invalid characters: ${SITE_ID}"
+    exit 1
+fi
 
 SQL_FILE=""
 MINIO_TAR=""
@@ -26,16 +33,27 @@ LEGACY_DIR=""
 while [[ $# -gt 0 ]]; do
     case $1 in
         --auto)
-            # Find latest .sql
-            SQL_FILE=$(find "${BACKUP_DIR}" -maxdepth 1 -name "*.sql" -type f | sort -r | head -1)
-            # Find latest minio tar.gz
-            MINIO_TAR=$(find "${BACKUP_DIR}/minio" -name "minio_*.tar.gz" -type f 2>/dev/null | sort -r | head -1)
+            # Find latest .sql matching SITE_ID
+            SQL_FILE=$(find "${BACKUP_DIR}" -maxdepth 1 -name "${SITE_ID}_*.sql" -type f | sort -r | head -1)
+            # Find latest minio tar.gz matching SITE_ID
+            MINIO_TAR=$(find "${BACKUP_DIR}/minio" -name "${SITE_ID}_minio_*.tar.gz" -type f 2>/dev/null | sort -r | head -1)
+            # Fallback: try legacy format (no SITE_ID prefix)
+            if [ -z "${SQL_FILE}" ]; then
+                echo "[$(date)] No SITE_ID=${SITE_ID} backups found, trying legacy format..."
+                SQL_FILE=$(find "${BACKUP_DIR}" -maxdepth 1 -name "*.sql" -type f | sort -r | head -1)
+                MINIO_TAR=$(find "${BACKUP_DIR}/minio" -name "minio_*.tar.gz" -type f 2>/dev/null | sort -r | head -1)
+            fi
             # If no local backups found, try downloading from Qiniu
             if [ -z "${SQL_FILE}" ]; then
                 echo "[$(date)] No local backups found, trying to download from Qiniu..."
                 if python3 /scripts/download_from_qiniu.py --type all; then
-                    SQL_FILE=$(find "${BACKUP_DIR}" -maxdepth 1 -name "*.sql" -type f | sort -r | head -1)
-                    MINIO_TAR=$(find "${BACKUP_DIR}/minio" -name "minio_*.tar.gz" -type f 2>/dev/null | sort -r | head -1)
+                    SQL_FILE=$(find "${BACKUP_DIR}" -maxdepth 1 -name "${SITE_ID}_*.sql" -type f | sort -r | head -1)
+                    MINIO_TAR=$(find "${BACKUP_DIR}/minio" -name "${SITE_ID}_minio_*.tar.gz" -type f 2>/dev/null | sort -r | head -1)
+                    # Fallback after download: try legacy format
+                    if [ -z "${SQL_FILE}" ]; then
+                        SQL_FILE=$(find "${BACKUP_DIR}" -maxdepth 1 -name "*.sql" -type f | sort -r | head -1)
+                        MINIO_TAR=$(find "${BACKUP_DIR}/minio" -name "minio_*.tar.gz" -type f 2>/dev/null | sort -r | head -1)
+                    fi
                 fi
             fi
             if [ -z "${SQL_FILE}" ]; then

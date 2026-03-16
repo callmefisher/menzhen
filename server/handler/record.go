@@ -8,17 +8,27 @@ import (
 	"github.com/callmefisher/menzhen/server/middleware"
 	"github.com/callmefisher/menzhen/server/service"
 	"github.com/gin-gonic/gin"
+	"github.com/minio/minio-go/v7"
 	"gorm.io/gorm"
 )
 
 // RecordHandler handles medical record CRUD endpoints.
 type RecordHandler struct {
-	db *gorm.DB
+	db          *gorm.DB
+	minioClient *minio.Client
+	minioBucket string
 }
 
 // NewRecordHandler creates a new RecordHandler.
-func NewRecordHandler(db *gorm.DB) *RecordHandler {
-	return &RecordHandler{db: db}
+func NewRecordHandler(db *gorm.DB, minioClient *minio.Client, bucket string) *RecordHandler {
+	return &RecordHandler{db: db, minioClient: minioClient, minioBucket: bucket}
+}
+
+// newRecordService creates a RecordService with MinIO client configured.
+func (h *RecordHandler) newRecordService() *service.RecordService {
+	svc := service.NewRecordService(h.db)
+	svc.SetMinIO(h.minioClient, h.minioBucket)
+	return svc
 }
 
 // Create handles POST /api/v1/records.
@@ -35,7 +45,7 @@ func (h *RecordHandler) Create(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
 	userID := middleware.GetUserID(c)
 
-	svc := service.NewRecordService(h.db)
+	svc := h.newRecordService()
 	record, err := svc.CreateRecord(tenantID, userID, &req)
 	if err != nil {
 		if errors.Is(err, service.ErrPatientInvalid) {
@@ -78,7 +88,7 @@ func (h *RecordHandler) List(c *gin.Context) {
 		size = 20
 	}
 
-	svc := service.NewRecordService(h.db)
+	svc := h.newRecordService()
 	records, total, err := svc.ListRecords(tenantID, name, date, patientID, page, size)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -113,7 +123,7 @@ func (h *RecordHandler) FindPage(c *gin.Context) {
 		size = 20
 	}
 
-	svc := service.NewRecordService(h.db)
+	svc := h.newRecordService()
 	page, err := svc.FindRecordPage(tenantID, id, size)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"page": 1}})
@@ -134,7 +144,7 @@ func (h *RecordHandler) Detail(c *gin.Context) {
 		return
 	}
 
-	svc := service.NewRecordService(h.db)
+	svc := h.newRecordService()
 	record, err := svc.GetRecord(tenantID, id)
 	if err != nil {
 		if errors.Is(err, service.ErrRecordNotFound) {
@@ -179,7 +189,7 @@ func (h *RecordHandler) Update(c *gin.Context) {
 		return
 	}
 
-	svc := service.NewRecordService(h.db)
+	svc := h.newRecordService()
 	oldRecord, newRecord, err := svc.UpdateRecord(tenantID, id, &req)
 	if err != nil {
 		if errors.Is(err, service.ErrRecordNotFound) {
@@ -218,7 +228,7 @@ func (h *RecordHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	svc := service.NewRecordService(h.db)
+	svc := h.newRecordService()
 	oldRecord, err := svc.DeleteRecord(tenantID, id)
 	if err != nil {
 		if errors.Is(err, service.ErrRecordNotFound) {

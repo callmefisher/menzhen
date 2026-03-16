@@ -211,7 +211,7 @@ func TestPulseService_Search_AIFallback(t *testing.T) {
 	}
 	svc := NewPulseService(db, ds)
 
-	pulses, total, err := svc.Search("革", "", 1, 10)
+	pulses, total, err := svc.Search("革", "", 1, 10, true)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), total)
 	assert.Len(t, pulses, 1)
@@ -287,7 +287,7 @@ func TestPulseService_queryAndSaveFromAI_InvalidResult(t *testing.T) {
 	ds := &DeepSeekService{APIKey: "key", BaseURL: server.URL, Model: "m", Client: server.Client()}
 	svc := NewPulseService(db, ds)
 
-	pulses, total, err := svc.Search("未知", "", 1, 10)
+	pulses, total, err := svc.Search("未知", "", 1, 10, true)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), total)
 	assert.Len(t, pulses, 1)
@@ -393,7 +393,7 @@ func TestPulseService_Search_AIFallback_ServerError(t *testing.T) {
 	ds := &DeepSeekService{APIKey: "key", BaseURL: server.URL, Model: "m", Client: server.Client()}
 	svc := NewPulseService(db, ds)
 
-	pulses, total, err := svc.Search("不存在脉", "", 1, 10)
+	pulses, total, err := svc.Search("不存在脉", "", 1, 10, true)
 	assert.NoError(t, err)
 	// Server error, but returns existing DB results (empty) without error
 	assert.True(t, total >= 0)
@@ -413,7 +413,7 @@ func TestPulseService_Search_ExactMatch_NoAIFallback(t *testing.T) {
 	ds := &DeepSeekService{APIKey: "key", BaseURL: "http://should-not-be-called", Model: "m", Client: http.DefaultClient}
 	svc := NewPulseService(db, ds)
 
-	pulses, total, err := svc.Search("浮脉", "", 1, 10)
+	pulses, total, err := svc.Search("浮脉", "", 1, 10, true)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), total)
 	assert.Equal(t, "浮脉", pulses[0].Name)
