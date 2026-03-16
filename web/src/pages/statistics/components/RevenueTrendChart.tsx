@@ -118,11 +118,9 @@ export default function RevenueTrendChart({
     if (onBrushSelect && rawDates?.length) {
       events.datazoom = handleDataZoom;
     }
-    if (onReset) {
-      events.dblclick = handleDblClick;
-    }
+    events.dblclick = handleDblClick;
     return events;
-  }, [showDataZoom, onBrushSelect, rawDates, onReset, handleDataZoom, handleDblClick]);
+  }, [showDataZoom, onBrushSelect, rawDates, handleDataZoom, handleDblClick]);
 
   return (
     <Card title="收入趋势 + 诊疗量" size="small">

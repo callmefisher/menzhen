@@ -147,4 +147,17 @@ describe('RevenueTrendChart', () => {
     );
     expect(lastEChartsProps.onEvents).not.toHaveProperty('datazoom');
   });
+
+  it('registers dblclick even without onReset when dataZoom is active', () => {
+    render(
+      <RevenueTrendChart
+        data={mockData}
+        rawDates={mockRawDates}
+        enableDataZoom={true}
+        isMobile={false}
+        onBrushSelect={vi.fn()}
+      />,
+    );
+    expect(lastEChartsProps.onEvents).toHaveProperty('dblclick');
+  });
 });
