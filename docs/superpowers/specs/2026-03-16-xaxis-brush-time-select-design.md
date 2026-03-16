@@ -77,23 +77,6 @@ const debouncedBrushSelect = useCallback((start: string, end: string) => {
 }, [onBrushSelect]);
 ```
 
-### 双击重置实现
-
-```typescript
-// 在 onEvents 中注册 dblclick 事件
-const onEvents = {
-  datazoom: handleDataZoom,
-  dblclick: () => {
-    // 通过 ref 获取 ECharts 实例，重置 dataZoom 到全量
-    echartsRef.current?.getEchartsInstance().dispatchAction({
-      type: 'dataZoom', start: 0, end: 100,
-    });
-    // 通知父组件重置（可选：恢复到上次 quickRange）
-    onReset?.();
-  },
-};
-```
-
 ## 改动范围
 
 ### RevenueTrendChart.tsx
@@ -146,11 +129,10 @@ grid: { left: 60, right: 60, bottom: showDataZoom ? 56 : 30, top: 40 },
 
 ```typescript
 const echartsRef = useRef<ReactECharts>(null);
+const timerRef = useRef<ReturnType<typeof setTimeout>>();  // 组件级，避免 useMemo 重建丢失 handle
 
 const onEvents = useMemo(() => {
   if (!onBrushSelect || !rawDates?.length) return {};
-
-  const timerRef = { current: undefined as ReturnType<typeof setTimeout> | undefined };
 
   const handleDataZoom = () => {
     const instance = echartsRef.current?.getEchartsInstance();
@@ -169,8 +151,15 @@ const onEvents = useMemo(() => {
     timerRef.current = setTimeout(() => onBrushSelect(startDate, endDate), 300);
   };
 
-  return { datazoom: handleDataZoom };
-}, [onBrushSelect, rawDates]);
+  const handleDblClick = () => {
+    echartsRef.current?.getEchartsInstance().dispatchAction({
+      type: 'dataZoom', start: 0, end: 100,
+    });
+    onReset?.();
+  };
+
+  return { datazoom: handleDataZoom, dblclick: handleDblClick };
+}, [onBrushSelect, onReset, rawDates]);
 ```
 
 ### StatsDashboard.tsx
