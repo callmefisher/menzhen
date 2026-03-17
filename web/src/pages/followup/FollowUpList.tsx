@@ -375,7 +375,7 @@ export default function FollowUpList() {
         setParams({ ...params, status: 'pending', planned_date_from: '', planned_date_to: '', page: 1 });
         break;
       case 'today':
-        setParams({ ...params, status: '', planned_date_from: today, planned_date_to: today, page: 1 });
+        setParams({ ...params, status: 'pending', planned_date_from: today, planned_date_to: today, page: 1 });
         break;
       case 'overdue':
         setParams({ ...params, status: 'overdue', planned_date_from: '', planned_date_to: '', page: 1 });

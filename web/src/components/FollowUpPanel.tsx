@@ -46,7 +46,7 @@ export default function FollowUpPanel({ recordId, patientId, patientName, highli
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await listFollowUps({ record_id: recordId, size: 100 });
+      const res = await listFollowUps({ record_id: recordId, size: 200 });
       const body = res as any;
       const list: FollowUpListItem[] = body.data?.list || [];
       const order: Record<string, number> = { overdue: 0, pending: 1, completed: 2 };
@@ -63,7 +63,7 @@ export default function FollowUpPanel({ recordId, patientId, patientName, highli
   useEffect(() => { fetchData(); }, [fetchData]);
 
   useEffect(() => {
-    if (highlightFollowUpId && highlightRef.current && !loading) {
+    if (highlightFollowUpId && highlightRef.current && !loading && items.some(i => i.id === highlightFollowUpId)) {
       highlightRef.current.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
     }
   }, [highlightFollowUpId, loading, items]);
