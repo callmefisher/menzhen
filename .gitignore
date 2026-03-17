@@ -18,6 +18,10 @@ server/menzhen-api
 web/coverage/
 server/coverage.out
 
+# Python
+__pycache__/
+*.pyc
+
 # OS
 .DS_Store
 Thumbs.db

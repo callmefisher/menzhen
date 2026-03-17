@@ -60,6 +60,7 @@ vi.mock('../../../api/pulse', () => ({
 vi.mock('../../../api/upload', () => ({
   uploadFile: vi.fn(),
   getFileUrl: vi.fn(),
+  fetchFileBlob: vi.fn().mockResolvedValue('blob:mock'),
 }));
 
 vi.mock('../../../utils/sse', () => ({

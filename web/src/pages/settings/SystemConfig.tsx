@@ -3,6 +3,7 @@ import { Card, Form, Input, InputNumber, Button, message, Spin, Modal, Typograph
 import { ReloadOutlined, QuestionCircleOutlined, DeleteOutlined, SearchOutlined } from '@ant-design/icons';
 import { getConfig, updateConfig, restartService } from '../../api/config';
 import { cleanupOrphanFiles, type CleanupResult } from '../../api/storage';
+import { cleanupOrphanData, type DBCleanupResult } from '../../api/dbCleanup';
 import useIsMobile from '../../hooks/useIsMobile';
 
 interface ConfigField {
@@ -139,6 +140,10 @@ export default function SystemConfig() {
   const [scanning, setScanning] = useState(false);
   const [cleaning, setCleaning] = useState(false);
   const [cleanupResult, setCleanupResult] = useState<CleanupResult | null>(null);
+  // DB cleanup state
+  const [dbScanning, setDbScanning] = useState(false);
+  const [dbCleaning, setDbCleaning] = useState(false);
+  const [dbCleanupResult, setDbCleanupResult] = useState<DBCleanupResult | null>(null);
 
   // Collect all number-type field keys for type conversion
   const numberFields = new Set(
@@ -291,6 +296,71 @@ export default function SystemConfig() {
           message.error('清理失败');
         } finally {
           setCleaning(false);
+        }
+      },
+    });
+  };
+
+  const SOFT_DELETE_LABELS: Record<string, string> = {
+    medical_records: '病历',
+    prescriptions: '处方',
+    billings: '账单',
+    ai_analyses: 'AI分析',
+    inventory_drugs: '库存药品',
+  };
+
+  const CLEANED_LABELS: Record<string, string> = {
+    orphan_prescriptions: '孤立处方',
+    orphan_items: '孤立处方项',
+    orphan_billings: '孤立账单',
+    orphan_user_roles: '孤立用户角色',
+    orphan_role_permissions: '孤立角色权限',
+    purged_medical_records: '过期病历',
+    purged_prescriptions: '过期处方',
+    purged_billings: '过期账单',
+    purged_ai_analyses: '过期AI分析',
+    purged_inventory_drugs: '过期库存药品',
+  };
+
+  const handleDbScan = async () => {
+    setDbScanning(true);
+    setDbCleanupResult(null);
+    try {
+      const res = (await cleanupOrphanData(true)) as unknown as { data: DBCleanupResult };
+      setDbCleanupResult(res.data);
+      const total = res.data.orphan_prescriptions + res.data.orphan_items +
+        res.data.orphan_billings + res.data.orphan_user_roles + res.data.orphan_role_permissions;
+      const softTotal = Object.values(res.data.soft_deleted).reduce((a, b) => a + b, 0);
+      if (total === 0 && softTotal === 0) {
+        message.success('数据库无孤立数据');
+      }
+    } catch {
+      message.error('扫描失败');
+    } finally {
+      setDbScanning(false);
+    }
+  };
+
+  const handleDbClean = () => {
+    if (!dbCleanupResult) return;
+    Modal.confirm({
+      title: '确认清理数据库孤立数据',
+      content: '将删除所有孤立关联数据并清除超过 30 天的软删除记录，此操作不可撤销，确定要清理吗？',
+      okText: '确认清理',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        setDbCleaning(true);
+        try {
+          const res = (await cleanupOrphanData(false)) as unknown as { data: DBCleanupResult };
+          setDbCleanupResult(res.data);
+          const cleanedTotal = res.data.cleaned
+            ? Object.values(res.data.cleaned).reduce((a, b) => a + b, 0) : 0;
+          message.success(`已清理 ${cleanedTotal} 条孤立数据`);
+        } catch {
+          message.error('清理失败');
+        } finally {
+          setDbCleaning(false);
         }
       },
     });
@@ -459,6 +529,80 @@ export default function SystemConfig() {
             )}
             {cleanupResult.failed_files && cleanupResult.failed_files.length > 0 && (
               <Alert type="warning" showIcon message={`${cleanupResult.failed_files.length} 个文件删除失败`} style={{ marginTop: 8 }} />
+            )}
+          </div>
+        )}
+      </Card>
+
+      <Card
+        size={isMobile ? 'small' : 'default'}
+        style={{ marginBottom: 24 }}
+      >
+        <div style={{ marginBottom: 12 }}>
+          <Typography.Text strong>数据库清理</Typography.Text>
+          <br />
+          <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+            扫描并清理数据库中的孤立数据（已删除记录的关联数据、过期软删除记录等）
+          </Typography.Text>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: dbCleanupResult ? 16 : 0 }}>
+          <Button
+            icon={<SearchOutlined />}
+            loading={dbScanning}
+            onClick={handleDbScan}
+          >
+            扫描孤立数据
+          </Button>
+          {dbCleanupResult && !dbCleanupResult.cleaned &&
+            (dbCleanupResult.orphan_prescriptions + dbCleanupResult.orphan_items +
+             dbCleanupResult.orphan_billings + dbCleanupResult.orphan_user_roles +
+             dbCleanupResult.orphan_role_permissions +
+             Object.values(dbCleanupResult.soft_deleted).reduce((a, b) => a + b, 0)) > 0 && (
+            <Button
+              danger
+              icon={<DeleteOutlined />}
+              loading={dbCleaning}
+              onClick={handleDbClean}
+            >
+              清理孤立数据
+            </Button>
+          )}
+        </div>
+        {dbCleanupResult && (
+          <div>
+            <div style={{ display: 'flex', gap: isMobile ? 16 : 32, flexWrap: 'wrap', marginBottom: 12 }}>
+              <Statistic title="孤立处方" value={dbCleanupResult.orphan_prescriptions}
+                valueStyle={dbCleanupResult.orphan_prescriptions > 0 ? { color: '#cf1322' } : undefined} />
+              <Statistic title="孤立处方项" value={dbCleanupResult.orphan_items}
+                valueStyle={dbCleanupResult.orphan_items > 0 ? { color: '#cf1322' } : undefined} />
+              <Statistic title="孤立账单" value={dbCleanupResult.orphan_billings}
+                valueStyle={dbCleanupResult.orphan_billings > 0 ? { color: '#cf1322' } : undefined} />
+              <Statistic title="孤立用户角色" value={dbCleanupResult.orphan_user_roles}
+                valueStyle={dbCleanupResult.orphan_user_roles > 0 ? { color: '#cf1322' } : undefined} />
+              <Statistic title="孤立角色权限" value={dbCleanupResult.orphan_role_permissions}
+                valueStyle={dbCleanupResult.orphan_role_permissions > 0 ? { color: '#cf1322' } : undefined} />
+            </div>
+            {Object.keys(dbCleanupResult.soft_deleted).length > 0 && (
+              <div style={{ marginBottom: 12 }}>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>软删除记录（超30天将被永久清除）</Typography.Text>
+                <div style={{ display: 'flex', gap: isMobile ? 16 : 32, flexWrap: 'wrap', marginTop: 8 }}>
+                  {Object.entries(dbCleanupResult.soft_deleted).map(([key, count]) => (
+                    <Statistic key={key} title={SOFT_DELETE_LABELS[key] || key} value={count}
+                      valueStyle={{ color: '#d48806' }} />
+                  ))}
+                </div>
+              </div>
+            )}
+            {dbCleanupResult.cleaned && Object.keys(dbCleanupResult.cleaned).length > 0 && (
+              <div>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>已清理</Typography.Text>
+                <div style={{ display: 'flex', gap: isMobile ? 16 : 32, flexWrap: 'wrap', marginTop: 8 }}>
+                  {Object.entries(dbCleanupResult.cleaned).map(([key, count]) => (
+                    <Statistic key={key} title={CLEANED_LABELS[key] || key} value={count}
+                      valueStyle={{ color: '#3f8600' }} />
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         )}

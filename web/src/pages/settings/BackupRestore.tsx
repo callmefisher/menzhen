@@ -37,6 +37,9 @@ export default function BackupRestore() {
   const taskOutputTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const pollRef = useRef<ReturnType<typeof setInterval>>(undefined);
   const [backupModalOpen, setBackupModalOpen] = useState(false);
+  const aliveCheckRef = useRef<ReturnType<typeof setInterval>>(undefined);
+  const aliveCheckDelayRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const aliveCheckTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [backupLocalFiles, setBackupLocalFiles] = useState<BackupFileList | null>(null);
   const [backupCloudFiles, setBackupCloudFiles] = useState<BackupFileList | null>(null);
   const fileRefreshRef = useRef<ReturnType<typeof setInterval>>(undefined);
@@ -54,6 +57,9 @@ export default function BackupRestore() {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
       if (fileRefreshRef.current) clearInterval(fileRefreshRef.current);
+      if (aliveCheckRef.current) clearInterval(aliveCheckRef.current);
+      if (aliveCheckDelayRef.current) clearTimeout(aliveCheckDelayRef.current);
+      if (aliveCheckTimeoutRef.current) clearTimeout(aliveCheckTimeoutRef.current);
     };
   }, []);
 
@@ -63,10 +69,12 @@ export default function BackupRestore() {
       getter: (id: string) => Promise<unknown>,
       onDone: (s: TaskStatus) => void,
       onTimeout?: () => void,
+      maxPolls = 100,
     ) => {
       if (pollRef.current) clearInterval(pollRef.current);
       let count = 0;
-      const maxPolls = 100;
+      let errorCount = 0;
+      const maxErrors = 5;
       setTaskOutput('');
       if (taskOutputTimeoutRef.current) clearTimeout(taskOutputTimeoutRef.current);
       pollRef.current = setInterval(async () => {
@@ -80,6 +88,7 @@ export default function BackupRestore() {
         }
         try {
           const res = (await getter(taskId)) as unknown as { code: number; data: TaskStatus };
+          errorCount = 0;
           if (res.data.output) {
             setTaskOutput(res.data.output);
           }
@@ -89,9 +98,12 @@ export default function BackupRestore() {
             taskOutputTimeoutRef.current = setTimeout(() => setTaskOutput(''), 5000);
           }
         } catch {
-          clearInterval(pollRef.current!);
-          onDone({ task_id: taskId, type: '', status: 'failed', output: '轮询失败', start_at: '' });
-          taskOutputTimeoutRef.current = setTimeout(() => setTaskOutput(''), 5000);
+          errorCount++;
+          if (errorCount >= maxErrors) {
+            clearInterval(pollRef.current!);
+            onDone({ task_id: taskId, type: '', status: 'failed', output: '轮询失败', start_at: '' });
+            taskOutputTimeoutRef.current = setTimeout(() => setTaskOutput(''), 5000);
+          }
         }
       }, 2000);
     },
@@ -226,11 +238,32 @@ export default function BackupRestore() {
       pollTaskStatus(res.data.task_id, getRestoreStatus, (status) => {
         setRestoreLoading(false);
         if (status.status === 'success') {
-          message.success('恢复完成');
+          if (selectedMySQL) {
+            message.success('恢复完成，服务将在约 15 秒后自动重启以应用数据库优化配置...');
+            // 等待 API 重启完成后自动刷新页面
+            aliveCheckDelayRef.current = setTimeout(() => {
+              aliveCheckRef.current = setInterval(async () => {
+                try {
+                  const resp = await fetch('/api/v1/backup/docker-status');
+                  if (resp.ok || resp.status === 401 || resp.status === 403 || resp.status === 500) {
+                    clearInterval(aliveCheckRef.current!);
+                    window.location.reload();
+                  }
+                } catch { /* server still restarting */ }
+              }, 2000);
+              // 最多等 60 秒
+              aliveCheckTimeoutRef.current = setTimeout(() => {
+                if (aliveCheckRef.current) clearInterval(aliveCheckRef.current);
+                window.location.reload();
+              }, 60000);
+            }, 15000);
+          } else {
+            message.success('恢复完成');
+          }
         } else {
           message.error('恢复失败: ' + status.output.slice(0, 200));
         }
-      });
+      }, undefined, source === 'cloud' ? 300 : 100);
     } catch {
       setRestoreLoading(false);
       message.error('启动恢复失败');
@@ -611,7 +644,7 @@ export default function BackupRestore() {
           placement="bottom"
           height="85vh"
           open={restoreModalOpen}
-          onClose={() => setRestoreModalOpen(false)}
+          onClose={() => { setRestoreModalOpen(false); if (pollRef.current) clearInterval(pollRef.current); }}
           footer={null}
           destroyOnClose
         >
@@ -622,7 +655,7 @@ export default function BackupRestore() {
           title={restoreSource === 'cloud' ? '☁️ 从云端恢复' : '💻 从本地恢复'}
           width={560}
           open={restoreModalOpen}
-          onCancel={() => setRestoreModalOpen(false)}
+          onCancel={() => { setRestoreModalOpen(false); if (pollRef.current) clearInterval(pollRef.current); }}
           footer={null}
           destroyOnClose
         >
@@ -645,7 +678,7 @@ export default function BackupRestore() {
       ) : (
         <Modal
           title={backupModalTitle}
-          width={600}
+          width={800}
           open={backupModalOpen}
           onCancel={() => { setBackupModalOpen(false); stopFileRefresh(); if (pollRef.current) clearInterval(pollRef.current); }}
           footer={null}
