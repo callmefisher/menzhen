@@ -100,3 +100,7 @@ export function deleteFollowUp(id: number) {
 export function getFollowUpStats() {
   return request.get('/follow-ups/stats');
 }
+
+export function findFollowUpPage(id: number, size: number = 20) {
+  return request.get(`/follow-ups/${id}/page`, { params: { size } });
+}

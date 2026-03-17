@@ -68,9 +68,6 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		auth.POST("/register", authHandler.Register)
 	}
 
-	// Public file download route (no JWT required — browser <img> tags can't send Authorization headers).
-	v1.GET("/files/*key", uploadHandler.GetFile)
-
 	// Auth-only routes (JWT validated, but no token_version check).
 	// The refresh endpoint must bypass TokenVersionMiddleware so that
 	// a user with a stale token_version can still obtain a new token.
@@ -87,6 +84,9 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	authenticated.Use(middleware.TokenVersionMiddleware(db))
 	authenticated.Use(middleware.TenantStatusMiddleware(db))
 	{
+		// File download route (authenticated, tenant-isolated).
+		authenticated.GET("/files/*key", uploadHandler.GetFile)
+
 		// Auth routes that require authentication.
 		authAuth := authenticated.Group("/auth")
 		{
@@ -116,8 +116,9 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			records.DELETE("/:id", middleware.RequirePermission(db, "record:delete"), recordHandler.Delete)
 		}
 
-		// File upload route (authenticated, no specific permission).
+		// File upload/delete routes (authenticated, no specific permission).
 		authenticated.POST("/upload", uploadHandler.Upload)
+		authenticated.DELETE("/upload", uploadHandler.DeleteUploadedFile)
 
 		// AI analysis routes (authenticated, requires record:read permission).
 		authenticated.POST("/ai/analyze-diagnosis", middleware.RequirePermission(db, "record:read"), aiAnalysisHandler.Analyze)
@@ -297,6 +298,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			followUps.GET("", middleware.RequirePermission(db, "followup:read"), followUpHandler.List)
 			followUps.POST("", middleware.RequirePermission(db, "followup:create"), followUpHandler.Create)
 			followUps.GET("/stats", middleware.RequirePermission(db, "followup:read"), followUpHandler.Stats)
+			followUps.GET("/:id/page", middleware.RequirePermission(db, "followup:read"), followUpHandler.FindPage)
 			followUps.GET("/:id", middleware.RequirePermission(db, "followup:read"), followUpHandler.Detail)
 			followUps.PUT("/:id", middleware.RequirePermission(db, "followup:update"), followUpHandler.Update)
 			followUps.DELETE("/:id", middleware.RequirePermission(db, "followup:delete"), followUpHandler.Delete)
@@ -312,6 +314,10 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 
 		// Storage cleanup route (super admin only).
 		authenticated.POST("/storage/cleanup", middleware.RequirePermission(db, "user:manage"), uploadHandler.CleanupOrphanFiles)
+
+		// Database cleanup route (super admin only).
+		dbCleanupHandler := handler.NewDBCleanupHandler(db)
+		authenticated.POST("/db/cleanup", middleware.RequirePermission(db, "user:manage"), dbCleanupHandler.CleanupOrphanData)
 
 		// Backup & Restore routes (super admin only).
 		backupHandler := handler.NewBackupHandler()

@@ -294,3 +294,25 @@ func (h *FollowUpHandler) Stats(c *gin.Context) {
 		"data":    stats,
 	})
 }
+
+// FindPage handles GET /api/v1/follow-ups/:id/page — returns which page a follow-up is on.
+func (h *FollowUpHandler) FindPage(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "invalid follow-up id"})
+		return
+	}
+	size, _ := strconv.Atoi(c.DefaultQuery("size", "20"))
+	if size < 1 {
+		size = 20
+	}
+
+	svc := service.NewFollowUpService(h.db)
+	page, err := svc.FindFollowUpPage(tenantID, id, size)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"page": 1}})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"page": page}})
+}

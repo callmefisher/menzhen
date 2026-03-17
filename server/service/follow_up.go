@@ -311,3 +311,24 @@ func (s *FollowUpService) Stats(tenantID uint64) (*FollowUpStats, error) {
 		TotalCount:     agg.TotalCount,
 	}, nil
 }
+
+// FindFollowUpPage returns which page (1-based) a follow-up appears on in planned_date ASC order.
+func (s *FollowUpService) FindFollowUpPage(tenantID, followUpID uint64, size int) (int, error) {
+	if size <= 0 {
+		size = 20
+	}
+	var fu model.FollowUp
+	if err := s.DB.Select("planned_date").Where("id = ? AND tenant_id = ? AND deleted_at IS NULL", followUpID, tenantID).First(&fu).Error; err != nil {
+		return 1, err
+	}
+
+	// Count how many follow-ups come before this one in planned_date ASC, id ASC order
+	var position int64
+	s.DB.Table("follow_ups").
+		Where("tenant_id = ? AND deleted_at IS NULL", tenantID).
+		Where("planned_date < ? OR (planned_date = ? AND id < ?)", fu.PlannedDate, fu.PlannedDate, followUpID).
+		Count(&position)
+
+	page := int(position)/size + 1
+	return page, nil
+}

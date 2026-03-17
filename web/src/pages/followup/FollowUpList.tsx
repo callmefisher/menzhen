@@ -5,7 +5,7 @@ import { PlusOutlined, SearchOutlined, CaretUpOutlined, CaretDownOutlined } from
 import type { ColumnsType } from 'antd/es/table';
 import { useAuth } from '../../store/auth';
 import useIsMobile from '../../hooks/useIsMobile';
-import { listFollowUps, createFollowUp, updateFollowUp, deleteFollowUp, getFollowUpStats } from '../../api/followUp';
+import { listFollowUps, createFollowUp, updateFollowUp, deleteFollowUp, getFollowUpStats, findFollowUpPage } from '../../api/followUp';
 import type { FollowUpListItem, FollowUpStats, CreateFollowUpReq, UpdateFollowUpReq } from '../../api/followUp';
 import { listPatients, getPatient } from '../../api/patient';
 import { listRecords } from '../../api/record';
@@ -102,21 +102,18 @@ export default function FollowUpList() {
   useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => { fetchStats(); }, [fetchStats]);
 
-  // Highlight: scroll to saved row after data loads, clear after 5s
-  // If saved row not in current page data, jump to page 1
+  // Highlight: find correct page, scroll to row, clear after 5s
   useEffect(() => {
     if (!lastSavedId) return;
     const inCurrentPage = data.some(item => item.id === lastSavedId);
-    if (!inCurrentPage && params.page !== 1) {
-      // Row moved to different page after edit, jump to page 1 to find it
-      setParams(p => ({ ...p, page: 1 }));
-      return;
+    if (inCurrentPage) {
+      // Row is on current page, scroll to it
+      requestAnimationFrame(() => {
+        const el = document.querySelector('.followup-saved-highlight');
+        el?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+      });
     }
     const timer = setTimeout(() => setLastSavedId(null), 5000);
-    requestAnimationFrame(() => {
-      const el = document.querySelector('.followup-saved-highlight');
-      el?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
-    });
     return () => clearTimeout(timer);
   }, [lastSavedId, data]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -280,6 +277,7 @@ export default function FollowUpList() {
     setConfirmLoading(true);
     try {
       const method = values.method === '其他' ? (values.custom_method || '其他') : values.method;
+      let savedId: number | null = null;
       if (editing) {
         const req: UpdateFollowUpReq = {
           patient_id: values.patient_id,
@@ -292,7 +290,7 @@ export default function FollowUpList() {
         };
         await updateFollowUp(editing.id, req);
         message.success('更新成功');
-        setLastSavedId(editing.id);
+        savedId = editing.id;
       } else {
         const req: CreateFollowUpReq = {
           patient_id: values.patient_id,
@@ -304,17 +302,24 @@ export default function FollowUpList() {
         const res = await createFollowUp(req);
         const body = res as any;
         message.success('新增成功');
-        if (body.data?.id) setLastSavedId(body.data.id);
+        savedId = body.data?.id || null;
       }
       setModalOpen(false);
-      if (!editing) {
-        // 新建：跳到第1页确保能看到新数据
-        setParams(p => ({ ...p, page: 1 }));
+      fetchStats();
+      window.dispatchEvent(new Event('followup-data-changed'));
+      if (savedId) {
+        setLastSavedId(savedId);
+        try {
+          const pageRes = await findFollowUpPage(savedId, params.size);
+          const pageBody = pageRes as any;
+          const targetPage = pageBody.data?.page || 1;
+          setParams(p => ({ ...p, page: targetPage }));
+        } catch {
+          fetchData();
+        }
       } else {
         fetchData();
       }
-      fetchStats();
-      window.dispatchEvent(new Event('followup-data-changed'));
     } catch { message.error('操作失败'); }
     finally { setConfirmLoading(false); }
   };
@@ -752,8 +757,8 @@ export default function FollowUpList() {
       <style>{`
         .follow-up-overdue-row { background: #ffe8e6 !important; }
         @keyframes followup-saved-flash {
-          0% { box-shadow: inset 0 0 0 2px #52c41a; background-color: #f6ffed; }
-          100% { box-shadow: none; background-color: inherit; }
+          0% { box-shadow: inset 0 0 0 2px #52c41a, 0 0 12px rgba(82, 196, 26, 0.3); }
+          100% { box-shadow: none; }
         }
         .followup-saved-highlight {
           box-shadow: inset 0 0 0 2px #52c41a;
