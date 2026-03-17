@@ -931,7 +931,7 @@ export default function PatientDetail() {
             </Form.Item>
           )}
           {editingFollowUp && (
-            <Form.Item name="actual_date" label="实际回访日期">
+            <Form.Item name="actual_date" label="实际回访日期" extra="清空此日期后，状态将恢复为待回访">
               <DatePicker style={{ width: '100%' }} placeholder="填写后自动标记为已完成" />
             </Form.Item>
           )}
@@ -972,11 +972,11 @@ export default function PatientDetail() {
     </div>
     <style>{`
       @keyframes followup-saved-flash {
-        0% { border-color: #52c41a; background: #f6ffed; }
-        100% { border-color: transparent; background: transparent; }
+        0% { box-shadow: inset 0 0 0 2px #52c41a; background: #f6ffed; }
+        100% { box-shadow: none; background: transparent; }
       }
       .followup-saved-highlight {
-        border: 2px solid #52c41a !important;
+        box-shadow: inset 0 0 0 2px #52c41a;
         animation: followup-saved-flash 5s ease-in-out forwards;
       }
     `}</style>

@@ -681,11 +681,11 @@ export default function FollowUpList() {
       <style>{`
         .follow-up-overdue-row { background: #fff2f0 !important; }
         @keyframes followup-saved-flash {
-          0% { border-color: #52c41a; background: #f6ffed; }
-          100% { border-color: transparent; background: transparent; }
+          0% { box-shadow: inset 0 0 0 2px #52c41a; background: #f6ffed; }
+          100% { box-shadow: none; background: transparent; }
         }
         .followup-saved-highlight {
-          border: 2px solid #52c41a !important;
+          box-shadow: inset 0 0 0 2px #52c41a;
           border-radius: 8px;
           animation: followup-saved-flash 5s ease-in-out forwards;
         }

@@ -301,11 +301,11 @@ export default function FollowUpPanel({ recordId, patientId, patientName, highli
 
       <style>{`
         @keyframes followup-highlight {
-          0% { background-color: #e6f4ff; }
-          100% { background-color: transparent; }
+          0% { background-color: #f6ffed; box-shadow: inset 0 0 0 2px #52c41a; }
+          100% { background-color: transparent; box-shadow: none; }
         }
         .followup-highlight {
-          animation: followup-highlight 2s ease-out;
+          animation: followup-highlight 3s ease-out;
           border-radius: 6px;
           padding-left: 8px !important;
           padding-right: 8px !important;
