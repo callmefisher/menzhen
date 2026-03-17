@@ -61,6 +61,7 @@ type FollowUpStats struct {
 	OverdueCount   int64 `json:"overdue_count"`
 	TodayCount     int64 `json:"today_count"`
 	CompletedCount int64 `json:"completed_count"`
+	TotalCount     int64 `json:"total_count"`
 }
 
 // FollowUpService handles follow-up business logic.
@@ -74,7 +75,7 @@ func NewFollowUpService(db *gorm.DB) *FollowUpService {
 }
 
 // List returns a paginated, filtered list of follow-ups with denormalized patient/record info.
-func (s *FollowUpService) List(tenantID uint64, patientID uint64, patientName, status string, plannedFrom, plannedTo string, page, size int, sortOrder string) ([]FollowUpListItem, int64, error) {
+func (s *FollowUpService) List(tenantID uint64, patientID uint64, recordID uint64, patientName, status string, plannedFrom, plannedTo string, page, size int, sortOrder string) ([]FollowUpListItem, int64, error) {
 	query := s.DB.Table("follow_ups AS f").
 		Select(`f.id, f.tenant_id, f.patient_id,
 			COALESCE(p.name, '已删除') AS patient_name,
@@ -96,6 +97,9 @@ func (s *FollowUpService) List(tenantID uint64, patientID uint64, patientName, s
 	// Filters
 	if patientID > 0 {
 		query = query.Where("f.patient_id = ?", patientID)
+	}
+	if recordID > 0 {
+		query = query.Where("f.record_id = ?", recordID)
 	}
 	if patientName != "" {
 		query = query.Where("p.name LIKE ?", "%"+patientName+"%")
@@ -276,6 +280,7 @@ func (s *FollowUpService) Stats(tenantID uint64) (*FollowUpStats, error) {
 		OverdueCount   int64
 		TodayCount     int64
 		CompletedCount int64
+		TotalCount     int64
 	}
 	var agg aggregated
 	if err := s.DB.Model(&model.FollowUp{}).
@@ -283,7 +288,8 @@ func (s *FollowUpService) Stats(tenantID uint64) (*FollowUpStats, error) {
 			SUM(CASE WHEN status='pending' AND planned_date >= CURDATE() THEN 1 ELSE 0 END) AS pending_count,
 			SUM(CASE WHEN status='pending' AND planned_date < CURDATE() THEN 1 ELSE 0 END) AS overdue_count,
 			SUM(CASE WHEN status='pending' AND planned_date = CURDATE() THEN 1 ELSE 0 END) AS today_count,
-			SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) AS completed_count
+			SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) AS completed_count,
+			COUNT(*) AS total_count
 		`).
 		Where("tenant_id = ?", tenantID).
 		Scan(&agg).Error; err != nil {
@@ -295,5 +301,6 @@ func (s *FollowUpService) Stats(tenantID uint64) (*FollowUpStats, error) {
 		OverdueCount:   agg.OverdueCount,
 		TodayCount:     agg.TodayCount,
 		CompletedCount: agg.CompletedCount,
+		TotalCount:     agg.TotalCount,
 	}, nil
 }
