@@ -91,21 +91,26 @@ if [ -n "${LEGACY_DIR}" ]; then
     fi
 fi
 
-if [ -z "${SQL_FILE}" ]; then
+if [ -z "${SQL_FILE}" ] && [ -z "${MINIO_TAR}" ]; then
     echo "Usage:"
     echo "  restore.sh <backup-dir-path>                           # Legacy directory mode"
     echo "  restore.sh --auto                                      # Auto-detect latest backups"
     echo "  restore.sh --sql <file.sql>                            # MySQL only"
     echo "  restore.sh --sql <file.sql> --minio-tar <file.tar.gz>  # MySQL + MinIO"
+    echo "  restore.sh --minio-tar <file.tar.gz>                   # MinIO only"
     exit 1
 fi
 
 echo "[$(date)] Starting restore..."
 
-# 1. Restore MySQL
-echo ">> Restoring MySQL database from ${SQL_FILE}..."
-mysql -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASSWORD}" "${DB_NAME}" < "${SQL_FILE}"
-echo "MySQL restore complete"
+# 1. Restore MySQL (skip if no SQL file)
+if [ -n "${SQL_FILE}" ]; then
+    echo ">> Restoring MySQL database from ${SQL_FILE}..."
+    mysql -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASSWORD}" "${DB_NAME}" < "${SQL_FILE}"
+    echo "MySQL restore complete"
+else
+    echo ">> 跳过 MySQL 恢复（未指定 SQL 文件）"
+fi
 
 # 2. Restore MinIO files
 mc alias set backup "http://${MINIO_ENDPOINT}" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}" --api S3v4 2>/dev/null
@@ -129,17 +134,19 @@ else
 fi
 
 # 3. Verify
-echo ">> Verifying data integrity..."
-TABLE_COUNT=$(mysql -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASSWORD}" "${DB_NAME}" \
-    -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${DB_NAME}';" 2>/dev/null)
-echo "Tables found: ${TABLE_COUNT}"
+if [ -n "${SQL_FILE}" ]; then
+    echo ">> Verifying data integrity..."
+    TABLE_COUNT=$(mysql -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASSWORD}" "${DB_NAME}" \
+        -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${DB_NAME}';" 2>/dev/null)
+    echo "Tables found: ${TABLE_COUNT}"
 
-PATIENT_COUNT=$(mysql -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASSWORD}" "${DB_NAME}" \
-    -N -e "SELECT COUNT(*) FROM patients;" 2>/dev/null || echo "0")
-echo "Patients: ${PATIENT_COUNT}"
+    PATIENT_COUNT=$(mysql -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASSWORD}" "${DB_NAME}" \
+        -N -e "SELECT COUNT(*) FROM patients;" 2>/dev/null || echo "0")
+    echo "Patients: ${PATIENT_COUNT}"
 
-RECORD_COUNT=$(mysql -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASSWORD}" "${DB_NAME}" \
-    -N -e "SELECT COUNT(*) FROM medical_records;" 2>/dev/null || echo "0")
-echo "Medical records: ${RECORD_COUNT}"
+    RECORD_COUNT=$(mysql -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASSWORD}" "${DB_NAME}" \
+        -N -e "SELECT COUNT(*) FROM medical_records;" 2>/dev/null || echo "0")
+    echo "Medical records: ${RECORD_COUNT}"
+fi
 
 echo "[$(date)] Restore completed successfully"

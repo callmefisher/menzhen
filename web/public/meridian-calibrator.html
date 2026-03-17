@@ -137,6 +137,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { MeshBVH, acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
 
 // Enable BVH acceleration on all BufferGeometry
@@ -258,6 +259,76 @@ controls.maxDistance = 5;
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
 controls.update();
+
+// ==================== TRANSFORM CONTROLS (GIZMO) ====================
+const gizmoTarget = new THREE.Object3D();
+scene.add(gizmoTarget);
+
+const transformControls = new TransformControls(camera, renderer.domElement);
+transformControls.setMode('translate');
+transformControls.setSize(0.5);
+transformControls.enabled = false;
+
+// r160+ TransformControls is no longer Object3D — use getHelper() for visual
+const gizmoHelper = typeof transformControls.getHelper === 'function'
+  ? transformControls.getHelper()
+  : transformControls; // fallback for older versions
+gizmoHelper.visible = false;
+scene.add(gizmoHelper);
+
+let gizmoDragUndoPushed = false;
+
+transformControls.addEventListener('dragging-changed', (event) => {
+  controls.enabled = !event.value;
+  if (event.value) {
+    // Drag started
+    gizmoDragUndoPushed = false;
+  } else {
+    // Drag ended — rebuild visualization
+    updateVisualization();
+  }
+});
+
+transformControls.addEventListener('objectChange', () => {
+  if (!gizmoDragUndoPushed) {
+    pushUndo();
+    gizmoDragUndoPushed = true;
+  }
+  const pos = gizmoTarget.position;
+  const newCoord = [round3(pos.x), round3(pos.y), round3(pos.z)];
+  const mid = currentMeridianId;
+
+  if (editMode === 'path' && selectedPointIndex >= 0) {
+    if (workingPaths[mid]?.path && workingPaths[mid].path[selectedPointIndex]) {
+      workingPaths[mid].path[selectedPointIndex] = newCoord;
+    }
+    const sphere = pathPoints.find(s => s.userData.index === selectedPointIndex);
+    if (sphere) sphere.position.set(newCoord[0], newCoord[1], newCoord[2]);
+  } else if (editMode === 'acupoint' && selectedAcupointCode) {
+    workingAcupoints[selectedAcupointCode] = newCoord;
+    const marker = acupointMarkers.find(m => m.userData.code === selectedAcupointCode);
+    if (marker) marker.position.set(newCoord[0], newCoord[1], newCoord[2]);
+  }
+
+  document.getElementById('status-coords').textContent =
+    `X: ${pos.x.toFixed(3)}  Y: ${pos.y.toFixed(3)}  Z: ${pos.z.toFixed(3)}`;
+});
+
+function showGizmo(x, y, z) {
+  gizmoTarget.position.set(x, y, z);
+  transformControls.attach(gizmoTarget);
+  transformControls.showX = true;
+  transformControls.showY = true;
+  transformControls.showZ = true;
+  gizmoHelper.visible = true;
+  transformControls.enabled = true;
+}
+
+function hideGizmo() {
+  transformControls.detach();
+  gizmoHelper.visible = false;
+  transformControls.enabled = false;
+}
 
 // Lights
 scene.add(new THREE.AmbientLight(0xffffff, 0.6));
@@ -418,6 +489,19 @@ function updateVisualization() {
       vizGroup.add(sphere);
       acupointMarkers.push(sphere);
     });
+  }
+
+  // Show/hide gizmo based on selection
+  if (editMode === 'path' && selectedPointIndex >= 0) {
+    const p = workingPaths[mid]?.path?.[selectedPointIndex];
+    if (p) showGizmo(p[0], p[1], p[2]);
+    else hideGizmo();
+  } else if (editMode === 'acupoint' && selectedAcupointCode) {
+    const p = workingAcupoints[selectedAcupointCode];
+    if (p) showGizmo(p[0], p[1], p[2]);
+    else hideGizmo();
+  } else {
+    hideGizmo();
   }
 
   renderPointList();
@@ -724,6 +808,19 @@ document.addEventListener('keydown', (e) => {
     undoAction();
     e.preventDefault();
   }
+  // X/Y/Z keys toggle axis constraints on gizmo (skip if Ctrl held)
+  if (!e.ctrlKey && !e.metaKey && transformControls.visible && (e.key === 'x' || e.key === 'X')) {
+    transformControls.showX = !transformControls.showX;
+    e.preventDefault();
+  }
+  if (!e.ctrlKey && !e.metaKey && transformControls.visible && (e.key === 'y' || e.key === 'Y')) {
+    transformControls.showY = !transformControls.showY;
+    e.preventDefault();
+  }
+  if (!e.ctrlKey && !e.metaKey && transformControls.visible && (e.key === 'z' || e.key === 'Z')) {
+    transformControls.showZ = !transformControls.showZ;
+    e.preventDefault();
+  }
   // Arrow keys to navigate points
   if (editMode === 'path' && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
     const pts = workingPaths[currentMeridianId]?.path || [];
@@ -970,14 +1067,14 @@ function updateStatusHint() {
   if (editMode === 'path') {
     mode.textContent = '编辑: 路径';
     if (selectedPointIndex >= 0) {
-      hint.textContent = '拖拽移动选中点 | Shift+点击插入 | 右键删除 | ESC取消选择';
+      hint.textContent = '拖拽轴向箭头沿X/Y/Z移动 | 拖拽点贴合表面 | Shift+点击插入 | 右键删除 | X/Y/Z键切换轴';
     } else {
       hint.textContent = '拖拽路径点移动 | 点击模型添加点 | 「从穴位生成路径」自动连线';
     }
   } else {
     mode.textContent = '编辑: 穴位';
     if (selectedAcupointCode) {
-      hint.textContent = `拖拽移动 ${selectedAcupointCode} ${ACUPOINT_NAMES[selectedAcupointCode] || ''} | ESC取消`;
+      hint.textContent = `拖拽轴向箭头沿X/Y/Z移动 ${selectedAcupointCode} ${ACUPOINT_NAMES[selectedAcupointCode] || ''} | 拖拽点贴合表面 | X/Y/Z键切换轴`;
     } else {
       hint.textContent = '直接拖拽任意穴位移动 | 在列表选择穴位后点击模型放置';
     }

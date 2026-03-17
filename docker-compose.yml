@@ -19,6 +19,8 @@ services:
     env_file: .env
     volumes:
       - ./.env:/app/.env
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./backups:/backups
     depends_on:
       mysql:
         condition: service_healthy

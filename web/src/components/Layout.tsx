@@ -19,6 +19,7 @@ import {
   ApartmentOutlined,
   HeartOutlined,
   CloudOutlined,
+  CloudSyncOutlined,
   BookOutlined,
   ShopOutlined,
   AlertOutlined,
@@ -279,6 +280,11 @@ export default function AppLayout() {
           icon: <ToolOutlined />,
           label: '软件配置',
         });
+        settingsChildren.push({
+          key: '/settings/backup',
+          icon: <CloudSyncOutlined />,
+          label: '备份与恢复',
+        });
       }
       items.push({
         key: '/settings',
@@ -306,6 +312,7 @@ export default function AppLayout() {
     if (path.startsWith('/settings/users')) return ['/settings/users'];
     if (path.startsWith('/settings/tenants')) return ['/settings/tenants'];
     if (path.startsWith('/settings/config')) return ['/settings/config'];
+    if (path.startsWith('/settings/backup')) return ['/settings/backup'];
     if (path.startsWith('/patients')) return ['/patients'];
     if (path.startsWith('/oplogs')) return ['/oplogs'];
     if (path.startsWith('/herbs')) return ['/herbs'];

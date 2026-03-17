@@ -76,6 +76,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	// a user with a stale token_version can still obtain a new token.
 	authOnly := v1.Group("")
 	authOnly.Use(middleware.AuthMiddleware(cfg.JWTSecret))
+	authOnly.Use(middleware.TenantStatusMiddleware(db))
 	{
 		authOnly.POST("/auth/refresh", authHandler.RefreshToken)
 	}
@@ -84,6 +85,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	authenticated := v1.Group("")
 	authenticated.Use(middleware.AuthMiddleware(cfg.JWTSecret))
 	authenticated.Use(middleware.TokenVersionMiddleware(db))
+	authenticated.Use(middleware.TenantStatusMiddleware(db))
 	{
 		// Auth routes that require authentication.
 		authAuth := authenticated.Group("/auth")
@@ -310,6 +312,22 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 
 		// Storage cleanup route (super admin only).
 		authenticated.POST("/storage/cleanup", middleware.RequirePermission(db, "user:manage"), uploadHandler.CleanupOrphanFiles)
+
+		// Backup & Restore routes (super admin only).
+		backupHandler := handler.NewBackupHandler()
+		backupRoutes := authenticated.Group("/backup")
+		{
+			backupRoutes.GET("/docker-status", middleware.RequirePermission(db, "user:manage"), backupHandler.DockerStatus)
+			backupRoutes.POST("/trigger", middleware.RequirePermission(db, "user:manage"), backupHandler.TriggerBackup)
+			backupRoutes.GET("/status/:task_id", middleware.RequirePermission(db, "user:manage"), backupHandler.GetTaskStatus)
+			backupRoutes.GET("/list/local", middleware.RequirePermission(db, "user:manage"), backupHandler.ListLocalFiles)
+			backupRoutes.GET("/list/cloud", middleware.RequirePermission(db, "user:manage"), backupHandler.ListCloudFiles)
+		}
+		restoreRoutes := authenticated.Group("/restore")
+		{
+			restoreRoutes.POST("/trigger", middleware.RequirePermission(db, "user:manage"), backupHandler.TriggerRestore)
+			restoreRoutes.GET("/status/:task_id", middleware.RequirePermission(db, "user:manage"), backupHandler.GetTaskStatus)
+		}
 
 		// Statistics routes (tenant-scoped).
 		statistics := authenticated.Group("/statistics")

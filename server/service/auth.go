@@ -11,6 +11,7 @@ import (
 var (
 	ErrInvalidCredentials = errors.New("用户名或密码错误")
 	ErrUserDisabled       = errors.New("该账号已被禁用")
+	ErrTenantDisabled     = errors.New("该诊所已被禁用")
 	ErrUsernameExists     = errors.New("该用户名已被注册")
 	ErrUserNotFound       = errors.New("用户不存在")
 	ErrWrongOldPassword   = errors.New("旧密码错误")
@@ -45,6 +46,15 @@ func (s *AuthService) Login(username, password string) (*model.User, error) {
 	// Compare password with stored hash.
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
 		return nil, ErrInvalidCredentials
+	}
+
+	// Check that the user's tenant is active (fail-closed).
+	var tenant struct{ Status int8 }
+	if err := s.DB.Table("tenants").Select("status").Where("id = ?", user.TenantID).First(&tenant).Error; err != nil {
+		return nil, ErrTenantDisabled
+	}
+	if tenant.Status != 1 {
+		return nil, ErrTenantDisabled
 	}
 
 	return &user, nil
