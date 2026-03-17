@@ -70,6 +70,28 @@ func InitDB(cfg *config.Config) *gorm.DB {
 		}
 	}
 
+	// InnoDB table compression for tables with TEXT/LONGTEXT fields.
+	// ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=8 reduces disk usage ~50%.
+	// Idempotent: skips tables already compressed.
+	compressTables := []string{
+		"medical_records", "formulas", "hexagrams", "clinical_experiences",
+		"ai_analyses", "solar_terms", "wuyun_liuqis", "herbs", "pulses",
+		"follow_ups", "prescriptions", "patients", "meridian_resources",
+		"inventory_drugs", "users",
+	}
+	for _, table := range compressTables {
+		var rowFormat string
+		db.Raw("SELECT ROW_FORMAT FROM information_schema.tables WHERE table_schema = ? AND table_name = ?",
+			cfg.DBName, table).Scan(&rowFormat)
+		if rowFormat != "" && rowFormat != "Compressed" {
+			if result := db.Exec("ALTER TABLE `" + table + "` ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=8"); result.Error != nil {
+				log.Printf("WARNING: failed to compress table %s: %v", table, result.Error)
+			} else {
+				log.Printf("Compressed table: %s", table)
+			}
+		}
+	}
+
 	log.Println("Database migration completed")
 
 	return db
