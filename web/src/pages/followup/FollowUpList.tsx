@@ -243,7 +243,7 @@ export default function FollowUpList() {
             </div>
             <a
               style={{ fontSize: 12 }}
-              onClick={() => navigate(`/records/${record.record_id}`)}
+              onClick={() => navigate(`/records/${record.record_id}?followup_id=${record.id}`)}
             >
               {record.record_visit_date} 查看详情 →
             </a>
@@ -340,7 +340,7 @@ export default function FollowUpList() {
             <span style={{ color: '#666' }}>
               诊疗: {item.record_diagnosis.slice(0, 20)}{item.record_diagnosis.length > 20 ? '...' : ''}
             </span>
-            <a onClick={() => navigate(`/records/${item.record_id}`)} style={{ marginLeft: 6, fontSize: 12 }}>
+            <a onClick={() => navigate(`/records/${item.record_id}?followup_id=${item.id}`)} style={{ marginLeft: 6, fontSize: 12 }}>
               查看 →
             </a>
           </div>

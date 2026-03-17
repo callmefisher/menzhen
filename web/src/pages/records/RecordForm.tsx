@@ -18,7 +18,7 @@ import {
   Drawer,
   Tooltip,
 } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, RobotOutlined, ReloadOutlined, MedicineBoxOutlined, InboxOutlined, SearchOutlined, DownOutlined, RightOutlined, DollarOutlined, CheckOutlined, PrinterOutlined, LeftOutlined, ScheduleOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, RobotOutlined, ReloadOutlined, MedicineBoxOutlined, InboxOutlined, SearchOutlined, DownOutlined, RightOutlined, DollarOutlined, CheckOutlined, PrinterOutlined, LeftOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import Markdown from 'react-markdown';
@@ -41,7 +41,7 @@ import PrescriptionModal from '../../components/PrescriptionModal';
 import PrescriptionPrint from '../../components/PrescriptionPrint';
 import BillingDrawer from '../../components/BillingDrawer';
 import PrintCenterDrawer from '../../components/PrintCenterDrawer';
-import FollowUpDrawer from '../../components/FollowUpDrawer';
+import FollowUpPanel from '../../components/FollowUpPanel';
 import { listRecordBillings } from '../../api/billing';
 import type { BillingRecord } from '../../api/billing';
 import { useAuth } from '../../store/auth';
@@ -116,8 +116,9 @@ export default function RecordForm() {
   const [billingPrescriptionId, setBillingPrescriptionId] = useState<number>(0);
   const [billingMap, setBillingMap] = useState<Record<number, BillingRecord>>({});
 
-  // Follow-up drawer state
-  const [followUpDrawerOpen, setFollowUpDrawerOpen] = useState(false);
+  // Follow-up panel: read highlight ID from URL
+  const followUpIdParam = searchParams.get('followup_id');
+  const highlightFollowUpId = followUpIdParam ? Number(followUpIdParam) : undefined;
 
   // Print center (mobile combined print+billing)
   const [printCenterOpen, setPrintCenterOpen] = useState(false);
@@ -1381,14 +1382,6 @@ export default function RecordForm() {
                 开方
               </Button>
             )}
-            {isEdit && hasPermission('followup:create') && (
-              <Button
-                icon={<ScheduleOutlined />}
-                onClick={() => setFollowUpDrawerOpen(true)}
-              >
-                {isMobile ? '回访' : '创建回访'}
-              </Button>
-            )}
             {!isMobile && <Button onClick={() => navigate('/records')}>取消</Button>}
             </Space>
           </div>
@@ -1774,16 +1767,13 @@ export default function RecordForm() {
         />
       )}
 
-      {/* 快速创建回访抽屉 */}
-      {isEdit && (
-        <FollowUpDrawer
-          open={followUpDrawerOpen}
+      {/* 回访折叠面板 */}
+      {isEdit && hasPermission('followup:read') && recordPatient && (
+        <FollowUpPanel
           recordId={Number(id)}
-          patientId={recordPatient?.id ?? 0}
-          patientName={recordPatient?.name || ''}
-          visitDate={form.getFieldValue('visit_date')?.format?.('YYYY-MM-DD') || dayjs().format('YYYY-MM-DD')}
-          diagnosis={form.getFieldValue('diagnosis')}
-          onClose={() => setFollowUpDrawerOpen(false)}
+          patientId={recordPatient.id}
+          patientName={recordPatient.name}
+          highlightFollowUpId={highlightFollowUpId}
         />
       )}
 
