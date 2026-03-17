@@ -83,7 +83,11 @@ func InitDB(cfg *config.Config) *gorm.DB {
 		var rowFormat string
 		db.Raw("SELECT ROW_FORMAT FROM information_schema.tables WHERE table_schema = ? AND table_name = ?",
 			cfg.DBName, table).Scan(&rowFormat)
-		if rowFormat != "" && rowFormat != "Compressed" {
+		if rowFormat == "" {
+			log.Printf("WARNING: could not read ROW_FORMAT for table %s, skipping compression", table)
+			continue
+		}
+		if rowFormat != "Compressed" {
 			if result := db.Exec("ALTER TABLE `" + table + "` ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=8"); result.Error != nil {
 				log.Printf("WARNING: failed to compress table %s: %v", table, result.Error)
 			} else {

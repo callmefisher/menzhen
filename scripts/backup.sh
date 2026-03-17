@@ -2,7 +2,7 @@
 set -e
 
 # Hourly database backup script
-# Output: BACKUP_DIR/YYYYMMDD_HHMMSS.sql
+# Output: BACKUP_DIR/SITE_ID_YYYYMMDD_HHMMSS.sql.gz
 # Retention: keep latest N files (QINIU_RETAIN_MYSQL, default 5)
 # After backup: upload to Qiniu cloud storage
 
