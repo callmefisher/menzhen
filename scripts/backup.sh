@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -eo pipefail
 
 # Hourly database backup script
 # Output: BACKUP_DIR/SITE_ID_YYYYMMDD_HHMMSS.sql.gz
@@ -36,7 +36,7 @@ TEMP_FILE="${BACKUP_FILE}.tmp"
 echo ">> Dumping MySQL to ${BACKUP_FILE}..."
 if mysqldump -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASSWORD}" \
     --single-transaction --routines --triggers --no-tablespaces \
-    "${DB_NAME}" 2>/dev/null | gzip > "${TEMP_FILE}"; then
+    "${DB_NAME}" 2>&1 | grep -v '^\[Warning\]\|^mysqldump: \[Warning\]' | gzip -9 > "${TEMP_FILE}"; then
     DUMP_SIZE=$(wc -c < "${TEMP_FILE}")
     if [ "${DUMP_SIZE}" -lt 256 ]; then
         echo ">> ERROR: dump too small (${DUMP_SIZE} bytes), likely failed"

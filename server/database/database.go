@@ -3,6 +3,7 @@ package database
 import (
 	"fmt"
 	"log"
+	"regexp"
 
 	"github.com/callmefisher/menzhen/server/config"
 	"github.com/callmefisher/menzhen/server/model"
@@ -73,13 +74,18 @@ func InitDB(cfg *config.Config) *gorm.DB {
 	// InnoDB table compression for tables with TEXT/LONGTEXT fields.
 	// ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=8 reduces disk usage ~50%.
 	// Idempotent: skips tables already compressed.
+	// SECURITY: compressTables must be a static hardcoded list, never from external input.
 	compressTables := []string{
 		"medical_records", "formulas", "hexagrams", "clinical_experiences",
 		"ai_analyses", "solar_terms", "wuyun_liuqi", "herbs", "pulses",
 		"follow_ups", "prescriptions", "patients", "meridian_resources",
 		"inventory_drugs", "users",
 	}
+	validTableName := regexp.MustCompile(`^[a-z_]+$`)
 	for _, table := range compressTables {
+		if !validTableName.MatchString(table) {
+			log.Panicf("invalid table name in compressTables: %q", table)
+		}
 		var rowFormat string
 		db.Raw("SELECT ROW_FORMAT FROM information_schema.tables WHERE table_schema = ? AND table_name = ?",
 			cfg.DBName, table).Scan(&rowFormat)
