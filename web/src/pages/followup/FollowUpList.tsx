@@ -107,13 +107,14 @@ export default function FollowUpList() {
     if (!lastSavedId) return;
     const inCurrentPage = data.some(item => item.id === lastSavedId);
     if (inCurrentPage) {
-      // Double rAF: wait for React commit + browser paint
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          const el = document.getElementById(`followup-row-${lastSavedId}`);
-          el?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
-        });
-      });
+      // Scroll after DOM settles: use setTimeout for mobile reliability
+      const scrollTimer = setTimeout(() => {
+        const el = document.getElementById(`followup-row-${lastSavedId}`);
+        el?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+      }, 500);
+      const clearScrollTimer = () => clearTimeout(scrollTimer);
+      const timer = setTimeout(() => setLastSavedId(null), 5000);
+      return () => { clearScrollTimer(); clearTimeout(timer); };
     }
     const timer = setTimeout(() => setLastSavedId(null), 5000);
     return () => clearTimeout(timer);
@@ -751,7 +752,7 @@ export default function FollowUpList() {
           }}
           onRow={(record) => ({
             id: `followup-row-${record.id}`,
-          } as any)}
+          })}
           pagination={{
             current: params.page,
             pageSize: params.size,
@@ -774,6 +775,9 @@ export default function FollowUpList() {
         }
         .followup-saved-highlight > td.ant-table-cell:last-child {
           box-shadow: inset -2px 2px 0 #52c41a, inset 0 -2px 0 #52c41a;
+        }
+        .follow-up-overdue-row.followup-saved-highlight > td.ant-table-cell {
+          background: #f6ffed !important;
         }
       `}</style>
     </>
