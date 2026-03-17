@@ -107,11 +107,13 @@ export default function FollowUpList() {
     if (!lastSavedId) return;
     const inCurrentPage = data.some(item => item.id === lastSavedId);
     if (inCurrentPage) {
-      // Wait for DOM render then scroll to highlighted element
-      setTimeout(() => {
-        const el = document.querySelector(`[data-followup-id="${lastSavedId}"]`);
-        el?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
-      }, 300);
+      // Double rAF: wait for React commit + browser paint
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const el = document.getElementById(`followup-row-${lastSavedId}`);
+          el?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+        });
+      });
     }
     const timer = setTimeout(() => setLastSavedId(null), 5000);
     return () => clearTimeout(timer);
@@ -445,10 +447,9 @@ export default function FollowUpList() {
     const isHighlighted = item.id === lastSavedId;
     const isOverdue = item.status === 'overdue';
     return (
+      <div key={item.id} id={`followup-row-${item.id}`}>
       <Card
-        key={item.id}
         size="small"
-        data-followup-id={item.id}
         style={{
           marginBottom: 8,
           ...(isOverdue ? { background: '#ffe8e6' } : {}),
@@ -489,6 +490,7 @@ export default function FollowUpList() {
           )}
         </div>
       </Card>
+      </div>
     );
   };
 
@@ -748,12 +750,8 @@ export default function FollowUpList() {
             return cls.join(' ');
           }}
           onRow={(record) => ({
-            'data-followup-id': record.id,
-            style: {
-              ...(record.status === 'overdue' ? { background: '#ffe8e6' } : {}),
-              ...(record.id === lastSavedId ? { outline: '2px solid #52c41a', outlineOffset: -2, borderRadius: 8 } : {}),
-            },
-          })}
+            id: `followup-row-${record.id}`,
+          } as any)}
           pagination={{
             current: params.page,
             pageSize: params.size,
@@ -769,7 +767,13 @@ export default function FollowUpList() {
         .follow-up-overdue-row > td.ant-table-cell { background: #ffe8e6 !important; }
         .followup-saved-highlight > td.ant-table-cell {
           background: #f6ffed !important;
-          transition: background 3s ease-out;
+          box-shadow: inset 0 2px 0 #52c41a, inset 0 -2px 0 #52c41a;
+        }
+        .followup-saved-highlight > td.ant-table-cell:first-child {
+          box-shadow: inset 2px 2px 0 #52c41a, inset 0 -2px 0 #52c41a;
+        }
+        .followup-saved-highlight > td.ant-table-cell:last-child {
+          box-shadow: inset -2px 2px 0 #52c41a, inset 0 -2px 0 #52c41a;
         }
       `}</style>
     </>
