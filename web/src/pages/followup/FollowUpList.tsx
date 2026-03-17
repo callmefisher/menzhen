@@ -102,16 +102,16 @@ export default function FollowUpList() {
   useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => { fetchStats(); }, [fetchStats]);
 
-  // Highlight: find correct page, scroll to row, clear after 5s
+  // Highlight: if saved row not in current page after data refresh, use findFollowUpPage to locate it
   useEffect(() => {
     if (!lastSavedId) return;
     const inCurrentPage = data.some(item => item.id === lastSavedId);
     if (inCurrentPage) {
+      // Scroll to highlighted row
       const doScroll = () => {
         const el = document.getElementById(`followup-row-${lastSavedId}`);
         el?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
       };
-      // Desktop: double rAF (fast); Mobile: setTimeout for reliable DOM timing
       let scrollCleanup: (() => void) | undefined;
       if (isMobile) {
         const t = setTimeout(doScroll, 500);
@@ -125,6 +125,17 @@ export default function FollowUpList() {
       }
       const timer = setTimeout(() => setLastSavedId(null), 5000);
       return () => { scrollCleanup?.(); clearTimeout(timer); };
+    } else if (data.length > 0) {
+      // Row not on current page — ask backend which page it's on
+      findFollowUpPage(lastSavedId, params.size)
+        .then((res) => {
+          const body = res as any;
+          const targetPage = body.data?.page || 1;
+          if (targetPage !== params.page) {
+            setParams(p => ({ ...p, page: targetPage }));
+          }
+        })
+        .catch(() => { /* stay on current page */ });
     }
     const timer = setTimeout(() => setLastSavedId(null), 5000);
     return () => clearTimeout(timer);
@@ -322,14 +333,8 @@ export default function FollowUpList() {
       window.dispatchEvent(new Event('followup-data-changed'));
       if (savedId) {
         setLastSavedId(savedId);
-        try {
-          const pageRes = await findFollowUpPage(savedId, params.size);
-          const pageBody = pageRes as any;
-          const targetPage = pageBody.data?.page || 1;
-          setParams(p => ({ ...p, page: targetPage }));
-        } catch {
-          fetchData();
-        }
+        // Refresh current page first, then check if saved row is still here
+        fetchData();
       } else {
         fetchData();
       }
