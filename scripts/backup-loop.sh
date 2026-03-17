@@ -43,7 +43,16 @@ mysql_loop() {
             echo "[$(date)] MySQL: interval changed: ${prev_interval:-<init>} -> ${MYSQL_INTERVAL}s"
             prev_interval="${MYSQL_INTERVAL}"
         fi
-        age=$(get_backup_age "${BACKUP_DIR}" "${SITE_ID}_*.sql")
+        # Check both .sql.gz (new) and .sql (legacy), use the youngest
+        age_gz=$(get_backup_age "${BACKUP_DIR}" "${SITE_ID}_*.sql.gz")
+        age_sql=$(get_backup_age "${BACKUP_DIR}" "${SITE_ID}_*.sql")
+        if [ -n "${age_gz}" ] && [ -n "${age_sql}" ]; then
+            age=$(( age_gz < age_sql ? age_gz : age_sql ))
+        elif [ -n "${age_gz}" ]; then
+            age="${age_gz}"
+        else
+            age="${age_sql}"
+        fi
         if [ -z "${age}" ]; then
             echo "[$(date)] MySQL: no backup found, triggering immediate..."
             /scripts/backup.sh
