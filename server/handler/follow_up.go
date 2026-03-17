@@ -30,6 +30,10 @@ func (h *FollowUpHandler) List(c *gin.Context) {
 	recordIDStr := c.Query("record_id")
 	status := c.Query("status")
 	isRecoveredStr := c.Query("is_recovered")
+	if isRecoveredStr != "" && isRecoveredStr != "true" && isRecoveredStr != "false" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "invalid is_recovered, must be true or false"})
+		return
+	}
 	plannedFrom := c.Query("planned_date_from")
 	plannedTo := c.Query("planned_date_to")
 

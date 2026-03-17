@@ -6,6 +6,7 @@ import { listFollowUps, createFollowUp, updateFollowUp } from '../api/followUp';
 import type { FollowUpListItem, CreateFollowUpReq, UpdateFollowUpReq } from '../api/followUp';
 import { useAuth } from '../store/auth';
 import useIsMobile from '../hooks/useIsMobile';
+import { recoveredTagStyle, notRecoveredTagStyle } from '../utils/followUpStyles';
 
 const { TextArea } = Input;
 
@@ -222,8 +223,8 @@ export default function FollowUpPanel({ recordId, patientId, patientName, patien
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <span style={{ background: cfg.bg, color: cfg.color, padding: '1px 8px', borderRadius: 10, fontSize: 11 }}>{cfg.label}</span>
                         {item.is_recovered
-                          ? <span style={{ background: '#f6ffed', color: '#389e0d', padding: '1px 6px', borderRadius: 3, fontSize: 12, border: '1px solid #b7eb8f', marginLeft: 4 }}>已康复</span>
-                          : <span style={{ background: '#fff7e6', color: '#d46b08', padding: '1px 6px', borderRadius: 3, fontSize: 12, border: '1px solid #ffd591', marginLeft: 4 }}>未康复</span>
+                          ? <span style={{ ...recoveredTagStyle, marginLeft: 4 }}>已康复</span>
+                          : <span style={{ ...notRecoveredTagStyle, marginLeft: 4 }}>未康复</span>
                         }
                         <span style={{ marginLeft: 6, fontSize: 13 }}>{item.planned_date}</span>
                         <span style={{ marginLeft: 6, fontSize: 12, color: '#666' }}>

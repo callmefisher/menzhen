@@ -23,6 +23,7 @@ import {
 } from 'antd';
 import {
   EditOutlined,
+  EyeOutlined,
   PlusOutlined,
   DownOutlined,
   UpOutlined,
@@ -43,6 +44,7 @@ import {
   deleteFollowUp,
 } from '../../api/followUp';
 import dayjs from 'dayjs';
+import { recoveredTagStyle, notRecoveredTagStyle } from '../../utils/followUpStyles';
 import { PatientFormModal } from './PatientForm';
 import useIsMobile from '../../hooks/useIsMobile';
 
@@ -344,7 +346,7 @@ export default function PatientDetail() {
         top: isMobile ? 8 : 12,
         left: isMobile ? 8 : undefined,
         right: isMobile ? undefined : 24,
-        zIndex: 1000,
+        zIndex: 999,
         background: '#1677ff',
         color: '#fff',
         padding: isMobile ? '4px 12px' : '6px 16px',
@@ -508,7 +510,7 @@ export default function PatientDetail() {
                       <Button
                         type="link"
                         size="small"
-                        icon={<EditOutlined />}
+                        icon={<EyeOutlined />}
                         onClick={() => navigate(`/records/${record.id}?from=patient&patient_id=${patient.id}`)}
                       >
                         查看
@@ -763,8 +765,8 @@ export default function PatientDetail() {
                       {cfg.label}
                     </Tag>
                     {item.is_recovered
-                      ? <span style={{ background: '#f6ffed', color: '#389e0d', padding: '1px 6px', borderRadius: 3, fontSize: 12, border: '1px solid #b7eb8f' }}>已康复</span>
-                      : <span style={{ background: '#fff7e6', color: '#d46b08', padding: '1px 6px', borderRadius: 3, fontSize: 12, border: '1px solid #ffd591' }}>未康复</span>
+                      ? <span style={recoveredTagStyle}>已康复</span>
+                      : <span style={notRecoveredTagStyle}>未康复</span>
                     }
                     <span style={{ fontSize: 13, color: '#333', whiteSpace: 'nowrap' }}>
                       {item.planned_date}

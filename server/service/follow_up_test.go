@@ -183,6 +183,18 @@ func TestFollowUpListIsRecovered(t *testing.T) {
 		}
 	}
 	assert.Equal(t, 1, recoveredCount)
+
+	// Filter recovered only
+	items, total, err = svc.List(tenantID, 0, 0, "", "", "true", "", "", 1, 10, "asc")
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	assert.True(t, items[0].IsRecovered)
+
+	// Filter not recovered only
+	items, total, err = svc.List(tenantID, 0, 0, "", "", "false", "", "", 1, 10, "asc")
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	assert.False(t, items[0].IsRecovered)
 }
 
 func TestFollowUpUpdate(t *testing.T) {

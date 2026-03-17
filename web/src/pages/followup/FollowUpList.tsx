@@ -21,9 +21,7 @@ const statusConfig: Record<string, { label: string; color: string }> = {
   overdue: { label: '逾期', color: 'red' },
 };
 
-// Recovery tag style constants
-const recoveredStyle = { background: '#f6ffed', color: '#389e0d', padding: '1px 6px', borderRadius: 3, fontSize: 12, border: '1px solid #b7eb8f' } as const;
-const notRecoveredStyle = { background: '#fff7e6', color: '#d46b08', padding: '1px 6px', borderRadius: 3, fontSize: 12, border: '1px solid #ffd591' } as const;
+import { recoveredTagStyle, notRecoveredTagStyle } from '../../utils/followUpStyles';
 
 // Pill tabs: Row 1 = status, Row 2 = recovery
 type StatusTab = 'all' | 'pending' | 'overdue' | 'completed';
@@ -318,7 +316,7 @@ export default function FollowUpList() {
             : <a style={{ color: '#1677ff' }} onClick={() => navigate(`/patients/${record.patient_id}`)}>{name}</a>
           }
           <div style={{ marginTop: 2 }}>
-            <span style={record.is_recovered ? recoveredStyle : notRecoveredStyle}>
+            <span style={record.is_recovered ? recoveredTagStyle : notRecoveredTagStyle}>
               {record.is_recovered ? '已康复' : '未康复'}
             </span>
           </div>
@@ -434,7 +432,7 @@ export default function FollowUpList() {
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
           <a style={{ color: '#1677ff', fontWeight: 500 }} onClick={() => navigate(`/patients/${item.patient_id}`)}>{item.patient_name}</a>
           <Space size={4}>
-            <span style={item.is_recovered ? { ...recoveredStyle, fontSize: 11 } : { ...notRecoveredStyle, fontSize: 11 }}>
+            <span style={item.is_recovered ? { ...recoveredTagStyle, fontSize: 11 } : { ...notRecoveredTagStyle, fontSize: 11 }}>
               {item.is_recovered ? '已康复' : '未康复'}
             </span>
             <Tag color={cfg.color}>{cfg.label}</Tag>
