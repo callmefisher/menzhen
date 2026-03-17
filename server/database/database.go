@@ -75,7 +75,7 @@ func InitDB(cfg *config.Config) *gorm.DB {
 	// Idempotent: skips tables already compressed.
 	compressTables := []string{
 		"medical_records", "formulas", "hexagrams", "clinical_experiences",
-		"ai_analyses", "solar_terms", "wuyun_liuqis", "herbs", "pulses",
+		"ai_analyses", "solar_terms", "wuyun_liuqi", "herbs", "pulses",
 		"follow_ups", "prescriptions", "patients", "meridian_resources",
 		"inventory_drugs", "users",
 	}
