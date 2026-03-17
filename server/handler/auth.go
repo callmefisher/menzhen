@@ -87,6 +87,13 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	user, err := h.authService.Login(req.Username, req.Password)
 	if err != nil {
+		if errors.Is(err, service.ErrTenantDisabled) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"code":    403,
+				"message": "tenant_disabled",
+			})
+			return
+		}
 		status := http.StatusUnauthorized
 		if errors.Is(err, service.ErrUserDisabled) {
 			status = http.StatusForbidden

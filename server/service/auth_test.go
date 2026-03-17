@@ -160,3 +160,18 @@ func TestChangePassword_UserNotFound(t *testing.T) {
 
 	assert.ErrorIs(t, err, service.ErrUserNotFound)
 }
+
+func TestLogin_TenantDisabled(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	tenant := testutil.SeedTestTenant(t, db, "诊所A", "clinic-a")
+	testutil.SeedTestUser(t, db, tenant.ID, "doctor1", "pass123", nil)
+
+	// Disable the tenant.
+	db.Model(tenant).Update("status", 0)
+
+	svc := service.NewAuthService(db)
+	result, err := svc.Login("doctor1", "pass123")
+
+	assert.Nil(t, result)
+	assert.ErrorIs(t, err, service.ErrTenantDisabled)
+}

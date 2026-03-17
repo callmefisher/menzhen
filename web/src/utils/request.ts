@@ -78,6 +78,17 @@ request.interceptors.response.use(
     const data = error.response?.data;
     let msg = data?.message || '请求失败';
 
+    // 403 tenant_disabled: clear token and redirect to login
+    if (error.response?.status === 403 && data?.message === 'tenant_disabled') {
+      localStorage.removeItem('token');
+      sessionStorage.removeItem('token');
+      message.error('该诊所已被禁用，请联系管理员');
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
+      return Promise.reject(error);
+    }
+
     // Show missing permissions for 403 errors
     if (error.response?.status === 403 && data?.required_permissions) {
       const perms = (data.required_permissions as string[])

@@ -221,3 +221,20 @@ func TestAuthHandler_Logout_Success(t *testing.T) {
 	body := parseJSON(w)
 	assert.Equal(t, float64(0), body["code"])
 }
+
+func TestAuthHandler_Login_TenantDisabled(t *testing.T) {
+	env := setupTestEnv(t)
+
+	// Disable the tenant.
+	env.DB.Model(env.Tenant).Update("status", 0)
+
+	w := env.doRequestNoAuth("POST", "/api/v1/auth/login", map[string]interface{}{
+		"username": "admin",
+		"password": "admin123",
+	})
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
+
+	body := parseJSON(w)
+	assert.Equal(t, "tenant_disabled", body["message"])
+}
