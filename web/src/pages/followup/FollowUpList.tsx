@@ -753,7 +753,7 @@ export default function FollowUpList() {
               current={params.page}
               pageSize={params.size}
               total={total}
-              onChange={(page) => setParams({ ...params, page })}
+              onChange={(page) => { setLastSavedId(null); setParams({ ...params, page }); }}
             />
           </div>
         </>
@@ -776,7 +776,7 @@ export default function FollowUpList() {
             current: params.page,
             pageSize: params.size,
             total,
-            onChange: (page, size) => setParams({ ...params, page, size }),
+            onChange: (page, size) => { setLastSavedId(null); setParams({ ...params, page, size }); },
             showSizeChanger: true,
             showTotal: (t) => `共 ${t} 条`,
           }}
