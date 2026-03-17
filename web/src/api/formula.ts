@@ -45,3 +45,8 @@ export function updateFormulaName(id: number, name: string) {
 export function updateFormulaNotes(id: number, notes: string) {
   return request.put(`/formulas/${id}/notes`, { notes });
 }
+
+export async function findFormulaPage(id: number, size: number): Promise<number> {
+  const res = await request.get(`/formulas/${id}/page`, { params: { size } });
+  return (res as any).data?.page || 1;
+}

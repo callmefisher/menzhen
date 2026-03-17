@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Table,
   Input,
@@ -25,9 +25,10 @@ import {
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
-import { listPatients, deletePatient } from '../../api/patient';
+import { listPatients, deletePatient, findPatientPage } from '../../api/patient';
 import { PatientFormModal } from './PatientForm';
 import useIsMobile from '../../hooks/useIsMobile';
+import useRowHighlight from '../../hooks/useRowHighlight';
 
 interface PatientItem {
   id: number;
@@ -52,6 +53,7 @@ interface ListParams {
 
 export default function PatientList() {
   const navigate = useNavigate();
+  const location = useLocation();
   const isMobile = useIsMobile();
 
   const [data, setData] = useState<PatientItem[]>([]);
@@ -65,6 +67,26 @@ export default function PatientList() {
   // Edit modal state
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editingPatient, setEditingPatient] = useState<PatientItem | null>(null);
+
+  const highlight = useRowHighlight({
+    data,
+    page: params.page,
+    pageSize: params.size,
+    loading,
+    onPageChange: (page) => setParams(prev => ({ ...prev, page })),
+    findPage: findPatientPage,
+    idPrefix: 'patient',
+  });
+
+  // Handle highlight from navigation state (detail page return or standalone form)
+  useEffect(() => {
+    const state = location.state as { highlightPatientId?: number } | null;
+    if (state?.highlightPatientId) {
+      highlight.setHighlightId(state.highlightPatientId);
+      // Clear state to prevent re-highlight on re-render
+      window.history.replaceState({}, '');
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchData = useCallback(async (query: ListParams) => {
     setLoading(true);
@@ -121,8 +143,9 @@ export default function PatientList() {
     setEditModalVisible(true);
   };
 
-  const handleEditSuccess = () => {
+  const handleEditSuccess = (id: number) => {
     fetchData(params);
+    highlight.setHighlightId(id);
   };
 
   const columns: ColumnsType<PatientItem> = [
@@ -245,7 +268,8 @@ export default function PatientList() {
     return (
       <div
         key={patient.id}
-        className="warm-list-card"
+        id={`patient-row-${patient.id}`}
+        className={`warm-list-card${highlight.isHighlighted(patient.id) ? ' row-highlight' : ''}`}
         onClick={() => navigate(`/patients/${patient.id}`)}
       >
         {/* Row 1: name + gender/age */}
@@ -381,6 +405,7 @@ export default function PatientList() {
                 size="small"
                 simple
                 onChange={(page, pageSize) => {
+                  highlight.setHighlightId(null);
                   setParams(prev => ({ ...prev, page, size: pageSize }));
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
@@ -394,6 +419,8 @@ export default function PatientList() {
           columns={columns}
           dataSource={data}
           loading={loading}
+          rowClassName={highlight.rowClassName}
+          onRow={highlight.onRow}
           pagination={{
             current: params.page,
             pageSize: params.size,
@@ -401,6 +428,7 @@ export default function PatientList() {
             showSizeChanger: true,
             showTotal: (t) => `共 ${t} 条记录`,
             onChange: (page, pageSize) => {
+              highlight.setHighlightId(null);
               setParams((prev) => ({ ...prev, page, size: pageSize }));
             },
           }}

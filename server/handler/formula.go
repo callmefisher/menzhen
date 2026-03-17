@@ -54,6 +54,27 @@ func (h *FormulaHandler) List(c *gin.Context) {
 	})
 }
 
+// FindPage handles GET /api/v1/formulas/:id/page — returns which page a formula is on.
+func (h *FormulaHandler) FindPage(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "invalid formula id"})
+		return
+	}
+	size, _ := strconv.Atoi(c.DefaultQuery("size", "20"))
+	if size < 1 {
+		size = 20
+	}
+
+	svc := service.NewFormulaService(h.db, h.deepSeek)
+	page, err := svc.FindFormulaPage(id, size)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"page": 1}})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"page": page}})
+}
+
 // Detail handles GET /api/v1/formulas/:id
 func (h *FormulaHandler) Detail(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)

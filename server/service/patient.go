@@ -13,6 +13,21 @@ var (
 	ErrPatientNotFound = errors.New("patient not found")
 )
 
+// DuplicatePatientInfo holds info about an existing patient with the same name.
+type DuplicatePatientInfo struct {
+	ID   uint64 `json:"existing_id"`
+	Name string `json:"existing_name"`
+}
+
+// DuplicateNameError is an error with associated duplicate info.
+type DuplicateNameError struct {
+	Info DuplicatePatientInfo
+}
+
+func (e *DuplicateNameError) Error() string {
+	return "duplicate patient name"
+}
+
 // CreatePatientRequest is the input for creating a new patient.
 type CreatePatientRequest struct {
 	Name        string  `json:"name" binding:"required"`
@@ -25,6 +40,7 @@ type CreatePatientRequest struct {
 	Address     string  `json:"address"`
 	NativePlace string  `json:"native_place"`
 	Notes       string  `json:"notes"`
+	Force       bool    `json:"force"`
 }
 
 // UpdatePatientRequest is the input for updating an existing patient.
@@ -71,8 +87,32 @@ func parseBirthday(s string) (*time.Time, int, error) {
 	return &t, calculateAge(t), nil
 }
 
+// CheckDuplicateName checks if a patient with the same name already exists in the tenant.
+func (s *PatientService) CheckDuplicateName(tenantID uint64, name string) (*DuplicatePatientInfo, error) {
+	var existing model.Patient
+	err := s.DB.Where("tenant_id = ? AND name = ?", tenantID, name).First(&existing).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil // no duplicate
+		}
+		return nil, err
+	}
+	return &DuplicatePatientInfo{ID: uint64(existing.ID), Name: existing.Name}, nil
+}
+
 // CreatePatient creates a new patient record.
 func (s *PatientService) CreatePatient(tenantID, createdBy uint64, req *CreatePatientRequest) (*model.Patient, error) {
+	// Check for duplicate name unless force is set.
+	if !req.Force {
+		dup, err := s.CheckDuplicateName(tenantID, req.Name)
+		if err != nil {
+			return nil, err
+		}
+		if dup != nil {
+			return nil, &DuplicateNameError{Info: *dup}
+		}
+	}
+
 	patient := model.Patient{
 		TenantID:    tenantID,
 		Name:        req.Name,
@@ -239,4 +279,25 @@ func (s *PatientService) DeletePatient(tenantID uint64, id uint64) (*model.Patie
 	}
 
 	return &patient, nil
+}
+
+// FindPatientPage returns which page a patient appears on (created_at DESC order).
+func (s *PatientService) FindPatientPage(tenantID, patientID uint64, size int) (int, error) {
+	if size <= 0 {
+		size = 20
+	}
+	var patient model.Patient
+	if err := s.DB.Select("created_at").Where("id = ? AND tenant_id = ?", patientID, tenantID).First(&patient).Error; err != nil {
+		return 1, err
+	}
+
+	// Count how many patients come before this one in created_at DESC order.
+	var position int64
+	s.DB.Table("patients").
+		Where("tenant_id = ? AND deleted_at IS NULL", tenantID).
+		Where("created_at > ? OR (created_at = ? AND id > ?)", patient.CreatedAt, patient.CreatedAt, patientID).
+		Count(&position)
+
+	page := int(position)/size + 1
+	return page, nil
 }

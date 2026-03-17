@@ -69,6 +69,33 @@ describe('TenantList', () => {
     expect(screen.getByRole('button', { name: /新增诊所/ })).toBeInTheDocument();
   });
 
+  it('shows pagination on mobile even when data fits one page', async () => {
+    // Override useIsMobile to return true for this test
+    const useIsMobileMock = await import('../../../hooks/useIsMobile');
+    vi.spyOn(useIsMobileMock, 'default').mockReturnValue(true);
+
+    mockListTenants.mockResolvedValue({
+      data: {
+        list: [
+          { id: 1, name: '测试诊所', code: 'test', status: 1, created_at: '2026-01-01T00:00:00Z' },
+        ],
+        total: 1,
+      },
+    });
+
+    renderTenantList();
+
+    await waitFor(() => {
+      expect(screen.getByText('测试诊所')).toBeInTheDocument();
+    });
+
+    // Pagination should be visible even with only 1 record (total=1 < size=20)
+    expect(document.querySelector('.ant-pagination')).toBeInTheDocument();
+
+    // Restore
+    vi.spyOn(useIsMobileMock, 'default').mockReturnValue(false);
+  });
+
   it('renders empty state when no tenants', async () => {
     mockListTenants.mockResolvedValue({
       data: {

@@ -28,9 +28,11 @@ import {
   deleteInventoryDrug,
   stockInDrug,
   batchStockIn,
+  findDrugPage,
 } from '../../api/inventory';
 import type { InventoryDrug, CreateInventoryDrugReq, BatchStockInItem } from '../../api/inventory';
 import useIsMobile from '../../hooks/useIsMobile';
+import useRowHighlight from '../../hooks/useRowHighlight';
 
 const getDefaultThreshold = (category: string): number => {
   const config = JSON.parse(localStorage.getItem('inventory-alert-config') || '{}');
@@ -110,6 +112,16 @@ export default function DrugList() {
   const [searchName, setSearchName] = useState('');
   const [searchCategory, setSearchCategory] = useState('');
   const [searchStatus, setSearchStatus] = useState('');
+
+  const highlight = useRowHighlight({
+    data: drugs,
+    page: params.page,
+    pageSize: params.size,
+    loading,
+    onPageChange: (page) => setParams(prev => ({ ...prev, page })),
+    findPage: findDrugPage,
+    idPrefix: 'drug',
+  });
 
   // Auto-search with debounce when status filter changes (clear = reset query)
   const [statusInited, setStatusInited] = useState(false);
@@ -253,13 +265,19 @@ export default function DrugList() {
       if (editingDrug) {
         await updateInventoryDrug(editingDrug.id, payload);
         message.success('更新成功');
+        setModalOpen(false);
+        fetchDrugs();
+        fetchAllDrugs();
+        highlight.setHighlightId(editingDrug.id);
       } else {
-        await createInventoryDrug(payload);
+        const res = await createInventoryDrug(payload) as any;
+        const newId = res.data?.id || res.data?.ID;
         message.success('新增成功');
+        setModalOpen(false);
+        fetchDrugs();
+        fetchAllDrugs();
+        if (newId) highlight.setHighlightId(newId);
       }
-      setModalOpen(false);
-      fetchDrugs();
-      fetchAllDrugs();
       window.dispatchEvent(new Event('inventory-data-changed'));
     } catch {
       // Validation error or API error handled by interceptor
@@ -303,6 +321,7 @@ export default function DrugList() {
           shelf_no: values.shelf_no || undefined,
         });
         message.success('入库成功');
+        highlight.setHighlightId(stockInDrugTarget.id);
       } else if (stockInTab === 'batch') {
         const items = parseBatchText(batchText);
         if (items.length === 0) {
@@ -321,6 +340,10 @@ export default function DrugList() {
         const body = res as any;
         const data = body.data;
         message.success(`批量入库完成：新增 ${data?.created || 0} 种，更新 ${data?.updated || 0} 种`);
+        // Highlight all batch-processed drugs
+        if (data?.drug_ids?.length) {
+          highlight.setHighlightIds(data.drug_ids);
+        }
       } else {
         // Single mode without target — use the form name to find or create
         const values = await stockInForm.validateFields();
@@ -490,7 +513,9 @@ export default function DrugList() {
     return (
       <Card
         key={drug.id}
+        id={`drug-row-${drug.id}`}
         size="small"
+        className={highlight.isHighlighted(drug.id) ? 'row-highlight' : undefined}
         style={{ marginBottom: 8 }}
         styles={{ body: { padding: '10px 12px' } }}
       >
@@ -715,6 +740,7 @@ export default function DrugList() {
                   size="small"
                   simple
                   onChange={(page, pageSize) => {
+                    highlight.setHighlightId(null);
                     setParams(prev => ({ ...prev, page, size: pageSize }));
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                   }}
@@ -728,6 +754,8 @@ export default function DrugList() {
             columns={columns}
             dataSource={drugs}
             loading={loading}
+            rowClassName={highlight.rowClassName}
+            onRow={highlight.onRow}
             pagination={
               params.status
                 ? false
@@ -738,6 +766,7 @@ export default function DrugList() {
                     showSizeChanger: true,
                     showTotal: (t) => `共 ${t} 种药材`,
                     onChange: (page, pageSize) => {
+                      highlight.setHighlightId(null);
                       setParams((prev) => ({ ...prev, page, size: pageSize }));
                     },
                   }

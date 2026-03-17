@@ -19,3 +19,8 @@ export function updatePatient(id: number, data: unknown) {
 export function deletePatient(id: number) {
   return request.delete(`/patients/${id}`);
 }
+
+export async function findPatientPage(id: number, size: number): Promise<number> {
+  const res = await request.get(`/patients/${id}/page`, { params: { size } });
+  return (res as any).data?.page || 1;
+}

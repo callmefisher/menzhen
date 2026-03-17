@@ -340,7 +340,7 @@ export default function PatientDetail() {
     <>
     {/* 悬浮返回按钮 */}
     <div
-      onClick={() => navigate('/patients')}
+      onClick={() => navigate('/patients', { state: { highlightPatientId: Number(id) } })}
       style={{
         position: 'fixed',
         top: isMobile ? 10 : 12,

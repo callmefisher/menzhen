@@ -1,14 +1,14 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Table, Button, Space, Input, Select, Modal, Form, DatePicker, message, Tag, Popconfirm, Pagination, Switch, Tooltip } from 'antd';
-import { PlusOutlined, SearchOutlined, CaretUpOutlined, CaretDownOutlined } from '@ant-design/icons';
+import { Card, Table, Button, Space, Input, Select, Modal, Form, DatePicker, message, Tag, Popconfirm, Pagination, Switch, Tooltip, Spin } from 'antd';
+import { PlusOutlined, SearchOutlined, CaretUpOutlined, CaretDownOutlined, DownOutlined, UpOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { useAuth } from '../../store/auth';
 import useIsMobile from '../../hooks/useIsMobile';
 import { listFollowUps, createFollowUp, updateFollowUp, deleteFollowUp, getFollowUpStats, findFollowUpPage } from '../../api/followUp';
 import type { FollowUpListItem, FollowUpStats, CreateFollowUpReq, UpdateFollowUpReq } from '../../api/followUp';
 import { listPatients, getPatient } from '../../api/patient';
-import { listRecords } from '../../api/record';
+import { listRecords, getRecord } from '../../api/record';
 import dayjs from 'dayjs';
 
 const { Option } = Select;
@@ -68,6 +68,11 @@ export default function FollowUpList() {
   const [activeRecoveryTab, setActiveRecoveryTab] = useState<RecoveryTab>('');
   const [lastSavedId, setLastSavedId] = useState<number | null>(null);
 
+  // Record expand state
+  const [expandedRecords, setExpandedRecords] = useState<Set<number>>(new Set());
+  const [recordCache, setRecordCache] = useState<Record<number, { diagnosis: string; treatment: string; prescriptions: { formula_name: string; total_doses: number; items: { herb_name: string; dosage: string }[] }[] }>>({});
+  const [loadingRecords, setLoadingRecords] = useState<Set<number>>(new Set());
+
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<FollowUpListItem | null>(null);
@@ -79,9 +84,30 @@ export default function FollowUpList() {
   const [patientRecords, setPatientRecords] = useState<{ id: number; diagnosis: string; visit_date: string }[]>([]);
   const [isOtherMethod, setIsOtherMethod] = useState(false);
 
+  // Toggle record expand/collapse
+  const toggleRecordExpand = useCallback(async (followUpId: number, recordId: number) => {
+    if (expandedRecords.has(followUpId)) {
+      setExpandedRecords(prev => { const next = new Set(prev); next.delete(followUpId); return next; });
+      return;
+    }
+    setExpandedRecords(prev => new Set(prev).add(followUpId));
+    if (recordCache[recordId]) return;
+    setLoadingRecords(prev => new Set(prev).add(recordId));
+    try {
+      const res = await getRecord(recordId);
+      const data = (res as any).data;
+      setRecordCache(prev => ({ ...prev, [recordId]: data }));
+    } catch {
+      // Clear expand so user can retry with a single click
+      setExpandedRecords(prev => { const n = new Set(prev); n.delete(followUpId); return n; });
+    }
+    finally { setLoadingRecords(prev => { const n = new Set(prev); n.delete(recordId); return n; }); }
+  }, [expandedRecords, recordCache]);
+
   // Fetch data
   const fetchData = useCallback(async () => {
     setLoading(true);
+    setExpandedRecords(new Set());
     try {
       const res = await listFollowUps(params);
       const body = res as any;
@@ -371,24 +397,73 @@ export default function FollowUpList() {
       render: (phone: string) => phone || '—',
     },
     {
-      title: '关联诊疗', key: 'record', width: 180,
+      title: '关联诊疗', key: 'record', width: 220,
       render: (_, record) => {
         if (!record.record_id) return '—';
         if (!record.record_diagnosis) return <span style={{ color: '#999' }}>已删除</span>;
-        const short = record.record_diagnosis.length > 20
-          ? record.record_diagnosis.slice(0, 20) + '...'
+        const isExpanded = expandedRecords.has(record.id);
+        const isLoading = loadingRecords.has(record.record_id);
+        const cached = recordCache[record.record_id];
+        const short = record.record_diagnosis.length > 8
+          ? record.record_diagnosis.slice(0, 8) + '...'
           : record.record_diagnosis;
         return (
-          <div>
-            <div title={record.record_diagnosis} style={{ fontSize: 13, color: '#333' }}>
-              {short}
+          <div style={{ overflow: 'hidden' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Tag
+                className="record-expand-tag"
+                color={isExpanded ? 'blue' : undefined}
+                style={{ cursor: 'pointer', margin: 0, display: 'inline-flex', alignItems: 'center', gap: 2, maxWidth: 'calc(100% - 36px)', overflow: 'hidden' }}
+                onClick={() => toggleRecordExpand(record.id, record.record_id)}
+              >
+                <span style={{ fontSize: 12, flexShrink: 0 }}>{record.record_visit_date}</span>
+                <span style={{ fontSize: 12, marginLeft: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{short}</span>
+                {isExpanded ? <UpOutlined style={{ fontSize: 10, marginLeft: 2, flexShrink: 0 }} /> : <DownOutlined style={{ fontSize: 10, marginLeft: 2, flexShrink: 0 }} />}
+              </Tag>
+              <a
+                style={{ fontSize: 12, whiteSpace: 'nowrap', flexShrink: 0 }}
+                onClick={() => navigate(`/records/${record.record_id}?followup_id=${record.id}`)}
+              >
+                查看
+              </a>
             </div>
-            <a
-              style={{ fontSize: 12 }}
-              onClick={() => navigate(`/records/${record.record_id}?followup_id=${record.id}`)}
-            >
-              {record.record_visit_date} 详情 →
-            </a>
+            {isExpanded && (
+              <div className="record-expand-panel" style={{ marginTop: 6, padding: 8, background: '#fafafa', borderRadius: 6, border: '1px solid #f0f0f0', fontSize: 12 }}>
+                {isLoading && !cached ? (
+                  <Spin size="small" />
+                ) : cached ? (
+                  <>
+                    {cached.diagnosis && (
+                      <div style={{ marginBottom: 4 }}>
+                        <span style={{ color: '#999' }}>诊断: </span>
+                        <span style={{ color: '#333' }}>{cached.diagnosis}</span>
+                      </div>
+                    )}
+                    {cached.treatment && (
+                      <div style={{ marginBottom: 4 }}>
+                        <span style={{ color: '#999' }}>治疗: </span>
+                        <span style={{ color: '#333' }}>{cached.treatment}</span>
+                      </div>
+                    )}
+                    {cached.prescriptions?.length > 0 && (
+                      <div>
+                        <span style={{ color: '#999' }}>处方: </span>
+                        {cached.prescriptions.map((p) => (
+                          <Tag key={p.formula_name || p.total_doses} style={{ fontSize: 11, marginTop: 2 }}>
+                            {p.formula_name || '处方'}{p.total_doses ? ` ${p.total_doses}剂` : ''}
+                          </Tag>
+                        ))}
+                      </div>
+                    )}
+                    {!cached.diagnosis && !cached.treatment && (!cached.prescriptions || cached.prescriptions.length === 0) && (
+                      <span style={{ color: '#999' }}>暂无详细信息</span>
+                    )}
+                  </>
+                ) : (
+                  <span style={{ color: '#999' }}>加载失败</span>
+                )}
+              </div>
+            )}
           </div>
         );
       },
@@ -444,7 +519,7 @@ export default function FollowUpList() {
         </Space>
       ),
     },
-  ], [params.sort_order]);
+  ], [params.sort_order, expandedRecords, loadingRecords, recordCache]);
 
   // Mobile sort toggle
   const renderMobileSortBar = () => (
@@ -490,16 +565,67 @@ export default function FollowUpList() {
           {item.patient_phone && <> | 电话: <a href={`tel:${item.patient_phone}`}>{item.patient_phone}</a></>}
           {item.actual_date && ` | 实际: ${item.actual_date}`}
         </div>
-        {item.record_id && item.record_diagnosis && (
-          <div style={{ marginTop: 4, fontSize: 13 }}>
-            <span style={{ color: '#666' }}>
-              诊疗: {item.record_diagnosis.slice(0, 20)}{item.record_diagnosis.length > 20 ? '...' : ''}
-            </span>
-            <a onClick={() => navigate(`/records/${item.record_id}?followup_id=${item.id}`)} style={{ marginLeft: 6, fontSize: 12 }}>
-              查看 →
-            </a>
-          </div>
-        )}
+        {item.record_id && item.record_diagnosis && (() => {
+          const isExpanded = expandedRecords.has(item.id);
+          const isLoading = loadingRecords.has(item.record_id);
+          const cached = recordCache[item.record_id];
+          const short = item.record_diagnosis.slice(0, 15) + (item.record_diagnosis.length > 15 ? '...' : '');
+          return (
+            <div style={{ marginTop: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <Tag
+                  className="record-expand-tag"
+                  color={isExpanded ? 'blue' : undefined}
+                  style={{ cursor: 'pointer', margin: 0, display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 12 }}
+                  onClick={() => toggleRecordExpand(item.id, item.record_id)}
+                >
+                  {item.record_visit_date} {short}
+                  {isExpanded ? <UpOutlined style={{ fontSize: 10, marginLeft: 2 }} /> : <DownOutlined style={{ fontSize: 10, marginLeft: 2 }} />}
+                </Tag>
+                <a onClick={() => navigate(`/records/${item.record_id}?followup_id=${item.id}`)} style={{ fontSize: 12 }}>
+                  查看
+                </a>
+              </div>
+              {isExpanded && (
+                <div className="record-expand-panel" style={{ marginTop: 4, padding: 8, background: '#fafafa', borderRadius: 6, border: '1px solid #f0f0f0', fontSize: 12 }}>
+                  {isLoading && !cached ? (
+                    <Spin size="small" />
+                  ) : cached ? (
+                    <>
+                      {cached.diagnosis && (
+                        <div style={{ marginBottom: 3 }}>
+                          <span style={{ color: '#999' }}>诊断: </span>
+                          <span style={{ color: '#333' }}>{cached.diagnosis}</span>
+                        </div>
+                      )}
+                      {cached.treatment && (
+                        <div style={{ marginBottom: 3 }}>
+                          <span style={{ color: '#999' }}>治疗: </span>
+                          <span style={{ color: '#333' }}>{cached.treatment}</span>
+                        </div>
+                      )}
+                      {cached.prescriptions?.length > 0 && (
+                        <div>
+                          <span style={{ color: '#999' }}>处方: </span>
+                          {cached.prescriptions.map((p, i) => (
+                            <Tag key={i} style={{ fontSize: 11, marginTop: 2 }}>
+                              {p.formula_name || '处方'}{p.total_doses ? ` ${p.total_doses}剂` : ''}
+                            </Tag>
+                          ))}
+                        </div>
+                      )}
+                      {!cached.diagnosis && !cached.treatment && (!cached.prescriptions || cached.prescriptions.length === 0) && (
+                        <span style={{ color: '#999' }}>暂无详细信息</span>
+                      )}
+                    </>
+                  ) : (
+                    <span style={{ color: '#999' }}>加载失败</span>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })()}
         {item.content && <div style={{ marginTop: 4, color: '#888', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.content}</div>}
         <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
           {hasPermission('followup:update') && <Button size="small" onClick={() => handleEdit(item)}>编辑</Button>}
@@ -797,6 +923,15 @@ export default function FollowUpList() {
         }
         .follow-up-overdue-row.followup-saved-highlight > td.ant-table-cell {
           background: #f6ffed !important;
+        }
+        .record-expand-tag { transition: all 0.2s; }
+        .record-expand-tag:hover { opacity: 0.85; }
+        .record-expand-panel {
+          animation: recordExpandIn 0.15s ease-out;
+        }
+        @keyframes recordExpandIn {
+          from { opacity: 0; max-height: 0; overflow: hidden; }
+          to { opacity: 1; max-height: 300px; overflow: visible; }
         }
       `}</style>
     </>

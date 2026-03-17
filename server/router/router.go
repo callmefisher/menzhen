@@ -101,6 +101,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			patients.GET("", middleware.RequirePermission(db, "patient:read"), patientHandler.List)
 			patients.POST("", middleware.RequirePermission(db, "patient:create"), patientHandler.Create)
 			patients.GET("/:id", middleware.RequirePermission(db, "patient:read"), patientHandler.Detail)
+			patients.GET("/:id/page", middleware.RequirePermission(db, "patient:read"), patientHandler.FindPage)
 			patients.PUT("/:id", middleware.RequirePermission(db, "patient:update"), patientHandler.Update)
 			patients.DELETE("/:id", middleware.RequirePermission(db, "patient:delete"), patientHandler.Delete)
 		}
@@ -194,6 +195,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			herbs.GET("", herbHandler.List)
 			herbs.GET("/categories", herbHandler.Categories)
 			herbs.GET("/:id", herbHandler.Detail)
+			herbs.GET("/:id/page", herbHandler.FindPage)
 			herbs.DELETE("/:id", middleware.RequirePermission(db, "role:manage"), herbHandler.Delete)
 			herbs.PUT("/:id", middleware.RequirePermission(db, "role:manage"), herbHandler.Update)
 			herbs.POST("/:id/ai-refresh", middleware.RequirePermission(db, "role:manage"), herbHandler.AIRefresh)
@@ -204,6 +206,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		{
 			formulas.GET("", formulaHandler.List)
 			formulas.GET("/:id", formulaHandler.Detail)
+			formulas.GET("/:id/page", formulaHandler.FindPage)
 			formulas.DELETE("/:id", middleware.RequirePermission(db, "role:manage"), formulaHandler.Delete)
 			formulas.PUT("/:id/composition", middleware.RequirePermission(db, "role:manage"), formulaHandler.UpdateComposition)
 			formulas.PUT("/:id/name", middleware.RequirePermission(db, "role:manage"), formulaHandler.UpdateName)
@@ -243,6 +246,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			clinicalExp.GET("", clinicalExpHandler.List)
 			clinicalExp.GET("/categories", clinicalExpHandler.Categories)
 			clinicalExp.GET("/:id", clinicalExpHandler.Detail)
+			clinicalExp.GET("/:id/page", clinicalExpHandler.FindPage)
 			clinicalExp.POST("", middleware.RequirePermission(db, "role:manage"), clinicalExpHandler.Create)
 			clinicalExp.PUT("/:id", middleware.RequirePermission(db, "role:manage"), clinicalExpHandler.Update)
 			clinicalExp.DELETE("/:id", middleware.RequirePermission(db, "role:manage"), clinicalExpHandler.Delete)
@@ -288,6 +292,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			inventoryDrugs.POST("", middleware.RequirePermission(db, "inventory:create"), inventoryDrugHandler.Create)
 			inventoryDrugs.POST("/batch-stock-in", middleware.RequirePermission(db, "inventory:create"), inventoryDrugHandler.BatchStockIn)
 			inventoryDrugs.POST("/:id/stock-in", middleware.RequirePermission(db, "inventory:update"), inventoryDrugHandler.StockIn)
+			inventoryDrugs.GET("/:id/page", middleware.RequirePermission(db, "inventory:read"), inventoryDrugHandler.FindPage)
 			inventoryDrugs.PUT("/:id", middleware.RequirePermission(db, "inventory:update"), inventoryDrugHandler.Update)
 			inventoryDrugs.DELETE("/:id", middleware.RequirePermission(db, "inventory:delete"), inventoryDrugHandler.Delete)
 		}

@@ -189,6 +189,13 @@ export default function AppLayout() {
       children: tcmChildren,
     });
 
+    const badgeStyle: React.CSSProperties = {
+      background: '#ff4d4f', color: '#fff', fontSize: 11,
+      lineHeight: '16px', minWidth: 16, height: 16,
+      borderRadius: 8, padding: '0 4px', textAlign: 'center', fontWeight: 500,
+    };
+    const fmtBadge = (n: number) => n > 99 ? '99+' : String(n);
+
     const showOps = hasPermission('inventory:read') || hasPermission('followup:read') || hasPermission('statistics:read');
     if (showOps) {
       const totalBadge = alertCount + followUpCount;
@@ -198,11 +205,7 @@ export default function AppLayout() {
         label: totalBadge > 0
           ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               运营
-              <span style={{
-                background: '#ff4d4f', color: '#fff', fontSize: 11,
-                lineHeight: '16px', minWidth: 16, height: 16,
-                borderRadius: 8, padding: '0 4px', textAlign: 'center', fontWeight: 500,
-              }}>{totalBadge}</span>
+              <span style={badgeStyle}>{fmtBadge(totalBadge)}</span>
             </span>
           : '运营',
         children: [
@@ -218,7 +221,7 @@ export default function AppLayout() {
               label: alertCount > 0
                 ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                     库存预警
-                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#ff4d4f', boxShadow: '0 0 4px #ff4d4f', flexShrink: 0 }} />
+                    <span style={badgeStyle}>{fmtBadge(alertCount)}</span>
                   </span>
                 : '库存预警',
             },
@@ -229,11 +232,7 @@ export default function AppLayout() {
             label: followUpCount > 0
               ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                   回访
-                  <span style={{
-                    background: '#ff4d4f', color: '#fff', fontSize: 11,
-                    lineHeight: '16px', minWidth: 16, height: 16,
-                    borderRadius: 8, padding: '0 4px', textAlign: 'center', fontWeight: 500,
-                  }}>{followUpCount}</span>
+                  <span style={badgeStyle}>{fmtBadge(followUpCount)}</span>
                 </span>
               : '回访',
           }] : []),

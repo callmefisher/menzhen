@@ -60,6 +60,21 @@ func (s *HerbService) Search(name, category string, page, size int) ([]model.Her
 	return herbs, total, nil
 }
 
+// FindHerbPage returns which page a herb appears on (id ASC order).
+func (s *HerbService) FindHerbPage(herbID uint64, size int) (int, error) {
+	if size <= 0 {
+		size = 20
+	}
+
+	var position int64
+	s.DB.Table("herbs").
+		Where("deleted_at IS NULL AND id < ?", herbID).
+		Count(&position)
+
+	page := int(position)/size + 1
+	return page, nil
+}
+
 // ListCategories returns all distinct non-empty category values.
 func (s *HerbService) ListCategories() ([]string, error) {
 	var categories []string

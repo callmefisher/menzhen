@@ -77,6 +77,26 @@ func (s *InventoryDrugService) List(tenantID uint64, name, category string, page
 	return drugs, total, nil
 }
 
+// FindDrugPage returns which page a drug appears on (created_at DESC order).
+func (s *InventoryDrugService) FindDrugPage(tenantID, drugID uint64, size int) (int, error) {
+	if size <= 0 {
+		size = 20
+	}
+	var drug model.InventoryDrug
+	if err := s.DB.Select("created_at").Where("id = ? AND tenant_id = ?", drugID, tenantID).First(&drug).Error; err != nil {
+		return 1, err
+	}
+
+	var position int64
+	s.DB.Table("inventory_drugs").
+		Where("tenant_id = ? AND deleted_at IS NULL", tenantID).
+		Where("created_at > ? OR (created_at = ? AND id > ?)", drug.CreatedAt, drug.CreatedAt, drugID).
+		Count(&position)
+
+	page := int(position)/size + 1
+	return page, nil
+}
+
 // Create creates a new inventory drug record.
 // If a soft-deleted record with the same tenant_id+name exists, it is restored
 // and updated with the new data instead of inserting a duplicate.
@@ -222,9 +242,10 @@ type BatchStockInRequest struct {
 
 // BatchStockInResult holds the result of a batch stock-in operation.
 type BatchStockInResult struct {
-	Created int `json:"created"`
-	Updated int `json:"updated"`
-	Total   int `json:"total"`
+	Created int      `json:"created"`
+	Updated int      `json:"updated"`
+	Total   int      `json:"total"`
+	DrugIDs []uint64 `json:"drug_ids"`
 }
 
 // BatchStockIn adds stock to existing drugs or creates new ones.
@@ -284,6 +305,7 @@ func (s *InventoryDrugService) BatchStockIn(tenantID uint64, req *BatchStockInRe
 				return nil, err
 			}
 			result.Updated++
+			result.DrugIDs = append(result.DrugIDs, uint64(drug.ID))
 		} else if sd, ok := softDeletedMap[item.Name]; ok {
 			// Restore soft-deleted drug with new data
 			updates := map[string]interface{}{
@@ -302,6 +324,7 @@ func (s *InventoryDrugService) BatchStockIn(tenantID uint64, req *BatchStockInRe
 				return nil, err
 			}
 			result.Created++
+			result.DrugIDs = append(result.DrugIDs, uint64(sd.ID))
 		} else {
 			newDrugs = append(newDrugs, model.InventoryDrug{
 				TenantID:       tenantID,
@@ -322,6 +345,9 @@ func (s *InventoryDrugService) BatchStockIn(tenantID uint64, req *BatchStockInRe
 			return nil, err
 		}
 		result.Created += len(newDrugs)
+		for i := range newDrugs {
+			result.DrugIDs = append(result.DrugIDs, uint64(newDrugs[i].ID))
+		}
 	}
 
 	return result, nil

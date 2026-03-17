@@ -251,7 +251,7 @@ export default function TenantList() {
                 </div>
               </div>
             ))}
-            {total > params.size && (
+            {total > 0 && (
               <div style={{ textAlign: 'center', marginTop: 12 }}>
                 <Pagination
                   size="small"

@@ -57,6 +57,21 @@ func (s *FormulaService) Search(name string, page, size int) ([]model.Formula, i
 	return formulas, total, nil
 }
 
+// FindFormulaPage returns which page a formula appears on (id ASC order).
+func (s *FormulaService) FindFormulaPage(formulaID uint64, size int) (int, error) {
+	if size <= 0 {
+		size = 20
+	}
+
+	var position int64
+	s.DB.Table("formulas").
+		Where("deleted_at IS NULL AND id < ?", formulaID).
+		Count(&position)
+
+	page := int(position)/size + 1
+	return page, nil
+}
+
 // GetByID retrieves a single formula by ID.
 func (s *FormulaService) GetByID(id uint64) (*model.Formula, error) {
 	var formula model.Formula
