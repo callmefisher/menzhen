@@ -41,3 +41,8 @@ export function deleteClinicalExperience(id: number) {
 export function listClinicalExperienceCategories() {
   return request.get('/clinical-experiences/categories');
 }
+
+export async function findClinicalExperiencePage(id: number, size: number): Promise<number> {
+  const res = await request.get(`/clinical-experiences/${id}/page`, { params: { size } });
+  return (res as any).data?.page || 1;
+}

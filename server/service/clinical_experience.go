@@ -49,6 +49,21 @@ func (s *ClinicalExperienceService) ListCategories() ([]string, error) {
 	return categories, err
 }
 
+// FindExperiencePage returns which page a clinical experience appears on (id DESC order).
+func (s *ClinicalExperienceService) FindExperiencePage(experienceID uint64, size int) (int, error) {
+	if size <= 0 {
+		size = 20
+	}
+
+	var position int64
+	s.DB.Table("clinical_experiences").
+		Where("deleted_at IS NULL AND id > ?", experienceID).
+		Count(&position)
+
+	page := int(position)/size + 1
+	return page, nil
+}
+
 func (s *ClinicalExperienceService) GetByID(id uint64) (*model.ClinicalExperience, error) {
 	var item model.ClinicalExperience
 	if err := s.DB.First(&item, id).Error; err != nil {

@@ -33,7 +33,7 @@ interface PatientFormValues {
 interface PatientFormModalProps {
   visible: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (id: number) => void;
   initialData?: Omit<PatientFormValues, 'birthday'> & { id: number; birthday?: string };
 }
 
@@ -161,12 +161,17 @@ export function PatientFormModal({
     }
   }, [visible, initialData, form]);
 
+  const doCreate = async (data: Record<string, unknown>, force = false) => {
+    const res = await createPatient({ ...data, force }) as any;
+    return res.data?.id || res.data?.ID;
+  };
+
   const handleOk = async () => {
     try {
       const values = await form.validateFields();
       setSubmitting(true);
 
-      const submitData = {
+      const submitData: Record<string, unknown> = {
         ...values,
         birthday: values.birthday ? dayjs(values.birthday).format('YYYY-MM-DD') : undefined,
       };
@@ -174,13 +179,38 @@ export function PatientFormModal({
       if (isEdit && initialData) {
         await updatePatient(initialData.id, submitData);
         message.success('患者信息更新成功');
+        onSuccess(initialData.id);
+        onClose();
       } else {
-        await createPatient(submitData);
-        message.success('患者创建成功');
+        try {
+          const newId = await doCreate(submitData);
+          message.success('患者创建成功');
+          onSuccess(newId);
+          onClose();
+        } catch (err: any) {
+          if (err?.response?.data?.code === 40901) {
+            const existingName = err.response.data.data?.existing_name || values.name;
+            Modal.confirm({
+              title: '重名提示',
+              content: `已存在同名患者「${existingName}」，是否仍要创建？`,
+              okText: '仍要创建',
+              cancelText: '取消',
+              onOk: async () => {
+                try {
+                  const newId = await doCreate(submitData, true);
+                  message.success('患者创建成功');
+                  onSuccess(newId);
+                  onClose();
+                } catch {
+                  message.error('创建患者失败');
+                }
+              },
+            });
+          } else {
+            throw err;
+          }
+        }
       }
-
-      onSuccess();
-      onClose();
     } catch {
       // Validation or API error
     } finally {
@@ -217,14 +247,42 @@ export default function PatientForm() {
       const values = await form.validateFields();
       setSubmitting(true);
 
-      const submitData = {
+      const submitData: Record<string, unknown> = {
         ...values,
         birthday: values.birthday ? dayjs(values.birthday).format('YYYY-MM-DD') : undefined,
       };
 
-      await createPatient(submitData);
-      message.success('患者创建成功');
-      navigate('/patients');
+      const doCreate = async (force = false) => {
+        const res = await createPatient({ ...submitData, force }) as any;
+        return res.data?.id || res.data?.ID;
+      };
+
+      try {
+        const newId = await doCreate();
+        message.success('患者创建成功');
+        navigate('/patients', { state: { highlightPatientId: newId } });
+      } catch (err: any) {
+        if (err?.response?.data?.code === 40901) {
+          const existingName = err.response.data.data?.existing_name || values.name;
+          Modal.confirm({
+            title: '重名提示',
+            content: `已存在同名患者「${existingName}」，是否仍要创建？`,
+            okText: '仍要创建',
+            cancelText: '取消',
+            onOk: async () => {
+              try {
+                const newId = await doCreate(true);
+                message.success('患者创建成功');
+                navigate('/patients', { state: { highlightPatientId: newId } });
+              } catch {
+                message.error('创建患者失败');
+              }
+            },
+          });
+        } else {
+          throw err;
+        }
+      }
     } catch {
       // Validation or API error
     } finally {

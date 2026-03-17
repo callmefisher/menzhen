@@ -43,3 +43,8 @@ export function updateHerb(id: number, data: Partial<Omit<HerbItem, 'id' | 'sour
 export function aiRefreshHerb(id: number) {
   return request.post(`/herbs/${id}/ai-refresh`);
 }
+
+export async function findHerbPage(id: number, size: number): Promise<number> {
+  const res = await request.get(`/herbs/${id}/page`, { params: { size } });
+  return (res as any).data?.page || 1;
+}

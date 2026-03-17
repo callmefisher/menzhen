@@ -45,6 +45,27 @@ func (h *ClinicalExperienceHandler) List(c *gin.Context) {
 	})
 }
 
+// FindPage handles GET /api/v1/clinical-experiences/:id/page — returns which page an experience is on.
+func (h *ClinicalExperienceHandler) FindPage(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "invalid experience id"})
+		return
+	}
+	size, _ := strconv.Atoi(c.DefaultQuery("size", "20"))
+	if size < 1 {
+		size = 20
+	}
+
+	svc := service.NewClinicalExperienceService(h.db)
+	page, err := svc.FindExperiencePage(id, size)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"page": 1}})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"page": page}})
+}
+
 // Categories handles GET /api/v1/clinical-experiences/categories
 func (h *ClinicalExperienceHandler) Categories(c *gin.Context) {
 	svc := service.NewClinicalExperienceService(h.db)

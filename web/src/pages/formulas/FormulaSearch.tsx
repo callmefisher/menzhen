@@ -2,11 +2,12 @@ import { useState, useEffect } from 'react';
 import { Input, Table, Tag, message, Button, Popconfirm, Space, Pagination, Spin } from 'antd';
 import { SearchOutlined, RobotOutlined, DeleteOutlined, EditOutlined, PlusOutlined, MinusCircleOutlined, InfoCircleOutlined, ReadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { listFormulas, deleteFormula, updateFormulaComposition, updateFormulaName, updateFormulaNotes } from '../../api/formula';
+import { listFormulas, deleteFormula, updateFormulaComposition, updateFormulaName, updateFormulaNotes, findFormulaPage } from '../../api/formula';
 import type { FormulaItem, FormulaCompositionItem } from '../../api/formula';
 import { useAuth } from '../../store/auth';
 import HerbDetailModal from '../../components/HerbDetailModal';
 import useIsMobile from '../../hooks/useIsMobile';
+import useRowHighlight from '../../hooks/useRowHighlight';
 
 export default function FormulaSearch() {
   const [formulas, setFormulas] = useState<FormulaItem[]>([]);
@@ -17,6 +18,16 @@ export default function FormulaSearch() {
   const [searchName, setSearchName] = useState('');
   const { hasPermission } = useAuth();
   const isMobile = useIsMobile();
+
+  const highlight = useRowHighlight({
+    data: formulas,
+    page,
+    pageSize: size,
+    loading,
+    onPageChange: (p) => { setPage(p); fetchFormulas(searchName, p, size); },
+    findPage: findFormulaPage,
+    idPrefix: 'formula',
+  });
 
   // Editable formula name state
   const [editingNameId, setEditingNameId] = useState<number | null>(null);
@@ -68,6 +79,7 @@ export default function FormulaSearch() {
   const handleTableChange = (pagination: { current?: number; pageSize?: number }) => {
     const newPage = pagination.current || 1;
     const newSize = pagination.pageSize || 20;
+    highlight.setHighlightId(null);
     setPage(newPage);
     setSize(newSize);
     fetchFormulas(searchName, newPage, newSize);
@@ -104,6 +116,7 @@ export default function FormulaSearch() {
       await updateFormulaName(id, trimmed);
       message.success('方剂名更新成功');
       fetchFormulas(searchName, page, size);
+      highlight.setHighlightId(id);
     } catch {
       // Error handled by interceptor
     } finally {
@@ -142,8 +155,10 @@ export default function FormulaSearch() {
     try {
       await updateFormulaComposition(inlineEditId, valid);
       message.success('组成更新成功');
+      const savedId = inlineEditId;
       setInlineEditId(null);
       fetchFormulas(searchName, page, size);
+      highlight.setHighlightId(savedId);
     } catch {
       // Error handled by interceptor
     } finally {
@@ -162,6 +177,7 @@ export default function FormulaSearch() {
       await updateFormulaNotes(id, editingNotesValue);
       message.success('备注更新成功');
       fetchFormulas(searchName, page, size);
+      highlight.setHighlightId(id);
     } catch {
       // Error handled by interceptor
     } finally {
@@ -303,7 +319,8 @@ export default function FormulaSearch() {
               return (
                 <div
                   key={record.id}
-                  className="warm-list-card"
+                  id={`formula-row-${record.id}`}
+                  className={`warm-list-card${highlight.isHighlighted(record.id) ? ' row-highlight' : ''}`}
                   style={{ cursor: 'default' }}
                 >
                   {/* Title row */}
@@ -507,6 +524,8 @@ export default function FormulaSearch() {
           dataSource={formulas}
           rowKey="id"
           loading={loading}
+          rowClassName={highlight.rowClassName}
+          onRow={highlight.onRow}
           pagination={{
             current: page,
             pageSize: size,

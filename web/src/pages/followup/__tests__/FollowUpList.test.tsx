@@ -29,6 +29,7 @@ vi.mock('../../../api/patient', () => ({
 }));
 vi.mock('../../../api/record', () => ({
   listRecords: vi.fn(),
+  getRecord: vi.fn(),
 }));
 
 // Mock auth
@@ -47,9 +48,11 @@ vi.mock('../../../hooks/useIsMobile', () => ({
 }));
 
 import { listFollowUps, getFollowUpStats } from '../../../api/followUp';
+import { getRecord } from '../../../api/record';
 
 const mockListFollowUps = listFollowUps as ReturnType<typeof vi.fn>;
 const mockGetStats = getFollowUpStats as ReturnType<typeof vi.fn>;
+const mockGetRecord = getRecord as ReturnType<typeof vi.fn>;
 
 describe('FollowUpList', () => {
   beforeEach(() => {
@@ -307,6 +310,211 @@ describe('FollowUpList', () => {
         expect(mockListFollowUps).toHaveBeenCalledWith(
           expect.objectContaining({ sort_order: 'desc' }),
         );
+      });
+    });
+  });
+
+  describe('record expand/collapse', () => {
+    const mockFollowUpWithRecord = {
+      id: 10, patient_id: 20, patient_name: '测试',
+      record_id: 100, record_diagnosis: '腰椎间盘突出', record_visit_date: '2026-03-10',
+      planned_date: '2026-03-20', actual_date: null,
+      status: 'pending' as const, method: '电话', content: '',
+      is_recovered: false,
+      created_by: 1, created_by_name: '李医生',
+      created_at: '2026-03-15', updated_at: '2026-03-15',
+    };
+
+    const mockRecordDetail = {
+      data: {
+        diagnosis: '腰椎间盘突出伴坐骨神经痛',
+        treatment: '针灸+推拿',
+        prescriptions: [
+          { formula_name: '独活寄生汤', total_doses: 7, items: [{ herb_name: '独活', dosage: '15g' }] },
+        ],
+      },
+    };
+
+    it('shows expand tag with diagnosis summary in desktop mode', async () => {
+      mockListFollowUps.mockResolvedValue({
+        data: { list: [mockFollowUpWithRecord], total: 1, page: 1, size: 20 },
+      });
+
+      render(<MemoryRouter><FollowUpList /></MemoryRouter>);
+
+      await waitFor(() => {
+        expect(screen.getByText('测试')).toBeInTheDocument();
+      });
+
+      // Tag should show visit date and truncated diagnosis
+      expect(screen.getByText('2026-03-10')).toBeInTheDocument();
+      expect(screen.getByText(/腰椎间盘突出/)).toBeInTheDocument();
+      // "查看" link should exist
+      expect(screen.getByText('查看')).toBeInTheDocument();
+    });
+
+    it('expands to show full record details on tag click', async () => {
+      const user = userEvent.setup();
+      mockListFollowUps.mockResolvedValue({
+        data: { list: [mockFollowUpWithRecord], total: 1, page: 1, size: 20 },
+      });
+      mockGetRecord.mockResolvedValue(mockRecordDetail);
+
+      render(<MemoryRouter><FollowUpList /></MemoryRouter>);
+
+      await waitFor(() => {
+        expect(screen.getByText('测试')).toBeInTheDocument();
+      });
+
+      // Click the expand tag
+      const tag = screen.getByText('2026-03-10').closest('.record-expand-tag')!;
+      await user.click(tag);
+
+      // Should show full details
+      await waitFor(() => {
+        expect(screen.getByText('腰椎间盘突出伴坐骨神经痛')).toBeInTheDocument();
+        expect(screen.getByText('针灸+推拿')).toBeInTheDocument();
+        expect(screen.getByText(/独活寄生汤 7剂/)).toBeInTheDocument();
+      });
+
+      expect(mockGetRecord).toHaveBeenCalledWith(100);
+    });
+
+    it('collapses on second click', async () => {
+      const user = userEvent.setup();
+      mockListFollowUps.mockResolvedValue({
+        data: { list: [mockFollowUpWithRecord], total: 1, page: 1, size: 20 },
+      });
+      mockGetRecord.mockResolvedValue(mockRecordDetail);
+
+      render(<MemoryRouter><FollowUpList /></MemoryRouter>);
+
+      await waitFor(() => {
+        expect(screen.getByText('测试')).toBeInTheDocument();
+      });
+
+      const tag = screen.getByText('2026-03-10').closest('.record-expand-tag')!;
+
+      // Expand
+      await user.click(tag);
+      await waitFor(() => {
+        expect(screen.getByText('腰椎间盘突出伴坐骨神经痛')).toBeInTheDocument();
+      });
+
+      // Collapse
+      await user.click(tag);
+      await waitFor(() => {
+        expect(screen.queryByText('腰椎间盘突出伴坐骨神经痛')).not.toBeInTheDocument();
+      });
+    });
+
+    it('uses cache on re-expand (no second API call)', async () => {
+      const user = userEvent.setup();
+      mockListFollowUps.mockResolvedValue({
+        data: { list: [mockFollowUpWithRecord], total: 1, page: 1, size: 20 },
+      });
+      mockGetRecord.mockResolvedValue(mockRecordDetail);
+
+      render(<MemoryRouter><FollowUpList /></MemoryRouter>);
+
+      await waitFor(() => {
+        expect(screen.getByText('测试')).toBeInTheDocument();
+      });
+
+      const tag = screen.getByText('2026-03-10').closest('.record-expand-tag')!;
+
+      // Expand → Collapse → Re-expand
+      await user.click(tag);
+      await waitFor(() => { expect(screen.getByText('针灸+推拿')).toBeInTheDocument(); });
+      await user.click(tag);
+      await waitFor(() => { expect(screen.queryByText('针灸+推拿')).not.toBeInTheDocument(); });
+      await user.click(tag);
+      await waitFor(() => { expect(screen.getByText('针灸+推拿')).toBeInTheDocument(); });
+
+      // getRecord should only be called once (cached)
+      expect(mockGetRecord).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows dash when no record_id', async () => {
+      mockListFollowUps.mockResolvedValue({
+        data: {
+          list: [{
+            ...mockFollowUpWithRecord, id: 11, record_id: 0, record_diagnosis: '', record_visit_date: null,
+          }],
+          total: 1, page: 1, size: 20,
+        },
+      });
+
+      render(<MemoryRouter><FollowUpList /></MemoryRouter>);
+
+      await waitFor(() => {
+        expect(screen.getByText('测试')).toBeInTheDocument();
+      });
+
+      // Should show '—' instead of expand tag
+      expect(screen.queryByText('查看')).not.toBeInTheDocument();
+    });
+
+    it('collapses on fetch error and allows single-click retry', async () => {
+      const user = userEvent.setup();
+      mockListFollowUps.mockResolvedValue({
+        data: { list: [mockFollowUpWithRecord], total: 1, page: 1, size: 20 },
+      });
+      // First call fails, second succeeds
+      mockGetRecord
+        .mockRejectedValueOnce(new Error('network'))
+        .mockResolvedValueOnce(mockRecordDetail);
+
+      render(<MemoryRouter><FollowUpList /></MemoryRouter>);
+
+      await waitFor(() => { expect(screen.getByText('测试')).toBeInTheDocument(); });
+
+      const tag = screen.getByText('2026-03-10').closest('.record-expand-tag')!;
+
+      // First click — fails, should auto-collapse
+      await user.click(tag);
+      await waitFor(() => {
+        expect(mockGetRecord).toHaveBeenCalledTimes(1);
+      });
+      // Panel should be collapsed (error auto-clears expand state)
+      await waitFor(() => {
+        expect(screen.queryByText('腰椎间盘突出伴坐骨神经痛')).not.toBeInTheDocument();
+      });
+
+      // Single click retry — should succeed
+      await user.click(tag);
+      await waitFor(() => {
+        expect(screen.getByText('腰椎间盘突出伴坐骨神经痛')).toBeInTheDocument();
+      });
+      expect(mockGetRecord).toHaveBeenCalledTimes(2);
+    });
+
+    describe('mobile expand', () => {
+      beforeEach(() => {
+        mockIsMobile = true;
+      });
+
+      it('expands record details in mobile card', async () => {
+        const user = userEvent.setup();
+        mockListFollowUps.mockResolvedValue({
+          data: { list: [mockFollowUpWithRecord], total: 1, page: 1, size: 20 },
+        });
+        mockGetRecord.mockResolvedValue(mockRecordDetail);
+
+        render(<MemoryRouter><FollowUpList /></MemoryRouter>);
+
+        await waitFor(() => {
+          expect(screen.getByText('测试')).toBeInTheDocument();
+        });
+
+        // Mobile Tag has date+diagnosis as single text node, use regex
+        const tag = screen.getByText(/2026-03-10/).closest('.record-expand-tag')!;
+        await user.click(tag);
+
+        await waitFor(() => {
+          expect(screen.getByText('腰椎间盘突出伴坐骨神经痛')).toBeInTheDocument();
+          expect(screen.getByText('针灸+推拿')).toBeInTheDocument();
+        });
       });
     });
   });

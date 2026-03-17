@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react';
 import { Input, Table, Tag, message, Button, Popconfirm, Select, Space, Pagination, Spin } from 'antd';
 import { SearchOutlined, RobotOutlined, DeleteOutlined, EditOutlined, SaveOutlined, CloseOutlined, ThunderboltOutlined, ExperimentOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { listHerbs, deleteHerb, listHerbCategories, updateHerb, aiRefreshHerb } from '../../api/herb';
+import { listHerbs, deleteHerb, listHerbCategories, updateHerb, aiRefreshHerb, findHerbPage } from '../../api/herb';
 import type { HerbItem } from '../../api/herb';
 import { useAuth } from '../../store/auth';
 import useIsMobile from '../../hooks/useIsMobile';
+import useRowHighlight from '../../hooks/useRowHighlight';
 
 export default function HerbSearch() {
   const [herbs, setHerbs] = useState<HerbItem[]>([]);
@@ -22,6 +23,16 @@ export default function HerbSearch() {
   const [aiRefreshing, setAiRefreshing] = useState(false);
   const { hasPermission } = useAuth();
   const isMobile = useIsMobile();
+
+  const highlight = useRowHighlight({
+    data: herbs,
+    page,
+    pageSize: size,
+    loading,
+    onPageChange: (p) => { setPage(p); fetchHerbs(searchName, selectedCategory, p, size); },
+    findPage: findHerbPage,
+    idPrefix: 'herb',
+  });
 
   useEffect(() => {
     listHerbCategories()
@@ -67,6 +78,7 @@ export default function HerbSearch() {
   const handleTableChange = (pagination: { current?: number; pageSize?: number }) => {
     const newPage = pagination.current || 1;
     const newSize = pagination.pageSize || 20;
+    highlight.setHighlightId(null);
     setPage(newPage);
     setSize(newSize);
     fetchHerbs(searchName, selectedCategory, newPage, newSize);
@@ -113,8 +125,10 @@ export default function HerbSearch() {
     try {
       await updateHerb(editingId, editingData);
       message.success('更新成功');
+      const savedId = editingId;
       setEditingId(null);
       fetchHerbs(searchName, selectedCategory, page, size);
+      highlight.setHighlightId(savedId);
     } catch {
       // Error handled by interceptor
     }
@@ -287,7 +301,7 @@ export default function HerbSearch() {
               const isExpanded = expandedRowKeys.includes(herb.id);
               const isEditing = editingId === herb.id;
               return (
-                <div key={herb.id} className="warm-list-card" style={{ cursor: 'default' }}>
+                <div key={herb.id} id={`herb-row-${herb.id}`} className={`warm-list-card${highlight.isHighlighted(herb.id) ? ' row-highlight' : ''}`} style={{ cursor: 'default' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                     <span style={{ fontWeight: 'bold', fontSize: 16, color: '#5C4A32' }}>{herb.name}</span>
                     <Space size="small">
@@ -398,6 +412,8 @@ export default function HerbSearch() {
           dataSource={herbs}
           rowKey="id"
           loading={loading}
+          rowClassName={highlight.rowClassName}
+          onRow={highlight.onRow}
           pagination={{
             current: page,
             pageSize: size,

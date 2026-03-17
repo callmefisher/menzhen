@@ -88,3 +88,8 @@ export interface BatchStockInReq {
 export function batchStockIn(data: BatchStockInReq) {
   return request.post('/inventory/drugs/batch-stock-in', data);
 }
+
+export async function findDrugPage(id: number, size: number): Promise<number> {
+  const res = await request.get(`/inventory/drugs/${id}/page`, { params: { size } });
+  return (res as any).data?.page || 1;
+}

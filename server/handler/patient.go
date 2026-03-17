@@ -38,6 +38,18 @@ func (h *PatientHandler) Create(c *gin.Context) {
 	svc := service.NewPatientService(h.db)
 	patient, err := svc.CreatePatient(tenantID, userID, &req)
 	if err != nil {
+		var dupErr *service.DuplicateNameError
+		if errors.As(err, &dupErr) {
+			c.JSON(http.StatusConflict, gin.H{
+				"code":    40901,
+				"message": "同名患者已存在",
+				"data": gin.H{
+					"existing_id":   dupErr.Info.ID,
+					"existing_name": dupErr.Info.Name,
+				},
+			})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
 			"message": "failed to create patient",
@@ -211,4 +223,26 @@ func (h *PatientHandler) Delete(c *gin.Context) {
 		"code":    0,
 		"message": "success",
 	})
+}
+
+// FindPage handles GET /api/v1/patients/:id/page — returns which page a patient is on.
+func (h *PatientHandler) FindPage(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "invalid patient id"})
+		return
+	}
+	size, _ := strconv.Atoi(c.DefaultQuery("size", "20"))
+	if size < 1 {
+		size = 20
+	}
+
+	svc := service.NewPatientService(h.db)
+	page, err := svc.FindPatientPage(tenantID, id, size)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"page": 1}})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"page": page}})
 }

@@ -8,10 +8,12 @@ import {
   listClinicalExperienceCategories,
   createClinicalExperience,
   updateClinicalExperience,
+  findClinicalExperiencePage,
 } from '../../api/clinicalExperience';
 import type { ClinicalExperienceItem } from '../../api/clinicalExperience';
 import { useAuth } from '../../store/auth';
 import useIsMobile from '../../hooks/useIsMobile';
+import useRowHighlight from '../../hooks/useRowHighlight';
 
 export default function ClinicalExperienceList() {
   const [items, setItems] = useState<ClinicalExperienceItem[]>([]);
@@ -29,6 +31,16 @@ export default function ClinicalExperienceList() {
   const isMobile = useIsMobile();
   const [form] = Form.useForm();
   const [mobileExpanded, setMobileExpanded] = useState<number[]>([]);
+
+  const highlight = useRowHighlight({
+    data: items,
+    page,
+    pageSize: size,
+    loading,
+    onPageChange: (p) => { setPage(p); fetchItems(searchKeyword, selectedCategory, p, size); },
+    findPage: findClinicalExperiencePage,
+    idPrefix: 'clinexp',
+  });
 
   useEffect(() => {
     loadCategories();
@@ -73,6 +85,7 @@ export default function ClinicalExperienceList() {
   const handleTableChange = (pagination: { current?: number; pageSize?: number }) => {
     const newPage = pagination.current || 1;
     const newSize = pagination.pageSize || 20;
+    highlight.setHighlightId(null);
     setPage(newPage);
     setSize(newSize);
     fetchItems(searchKeyword, selectedCategory, newPage, newSize);
@@ -114,15 +127,23 @@ export default function ClinicalExperienceList() {
       if (editingItem) {
         await updateClinicalExperience(editingItem.id, values);
         message.success('更新成功');
+        setModalOpen(false);
+        form.resetFields();
+        setEditingItem(null);
+        fetchItems(searchKeyword, selectedCategory, page, size);
+        loadCategories();
+        highlight.setHighlightId(editingItem.id);
       } else {
-        await createClinicalExperience(values);
+        const res = await createClinicalExperience(values) as any;
+        const newId = res.data?.id || res.data?.ID;
         message.success('新增成功');
+        setModalOpen(false);
+        form.resetFields();
+        setEditingItem(null);
+        fetchItems(searchKeyword, selectedCategory, page, size);
+        loadCategories();
+        if (newId) highlight.setHighlightId(newId);
       }
-      setModalOpen(false);
-      form.resetFields();
-      setEditingItem(null);
-      fetchItems(searchKeyword, selectedCategory, page, size);
-      loadCategories();
     } catch {
       // Validation or API error
     } finally {
@@ -246,7 +267,8 @@ export default function ClinicalExperienceList() {
               return (
                 <div
                   key={item.id}
-                  style={{ background: '#fafafa', borderRadius: 8, padding: 12, marginBottom: 8 }}
+                  id={`clinexp-row-${item.id}`}
+                  style={{ background: '#fafafa', borderRadius: 8, padding: 12, marginBottom: 8, ...(highlight.isHighlighted(item.id) ? { animation: 'row-flash 15s ease-in-out' } : {}) }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ fontWeight: 'bold', fontSize: 15 }}>{item.source || '—'}</span>
@@ -313,6 +335,8 @@ export default function ClinicalExperienceList() {
         dataSource={items}
         rowKey="id"
         loading={loading}
+        rowClassName={highlight.rowClassName}
+        onRow={highlight.onRow}
         pagination={{
           current: page,
           pageSize: size,
