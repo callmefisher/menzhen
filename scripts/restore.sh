@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -eo pipefail
 
 # Usage:
 #   restore.sh <backup-dir-path>              # Legacy: directory with database.sql + files/

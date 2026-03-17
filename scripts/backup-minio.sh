@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -eo pipefail
 
 # MinIO backup script
 # Flow: mc mirror → tar.gz → upload to Qiniu → cleanup
