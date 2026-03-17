@@ -126,19 +126,23 @@ export default function FollowUpList() {
       const timer = setTimeout(() => setLastSavedId(null), 5000);
       return () => { scrollCleanup?.(); clearTimeout(timer); };
     } else if (data.length > 0) {
-      // Row not on current page — ask backend which page it's on
+      // Row not on current page — ask backend which page it's on (once)
       findFollowUpPage(lastSavedId, params.size)
         .then((res) => {
           const body = res as any;
           const targetPage = body.data?.page || 1;
           if (targetPage !== params.page) {
             setParams(p => ({ ...p, page: targetPage }));
+          } else {
+            // Already on the target page but row not found — give up highlight
+            setLastSavedId(null);
           }
         })
-        .catch(() => { /* stay on current page */ });
+        .catch(() => { setLastSavedId(null); });
+      // Clear highlight as fallback after 5s
+      const timer = setTimeout(() => setLastSavedId(null), 5000);
+      return () => clearTimeout(timer);
     }
-    const timer = setTimeout(() => setLastSavedId(null), 5000);
-    return () => clearTimeout(timer);
   }, [lastSavedId, data, isMobile]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 电话为空的回访项，逐个查询患者电话并回填
