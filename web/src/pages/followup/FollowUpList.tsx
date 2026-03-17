@@ -102,12 +102,17 @@ export default function FollowUpList() {
   useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => { fetchStats(); }, [fetchStats]);
 
-  // Clear highlight after 5s
+  // Highlight: scroll to saved row after data loads, clear after 5s
   useEffect(() => {
     if (!lastSavedId) return;
     const timer = setTimeout(() => setLastSavedId(null), 5000);
+    // Scroll to highlighted row/card after data renders
+    requestAnimationFrame(() => {
+      const el = document.querySelector('.followup-saved-highlight');
+      el?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+    });
     return () => clearTimeout(timer);
-  }, [lastSavedId]);
+  }, [lastSavedId, data]);
 
   // 电话为空的回访项，逐个查询患者电话并回填
   useEffect(() => {
@@ -296,7 +301,12 @@ export default function FollowUpList() {
         if (body.data?.id) setLastSavedId(body.data.id);
       }
       setModalOpen(false);
-      fetchData();
+      if (!editing) {
+        // 新建：跳到第1页确保能看到新数据
+        setParams(p => ({ ...p, page: 1 }));
+      } else {
+        fetchData();
+      }
       fetchStats();
       window.dispatchEvent(new Event('followup-data-changed'));
     } catch { message.error('操作失败'); }
@@ -422,12 +432,13 @@ export default function FollowUpList() {
   const renderMobileCard = (item: FollowUpListItem) => {
     const cfg = statusConfig[item.status] || statusConfig.pending;
     const isHighlighted = item.id === lastSavedId;
+    const isOverdue = item.status === 'overdue';
     return (
       <Card
         key={item.id}
         size="small"
         className={isHighlighted ? 'followup-saved-highlight' : undefined}
-        style={{ marginBottom: 8 }}
+        style={{ marginBottom: 8, ...(isOverdue ? { background: '#ffe8e6' } : {}) }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
           <a style={{ color: '#1677ff', fontWeight: 500 }} onClick={() => navigate(`/patients/${item.patient_id}`)}>{item.patient_name}</a>
@@ -733,7 +744,7 @@ export default function FollowUpList() {
       )}
       {renderModal()}
       <style>{`
-        .follow-up-overdue-row { background: #fff2f0 !important; }
+        .follow-up-overdue-row { background: #ffe8e6 !important; }
         @keyframes followup-saved-flash {
           0% { box-shadow: inset 0 0 0 2px #52c41a; background: #f6ffed; }
           100% { box-shadow: none; background: transparent; }

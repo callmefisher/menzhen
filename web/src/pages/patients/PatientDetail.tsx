@@ -343,15 +343,15 @@ export default function PatientDetail() {
       onClick={() => navigate('/patients')}
       style={{
         position: 'fixed',
-        top: isMobile ? 8 : 12,
-        left: isMobile ? 8 : undefined,
-        right: isMobile ? undefined : 24,
+        top: isMobile ? 10 : 12,
+        left: isMobile ? 60 : undefined,
+        right: isMobile ? undefined : 200,
         zIndex: 999,
         background: '#1677ff',
         color: '#fff',
-        padding: isMobile ? '4px 12px' : '6px 16px',
+        padding: isMobile ? '6px 16px' : '6px 16px',
         borderRadius: 20,
-        fontSize: isMobile ? 12 : 13,
+        fontSize: isMobile ? 14 : 13,
         boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
         cursor: 'pointer',
         userSelect: 'none',
@@ -938,10 +938,9 @@ export default function PatientDetail() {
             </Form.Item>
           )}
           {records.length > 0 && (
-            <Form.Item name="record_id" label="关联诊疗记录">
+            <Form.Item name="record_id" label="关联诊疗记录" rules={[{ required: true, message: '请选择关联诊疗记录' }]}>
               <Select
-                allowClear
-                placeholder="选择关联的诊疗记录（可选）"
+                placeholder="选择关联的诊疗记录"
                 options={records.map((r) => ({
                   value: r.id,
                   label: `${r.visit_date?.slice(0, 10)} ${r.diagnosis?.slice(0, 30) || '(无诊断)'}`,
