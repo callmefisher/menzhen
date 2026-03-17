@@ -103,16 +103,22 @@ export default function FollowUpList() {
   useEffect(() => { fetchStats(); }, [fetchStats]);
 
   // Highlight: scroll to saved row after data loads, clear after 5s
+  // If saved row not in current page data, jump to page 1
   useEffect(() => {
     if (!lastSavedId) return;
+    const inCurrentPage = data.some(item => item.id === lastSavedId);
+    if (!inCurrentPage && params.page !== 1) {
+      // Row moved to different page after edit, jump to page 1 to find it
+      setParams(p => ({ ...p, page: 1 }));
+      return;
+    }
     const timer = setTimeout(() => setLastSavedId(null), 5000);
-    // Scroll to highlighted row/card after data renders
     requestAnimationFrame(() => {
       const el = document.querySelector('.followup-saved-highlight');
       el?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
     });
     return () => clearTimeout(timer);
-  }, [lastSavedId, data]);
+  }, [lastSavedId, data]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 电话为空的回访项，逐个查询患者电话并回填
   useEffect(() => {
@@ -746,13 +752,13 @@ export default function FollowUpList() {
       <style>{`
         .follow-up-overdue-row { background: #ffe8e6 !important; }
         @keyframes followup-saved-flash {
-          0% { box-shadow: inset 0 0 0 2px #52c41a; background: #f6ffed; }
-          100% { box-shadow: none; background: transparent; }
+          0% { box-shadow: inset 0 0 0 2px #52c41a; background-color: #f6ffed; }
+          100% { box-shadow: none; background-color: inherit; }
         }
         .followup-saved-highlight {
           box-shadow: inset 0 0 0 2px #52c41a;
           border-radius: 8px;
-          animation: followup-saved-flash 5s ease-in-out forwards;
+          animation: followup-saved-flash 5s ease-in-out;
         }
       `}</style>
     </>
