@@ -13,6 +13,7 @@ interface FollowUpPanelProps {
   recordId: number;
   patientId: number;
   patientName: string;
+  patientPhone?: string;
   highlightFollowUpId?: number;
 }
 
@@ -29,7 +30,7 @@ const METHOD_OPTIONS = [
   { label: '其他', value: '其他' },
 ];
 
-export default function FollowUpPanel({ recordId, patientId, patientName, highlightFollowUpId }: FollowUpPanelProps) {
+export default function FollowUpPanel({ recordId, patientId, patientName, patientPhone, highlightFollowUpId }: FollowUpPanelProps) {
   const isMobile = useIsMobile();
   const { hasPermission } = useAuth();
 
@@ -220,11 +221,15 @@ export default function FollowUpPanel({ recordId, patientId, patientName, highli
                     >
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <span style={{ background: cfg.bg, color: cfg.color, padding: '1px 8px', borderRadius: 10, fontSize: 11 }}>{cfg.label}</span>
-                        <span style={{ marginLeft: 4, fontSize: 11, color: item.is_recovered ? '#52c41a' : '#999' }}>
-                          {item.is_recovered ? '已康复' : '未康复'}
+                        {item.is_recovered
+                          ? <span style={{ background: '#f6ffed', color: '#52c41a', padding: '0 5px', borderRadius: 3, fontSize: 10, marginLeft: 4 }}>已康复</span>
+                          : <span style={{ background: '#fff7e6', color: '#fa8c16', padding: '0 5px', borderRadius: 3, fontSize: 10, marginLeft: 4 }}>未康复</span>
+                        }
+                        <span style={{ marginLeft: 6, fontSize: 13 }}>{item.planned_date}</span>
+                        <span style={{ marginLeft: 6, fontSize: 12, color: '#666' }}>
+                          {item.patient_phone || patientPhone || '暂无电话'}
                         </span>
-                        <span style={{ marginLeft: 6, fontSize: 13 }}>{item.planned_date} · {item.method}</span>
-                        {item.content && (
+                        {item.content && !/^已[经]?康复$/.test(item.content.trim()) && (
                           <div style={{ color: '#888', fontSize: 12, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
                             {item.content}
                           </div>

@@ -277,23 +277,26 @@ export default function FollowUpList() {
             ? <span style={{ color: '#999' }}>{name}</span>
             : <a onClick={() => navigate(`/patients/${record.patient_id}`)}>{name}</a>
           }
-          <div style={{ fontSize: 11, color: record.is_recovered ? '#52c41a' : '#999' }}>
-            {record.is_recovered ? '已康复' : '未康复'}
+          <div>
+            {record.is_recovered
+              ? <span style={{ background: '#f6ffed', color: '#52c41a', padding: '0 5px', borderRadius: 3, fontSize: 10 }}>已康复</span>
+              : <span style={{ background: '#fff7e6', color: '#fa8c16', padding: '0 5px', borderRadius: 3, fontSize: 10 }}>未康复</span>
+            }
           </div>
         </div>
       ),
     },
     {
-      title: '联系电话', dataIndex: 'patient_phone', key: 'patient_phone', width: 110,
+      title: '联系电话', dataIndex: 'patient_phone', key: 'patient_phone', width: 130,
       render: (phone: string) => phone || '—',
     },
     {
-      title: '关联诊疗', key: 'record', width: 150,
+      title: '关联诊疗', key: 'record', width: 180,
       render: (_, record) => {
         if (!record.record_id) return '—';
         if (!record.record_diagnosis) return <span style={{ color: '#999' }}>已删除</span>;
-        const short = record.record_diagnosis.length > 15
-          ? record.record_diagnosis.slice(0, 15) + '...'
+        const short = record.record_diagnosis.length > 20
+          ? record.record_diagnosis.slice(0, 20) + '...'
           : record.record_diagnosis;
         return (
           <div>
@@ -316,18 +319,20 @@ export default function FollowUpList() {
           style={{ cursor: 'pointer', userSelect: 'none', display: 'inline-flex', alignItems: 'center', gap: 2 }}
           onClick={() => setParams((p) => ({ ...p, sort_order: p.sort_order === 'asc' ? 'desc' : 'asc', page: 1 }))}
         >
-          计划日期
+          日期
           <span style={{ display: 'inline-flex', flexDirection: 'column', fontSize: 10, lineHeight: 1 }}>
             <CaretUpOutlined style={{ color: params.sort_order === 'asc' ? '#1677ff' : '#bbb' }} />
             <CaretDownOutlined style={{ color: params.sort_order === 'desc' ? '#1677ff' : '#bbb', marginTop: -2 }} />
           </span>
         </span>
       ),
-      dataIndex: 'planned_date', key: 'planned_date', width: 90,
-    },
-    {
-      title: '到访日期', dataIndex: 'actual_date', key: 'actual_date', width: 90,
-      render: (v: string | null) => v || '—',
+      key: 'dates', width: 130,
+      render: (_, record) => (
+        <div style={{ fontSize: 12 }}>
+          <div>计划: {record.planned_date}</div>
+          <div style={{ color: record.actual_date ? '#52c41a' : '#999' }}>到访: {record.actual_date || '—'}</div>
+        </div>
+      ),
     },
     {
       title: '状态', key: 'status', width: 75,
@@ -391,9 +396,10 @@ export default function FollowUpList() {
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
           <a onClick={() => navigate(`/patients/${item.patient_id}`)} style={{ fontWeight: 500 }}>{item.patient_name}</a>
           <Space size={4}>
-            <span style={{ fontSize: 11, color: item.is_recovered ? '#52c41a' : '#999' }}>
-              {item.is_recovered ? '已康复' : '未康复'}
-            </span>
+            {item.is_recovered
+              ? <span style={{ background: '#f6ffed', color: '#52c41a', padding: '0 5px', borderRadius: 3, fontSize: 11 }}>已康复</span>
+              : <span style={{ background: '#fff7e6', color: '#fa8c16', padding: '0 5px', borderRadius: 3, fontSize: 11 }}>未康复</span>
+            }
             <Tag color={cfg.color}>{cfg.label}</Tag>
           </Space>
         </div>

@@ -746,8 +746,8 @@ export default function PatientDetail() {
                       {cfg.label}
                     </Tag>
                     {item.is_recovered
-                      ? <Tag color="green" style={{ margin: 0, fontSize: 12 }}>已康复</Tag>
-                      : <Tag color="default" style={{ margin: 0, fontSize: 12 }}>未康复</Tag>
+                      ? <span style={{ background: '#f6ffed', color: '#52c41a', padding: '0 5px', borderRadius: 3, fontSize: 11 }}>已康复</span>
+                      : <span style={{ background: '#fff7e6', color: '#fa8c16', padding: '0 5px', borderRadius: 3, fontSize: 11 }}>未康复</span>
                     }
                     <span style={{ fontSize: 13, color: '#333', whiteSpace: 'nowrap' }}>
                       {item.planned_date}
@@ -762,7 +762,7 @@ export default function PatientDetail() {
                     color: '#666',
                     width: isMobile ? '100%' : undefined,
                   }}>
-                    {item.content && (
+                    {item.content && !/^已[经]?康复$/.test(item.content.trim()) && (
                       <div style={{
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',

@@ -48,7 +48,7 @@ import { useAuth } from '../../store/auth';
 import useIsMobile from '../../hooks/useIsMobile';
 import { listPulses } from '../../api/pulse';
 import type { PulseItem } from '../../api/pulse';
-import { uploadFile, getFileUrl } from '../../api/upload';
+import { uploadFile, fetchFileBlob } from '../../api/upload';
 
 interface PatientOption {
   id: number;
@@ -165,6 +165,7 @@ export default function RecordForm() {
   const [tongueResult, setTongueResult] = useState<string>('');
   const [tongueDrawerOpen, setTongueDrawerOpen] = useState(false);  const [tongueImageUrl, setTongueImageUrl] = useState<string>('');
   const [tongueUploading, setTongueUploading] = useState(false);
+  const [tongueDeleting, setTongueDeleting] = useState(false);
 
   // Card 4 collapsible state (notes & attachments)
   const [notesExpanded, setNotesExpanded] = useState(false);
@@ -383,7 +384,7 @@ export default function RecordForm() {
           } catch { /* ignore */ }
         }
         if (record.tongue_image) {
-          setTongueImageUrl(getFileUrl(record.tongue_image));
+          fetchFileBlob(record.tongue_image).then(url => setTongueImageUrl(url)).catch(() => {});
         }
         if (record.tongue_analysis) {
           setTongueResult(record.tongue_analysis);
@@ -488,8 +489,18 @@ export default function RecordForm() {
       const body = res as unknown as { data: { file_path: string } };
       const filePath = body.data.file_path;
       form.setFieldValue('tongue_image', filePath);
-      setTongueImageUrl(getFileUrl(filePath));
-      message.success('舌象图片上传成功');
+      fetchFileBlob(filePath).then(url => setTongueImageUrl(url)).catch(() => {});
+      // 编辑模式下立即同步到后端，防止孤立文件
+      if (isEdit) {
+        try {
+          await updateRecord(Number(id), { tongue_image: filePath });
+          message.success('舌象图片上传成功');
+        } catch {
+          message.error('同步舌象图片失败，请手动保存');
+        }
+      } else {
+        message.success('舌象图片上传成功');
+      }
     } catch {
       message.error('上传失败');
     } finally {
@@ -1167,10 +1178,24 @@ export default function RecordForm() {
                 <Button
                   size="small"
                   danger
+                  loading={tongueDeleting}
                   style={{ position: 'absolute', top: 4, right: 4 }}
-                  onClick={() => {
+                  onClick={async () => {
                     form.setFieldValue('tongue_image', '');
                     setTongueImageUrl('');
+                    setTongueResult('');
+                    setTongueDrawerOpen(false);
+                    // 编辑模式下立即同步到后端，清除关联防止孤立数据
+                    if (isEdit) {
+                      setTongueDeleting(true);
+                      try {
+                        await updateRecord(Number(id), { tongue_image: '' });
+                      } catch {
+                        message.error('同步删除舌象图片失败，请手动保存');
+                      } finally {
+                        setTongueDeleting(false);
+                      }
+                    }
                   }}
                 >
                   删除
@@ -1317,7 +1342,13 @@ export default function RecordForm() {
             </div>
             <div style={{ display: attachmentsExpanded ? 'block' : 'none' }}>
               <Form.Item name="attachments" style={{ marginBottom: 0 }}>
-                <FileUpload />
+                <FileUpload onSync={isEdit ? async (updatedAttachments) => {
+                  try {
+                    await updateRecord(Number(id), { attachments: updatedAttachments });
+                  } catch {
+                    message.error('同步附件失败，请手动保存');
+                  }
+                } : undefined} />
               </Form.Item>
             </div>
           </div>
@@ -1327,7 +1358,7 @@ export default function RecordForm() {
         <Form.Item style={{ marginTop: 8 }}>
           <div className={isMobile ? 'record-form-actions' : undefined}>
             <Space>
-              <Button type="primary" htmlType="submit" loading={submitting}>
+              <Button type="primary" htmlType="submit" loading={submitting} disabled={tongueUploading || tongueDeleting}>
                 保存
               </Button>
             {hasPermission('prescription:create') && (
@@ -1773,6 +1804,7 @@ export default function RecordForm() {
           recordId={Number(id)}
           patientId={recordPatient.id}
           patientName={recordPatient.name}
+          patientPhone={recordPatient.phone}
           highlightFollowUpId={highlightFollowUpId}
         />
       )}
