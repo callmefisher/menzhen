@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/callmefisher/menzhen/server/model"
@@ -102,7 +103,8 @@ func (s *FollowUpService) List(tenantID uint64, patientID uint64, recordID uint6
 		query = query.Where("f.record_id = ?", recordID)
 	}
 	if patientName != "" {
-		query = query.Where("p.name LIKE ?", "%"+patientName+"%")
+		escaped := strings.NewReplacer("%", "\\%", "_", "\\_").Replace(patientName)
+		query = query.Where("p.name LIKE ?", "%"+escaped+"%")
 	}
 	if status == "overdue" {
 		query = query.Where("f.status = 'pending' AND f.planned_date < CURDATE()")

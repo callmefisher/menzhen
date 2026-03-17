@@ -72,7 +72,6 @@ export default function FollowUpList() {
       const res = await getFollowUpStats();
       const body = res as any;
       if (body.data) setStats(body.data);
-      window.dispatchEvent(new Event('followup-data-changed'));
     } catch { /* ignore */ }
   }, []);
 
@@ -81,13 +80,14 @@ export default function FollowUpList() {
 
   // 电话为空的回访项，逐个查询患者电话并回填
   useEffect(() => {
+    let cancelled = false;
     const emptyPhoneItems = data.filter((item) => !item.patient_phone && item.patient_id);
     if (emptyPhoneItems.length === 0) return;
-    // 按 patient_id 去重
     const uniquePatientIds = [...new Set(emptyPhoneItems.map((item) => item.patient_id))];
     uniquePatientIds.forEach(async (pid) => {
       try {
         const res = await getPatient(pid);
+        if (cancelled) return;
         const body = res as any;
         const phone = body.data?.phone;
         if (phone) {
@@ -97,6 +97,7 @@ export default function FollowUpList() {
         }
       } catch { /* ignore */ }
     });
+    return () => { cancelled = true; };
   }, [data.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Patient search for modal
@@ -175,6 +176,7 @@ export default function FollowUpList() {
       message.success('删除成功');
       fetchData();
       fetchStats();
+      window.dispatchEvent(new Event('followup-data-changed'));
     } catch { message.error('删除失败'); }
   };
 
@@ -209,11 +211,13 @@ export default function FollowUpList() {
       setModalOpen(false);
       fetchData();
       fetchStats();
+      window.dispatchEvent(new Event('followup-data-changed'));
     } catch { message.error('操作失败'); }
     finally { setConfirmLoading(false); }
   };
 
   // Table columns (desktop)
+  // Deps: sort_order for header UI; handlers use stable setState/form refs so safe to omit
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const columns: ColumnsType<FollowUpListItem> = useMemo(() => [
     {

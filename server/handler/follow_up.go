@@ -34,11 +34,27 @@ func (h *FollowUpHandler) List(c *gin.Context) {
 
 	var patientID uint64
 	if patientIDStr != "" {
-		patientID, _ = strconv.ParseUint(patientIDStr, 10, 64)
+		var err error
+		patientID, err = strconv.ParseUint(patientIDStr, 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "invalid patient_id",
+			})
+			return
+		}
 	}
 	var recordID uint64
 	if recordIDStr != "" {
-		recordID, _ = strconv.ParseUint(recordIDStr, 10, 64)
+		var err error
+		recordID, err = strconv.ParseUint(recordIDStr, 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "invalid record_id",
+			})
+			return
+		}
 	}
 
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
