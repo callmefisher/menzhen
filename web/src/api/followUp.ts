@@ -40,6 +40,7 @@ export interface FollowUpListItem {
 export interface FollowUpListParams {
   patient_id?: number;
   patient_name?: string;
+  record_id?: number;
   status?: string;
   planned_date_from?: string;
   planned_date_to?: string;
@@ -72,6 +73,7 @@ export interface FollowUpStats {
   overdue_count: number;
   today_count: number;
   completed_count: number;
+  total_count: number;
 }
 
 export function listFollowUps(params: FollowUpListParams) {

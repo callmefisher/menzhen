@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Table, Button, Space, Input, Select, Modal, Form, DatePicker, message, Tag, Statistic, Row, Col, Popconfirm, Pagination, Switch } from 'antd';
+import { Card, Table, Button, Space, Input, Select, Modal, Form, DatePicker, message, Tag, Popconfirm, Pagination, Switch } from 'antd';
 import { PlusOutlined, SearchOutlined, CaretUpOutlined, CaretDownOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { useAuth } from '../../store/auth';
@@ -21,6 +21,16 @@ const statusConfig: Record<string, { label: string; color: string }> = {
   overdue: { label: '逾期', color: 'red' },
 };
 
+type PillTab = 'all' | 'pending' | 'today' | 'overdue' | 'completed';
+
+const pillTabs: { key: PillTab; label: string; bgActive: string; colorActive: string; bgInactive: string; colorInactive: string; statsKey: keyof FollowUpStats }[] = [
+  { key: 'all', label: '全部', bgActive: '#1677ff', colorActive: '#fff', bgInactive: '#f5f5f5', colorInactive: '#666', statsKey: 'total_count' },
+  { key: 'pending', label: '待回访', bgActive: '#e6f4ff', colorActive: '#1677ff', bgInactive: '#f5f5f5', colorInactive: '#666', statsKey: 'pending_count' },
+  { key: 'today', label: '今日', bgActive: '#fff7e6', colorActive: '#fa8c16', bgInactive: '#f5f5f5', colorInactive: '#666', statsKey: 'today_count' },
+  { key: 'overdue', label: '逾期', bgActive: '#fff2f0', colorActive: '#ff4d4f', bgInactive: '#f5f5f5', colorInactive: '#666', statsKey: 'overdue_count' },
+  { key: 'completed', label: '已完成', bgActive: '#f6ffed', colorActive: '#52c41a', bgInactive: '#f5f5f5', colorInactive: '#666', statsKey: 'completed_count' },
+];
+
 export default function FollowUpList() {
   const isMobile = useIsMobile();
   const navigate = useNavigate();
@@ -31,7 +41,8 @@ export default function FollowUpList() {
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
   const [params, setParams] = useState({ page: 1, size: 20, patient_name: '', status: '', planned_date_from: '', planned_date_to: '', sort_order: 'asc' as 'asc' | 'desc' });
-  const [stats, setStats] = useState<FollowUpStats>({ pending_count: 0, overdue_count: 0, today_count: 0, completed_count: 0 });
+  const [stats, setStats] = useState<FollowUpStats>({ pending_count: 0, overdue_count: 0, today_count: 0, completed_count: 0, total_count: 0 });
+  const [activeTab, setActiveTab] = useState<PillTab>('all');
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -347,46 +358,67 @@ export default function FollowUpList() {
     );
   };
 
-  // Quick date range helpers
-  type QuickRangeKey = 'today' | 'week' | 'month';
-
-  const getQuickRange = (key: QuickRangeKey): [string, string] => {
-    const today = dayjs();
-    switch (key) {
+  // Pill tab click handler
+  const handleTabClick = (tab: PillTab) => {
+    if (tab === activeTab) {
+      setActiveTab('all');
+      setParams({ ...params, status: '', planned_date_from: '', planned_date_to: '', page: 1 });
+      return;
+    }
+    setActiveTab(tab);
+    const today = dayjs().format('YYYY-MM-DD');
+    switch (tab) {
+      case 'all':
+        setParams({ ...params, status: '', planned_date_from: '', planned_date_to: '', page: 1 });
+        break;
+      case 'pending':
+        setParams({ ...params, status: 'pending', planned_date_from: '', planned_date_to: '', page: 1 });
+        break;
       case 'today':
-        return [today.format('YYYY-MM-DD'), today.format('YYYY-MM-DD')];
-      case 'week': {
-        // 显式计算本周一~周日，不依赖 locale startOf('week')
-        const d = today.day(); // 0=周日, 1=周一, ..., 6=周六
-        const diffToMonday = d === 0 ? 6 : d - 1;
-        const monday = today.subtract(diffToMonday, 'day');
-        const sunday = monday.add(6, 'day');
-        return [monday.format('YYYY-MM-DD'), sunday.format('YYYY-MM-DD')];
-      }
-      case 'month':
-        return [today.startOf('month').format('YYYY-MM-DD'), today.endOf('month').format('YYYY-MM-DD')];
+        setParams({ ...params, status: '', planned_date_from: today, planned_date_to: today, page: 1 });
+        break;
+      case 'overdue':
+        setParams({ ...params, status: 'overdue', planned_date_from: '', planned_date_to: '', page: 1 });
+        break;
+      case 'completed':
+        setParams({ ...params, status: 'completed', planned_date_from: '', planned_date_to: '', page: 1 });
+        break;
     }
   };
 
-  const activeQuickRange = useMemo(() => {
-    const { planned_date_from: from, planned_date_to: to } = params;
-    if (!from && !to) return '';
-    for (const key of ['today', 'week', 'month'] as const) {
-      const [qf, qt] = getQuickRange(key);
-      if (from === qf && to === qt) return key;
-    }
-    return 'custom';
-  }, [params.planned_date_from, params.planned_date_to]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleQuickRange = (key: QuickRangeKey) => {
-    if (activeQuickRange === key) {
-      // 取消选中
-      setParams({ ...params, planned_date_from: '', planned_date_to: '', page: 1 });
-    } else {
-      const [from, to] = getQuickRange(key);
-      setParams({ ...params, planned_date_from: from, planned_date_to: to, page: 1 });
-    }
-  };
+  // Pill tabs
+  const renderPillTabs = () => (
+    <div style={{
+      display: 'flex',
+      gap: 8,
+      marginBottom: 16,
+      ...(isMobile ? { overflowX: 'auto', whiteSpace: 'nowrap' as const, flexWrap: 'nowrap' as const, paddingBottom: 4 } : { flexWrap: 'wrap' as const }),
+    }}>
+      {pillTabs.map(({ key, label, bgActive, colorActive, bgInactive, colorInactive, statsKey }) => {
+        const isActive = activeTab === key;
+        return (
+          <div
+            key={key}
+            onClick={() => handleTabClick(key)}
+            style={{
+              padding: isMobile ? '4px 12px' : '6px 16px',
+              background: isActive ? bgActive : bgInactive,
+              color: isActive ? colorActive : colorInactive,
+              borderRadius: 20,
+              fontSize: isMobile ? 12 : 13,
+              cursor: 'pointer',
+              fontWeight: isActive ? 500 : 400,
+              flexShrink: 0,
+              transition: 'all 0.2s',
+              userSelect: 'none' as const,
+            }}
+          >
+            {label} {stats[statsKey] ?? 0}
+          </div>
+        );
+      })}
+    </div>
+  );
 
   // Search bar
   const renderSearchBar = () => (
@@ -399,35 +431,9 @@ export default function FollowUpList() {
         style={{ width: isMobile ? '100%' : 200 }}
         allowClear
       />
-      <Select
-        value={params.status || undefined}
-        placeholder="状态"
-        onChange={(v) => setParams({ ...params, status: v || '', page: 1 })}
-        style={{ width: isMobile ? 'calc(50% - 4px)' : 120 }}
-        allowClear
-      >
-        <Option value="pending">待回访</Option>
-        <Option value="overdue">逾期</Option>
-        <Option value="completed">已完成</Option>
-      </Select>
       {isMobile && hasPermission('followup:create') && (
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} style={{ width: 'calc(50% - 4px)' }} aria-label="新增回访" />
       )}
-      <Space.Compact size={isMobile ? 'small' : 'middle'}>
-        {([
-          { key: 'today' as const, label: '今日' },
-          { key: 'week' as const, label: '本周' },
-          { key: 'month' as const, label: '本月' },
-        ]).map(({ key, label }) => (
-          <Button
-            key={key}
-            type={activeQuickRange === key ? 'primary' : 'default'}
-            onClick={() => handleQuickRange(key)}
-          >
-            {label}
-          </Button>
-        ))}
-      </Space.Compact>
       {isMobile ? (
         <div style={{ display: 'flex', gap: 4, width: '100%' }}>
           <DatePicker
@@ -436,9 +442,9 @@ export default function FollowUpList() {
             value={params.planned_date_from ? dayjs(params.planned_date_from) : undefined}
             onChange={(d) => {
               const from = d?.format('YYYY-MM-DD') || '';
-              // 如果开始日期晚于结束日期，清空结束日期
               const to = from && params.planned_date_to && from > params.planned_date_to ? '' : params.planned_date_to;
               setParams({ ...params, planned_date_from: from, planned_date_to: to, page: 1 });
+              setActiveTab('all');
             }}
             disabledDate={params.planned_date_to ? (d) => d.isAfter(dayjs(params.planned_date_to), 'day') : undefined}
             style={{ flex: 1, minWidth: 0 }}
@@ -450,9 +456,9 @@ export default function FollowUpList() {
             value={params.planned_date_to ? dayjs(params.planned_date_to) : undefined}
             onChange={(d) => {
               const to = d?.format('YYYY-MM-DD') || '';
-              // 如果结束日期早于开始日期，清空开始日期
               const from = to && params.planned_date_from && to < params.planned_date_from ? '' : params.planned_date_from;
               setParams({ ...params, planned_date_from: from, planned_date_to: to, page: 1 });
+              setActiveTab('all');
             }}
             disabledDate={params.planned_date_from ? (d) => d.isBefore(dayjs(params.planned_date_from), 'day') : undefined}
             style={{ flex: 1, minWidth: 0 }}
@@ -473,6 +479,7 @@ export default function FollowUpList() {
               planned_date_to: dates?.[1]?.format('YYYY-MM-DD') || '',
               page: 1,
             });
+            setActiveTab('all');
           }}
         />
       )}
@@ -482,21 +489,6 @@ export default function FollowUpList() {
         </Button>
       )}
     </div>
-  );
-
-  // Stats cards
-  const renderStats = () => (
-    <Row gutter={16} style={{ marginBottom: 16 }}>
-      <Col span={isMobile ? 8 : 4}>
-        <Card size="small"><Statistic title="待回访" value={stats.pending_count} /></Card>
-      </Col>
-      <Col span={isMobile ? 8 : 4}>
-        <Card size="small"><Statistic title="今日" value={stats.today_count} /></Card>
-      </Col>
-      <Col span={isMobile ? 8 : 4}>
-        <Card size="small"><Statistic title="逾期" value={stats.overdue_count} valueStyle={{ color: '#ff4d4f' }} /></Card>
-      </Col>
-    </Row>
   );
 
   // Modal form
@@ -564,8 +556,8 @@ export default function FollowUpList() {
 
   return (
     <>
+      {renderPillTabs()}
       {renderSearchBar()}
-      {renderStats()}
       {isMobile ? (
         <>
           {renderMobileSortBar()}
