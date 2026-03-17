@@ -186,7 +186,7 @@ describe('FollowUpList', () => {
     });
 
     // Sort indicator in column header
-    expect(screen.getByText('计划日期')).toBeInTheDocument();
+    expect(screen.getByText('日期')).toBeInTheDocument();
   });
 
   it('toggles sort order on column header click', async () => {
@@ -202,7 +202,7 @@ describe('FollowUpList', () => {
     });
 
     // Click sort toggle
-    await user.click(screen.getByText('计划日期'));
+    await user.click(screen.getByText('日期'));
 
     await waitFor(() => {
       expect(mockListFollowUps).toHaveBeenCalledWith(
