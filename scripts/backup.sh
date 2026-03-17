@@ -24,27 +24,27 @@ if ! echo "${SITE_ID}" | grep -qE '^[A-Za-z0-9_-]+$'; then
 fi
 
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_FILE="${BACKUP_DIR}/${SITE_ID}_${TIMESTAMP}.sql"
+BACKUP_FILE="${BACKUP_DIR}/${SITE_ID}_${TIMESTAMP}.sql.gz"
 
 echo "[$(date)] Starting backup..."
 
 # Create backup directory
 mkdir -p "${BACKUP_DIR}"
 
-# 1. MySQL dump (write to temp file first, rename on success to avoid empty backups)
+# 1. MySQL dump with gzip compression
 TEMP_FILE="${BACKUP_FILE}.tmp"
 echo ">> Dumping MySQL to ${BACKUP_FILE}..."
 if mysqldump -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASSWORD}" \
     --single-transaction --routines --triggers --no-tablespaces \
-    "${DB_NAME}" > "${TEMP_FILE}" 2>&1; then
+    "${DB_NAME}" 2>/dev/null | gzip > "${TEMP_FILE}"; then
     DUMP_SIZE=$(wc -c < "${TEMP_FILE}")
-    if [ "${DUMP_SIZE}" -lt 1024 ]; then
+    if [ "${DUMP_SIZE}" -lt 256 ]; then
         echo ">> ERROR: dump too small (${DUMP_SIZE} bytes), likely failed"
         rm -f "${TEMP_FILE}"
         exit 1
     fi
     mv "${TEMP_FILE}" "${BACKUP_FILE}"
-    echo ">> MySQL dump complete: ${DUMP_SIZE} bytes"
+    echo ">> MySQL dump complete (compressed): ${DUMP_SIZE} bytes"
 else
     echo ">> ERROR: mysqldump failed"
     rm -f "${TEMP_FILE}"
@@ -59,14 +59,15 @@ mysql -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASSWORD}" "${DB_N
 # 3. Clean old local backups, keep latest N (same as cloud retention)
 LOCAL_RETAIN="${QINIU_RETAIN_MYSQL:-5}"
 echo ">> Cleaning local MySQL backups (SITE_ID=${SITE_ID}), keeping latest ${LOCAL_RETAIN}..."
-BACKUP_FILES=$(find "${BACKUP_DIR}" -maxdepth 1 -name "${SITE_ID}_*.sql" -type f | sort -r)
+# Match both .sql.gz (new) and .sql (legacy) for cleanup
+BACKUP_FILES=$(find "${BACKUP_DIR}" -maxdepth 1 \( -name "${SITE_ID}_*.sql.gz" -o -name "${SITE_ID}_*.sql" \) -type f | sort -r)
 if [ -n "${BACKUP_FILES}" ]; then
     REMAINING=$(echo "${BACKUP_FILES}" | wc -l | tr -d ' ')
     if [ "${REMAINING}" -gt "${LOCAL_RETAIN}" ]; then
         echo "${BACKUP_FILES}" | tail -n +$((LOCAL_RETAIN + 1)) | xargs rm -f
     fi
 fi
-REMAINING=$(find "${BACKUP_DIR}" -maxdepth 1 -name "${SITE_ID}_*.sql" -type f | wc -l)
+REMAINING=$(find "${BACKUP_DIR}" -maxdepth 1 \( -name "${SITE_ID}_*.sql.gz" -o -name "${SITE_ID}_*.sql" \) -type f | wc -l)
 echo ">> Remaining backup files: ${REMAINING}"
 
 # 4. Upload to Qiniu cloud storage (retry up to 10 times)
