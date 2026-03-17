@@ -21,14 +21,19 @@ const statusConfig: Record<string, { label: string; color: string }> = {
   overdue: { label: '逾期', color: 'red' },
 };
 
-type PillTab = 'all' | 'pending' | 'today' | 'overdue' | 'completed';
+// Recovery tag style constants
+const recoveredStyle = { background: '#f6ffed', color: '#389e0d', padding: '1px 6px', borderRadius: 3, fontSize: 12, border: '1px solid #b7eb8f' } as const;
+const notRecoveredStyle = { background: '#fff7e6', color: '#d46b08', padding: '1px 6px', borderRadius: 3, fontSize: 12, border: '1px solid #ffd591' } as const;
 
-const pillTabs: { key: PillTab; label: string; bgActive: string; colorActive: string; bgInactive: string; colorInactive: string; statsKey: keyof FollowUpStats }[] = [
-  { key: 'all', label: '全部', bgActive: '#1677ff', colorActive: '#fff', bgInactive: '#f5f5f5', colorInactive: '#666', statsKey: 'total_count' },
-  { key: 'pending', label: '待回访', bgActive: '#e6f4ff', colorActive: '#1677ff', bgInactive: '#f5f5f5', colorInactive: '#666', statsKey: 'pending_count' },
-  { key: 'today', label: '今日', bgActive: '#fff7e6', colorActive: '#fa8c16', bgInactive: '#f5f5f5', colorInactive: '#666', statsKey: 'today_count' },
-  { key: 'overdue', label: '逾期', bgActive: '#fff2f0', colorActive: '#ff4d4f', bgInactive: '#f5f5f5', colorInactive: '#666', statsKey: 'overdue_count' },
-  { key: 'completed', label: '已完成', bgActive: '#f6ffed', colorActive: '#52c41a', bgInactive: '#f5f5f5', colorInactive: '#666', statsKey: 'completed_count' },
+// Pill tabs: Row 1 = status, Row 2 = recovery
+type StatusTab = 'all' | 'pending' | 'overdue' | 'completed';
+type RecoveryTab = '' | 'recovered' | 'not_recovered';
+
+const statusTabs: { key: StatusTab; label: string; bgActive: string; colorActive: string; statsKey: keyof FollowUpStats }[] = [
+  { key: 'all', label: '全部', bgActive: '#1677ff', colorActive: '#fff', statsKey: 'total_count' },
+  { key: 'pending', label: '待回访', bgActive: '#e6f4ff', colorActive: '#1677ff', statsKey: 'pending_count' },
+  { key: 'overdue', label: '逾期', bgActive: '#fff2f0', colorActive: '#ff4d4f', statsKey: 'overdue_count' },
+  { key: 'completed', label: '已完成', bgActive: '#f6ffed', colorActive: '#52c41a', statsKey: 'completed_count' },
 ];
 
 // Quick date range helpers
@@ -59,9 +64,10 @@ export default function FollowUpList() {
   const [data, setData] = useState<FollowUpListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
-  const [params, setParams] = useState({ page: 1, size: 20, patient_name: '', status: '', planned_date_from: '', planned_date_to: '', sort_order: 'asc' as 'asc' | 'desc' });
+  const [params, setParams] = useState({ page: 1, size: 20, patient_name: '', status: '', is_recovered: '' as '' | 'true' | 'false', planned_date_from: '', planned_date_to: '', sort_order: 'asc' as 'asc' | 'desc' });
   const [stats, setStats] = useState<FollowUpStats>({ pending_count: 0, overdue_count: 0, today_count: 0, completed_count: 0, total_count: 0 });
-  const [activeTab, setActiveTab] = useState<PillTab>('all');
+  const [activeStatusTab, setActiveStatusTab] = useState<StatusTab>('all');
+  const [activeRecoveryTab, setActiveRecoveryTab] = useState<RecoveryTab>('');
   const [lastSavedId, setLastSavedId] = useState<number | null>(null);
 
   // Modal state
@@ -164,12 +170,46 @@ export default function FollowUpList() {
   const handleQuickRange = (key: QuickRangeKey) => {
     if (activeQuickRange === key) {
       setParams({ ...params, planned_date_from: '', planned_date_to: '', page: 1 });
-      setActiveTab('all');
     } else {
       const [from, to] = getQuickRange(key);
       setParams({ ...params, planned_date_from: from, planned_date_to: to, status: '', page: 1 });
-      setActiveTab('all');
+      setActiveStatusTab('all');
     }
+  };
+
+  // Status tab click
+  const handleStatusTabClick = (tab: StatusTab) => {
+    if (tab === activeStatusTab) {
+      setActiveStatusTab('all');
+      setParams({ ...params, status: '', planned_date_from: '', planned_date_to: '', page: 1 });
+      return;
+    }
+    setActiveStatusTab(tab);
+    switch (tab) {
+      case 'all':
+        setParams({ ...params, status: '', planned_date_from: '', planned_date_to: '', page: 1 });
+        break;
+      case 'pending':
+        setParams({ ...params, status: 'pending', planned_date_from: '', planned_date_to: '', page: 1 });
+        break;
+      case 'overdue':
+        setParams({ ...params, status: 'overdue', planned_date_from: '', planned_date_to: '', page: 1 });
+        break;
+      case 'completed':
+        setParams({ ...params, status: 'completed', planned_date_from: '', planned_date_to: '', page: 1 });
+        break;
+    }
+  };
+
+  // Recovery tab click
+  const handleRecoveryTabClick = (tab: RecoveryTab) => {
+    if (tab === activeRecoveryTab) {
+      setActiveRecoveryTab('');
+      setParams({ ...params, is_recovered: '', page: 1 });
+      return;
+    }
+    setActiveRecoveryTab(tab);
+    setParams({ ...params, is_recovered: tab === 'recovered' ? 'true' : 'false', page: 1 });
   };
 
   // CRUD handlers
@@ -275,13 +315,12 @@ export default function FollowUpList() {
         <div>
           {name === '已删除'
             ? <span style={{ color: '#999' }}>{name}</span>
-            : <a onClick={() => navigate(`/patients/${record.patient_id}`)}>{name}</a>
+            : <a style={{ color: '#1677ff' }} onClick={() => navigate(`/patients/${record.patient_id}`)}>{name}</a>
           }
-          <div>
-            {record.is_recovered
-              ? <span style={{ background: '#f6ffed', color: '#52c41a', padding: '0 5px', borderRadius: 3, fontSize: 10 }}>已康复</span>
-              : <span style={{ background: '#fff7e6', color: '#fa8c16', padding: '0 5px', borderRadius: 3, fontSize: 10 }}>未康复</span>
-            }
+          <div style={{ marginTop: 2 }}>
+            <span style={record.is_recovered ? recoveredStyle : notRecoveredStyle}>
+              {record.is_recovered ? '已康复' : '未康复'}
+            </span>
           </div>
         </div>
       ),
@@ -326,7 +365,7 @@ export default function FollowUpList() {
           </span>
         </span>
       ),
-      key: 'dates', width: 130,
+      key: 'dates', width: 160,
       render: (_, record) => (
         <div style={{ fontSize: 12 }}>
           <div>计划: {record.planned_date}</div>
@@ -384,22 +423,20 @@ export default function FollowUpList() {
   // Mobile card
   const renderMobileCard = (item: FollowUpListItem) => {
     const cfg = statusConfig[item.status] || statusConfig.pending;
-    const borderColor = item.status === 'overdue' ? '#ff4d4f' : item.is_recovered ? '#52c41a' : undefined;
     const isHighlighted = item.id === lastSavedId;
     return (
       <Card
         key={item.id}
         size="small"
         className={isHighlighted ? 'followup-saved-highlight' : undefined}
-        style={{ marginBottom: 8, borderLeft: borderColor ? `3px solid ${borderColor}` : undefined }}
+        style={{ marginBottom: 8 }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-          <a onClick={() => navigate(`/patients/${item.patient_id}`)} style={{ fontWeight: 500 }}>{item.patient_name}</a>
+          <a style={{ color: '#1677ff', fontWeight: 500 }} onClick={() => navigate(`/patients/${item.patient_id}`)}>{item.patient_name}</a>
           <Space size={4}>
-            {item.is_recovered
-              ? <span style={{ background: '#f6ffed', color: '#52c41a', padding: '0 5px', borderRadius: 3, fontSize: 11 }}>已康复</span>
-              : <span style={{ background: '#fff7e6', color: '#fa8c16', padding: '0 5px', borderRadius: 3, fontSize: 11 }}>未康复</span>
-            }
+            <span style={item.is_recovered ? { ...recoveredStyle, fontSize: 11 } : { ...notRecoveredStyle, fontSize: 11 }}>
+              {item.is_recovered ? '已康复' : '未康复'}
+            </span>
             <Tag color={cfg.color}>{cfg.label}</Tag>
           </Space>
         </div>
@@ -431,65 +468,78 @@ export default function FollowUpList() {
     );
   };
 
-  // Pill tab click handler
-  const handleTabClick = (tab: PillTab) => {
-    if (tab === activeTab) {
-      setActiveTab('all');
-      setParams({ ...params, status: '', planned_date_from: '', planned_date_to: '', page: 1 });
-      return;
-    }
-    setActiveTab(tab);
-    const today = dayjs().format('YYYY-MM-DD');
-    switch (tab) {
-      case 'all':
-        setParams({ ...params, status: '', planned_date_from: '', planned_date_to: '', page: 1 });
-        break;
-      case 'pending':
-        setParams({ ...params, status: 'pending', planned_date_from: '', planned_date_to: '', page: 1 });
-        break;
-      case 'today':
-        setParams({ ...params, status: 'pending', planned_date_from: today, planned_date_to: today, page: 1 });
-        break;
-      case 'overdue':
-        setParams({ ...params, status: 'overdue', planned_date_from: '', planned_date_to: '', page: 1 });
-        break;
-      case 'completed':
-        setParams({ ...params, status: 'completed', planned_date_from: '', planned_date_to: '', page: 1 });
-        break;
-    }
-  };
-
-  // Pill tabs
+  // Two-row pill tabs
   const renderPillTabs = () => (
-    <div style={{
-      display: 'flex',
-      gap: isMobile ? 8 : 10,
-      marginBottom: 16,
-      ...(isMobile ? { overflowX: 'auto', whiteSpace: 'nowrap' as const, flexWrap: 'nowrap' as const, paddingBottom: 4 } : { flexWrap: 'wrap' as const }),
-    }}>
-      {pillTabs.map(({ key, label, bgActive, colorActive, bgInactive, colorInactive, statsKey }) => {
-        const isActive = activeTab === key;
-        return (
-          <div
-            key={key}
-            onClick={() => handleTabClick(key)}
-            style={{
-              padding: isMobile ? '4px 12px' : '7px 20px',
-              background: isActive ? bgActive : bgInactive,
-              color: isActive ? colorActive : colorInactive,
-              borderRadius: 20,
-              fontSize: isMobile ? 12 : 15,
-              cursor: 'pointer',
-              fontWeight: isActive ? 500 : 400,
-              flexShrink: 0,
-              transition: 'all 0.2s',
-              userSelect: 'none' as const,
-            }}
-          >
-            {label} {stats[statsKey] ?? 0}
-          </div>
-        );
-      })}
+    <div style={{ marginBottom: 16 }}>
+      {/* Row 1: status tabs */}
+      <div style={{
+        display: 'flex',
+        gap: isMobile ? 6 : 10,
+        marginBottom: 8,
+        ...(isMobile ? { overflowX: 'auto', whiteSpace: 'nowrap' as const, flexWrap: 'nowrap' as const, paddingBottom: 4 } : { flexWrap: 'wrap' as const }),
+      }}>
+        {statusTabs.map(({ key, label, bgActive, colorActive, statsKey }) => {
+          const isActive = activeStatusTab === key;
+          return (
+            <div
+              key={key}
+              onClick={() => handleStatusTabClick(key)}
+              style={{
+                padding: isMobile ? '4px 12px' : '7px 20px',
+                background: isActive ? bgActive : '#f5f5f5',
+                color: isActive ? colorActive : '#666',
+                borderRadius: 20,
+                fontSize: isMobile ? 12 : 15,
+                cursor: 'pointer',
+                fontWeight: isActive ? 500 : 400,
+                flexShrink: 0,
+                transition: 'all 0.2s',
+                userSelect: 'none' as const,
+              }}
+            >
+              {label} {stats[statsKey] ?? 0}
+            </div>
+          );
+        })}
+      </div>
+      {/* Row 2: recovery tabs */}
+      <div style={{ display: 'flex', gap: isMobile ? 6 : 10, alignItems: 'center' }}>
+        <span style={{ color: '#999', fontSize: isMobile ? 11 : 13 }}>康复:</span>
+        <div
+          onClick={() => handleRecoveryTabClick('recovered')}
+          style={{
+            padding: isMobile ? '3px 10px' : '5px 16px',
+            background: activeRecoveryTab === 'recovered' ? '#f6ffed' : '#f5f5f5',
+            color: activeRecoveryTab === 'recovered' ? '#389e0d' : '#666',
+            borderRadius: 20,
+            fontSize: isMobile ? 11 : 14,
+            cursor: 'pointer',
+            fontWeight: activeRecoveryTab === 'recovered' ? 500 : 400,
+            border: activeRecoveryTab === 'recovered' ? '1px solid #b7eb8f' : '1px solid transparent',
+            transition: 'all 0.2s',
+            userSelect: 'none' as const,
+          }}
+        >
+          已康复
+        </div>
+        <div
+          onClick={() => handleRecoveryTabClick('not_recovered')}
+          style={{
+            padding: isMobile ? '3px 10px' : '5px 16px',
+            background: activeRecoveryTab === 'not_recovered' ? '#fff7e6' : '#f5f5f5',
+            color: activeRecoveryTab === 'not_recovered' ? '#d46b08' : '#666',
+            borderRadius: 20,
+            fontSize: isMobile ? 11 : 14,
+            cursor: 'pointer',
+            fontWeight: activeRecoveryTab === 'not_recovered' ? 500 : 400,
+            border: activeRecoveryTab === 'not_recovered' ? '1px solid #ffd591' : '1px solid transparent',
+            transition: 'all 0.2s',
+            userSelect: 'none' as const,
+          }}
+        >
+          未康复
+        </div>
+      </div>
     </div>
   );
 
@@ -532,7 +582,7 @@ export default function FollowUpList() {
               const from = d?.format('YYYY-MM-DD') || '';
               const to = from && params.planned_date_to && from > params.planned_date_to ? '' : params.planned_date_to;
               setParams({ ...params, planned_date_from: from, planned_date_to: to, page: 1 });
-              setActiveTab('all');
+              setActiveStatusTab('all');
             }}
             disabledDate={params.planned_date_to ? (d) => d.isAfter(dayjs(params.planned_date_to), 'day') : undefined}
             style={{ flex: 1, minWidth: 0 }}
@@ -546,7 +596,7 @@ export default function FollowUpList() {
               const to = d?.format('YYYY-MM-DD') || '';
               const from = to && params.planned_date_from && to < params.planned_date_from ? '' : params.planned_date_from;
               setParams({ ...params, planned_date_from: from, planned_date_to: to, page: 1 });
-              setActiveTab('all');
+              setActiveStatusTab('all');
             }}
             disabledDate={params.planned_date_from ? (d) => d.isBefore(dayjs(params.planned_date_from), 'day') : undefined}
             style={{ flex: 1, minWidth: 0 }}
@@ -567,7 +617,7 @@ export default function FollowUpList() {
               planned_date_to: dates?.[1]?.format('YYYY-MM-DD') || '',
               page: 1,
             });
-            setActiveTab('all');
+            setActiveStatusTab('all');
           }}
         />
       )}

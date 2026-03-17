@@ -29,6 +29,7 @@ func (h *FollowUpHandler) List(c *gin.Context) {
 	patientIDStr := c.Query("patient_id")
 	recordIDStr := c.Query("record_id")
 	status := c.Query("status")
+	isRecoveredStr := c.Query("is_recovered")
 	plannedFrom := c.Query("planned_date_from")
 	plannedTo := c.Query("planned_date_to")
 
@@ -72,7 +73,7 @@ func (h *FollowUpHandler) List(c *gin.Context) {
 	}
 
 	svc := service.NewFollowUpService(h.db)
-	items, total, err := svc.List(tenantID, patientID, recordID, patientName, status, plannedFrom, plannedTo, page, size, sortOrder)
+	items, total, err := svc.List(tenantID, patientID, recordID, patientName, status, isRecoveredStr, plannedFrom, plannedTo, page, size, sortOrder)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,

@@ -34,7 +34,7 @@ import {
 import { getPatient } from '../../api/patient';
 import { deleteRecord } from '../../api/record';
 import type { PrescriptionData } from '../../api/prescription';
-import { getFileUrl } from '../../api/upload';
+import { AuthImage, AuthAudio, AuthVideo } from '../../components/AuthMedia';
 import type { FollowUpListItem } from '../../api/followUp';
 import {
   listFollowUps,
@@ -336,6 +336,27 @@ export default function PatientDetail() {
 
   return (
     <>
+    {/* 悬浮返回按钮 */}
+    <div
+      onClick={() => navigate('/patients')}
+      style={{
+        position: 'fixed',
+        top: isMobile ? 8 : 12,
+        left: isMobile ? 8 : undefined,
+        right: isMobile ? undefined : 24,
+        zIndex: 1000,
+        background: '#1677ff',
+        color: '#fff',
+        padding: isMobile ? '4px 12px' : '6px 16px',
+        borderRadius: 20,
+        fontSize: isMobile ? 12 : 13,
+        boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+        cursor: 'pointer',
+        userSelect: 'none',
+      }}
+    >
+      ← {isMobile ? '患者列表' : '返回患者列表'}
+    </div>
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Top section: Patient basic info */}
       <Card
@@ -490,7 +511,7 @@ export default function PatientDetail() {
                         icon={<EditOutlined />}
                         onClick={() => navigate(`/records/${record.id}?from=patient&patient_id=${patient.id}`)}
                       >
-                        编辑
+                        查看
                       </Button>
                       <Popconfirm
                         title="确定删除此诊疗记录？"
@@ -555,9 +576,9 @@ export default function PatientDetail() {
                               <Image.PreviewGroup>
                                 <Space wrap>
                                   {imageAttachments.map((att) => (
-                                    <Image
+                                    <AuthImage
                                       key={att.id}
-                                      src={getFileUrl(att.file_path)}
+                                      fileKey={att.file_path}
                                       alt={att.file_name}
                                       width={120}
                                       height={90}
@@ -594,13 +615,11 @@ export default function PatientDetail() {
                                   >
                                     {att.file_name}
                                   </Text>
-                                  <audio
-                                    controls
-                                    src={getFileUrl(att.file_path)}
+                                  <AuthAudio
+                                    key={att.id}
+                                    fileKey={att.file_path}
                                     style={{ width: '100%', maxWidth: isMobile ? undefined : 400 }}
-                                  >
-                                    您的浏览器不支持音频播放
-                                  </audio>
+                                  />
                                 </div>
                               ))}
                             </div>
@@ -627,17 +646,15 @@ export default function PatientDetail() {
                                   >
                                     {att.file_name}
                                   </Text>
-                                  <video
-                                    controls
-                                    src={getFileUrl(att.file_path)}
+                                  <AuthVideo
+                                    key={att.id}
+                                    fileKey={att.file_path}
                                     style={{
                                       width: '100%',
                                       maxWidth: isMobile ? undefined : 480,
                                       borderRadius: 4,
                                     }}
-                                  >
-                                    您的浏览器不支持视频播放
-                                  </video>
+                                  />
                                 </div>
                               ))}
                             </div>
@@ -746,8 +763,8 @@ export default function PatientDetail() {
                       {cfg.label}
                     </Tag>
                     {item.is_recovered
-                      ? <span style={{ background: '#f6ffed', color: '#52c41a', padding: '0 5px', borderRadius: 3, fontSize: 11 }}>已康复</span>
-                      : <span style={{ background: '#fff7e6', color: '#fa8c16', padding: '0 5px', borderRadius: 3, fontSize: 11 }}>未康复</span>
+                      ? <span style={{ background: '#f6ffed', color: '#389e0d', padding: '1px 6px', borderRadius: 3, fontSize: 12, border: '1px solid #b7eb8f' }}>已康复</span>
+                      : <span style={{ background: '#fff7e6', color: '#d46b08', padding: '1px 6px', borderRadius: 3, fontSize: 12, border: '1px solid #ffd591' }}>未康复</span>
                     }
                     <span style={{ fontSize: 13, color: '#333', whiteSpace: 'nowrap' }}>
                       {item.planned_date}

@@ -42,6 +42,7 @@ export interface FollowUpListParams {
   patient_name?: string;
   record_id?: number;
   status?: string;
+  is_recovered?: string;
   planned_date_from?: string;
   planned_date_to?: string;
   sort_order?: 'asc' | 'desc';
