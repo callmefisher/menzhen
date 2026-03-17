@@ -180,9 +180,11 @@ describe('FollowUpList', () => {
     await waitFor(() => {
       expect(screen.getByText(/全部 9/)).toBeInTheDocument();
       expect(screen.getByText(/待回访 2/)).toBeInTheDocument();
-      expect(screen.getByText(/今日 1/)).toBeInTheDocument();
       expect(screen.getByText(/逾期 1/)).toBeInTheDocument();
       expect(screen.getByText(/已完成 5/)).toBeInTheDocument();
+      // Recovery row
+      expect(screen.getByText(/已康复/)).toBeInTheDocument();
+      expect(screen.getByText(/未康复/)).toBeInTheDocument();
     });
 
     // Sort indicator in column header
