@@ -88,7 +88,7 @@ def main():
         items = list_files(bucket_mgr, bucket_name, key_prefix)
         matched = [
             item for item in items
-            if item["key"].endswith(".sql")
+            if (item["key"].endswith(".sql") or item["key"].endswith(".sql.gz"))
             and "/" not in item["key"][len(key_prefix):]
         ]
         total = len(matched)

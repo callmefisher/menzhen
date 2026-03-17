@@ -68,7 +68,7 @@ def list_files_json(bucket_mgr, bucket_name, key_prefix, site_id, download_type)
         items = list_files(bucket_mgr, bucket_name, prefix=site_prefix)
         sql_files = [
             item for item in items
-            if item["key"].endswith(".sql")
+            if (item["key"].endswith(".sql") or item["key"].endswith(".sql.gz"))
             and "/" not in item["key"][len(site_prefix):]
         ]
         # Fallback to legacy prefix
@@ -76,7 +76,7 @@ def list_files_json(bucket_mgr, bucket_name, key_prefix, site_id, download_type)
             items = list_files(bucket_mgr, bucket_name, prefix=key_prefix)
             sql_files = [
                 item for item in items
-                if item["key"].endswith(".sql")
+                if (item["key"].endswith(".sql") or item["key"].endswith(".sql.gz"))
                 and "/" not in item["key"][len(key_prefix):]
             ]
         for item in sql_files:
@@ -164,7 +164,7 @@ def main():
         items = list_files(bucket_mgr, bucket_name, prefix=site_prefix)
         sql_files = [
             item for item in items
-            if item["key"].endswith(".sql")
+            if (item["key"].endswith(".sql") or item["key"].endswith(".sql.gz"))
             and "/" not in item["key"][len(site_prefix):]
         ]
         # Fallback: try legacy prefix (no SITE_ID subdirectory)
@@ -173,7 +173,7 @@ def main():
             items = list_files(bucket_mgr, bucket_name, prefix=key_prefix)
             sql_files = [
                 item for item in items
-                if item["key"].endswith(".sql")
+                if (item["key"].endswith(".sql") or item["key"].endswith(".sql.gz"))
                 and "/" not in item["key"][len(key_prefix):]
             ]
         if sql_files:
