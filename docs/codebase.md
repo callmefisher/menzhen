@@ -40,6 +40,7 @@ menzhen/
 │   │   ├── patient.go               # List/Create/Detail/Update/Delete
 │   │   ├── record.go                # List/Create/Detail/Update/Delete
 │   │   ├── upload.go                # Upload/GetFile/CleanupOrphanFiles（MinIO 文件管理+孤立文件清理）
+│   │   ├── db_cleanup.go           # CleanupOrphanData（数据库孤立数据扫描+清理，dry_run模式）
 │   │   ├── herb.go                  # List/Detail/Delete/Categories/Update/AIRefresh
 │   │   ├── formula.go               # List/Detail/Delete/UpdateComposition/UpdateName/UpdateNotes
 │   │   ├── prescription.go          # Create/Detail/Update/Delete/ListByRecord
@@ -83,6 +84,7 @@ menzhen/
 │   │   ├── billing.go              # 收费 GetBillingDetail/CreateBilling/DeductStockAndBill/ListBillingsByRecord/GetRecordBillingDetail/CreateRecordBilling（含实时价格计算：中药 元/500g→元/g 转换 + 中成药不乘付数 + 事务库存扣除 + 写时刷新daily_stats + 按处方药品名称定向查库存避免全表扫描）
 │   │   ├── statistics.go           # 统计服务 RefreshDailyStats/GetDashboard/RebuildAllDailyStats（每日汇总表聚合，批量查首诊日期替代N+1，范围查询替代DATE()函数确保索引生效）
 │   │   ├── storage_cleanup.go     # 孤立文件扫描清理服务 ScanOrphanFiles/CleanupOrphanFiles（比对 MinIO 对象与 DB 引用，找出并删除孤立文件）
+│   │   ├── db_cleanup.go          # 数据库孤立数据清理 ScanOrphanData/CleanupOrphanData（孤立处方/处方项/账单/用户角色/角色权限 + 过期软删除记录清理）
 │   │   ├── follow_up.go           # 回访 List/Create/Get/Update/Delete/Stats（租户隔离，含患者/记录名称关联+逾期状态自动标记，Stats单条聚合SQL替代4次COUNT）
 │   │   ├── tenant_admin.go         # 租户级用户/角色管理服务（ListTenantUsers 隐藏 user:manage 用户，UpdateUser/DisableUser/AssignRoles 返回 ErrProtectedUser）
 │   │   ├── hexagram.go              # 卦象 Search/GetByID/Create/Update/DeleteByID/ListTrigrams

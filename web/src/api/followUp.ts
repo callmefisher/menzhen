@@ -40,7 +40,9 @@ export interface FollowUpListItem {
 export interface FollowUpListParams {
   patient_id?: number;
   patient_name?: string;
+  record_id?: number;
   status?: string;
+  is_recovered?: string;
   planned_date_from?: string;
   planned_date_to?: string;
   sort_order?: 'asc' | 'desc';
@@ -72,6 +74,7 @@ export interface FollowUpStats {
   overdue_count: number;
   today_count: number;
   completed_count: number;
+  total_count: number;
 }
 
 export function listFollowUps(params: FollowUpListParams) {
@@ -96,4 +99,8 @@ export function deleteFollowUp(id: number) {
 
 export function getFollowUpStats() {
   return request.get('/follow-ups/stats');
+}
+
+export function findFollowUpPage(id: number, size: number = 20) {
+  return request.get(`/follow-ups/${id}/page`, { params: { size } });
 }

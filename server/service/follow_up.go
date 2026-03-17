@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/callmefisher/menzhen/server/model"
@@ -61,6 +62,7 @@ type FollowUpStats struct {
 	OverdueCount   int64 `json:"overdue_count"`
 	TodayCount     int64 `json:"today_count"`
 	CompletedCount int64 `json:"completed_count"`
+	TotalCount     int64 `json:"total_count"`
 }
 
 // FollowUpService handles follow-up business logic.
@@ -74,7 +76,7 @@ func NewFollowUpService(db *gorm.DB) *FollowUpService {
 }
 
 // List returns a paginated, filtered list of follow-ups with denormalized patient/record info.
-func (s *FollowUpService) List(tenantID uint64, patientID uint64, patientName, status string, plannedFrom, plannedTo string, page, size int, sortOrder string) ([]FollowUpListItem, int64, error) {
+func (s *FollowUpService) List(tenantID uint64, patientID uint64, recordID uint64, patientName, status string, isRecoveredStr string, plannedFrom, plannedTo string, page, size int, sortOrder string) ([]FollowUpListItem, int64, error) {
 	query := s.DB.Table("follow_ups AS f").
 		Select(`f.id, f.tenant_id, f.patient_id,
 			COALESCE(p.name, '已删除') AS patient_name,
@@ -97,8 +99,12 @@ func (s *FollowUpService) List(tenantID uint64, patientID uint64, patientName, s
 	if patientID > 0 {
 		query = query.Where("f.patient_id = ?", patientID)
 	}
+	if recordID > 0 {
+		query = query.Where("f.record_id = ?", recordID)
+	}
 	if patientName != "" {
-		query = query.Where("p.name LIKE ?", "%"+patientName+"%")
+		escaped := strings.NewReplacer("%", "\\%", "_", "\\_").Replace(patientName)
+		query = query.Where("p.name LIKE ?", "%"+escaped+"%")
 	}
 	if status == "overdue" {
 		query = query.Where("f.status = 'pending' AND f.planned_date < CURDATE()")
@@ -112,6 +118,11 @@ func (s *FollowUpService) List(tenantID uint64, patientID uint64, patientName, s
 	}
 	if plannedTo != "" {
 		query = query.Where("f.planned_date <= ?", plannedTo)
+	}
+	if isRecoveredStr == "true" {
+		query = query.Where("f.is_recovered = ?", true)
+	} else if isRecoveredStr == "false" {
+		query = query.Where("f.is_recovered = ?", false)
 	}
 
 	var total int64
@@ -276,6 +287,7 @@ func (s *FollowUpService) Stats(tenantID uint64) (*FollowUpStats, error) {
 		OverdueCount   int64
 		TodayCount     int64
 		CompletedCount int64
+		TotalCount     int64
 	}
 	var agg aggregated
 	if err := s.DB.Model(&model.FollowUp{}).
@@ -283,7 +295,8 @@ func (s *FollowUpService) Stats(tenantID uint64) (*FollowUpStats, error) {
 			SUM(CASE WHEN status='pending' AND planned_date >= CURDATE() THEN 1 ELSE 0 END) AS pending_count,
 			SUM(CASE WHEN status='pending' AND planned_date < CURDATE() THEN 1 ELSE 0 END) AS overdue_count,
 			SUM(CASE WHEN status='pending' AND planned_date = CURDATE() THEN 1 ELSE 0 END) AS today_count,
-			SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) AS completed_count
+			SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) AS completed_count,
+			COUNT(*) AS total_count
 		`).
 		Where("tenant_id = ?", tenantID).
 		Scan(&agg).Error; err != nil {
@@ -295,5 +308,27 @@ func (s *FollowUpService) Stats(tenantID uint64) (*FollowUpStats, error) {
 		OverdueCount:   agg.OverdueCount,
 		TodayCount:     agg.TodayCount,
 		CompletedCount: agg.CompletedCount,
+		TotalCount:     agg.TotalCount,
 	}, nil
+}
+
+// FindFollowUpPage returns which page (1-based) a follow-up appears on in planned_date ASC order.
+func (s *FollowUpService) FindFollowUpPage(tenantID, followUpID uint64, size int) (int, error) {
+	if size <= 0 {
+		size = 20
+	}
+	var fu model.FollowUp
+	if err := s.DB.Select("planned_date").Where("id = ? AND tenant_id = ? AND deleted_at IS NULL", followUpID, tenantID).First(&fu).Error; err != nil {
+		return 1, err
+	}
+
+	// Count how many follow-ups come before this one in planned_date ASC, id ASC order
+	var position int64
+	s.DB.Table("follow_ups").
+		Where("tenant_id = ? AND deleted_at IS NULL", tenantID).
+		Where("planned_date < ? OR (planned_date = ? AND id < ?)", fu.PlannedDate, fu.PlannedDate, followUpID).
+		Count(&position)
+
+	page := int(position)/size + 1
+	return page, nil
 }

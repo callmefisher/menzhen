@@ -27,13 +27,39 @@ func (h *FollowUpHandler) List(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
 	patientName := c.Query("patient_name")
 	patientIDStr := c.Query("patient_id")
+	recordIDStr := c.Query("record_id")
 	status := c.Query("status")
+	isRecoveredStr := c.Query("is_recovered")
+	if isRecoveredStr != "" && isRecoveredStr != "true" && isRecoveredStr != "false" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "invalid is_recovered, must be true or false"})
+		return
+	}
 	plannedFrom := c.Query("planned_date_from")
 	plannedTo := c.Query("planned_date_to")
 
 	var patientID uint64
 	if patientIDStr != "" {
-		patientID, _ = strconv.ParseUint(patientIDStr, 10, 64)
+		var err error
+		patientID, err = strconv.ParseUint(patientIDStr, 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "invalid patient_id",
+			})
+			return
+		}
+	}
+	var recordID uint64
+	if recordIDStr != "" {
+		var err error
+		recordID, err = strconv.ParseUint(recordIDStr, 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "invalid record_id",
+			})
+			return
+		}
 	}
 
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
@@ -51,7 +77,7 @@ func (h *FollowUpHandler) List(c *gin.Context) {
 	}
 
 	svc := service.NewFollowUpService(h.db)
-	items, total, err := svc.List(tenantID, patientID, patientName, status, plannedFrom, plannedTo, page, size, sortOrder)
+	items, total, err := svc.List(tenantID, patientID, recordID, patientName, status, isRecoveredStr, plannedFrom, plannedTo, page, size, sortOrder)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -267,4 +293,26 @@ func (h *FollowUpHandler) Stats(c *gin.Context) {
 		"message": "success",
 		"data":    stats,
 	})
+}
+
+// FindPage handles GET /api/v1/follow-ups/:id/page — returns which page a follow-up is on.
+func (h *FollowUpHandler) FindPage(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "invalid follow-up id"})
+		return
+	}
+	size, _ := strconv.Atoi(c.DefaultQuery("size", "20"))
+	if size < 1 {
+		size = 20
+	}
+
+	svc := service.NewFollowUpService(h.db)
+	page, err := svc.FindFollowUpPage(tenantID, id, size)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"page": 1}})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"page": page}})
 }

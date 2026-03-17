@@ -1,19 +1,28 @@
-import { useState } from 'react';
-import { Upload, message, Image, Button } from 'antd';
+import { useState, useRef, useEffect } from 'react';
+import { Upload, message, Button, Modal, Spin } from 'antd';
 import {
   InboxOutlined,
   DeleteOutlined,
+  DownloadOutlined,
+  EyeOutlined,
   AudioOutlined,
   VideoCameraOutlined,
   FileOutlined,
+  FilePdfOutlined,
+  FileWordOutlined,
+  FileExcelOutlined,
+  FilePptOutlined,
+  FileTextOutlined,
+  FileZipOutlined,
 } from '@ant-design/icons';
 import type { UploadFile, UploadProps } from 'antd';
-import { uploadFile, getFileUrl } from '../api/upload';
+import { uploadFile, downloadFile, deleteUploadedFile } from '../api/upload';
+import { useAuthUrl, AuthImage } from './AuthMedia';
 
 const { Dragger } = Upload;
 
 export interface AttachmentInfo {
-  file_type: string; // image/audio/video
+  file_type: string; // image/audio/video/document/archive
   file_name: string;
   file_path: string; // MinIO object key
   file_size: number;
@@ -22,20 +31,84 @@ export interface AttachmentInfo {
 interface FileUploadProps {
   value?: AttachmentInfo[];
   onChange?: (attachments: AttachmentInfo[]) => void;
+  /** Called after attachments change (upload or delete), to immediately persist to DB. */
+  onSync?: (updatedAttachments: AttachmentInfo[]) => void;
 }
 
-export default function FileUpload({ value = [], onChange }: FileUploadProps) {
-  const [uploading, setUploading] = useState(false);
+/** File extensions that can be previewed in the browser. */
+const previewableExts = new Set([
+  'mp4', 'webm',              // video (mov excluded — poor non-Safari support)
+  'mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac', // audio
+  'pdf', 'txt', 'csv',        // iframe-renderable
+]);
 
-  const handleRemove = (index: number) => {
-    const newList = [...value];
-    newList.splice(index, 1);
-    onChange?.(newList);
+function canPreview(att: AttachmentInfo): boolean {
+  if (att.file_type === 'image') return false; // images use antd Image preview
+  const ext = att.file_name.split('.').pop()?.toLowerCase() ?? '';
+  return previewableExts.has(ext);
+}
+
+function getPreviewType(att: AttachmentInfo): 'video' | 'audio' | 'iframe' {
+  if (att.file_type === 'video') return 'video';
+  if (att.file_type === 'audio') return 'audio';
+  return 'iframe';
+}
+
+export default function FileUpload({ value = [], onChange, onSync }: FileUploadProps) {
+  const [uploadingCount, setUploadingCount] = useState(0);
+  const [previewAtt, setPreviewAtt] = useState<AttachmentInfo | null>(null);
+
+  // Ref tracks the latest attachment list to avoid stale closures in concurrent uploads.
+  const listRef = useRef<AttachmentInfo[]>(value);
+  useEffect(() => { listRef.current = value; }, [value]);
+
+  // Serialize onSync calls so concurrent uploads always resolve in order.
+  const syncChainRef = useRef<Promise<void>>(Promise.resolve());
+  const enqueueSync = (newList: AttachmentInfo[]) => {
+    if (!onSync) return;
+    syncChainRef.current = syncChainRef.current.then(async () => {
+      try {
+        await onSync(newList);
+      } catch {
+        message.warning('同步附件失败，请手动保存');
+      }
+    });
+  };
+
+  const handleRemove = async (index: number) => {
+    const removed = listRef.current[index];
+    if (!removed) return;
+
+    if (onSync) {
+      const newList = listRef.current.filter((_, i) => i !== index);
+      try {
+        await onSync(newList);
+        listRef.current = newList;
+        onChange?.(newList);
+      } catch {
+        message.error('删除附件失败，请重试');
+      }
+    } else {
+      try {
+        await deleteUploadedFile(removed.file_path);
+        const newList = listRef.current.filter((_, i) => i !== index);
+        listRef.current = newList;
+        onChange?.(newList);
+      } catch {
+        message.error('删除文件失败，请重试');
+      }
+    }
+  };
+
+  const handleDownload = (att: AttachmentInfo) => {
+    downloadFile(att.file_path, att.file_name).catch(() => {
+      message.error('下载失败，请重试');
+    });
   };
 
   const customUpload: UploadProps['customRequest'] = async (options) => {
     const { file, onSuccess, onError, onProgress } = options;
-    setUploading(true);
+    setUploadingCount(c => c + 1);
 
     try {
       onProgress?.({ percent: 30 } as unknown as UploadFile);
@@ -59,23 +132,35 @@ export default function FileUpload({ value = [], onChange }: FileUploadProps) {
         file_size: body.data.file_size,
       };
 
-      onChange?.([...value, attachment]);
+      const newList = [...listRef.current, attachment];
+      listRef.current = newList;
+      onChange?.(newList);
+      enqueueSync(newList);
       onSuccess?.(body.data);
       message.success(`${body.data.file_name} 上传成功`);
     } catch (err) {
       onError?.(err as Error);
-      // Error already handled by request interceptor
     } finally {
-      setUploading(false);
+      setUploadingCount(c => c - 1);
     }
   };
 
-  const getFileIcon = (fileType: string) => {
+  const getFileIcon = (fileType: string, fileName?: string) => {
     switch (fileType) {
       case 'audio':
         return <AudioOutlined style={{ fontSize: 24, color: '#1677ff' }} />;
       case 'video':
         return <VideoCameraOutlined style={{ fontSize: 24, color: '#52c41a' }} />;
+      case 'document': {
+        const ext = fileName?.split('.').pop()?.toLowerCase();
+        if (ext === 'pdf') return <FilePdfOutlined style={{ fontSize: 24, color: '#ff4d4f' }} />;
+        if (ext === 'doc' || ext === 'docx') return <FileWordOutlined style={{ fontSize: 24, color: '#1677ff' }} />;
+        if (ext === 'xls' || ext === 'xlsx') return <FileExcelOutlined style={{ fontSize: 24, color: '#52c41a' }} />;
+        if (ext === 'ppt' || ext === 'pptx') return <FilePptOutlined style={{ fontSize: 24, color: '#fa8c16' }} />;
+        return <FileTextOutlined style={{ fontSize: 24, color: '#8c8c8c' }} />;
+      }
+      case 'archive':
+        return <FileZipOutlined style={{ fontSize: 24, color: '#722ed1' }} />;
       default:
         return <FileOutlined style={{ fontSize: 24 }} />;
     }
@@ -90,20 +175,20 @@ export default function FileUpload({ value = [], onChange }: FileUploadProps) {
   return (
     <div>
       <Dragger
-        accept="image/*,audio/*,video/*"
+        accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.rtf,.zip,.rar,.7z,.gz,.tar"
         multiple
         showUploadList={false}
         customRequest={customUpload}
-        disabled={uploading}
+        disabled={uploadingCount > 0}
       >
         <p className="ant-upload-drag-icon">
           <InboxOutlined />
         </p>
         <p className="ant-upload-text">
-          {uploading ? '上传中...' : '点击或拖拽文件到此区域上传'}
+          {uploadingCount > 0 ? '上传中...' : '点击或拖拽文件到此区域上传'}
         </p>
         <p className="ant-upload-hint">
-          支持图片、音频、视频文件
+          支持图片、音频、视频、文档、压缩包
         </p>
       </Dragger>
 
@@ -118,7 +203,7 @@ export default function FileUpload({ value = [], onChange }: FileUploadProps) {
           >
             {value.map((att, idx) => (
               <div
-                key={`${att.file_path}-${idx}`}
+                key={att.file_path}
                 style={{
                   border: '1px solid #d9d9d9',
                   borderRadius: 8,
@@ -128,11 +213,17 @@ export default function FileUpload({ value = [], onChange }: FileUploadProps) {
                   alignItems: 'center',
                   gap: 8,
                   position: 'relative',
+                  cursor: !canPreview(att) && att.file_type !== 'image' ? 'pointer' : 'default',
+                }}
+                onClick={() => {
+                  if (!canPreview(att) && att.file_type !== 'image') {
+                    handleDownload(att);
+                  }
                 }}
               >
                 {att.file_type === 'image' ? (
-                  <Image
-                    src={getFileUrl(att.file_path)}
+                  <AuthImage
+                    fileKey={att.file_path}
                     alt={att.file_name}
                     width={180}
                     height={120}
@@ -151,7 +242,7 @@ export default function FileUpload({ value = [], onChange }: FileUploadProps) {
                       borderRadius: 4,
                     }}
                   >
-                    {getFileIcon(att.file_type)}
+                    {getFileIcon(att.file_type, att.file_name)}
                   </div>
                 )}
                 <div
@@ -170,19 +261,117 @@ export default function FileUpload({ value = [], onChange }: FileUploadProps) {
                 <div style={{ fontSize: 11, color: '#999' }}>
                   {formatFileSize(att.file_size)}
                 </div>
-                <Button
-                  type="text"
-                  danger
-                  size="small"
-                  icon={<DeleteOutlined />}
-                  onClick={() => handleRemove(idx)}
-                  style={{ position: 'absolute', top: 4, right: 4 }}
-                />
+
+                {/* Action buttons — top-right corner */}
+                <div style={{ position: 'absolute', top: 4, right: 4, display: 'flex', gap: 2 }}>
+                  {canPreview(att) && (
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<EyeOutlined />}
+                      onClick={(e) => { e.stopPropagation(); setPreviewAtt(att); }}
+                      title="预览"
+                    />
+                  )}
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<DownloadOutlined />}
+                    onClick={(e) => { e.stopPropagation(); handleDownload(att); }}
+                    title="下载"
+                  />
+                  <Button
+                    type="text"
+                    danger
+                    size="small"
+                    icon={<DeleteOutlined />}
+                    onClick={(e) => { e.stopPropagation(); handleRemove(idx); }}
+                    title="删除"
+                  />
+                </div>
               </div>
             ))}
           </div>
         </div>
       )}
+
+      {/* Preview Modal */}
+      {previewAtt && (
+        <PreviewModal
+          att={previewAtt}
+          onClose={() => setPreviewAtt(null)}
+          onDownload={handleDownload}
+        />
+      )}
     </div>
+  );
+}
+
+/** Preview Modal that loads content via authenticated blob URL. */
+function PreviewModal({ att, onClose, onDownload }: {
+  att: AttachmentInfo;
+  onClose: () => void;
+  onDownload: (att: AttachmentInfo) => void;
+}) {
+  const blobUrl = useAuthUrl(att.file_path);
+  const type = getPreviewType(att);
+
+  const renderContent = () => {
+    if (!blobUrl) {
+      return (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 0' }}>
+          <Spin tip="加载中..." />
+        </div>
+      );
+    }
+
+    switch (type) {
+      case 'video':
+        return (
+          <video
+            controls
+            autoPlay
+            style={{ width: '100%', maxHeight: '70vh' }}
+            src={blobUrl}
+          />
+        );
+      case 'audio':
+        return (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
+            <audio controls autoPlay src={blobUrl} />
+          </div>
+        );
+      case 'iframe':
+        return (
+          <iframe
+            src={blobUrl}
+            sandbox="allow-scripts"
+            style={{ width: '100%', height: '70vh', border: 'none' }}
+            title={att.file_name}
+          />
+        );
+    }
+  };
+
+  return (
+    <Modal
+      open
+      title={att.file_name}
+      onCancel={onClose}
+      width="80vw"
+      style={{ maxWidth: 1200, top: 20 }}
+      footer={
+        <Button
+          type="primary"
+          icon={<DownloadOutlined />}
+          onClick={() => onDownload(att)}
+        >
+          下载
+        </Button>
+      }
+      destroyOnClose
+    >
+      {renderContent()}
+    </Modal>
   );
 }

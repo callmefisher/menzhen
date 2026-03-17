@@ -55,7 +55,7 @@ describe('FollowUpList', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockIsMobile = false;
-    mockGetStats.mockResolvedValue({ data: { pending_count: 2, overdue_count: 1, today_count: 1, completed_count: 5 } });
+    mockGetStats.mockResolvedValue({ data: { pending_count: 2, overdue_count: 1, today_count: 1, completed_count: 5, total_count: 9 } });
   });
 
   it('renders follow-up list with data', async () => {
@@ -170,28 +170,25 @@ describe('FollowUpList', () => {
     });
   });
 
-  it('renders quick time range buttons and sort indicator', async () => {
+  it('renders pill tabs with stats counts', async () => {
     mockListFollowUps.mockResolvedValue({
       data: { list: [], total: 0, page: 1, size: 20 },
     });
 
-    const { container } = render(<MemoryRouter><FollowUpList /></MemoryRouter>);
+    render(<MemoryRouter><FollowUpList /></MemoryRouter>);
 
     await waitFor(() => {
-      expect(mockListFollowUps).toHaveBeenCalled();
+      expect(screen.getByText(/全部 9/)).toBeInTheDocument();
+      expect(screen.getByText(/待回访 2/)).toBeInTheDocument();
+      expect(screen.getByText(/逾期 1/)).toBeInTheDocument();
+      expect(screen.getByText(/已完成 5/)).toBeInTheDocument();
+      // Recovery row
+      expect(screen.getByText(/已康复/)).toBeInTheDocument();
+      expect(screen.getByText(/未康复/)).toBeInTheDocument();
     });
 
-    // Quick range buttons exist in compact group
-    const buttons = container.querySelectorAll('.ant-space-compact button');
-    expect(buttons.length).toBe(3);
-
     // Sort indicator in column header
-    expect(screen.getByText('计划日期')).toBeInTheDocument();
-
-    // Default sort_order=asc
-    expect(mockListFollowUps).toHaveBeenCalledWith(
-      expect.objectContaining({ sort_order: 'asc' }),
-    );
+    expect(screen.getByText('日期')).toBeInTheDocument();
   });
 
   it('toggles sort order on column header click', async () => {
@@ -207,7 +204,7 @@ describe('FollowUpList', () => {
     });
 
     // Click sort toggle
-    await user.click(screen.getByText('计划日期'));
+    await user.click(screen.getByText('日期'));
 
     await waitFor(() => {
       expect(mockListFollowUps).toHaveBeenCalledWith(
@@ -216,28 +213,24 @@ describe('FollowUpList', () => {
     });
   });
 
-  it('sets date range when clicking quick range button', async () => {
+  it('filters by status when clicking pill tab', async () => {
     const user = userEvent.setup();
     mockListFollowUps.mockResolvedValue({
       data: { list: [], total: 0, page: 1, size: 20 },
     });
 
-    const { container } = render(<MemoryRouter><FollowUpList /></MemoryRouter>);
+    render(<MemoryRouter><FollowUpList /></MemoryRouter>);
 
     await waitFor(() => {
       expect(mockListFollowUps).toHaveBeenCalled();
     });
 
-    // Click first quick range button (今日)
-    const quickButtons = container.querySelectorAll('.ant-space-compact button');
-    await user.click(quickButtons[0]);
+    // Click "待回访" pill
+    await user.click(screen.getByText(/待回访 2/));
 
     await waitFor(() => {
       expect(mockListFollowUps).toHaveBeenCalledWith(
-        expect.objectContaining({
-          planned_date_from: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-          planned_date_to: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-        }),
+        expect.objectContaining({ status: 'pending' }),
       );
     });
   });

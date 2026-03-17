@@ -213,9 +213,20 @@ func (s *BackupService) TriggerRestore(source, mysqlFile, minioFile string) (str
 			cmdArgs := s.buildRestoreArgs(mysqlFile, minioFile)
 			output, err = s.dockerExecStreaming(taskID, cmdArgs...)
 		} else {
-			// cloud: 先下载文件
+			// cloud: 下载用户选择的特定文件
+			if mysqlFile == "" && minioFile == "" {
+				s.UpdateTask(taskID, "failed", "未指定任何备份文件")
+				return
+			}
 			s.UpdateTask(taskID, "running", "正在从七牛云下载备份文件...\n")
-			dlOutput, dlErr := s.dockerExecStreaming(taskID, "python3", "/scripts/download_from_qiniu.py", "--type", "all")
+			dlArgs := []string{"python3", "/scripts/download_from_qiniu.py"}
+			if mysqlFile != "" {
+				dlArgs = append(dlArgs, "--mysql-file", mysqlFile)
+			}
+			if minioFile != "" {
+				dlArgs = append(dlArgs, "--minio-file", minioFile)
+			}
+			dlOutput, dlErr := s.dockerExecStreaming(taskID, dlArgs...)
 			if dlErr != nil {
 				s.UpdateTask(taskID, "failed", dlOutput+"\nDownload Error: "+dlErr.Error())
 				return
@@ -233,6 +244,15 @@ func (s *BackupService) TriggerRestore(source, mysqlFile, minioFile string) (str
 			s.UpdateTask(taskID, "failed", output+"\nError: "+err.Error())
 		} else {
 			s.UpdateTask(taskID, "success", output)
+			// MySQL 恢复后延迟重启 API 容器，让压缩配置重新生效
+			if mysqlFile != "" {
+				go func() {
+					time.Sleep(15 * time.Second)
+					if restartErr := s.RestartAPIContainer(); restartErr != nil {
+						log.Printf("[backup] WARNING: auto-restart API after restore failed: %v", restartErr)
+					}
+				}()
+			}
 		}
 	}()
 
@@ -261,7 +281,7 @@ func (s *BackupService) ListLocalFiles() (*BackupFileList, error) {
 				continue
 			}
 			name := e.Name()
-			if strings.HasPrefix(name, siteID+"_") && strings.HasSuffix(name, ".sql") {
+			if strings.HasPrefix(name, siteID+"_") && (strings.HasSuffix(name, ".sql.gz") || strings.HasSuffix(name, ".sql")) {
 				info, _ := e.Info()
 				if info != nil {
 					result.MySQL = append(result.MySQL, BackupFileInfo{
@@ -503,6 +523,35 @@ func backupContainerName() string {
 		return name
 	}
 	return "menzhen-backup-1"
+}
+
+// apiContainerName 获取 API 容器名称
+func apiContainerName() string {
+	if name := os.Getenv("API_CONTAINER"); name != "" {
+		return name
+	}
+	return "menzhen-api-1"
+}
+
+// RestartAPIContainer 通过 Docker socket 重启 API 容器（用于恢复后重新加载压缩配置）
+func (s *BackupService) RestartAPIContainer() error {
+	container := apiContainerName()
+	req, err := http.NewRequest("POST",
+		fmt.Sprintf("http://localhost/v1.41/containers/%s/restart?t=3", container), nil)
+	if err != nil {
+		return fmt.Errorf("create restart request failed: %v", err)
+	}
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("restart API container failed: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 204 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("restart API container failed (%d): %s", resp.StatusCode, string(body))
+	}
+	log.Printf("[backup] API container %s restart triggered", container)
+	return nil
 }
 
 // dockerExec 通过 Docker socket 在 backup 容器中执行命令

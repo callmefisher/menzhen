@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -eo pipefail
 
 # MinIO backup script
 # Flow: mc mirror → tar.gz → upload to Qiniu → cleanup
@@ -47,7 +47,7 @@ if [ "${FILE_COUNT}" -eq 0 ]; then
 fi
 
 # 3. Create tar.gz
-tar czf "${BACKUP_FILE}" -C "${TMP_DIR}" .
+tar -cf - -C "${TMP_DIR}" . | gzip -9 > "${BACKUP_FILE}"
 rm -rf "${TMP_DIR}"
 echo "[$(date)] MinIO backup: ${BACKUP_FILE} ($(wc -c < "${BACKUP_FILE}") bytes, ${FILE_COUNT} files)"
 

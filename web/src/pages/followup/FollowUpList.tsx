@@ -1,11 +1,11 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Table, Button, Space, Input, Select, Modal, Form, DatePicker, message, Tag, Statistic, Row, Col, Popconfirm, Pagination, Switch } from 'antd';
+import { Card, Table, Button, Space, Input, Select, Modal, Form, DatePicker, message, Tag, Popconfirm, Pagination, Switch, Tooltip } from 'antd';
 import { PlusOutlined, SearchOutlined, CaretUpOutlined, CaretDownOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { useAuth } from '../../store/auth';
 import useIsMobile from '../../hooks/useIsMobile';
-import { listFollowUps, createFollowUp, updateFollowUp, deleteFollowUp, getFollowUpStats } from '../../api/followUp';
+import { listFollowUps, createFollowUp, updateFollowUp, deleteFollowUp, getFollowUpStats, findFollowUpPage } from '../../api/followUp';
 import type { FollowUpListItem, FollowUpStats, CreateFollowUpReq, UpdateFollowUpReq } from '../../api/followUp';
 import { listPatients, getPatient } from '../../api/patient';
 import { listRecords } from '../../api/record';
@@ -21,6 +21,38 @@ const statusConfig: Record<string, { label: string; color: string }> = {
   overdue: { label: '逾期', color: 'red' },
 };
 
+import { recoveredTagStyle, notRecoveredTagStyle } from '../../utils/followUpStyles';
+
+// Pill tabs: Row 1 = status, Row 2 = recovery
+type StatusTab = 'all' | 'pending' | 'overdue' | 'completed';
+type RecoveryTab = '' | 'recovered' | 'not_recovered';
+
+const statusTabs: { key: StatusTab; label: string; bgActive: string; colorActive: string; statsKey: keyof FollowUpStats }[] = [
+  { key: 'all', label: '全部', bgActive: '#1677ff', colorActive: '#fff', statsKey: 'total_count' },
+  { key: 'pending', label: '待回访', bgActive: '#e6f4ff', colorActive: '#1677ff', statsKey: 'pending_count' },
+  { key: 'overdue', label: '逾期', bgActive: '#fff2f0', colorActive: '#ff4d4f', statsKey: 'overdue_count' },
+  { key: 'completed', label: '已完成', bgActive: '#f6ffed', colorActive: '#52c41a', statsKey: 'completed_count' },
+];
+
+// Quick date range helpers
+type QuickRangeKey = 'today' | 'week' | 'month';
+const getQuickRange = (key: QuickRangeKey): [string, string] => {
+  const today = dayjs();
+  switch (key) {
+    case 'today':
+      return [today.format('YYYY-MM-DD'), today.format('YYYY-MM-DD')];
+    case 'week': {
+      const d = today.day();
+      const diffToMonday = d === 0 ? 6 : d - 1;
+      const monday = today.subtract(diffToMonday, 'day');
+      const sunday = monday.add(6, 'day');
+      return [monday.format('YYYY-MM-DD'), sunday.format('YYYY-MM-DD')];
+    }
+    case 'month':
+      return [today.startOf('month').format('YYYY-MM-DD'), today.endOf('month').format('YYYY-MM-DD')];
+  }
+};
+
 export default function FollowUpList() {
   const isMobile = useIsMobile();
   const navigate = useNavigate();
@@ -30,8 +62,11 @@ export default function FollowUpList() {
   const [data, setData] = useState<FollowUpListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
-  const [params, setParams] = useState({ page: 1, size: 20, patient_name: '', status: '', planned_date_from: '', planned_date_to: '', sort_order: 'asc' as 'asc' | 'desc' });
-  const [stats, setStats] = useState<FollowUpStats>({ pending_count: 0, overdue_count: 0, today_count: 0, completed_count: 0 });
+  const [params, setParams] = useState({ page: 1, size: 20, patient_name: '', status: '', is_recovered: '' as '' | 'true' | 'false', planned_date_from: '', planned_date_to: '', sort_order: 'asc' as 'asc' | 'desc' });
+  const [stats, setStats] = useState<FollowUpStats>({ pending_count: 0, overdue_count: 0, today_count: 0, completed_count: 0, total_count: 0 });
+  const [activeStatusTab, setActiveStatusTab] = useState<StatusTab>('all');
+  const [activeRecoveryTab, setActiveRecoveryTab] = useState<RecoveryTab>('');
+  const [lastSavedId, setLastSavedId] = useState<number | null>(null);
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -61,22 +96,65 @@ export default function FollowUpList() {
       const res = await getFollowUpStats();
       const body = res as any;
       if (body.data) setStats(body.data);
-      window.dispatchEvent(new Event('followup-data-changed'));
     } catch { /* ignore */ }
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => { fetchStats(); }, [fetchStats]);
 
+  // Highlight: if saved row not in current page after data refresh, use findFollowUpPage to locate it
+  useEffect(() => {
+    if (!lastSavedId) return;
+    const inCurrentPage = data.some(item => item.id === lastSavedId);
+    if (inCurrentPage) {
+      // Scroll to highlighted row
+      const doScroll = () => {
+        const el = document.getElementById(`followup-row-${lastSavedId}`);
+        el?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+      };
+      let scrollCleanup: (() => void) | undefined;
+      if (isMobile) {
+        const t = setTimeout(doScroll, 500);
+        scrollCleanup = () => clearTimeout(t);
+      } else {
+        let cancelled = false;
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => { if (!cancelled) doScroll(); });
+        });
+        scrollCleanup = () => { cancelled = true; };
+      }
+      const timer = setTimeout(() => setLastSavedId(null), 5000);
+      return () => { scrollCleanup?.(); clearTimeout(timer); };
+    } else if (data.length > 0) {
+      // Row not on current page — ask backend which page it's on (once)
+      findFollowUpPage(lastSavedId, params.size)
+        .then((res) => {
+          const body = res as any;
+          const targetPage = body.data?.page || 1;
+          if (targetPage !== params.page) {
+            setParams(p => ({ ...p, page: targetPage }));
+          } else {
+            // Already on the target page but row not found — give up highlight
+            setLastSavedId(null);
+          }
+        })
+        .catch(() => { setLastSavedId(null); });
+      // Clear highlight as fallback after 5s
+      const timer = setTimeout(() => setLastSavedId(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [lastSavedId, data, isMobile]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // 电话为空的回访项，逐个查询患者电话并回填
   useEffect(() => {
+    let cancelled = false;
     const emptyPhoneItems = data.filter((item) => !item.patient_phone && item.patient_id);
     if (emptyPhoneItems.length === 0) return;
-    // 按 patient_id 去重
     const uniquePatientIds = [...new Set(emptyPhoneItems.map((item) => item.patient_id))];
     uniquePatientIds.forEach(async (pid) => {
       try {
         const res = await getPatient(pid);
+        if (cancelled) return;
         const body = res as any;
         const phone = body.data?.phone;
         if (phone) {
@@ -86,6 +164,7 @@ export default function FollowUpList() {
         }
       } catch { /* ignore */ }
     });
+    return () => { cancelled = true; };
   }, [data.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Patient search for modal
@@ -111,6 +190,62 @@ export default function FollowUpList() {
     } catch { /* ignore */ }
   };
 
+  // Quick date range
+  const activeQuickRange = useMemo(() => {
+    const { planned_date_from: from, planned_date_to: to } = params;
+    if (!from && !to) return '';
+    for (const key of ['today', 'week', 'month'] as const) {
+      const [qf, qt] = getQuickRange(key);
+      if (from === qf && to === qt) return key;
+    }
+    return 'custom';
+  }, [params.planned_date_from, params.planned_date_to]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleQuickRange = (key: QuickRangeKey) => {
+    if (activeQuickRange === key) {
+      setParams({ ...params, planned_date_from: '', planned_date_to: '', page: 1 });
+    } else {
+      const [from, to] = getQuickRange(key);
+      setParams({ ...params, planned_date_from: from, planned_date_to: to, status: '', page: 1 });
+      setActiveStatusTab('all');
+    }
+  };
+
+  // Status tab click
+  const handleStatusTabClick = (tab: StatusTab) => {
+    if (tab === activeStatusTab) {
+      setActiveStatusTab('all');
+      setParams({ ...params, status: '', planned_date_from: '', planned_date_to: '', page: 1 });
+      return;
+    }
+    setActiveStatusTab(tab);
+    switch (tab) {
+      case 'all':
+        setParams({ ...params, status: '', planned_date_from: '', planned_date_to: '', page: 1 });
+        break;
+      case 'pending':
+        setParams({ ...params, status: 'pending', planned_date_from: '', planned_date_to: '', page: 1 });
+        break;
+      case 'overdue':
+        setParams({ ...params, status: 'overdue', planned_date_from: '', planned_date_to: '', page: 1 });
+        break;
+      case 'completed':
+        setParams({ ...params, status: 'completed', planned_date_from: '', planned_date_to: '', page: 1 });
+        break;
+    }
+  };
+
+  // Recovery tab click
+  const handleRecoveryTabClick = (tab: RecoveryTab) => {
+    if (tab === activeRecoveryTab) {
+      setActiveRecoveryTab('');
+      setParams({ ...params, is_recovered: '', page: 1 });
+      return;
+    }
+    setActiveRecoveryTab(tab);
+    setParams({ ...params, is_recovered: tab === 'recovered' ? 'true' : 'false', page: 1 });
+  };
+
   // CRUD handlers
   const handleAdd = () => {
     form.resetFields();
@@ -124,7 +259,6 @@ export default function FollowUpList() {
     setEditing(record);
     const isOther = !['电话', '微信', '到诊'].includes(record.method);
     setIsOtherMethod(isOther);
-    // 确保患者列表包含当前患者，这样 Select 能显示名字而非 ID
     setPatients((prev) => {
       const exists = prev.some((p) => p.id === record.patient_id);
       return exists ? prev : [...prev, { id: record.patient_id, name: record.patient_name }];
@@ -138,12 +272,10 @@ export default function FollowUpList() {
       content: record.content,
       is_recovered: record.is_recovered,
     });
-    // 先加载诊疗记录列表，再回填 record_id（避免被 handlePatientChange 清空）
     await handlePatientChange(record.patient_id);
     form.setFieldValue('record_id', record.record_id);
     setModalOpen(true);
 
-    // 电话为空时，重新查询患者电话并更新列表数据
     if (!record.patient_phone && record.patient_id) {
       try {
         const res = await getPatient(record.patient_id);
@@ -164,6 +296,7 @@ export default function FollowUpList() {
       message.success('删除成功');
       fetchData();
       fetchStats();
+      window.dispatchEvent(new Event('followup-data-changed'));
     } catch { message.error('删除失败'); }
   };
 
@@ -172,18 +305,20 @@ export default function FollowUpList() {
     setConfirmLoading(true);
     try {
       const method = values.method === '其他' ? (values.custom_method || '其他') : values.method;
+      let savedId: number | null = null;
       if (editing) {
         const req: UpdateFollowUpReq = {
           patient_id: values.patient_id,
           record_id: values.record_id,
           planned_date: values.planned_date?.format('YYYY-MM-DD'),
-          actual_date: values.actual_date?.format('YYYY-MM-DD') ?? null,
+          actual_date: values.actual_date ? values.actual_date.format('YYYY-MM-DD') : '',
           method,
           content: values.content || '',
           is_recovered: values.is_recovered ?? false,
         };
         await updateFollowUp(editing.id, req);
         message.success('更新成功');
+        savedId = editing.id;
       } else {
         const req: CreateFollowUpReq = {
           patient_id: values.patient_id,
@@ -192,29 +327,47 @@ export default function FollowUpList() {
           method,
           content: values.content || '',
         };
-        await createFollowUp(req);
+        const res = await createFollowUp(req);
+        const body = res as any;
         message.success('新增成功');
+        savedId = body.data?.id || null;
       }
       setModalOpen(false);
-      fetchData();
       fetchStats();
+      window.dispatchEvent(new Event('followup-data-changed'));
+      if (savedId) {
+        setLastSavedId(savedId);
+        // Refresh current page first, then check if saved row is still here
+        fetchData();
+      } else {
+        fetchData();
+      }
     } catch { message.error('操作失败'); }
     finally { setConfirmLoading(false); }
   };
 
   // Table columns (desktop)
+  // Deps: sort_order for header UI; handlers use stable setState/form refs so safe to omit
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const columns: ColumnsType<FollowUpListItem> = useMemo(() => [
     {
-      title: '患者姓名', dataIndex: 'patient_name', key: 'patient_name', width: 100,
+      title: '患者', dataIndex: 'patient_name', key: 'patient_name', width: 90,
       render: (name: string, record) => (
-        name === '已删除'
-          ? <span style={{ color: '#999' }}>{name}</span>
-          : <a onClick={() => navigate(`/patients/${record.patient_id}`)}>{name}</a>
+        <div>
+          {name === '已删除'
+            ? <span style={{ color: '#999' }}>{name}</span>
+            : <a style={{ color: '#1677ff' }} onClick={() => navigate(`/patients/${record.patient_id}`)}>{name}</a>
+          }
+          <div style={{ marginTop: 2 }}>
+            <span style={record.is_recovered ? recoveredTagStyle : notRecoveredTagStyle}>
+              {record.is_recovered ? '已康复' : '未康复'}
+            </span>
+          </div>
+        </div>
       ),
     },
     {
-      title: '联系电话', dataIndex: 'patient_phone', key: 'patient_phone', width: 120,
+      title: '联系电话', dataIndex: 'patient_phone', key: 'patient_phone', width: 130,
       render: (phone: string) => phone || '—',
     },
     {
@@ -232,9 +385,9 @@ export default function FollowUpList() {
             </div>
             <a
               style={{ fontSize: 12 }}
-              onClick={() => navigate(`/records/${record.record_id}`)}
+              onClick={() => navigate(`/records/${record.record_id}?followup_id=${record.id}`)}
             >
-              {record.record_visit_date} 查看详情 →
+              {record.record_visit_date} 详情 →
             </a>
           </div>
         );
@@ -246,36 +399,38 @@ export default function FollowUpList() {
           style={{ cursor: 'pointer', userSelect: 'none', display: 'inline-flex', alignItems: 'center', gap: 2 }}
           onClick={() => setParams((p) => ({ ...p, sort_order: p.sort_order === 'asc' ? 'desc' : 'asc', page: 1 }))}
         >
-          计划日期
+          日期
           <span style={{ display: 'inline-flex', flexDirection: 'column', fontSize: 10, lineHeight: 1 }}>
             <CaretUpOutlined style={{ color: params.sort_order === 'asc' ? '#1677ff' : '#bbb' }} />
             <CaretDownOutlined style={{ color: params.sort_order === 'desc' ? '#1677ff' : '#bbb', marginTop: -2 }} />
           </span>
         </span>
       ),
-      dataIndex: 'planned_date', key: 'planned_date', width: 110,
+      key: 'dates', width: 160,
+      render: (_, record) => (
+        <div style={{ fontSize: 12 }}>
+          <div>计划: {record.planned_date}</div>
+          <div style={{ color: record.actual_date ? '#52c41a' : '#999' }}>到访: {record.actual_date || '—'}</div>
+        </div>
+      ),
     },
     {
-      title: '实际日期', dataIndex: 'actual_date', key: 'actual_date', width: 110,
-      render: (v: string | null) => v || '—',
-    },
-    {
-      title: '状态', key: 'status', width: 80,
+      title: '状态', key: 'status', width: 75,
       render: (_, record) => {
         const cfg = statusConfig[record.status] || statusConfig.pending;
         return <Tag color={cfg.color}>{cfg.label}</Tag>;
       },
     },
     {
-      title: '康复', key: 'is_recovered', width: 80,
-      render: (_, record) => (
-        record.is_recovered
-          ? <Tag color="green">已康复</Tag>
-          : <Tag color="default">未康复</Tag>
-      ),
+      title: '回访内容', dataIndex: 'content', key: 'content', ellipsis: true,
+      render: (content: string) => content ? (
+        <Tooltip title={content}>
+          <span style={{ color: '#666' }}>{content}</span>
+        </Tooltip>
+      ) : '—',
     },
     {
-      title: '操作', key: 'action', width: 120,
+      title: '操作', key: 'action', width: 100,
       render: (_, record) => (
         <Space size="small">
           {hasPermission('followup:update') && (
@@ -309,13 +464,24 @@ export default function FollowUpList() {
   // Mobile card
   const renderMobileCard = (item: FollowUpListItem) => {
     const cfg = statusConfig[item.status] || statusConfig.pending;
-    const borderColor = item.status === 'overdue' ? '#ff4d4f' : item.is_recovered ? '#52c41a' : undefined;
+    const isHighlighted = item.id === lastSavedId;
+    const isOverdue = item.status === 'overdue';
     return (
-      <Card key={item.id} size="small" style={{ marginBottom: 8, borderLeft: borderColor ? `3px solid ${borderColor}` : undefined }}>
+      <div key={item.id} id={`followup-row-${item.id}`}>
+      <Card
+        size="small"
+        style={{
+          marginBottom: 8,
+          ...(isOverdue ? { background: '#ffe8e6' } : {}),
+          ...(isHighlighted ? { outline: '2px solid #52c41a', outlineOffset: -2, background: isOverdue ? '#ffe8e6' : '#f6ffed' } : {}),
+        }}
+      >
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-          <a onClick={() => navigate(`/patients/${item.patient_id}`)} style={{ fontWeight: 500 }}>{item.patient_name}</a>
+          <a style={{ color: '#1677ff', fontWeight: 500 }} onClick={() => navigate(`/patients/${item.patient_id}`)}>{item.patient_name}</a>
           <Space size={4}>
-            {item.is_recovered && <Tag color="green">已康复</Tag>}
+            <span style={item.is_recovered ? { ...recoveredTagStyle, fontSize: 11 } : { ...notRecoveredTagStyle, fontSize: 11 }}>
+              {item.is_recovered ? '已康复' : '未康复'}
+            </span>
             <Tag color={cfg.color}>{cfg.label}</Tag>
           </Space>
         </div>
@@ -329,12 +495,12 @@ export default function FollowUpList() {
             <span style={{ color: '#666' }}>
               诊疗: {item.record_diagnosis.slice(0, 20)}{item.record_diagnosis.length > 20 ? '...' : ''}
             </span>
-            <a onClick={() => navigate(`/records/${item.record_id}`)} style={{ marginLeft: 6, fontSize: 12 }}>
+            <a onClick={() => navigate(`/records/${item.record_id}?followup_id=${item.id}`)} style={{ marginLeft: 6, fontSize: 12 }}>
               查看 →
             </a>
           </div>
         )}
-        {item.content && <div style={{ marginTop: 4, color: '#888', fontSize: 12 }}>{item.content}</div>}
+        {item.content && <div style={{ marginTop: 4, color: '#888', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.content}</div>}
         <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
           {hasPermission('followup:update') && <Button size="small" onClick={() => handleEdit(item)}>编辑</Button>}
           {hasPermission('followup:delete') && (
@@ -344,49 +510,84 @@ export default function FollowUpList() {
           )}
         </div>
       </Card>
+      </div>
     );
   };
 
-  // Quick date range helpers
-  type QuickRangeKey = 'today' | 'week' | 'month';
-
-  const getQuickRange = (key: QuickRangeKey): [string, string] => {
-    const today = dayjs();
-    switch (key) {
-      case 'today':
-        return [today.format('YYYY-MM-DD'), today.format('YYYY-MM-DD')];
-      case 'week': {
-        // 显式计算本周一~周日，不依赖 locale startOf('week')
-        const d = today.day(); // 0=周日, 1=周一, ..., 6=周六
-        const diffToMonday = d === 0 ? 6 : d - 1;
-        const monday = today.subtract(diffToMonday, 'day');
-        const sunday = monday.add(6, 'day');
-        return [monday.format('YYYY-MM-DD'), sunday.format('YYYY-MM-DD')];
-      }
-      case 'month':
-        return [today.startOf('month').format('YYYY-MM-DD'), today.endOf('month').format('YYYY-MM-DD')];
-    }
-  };
-
-  const activeQuickRange = useMemo(() => {
-    const { planned_date_from: from, planned_date_to: to } = params;
-    if (!from && !to) return '';
-    for (const key of ['today', 'week', 'month'] as const) {
-      const [qf, qt] = getQuickRange(key);
-      if (from === qf && to === qt) return key;
-    }
-    return 'custom';
-  }, [params.planned_date_from, params.planned_date_to]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleQuickRange = (key: QuickRangeKey) => {
-    if (activeQuickRange === key) {
-      // 取消选中
-      setParams({ ...params, planned_date_from: '', planned_date_to: '', page: 1 });
-    } else {
-      const [from, to] = getQuickRange(key);
-      setParams({ ...params, planned_date_from: from, planned_date_to: to, page: 1 });
-    }
-  };
+  // Two-row pill tabs
+  const renderPillTabs = () => (
+    <div style={{ marginBottom: 16 }}>
+      {/* Row 1: status tabs */}
+      <div style={{
+        display: 'flex',
+        gap: isMobile ? 6 : 10,
+        marginBottom: 8,
+        ...(isMobile ? { overflowX: 'auto', whiteSpace: 'nowrap' as const, flexWrap: 'nowrap' as const, paddingBottom: 4 } : { flexWrap: 'wrap' as const }),
+      }}>
+        {statusTabs.map(({ key, label, bgActive, colorActive, statsKey }) => {
+          const isActive = activeStatusTab === key;
+          return (
+            <div
+              key={key}
+              onClick={() => handleStatusTabClick(key)}
+              style={{
+                padding: isMobile ? '4px 12px' : '7px 20px',
+                background: isActive ? bgActive : '#f5f5f5',
+                color: isActive ? colorActive : '#666',
+                borderRadius: 20,
+                fontSize: isMobile ? 12 : 15,
+                cursor: 'pointer',
+                fontWeight: isActive ? 500 : 400,
+                flexShrink: 0,
+                transition: 'all 0.2s',
+                userSelect: 'none' as const,
+              }}
+            >
+              {label} {stats[statsKey] ?? 0}
+            </div>
+          );
+        })}
+      </div>
+      {/* Row 2: recovery tabs */}
+      <div style={{ display: 'flex', gap: isMobile ? 6 : 10, alignItems: 'center' }}>
+        <span style={{ color: '#999', fontSize: isMobile ? 11 : 13 }}>康复:</span>
+        <div
+          onClick={() => handleRecoveryTabClick('recovered')}
+          style={{
+            padding: isMobile ? '3px 10px' : '5px 16px',
+            background: activeRecoveryTab === 'recovered' ? '#f6ffed' : '#f5f5f5',
+            color: activeRecoveryTab === 'recovered' ? '#389e0d' : '#666',
+            borderRadius: 20,
+            fontSize: isMobile ? 11 : 14,
+            cursor: 'pointer',
+            fontWeight: activeRecoveryTab === 'recovered' ? 500 : 400,
+            border: activeRecoveryTab === 'recovered' ? '1px solid #b7eb8f' : '1px solid transparent',
+            transition: 'all 0.2s',
+            userSelect: 'none' as const,
+          }}
+        >
+          已康复
+        </div>
+        <div
+          onClick={() => handleRecoveryTabClick('not_recovered')}
+          style={{
+            padding: isMobile ? '3px 10px' : '5px 16px',
+            background: activeRecoveryTab === 'not_recovered' ? '#fff7e6' : '#f5f5f5',
+            color: activeRecoveryTab === 'not_recovered' ? '#d46b08' : '#666',
+            borderRadius: 20,
+            fontSize: isMobile ? 11 : 14,
+            cursor: 'pointer',
+            fontWeight: activeRecoveryTab === 'not_recovered' ? 500 : 400,
+            border: activeRecoveryTab === 'not_recovered' ? '1px solid #ffd591' : '1px solid transparent',
+            transition: 'all 0.2s',
+            userSelect: 'none' as const,
+          }}
+        >
+          未康复
+        </div>
+      </div>
+    </div>
+  );
 
   // Search bar
   const renderSearchBar = () => (
@@ -399,17 +600,6 @@ export default function FollowUpList() {
         style={{ width: isMobile ? '100%' : 200 }}
         allowClear
       />
-      <Select
-        value={params.status || undefined}
-        placeholder="状态"
-        onChange={(v) => setParams({ ...params, status: v || '', page: 1 })}
-        style={{ width: isMobile ? 'calc(50% - 4px)' : 120 }}
-        allowClear
-      >
-        <Option value="pending">待回访</Option>
-        <Option value="overdue">逾期</Option>
-        <Option value="completed">已完成</Option>
-      </Select>
       {isMobile && hasPermission('followup:create') && (
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} style={{ width: 'calc(50% - 4px)' }} aria-label="新增回访" />
       )}
@@ -436,9 +626,9 @@ export default function FollowUpList() {
             value={params.planned_date_from ? dayjs(params.planned_date_from) : undefined}
             onChange={(d) => {
               const from = d?.format('YYYY-MM-DD') || '';
-              // 如果开始日期晚于结束日期，清空结束日期
               const to = from && params.planned_date_to && from > params.planned_date_to ? '' : params.planned_date_to;
               setParams({ ...params, planned_date_from: from, planned_date_to: to, page: 1 });
+              setActiveStatusTab('all');
             }}
             disabledDate={params.planned_date_to ? (d) => d.isAfter(dayjs(params.planned_date_to), 'day') : undefined}
             style={{ flex: 1, minWidth: 0 }}
@@ -450,9 +640,9 @@ export default function FollowUpList() {
             value={params.planned_date_to ? dayjs(params.planned_date_to) : undefined}
             onChange={(d) => {
               const to = d?.format('YYYY-MM-DD') || '';
-              // 如果结束日期早于开始日期，清空开始日期
               const from = to && params.planned_date_from && to < params.planned_date_from ? '' : params.planned_date_from;
               setParams({ ...params, planned_date_from: from, planned_date_to: to, page: 1 });
+              setActiveStatusTab('all');
             }}
             disabledDate={params.planned_date_from ? (d) => d.isBefore(dayjs(params.planned_date_from), 'day') : undefined}
             style={{ flex: 1, minWidth: 0 }}
@@ -473,6 +663,7 @@ export default function FollowUpList() {
               planned_date_to: dates?.[1]?.format('YYYY-MM-DD') || '',
               page: 1,
             });
+            setActiveStatusTab('all');
           }}
         />
       )}
@@ -482,21 +673,6 @@ export default function FollowUpList() {
         </Button>
       )}
     </div>
-  );
-
-  // Stats cards
-  const renderStats = () => (
-    <Row gutter={16} style={{ marginBottom: 16 }}>
-      <Col span={isMobile ? 8 : 4}>
-        <Card size="small"><Statistic title="待回访" value={stats.pending_count} /></Card>
-      </Col>
-      <Col span={isMobile ? 8 : 4}>
-        <Card size="small"><Statistic title="今日" value={stats.today_count} /></Card>
-      </Col>
-      <Col span={isMobile ? 8 : 4}>
-        <Card size="small"><Statistic title="逾期" value={stats.overdue_count} valueStyle={{ color: '#ff4d4f' }} /></Card>
-      </Col>
-    </Row>
   );
 
   // Modal form
@@ -546,7 +722,7 @@ export default function FollowUpList() {
           </Form.Item>
         )}
         {editing && (
-          <Form.Item name="actual_date" label="实际回访日期">
+          <Form.Item name="actual_date" label="实际回访日期" extra="清空此日期后，状态将恢复为待回访">
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
         )}
@@ -564,8 +740,8 @@ export default function FollowUpList() {
 
   return (
     <>
+      {renderPillTabs()}
       {renderSearchBar()}
-      {renderStats()}
       {isMobile ? (
         <>
           {renderMobileSortBar()}
@@ -577,7 +753,7 @@ export default function FollowUpList() {
               current={params.page}
               pageSize={params.size}
               total={total}
-              onChange={(page) => setParams({ ...params, page })}
+              onChange={(page) => { setLastSavedId(null); setParams({ ...params, page }); }}
             />
           </div>
         </>
@@ -587,19 +763,42 @@ export default function FollowUpList() {
           dataSource={data}
           rowKey="id"
           loading={loading}
-          rowClassName={(record) => record.status === 'overdue' ? 'follow-up-overdue-row' : ''}
+          rowClassName={(record) => {
+            const cls: string[] = [];
+            if (record.status === 'overdue') cls.push('follow-up-overdue-row');
+            if (record.id === lastSavedId) cls.push('followup-saved-highlight');
+            return cls.join(' ');
+          }}
+          onRow={(record) => ({
+            id: `followup-row-${record.id}`,
+          })}
           pagination={{
             current: params.page,
             pageSize: params.size,
             total,
-            onChange: (page, size) => setParams({ ...params, page, size }),
+            onChange: (page, size) => { setLastSavedId(null); setParams({ ...params, page, size }); },
             showSizeChanger: true,
             showTotal: (t) => `共 ${t} 条`,
           }}
         />
       )}
       {renderModal()}
-      <style>{`.follow-up-overdue-row { background: #fff2f0 !important; }`}</style>
+      <style>{`
+        .follow-up-overdue-row > td.ant-table-cell { background: #ffe8e6 !important; }
+        .followup-saved-highlight > td.ant-table-cell {
+          background: #f6ffed !important;
+          box-shadow: inset 0 2px 0 #52c41a, inset 0 -2px 0 #52c41a;
+        }
+        .followup-saved-highlight > td.ant-table-cell:first-child {
+          box-shadow: inset 2px 2px 0 #52c41a, inset 0 -2px 0 #52c41a;
+        }
+        .followup-saved-highlight > td.ant-table-cell:last-child {
+          box-shadow: inset -2px 2px 0 #52c41a, inset 0 -2px 0 #52c41a;
+        }
+        .follow-up-overdue-row.followup-saved-highlight > td.ant-table-cell {
+          background: #f6ffed !important;
+        }
+      `}</style>
     </>
   );
 }

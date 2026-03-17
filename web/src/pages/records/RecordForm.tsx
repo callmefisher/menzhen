@@ -18,7 +18,7 @@ import {
   Drawer,
   Tooltip,
 } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, RobotOutlined, ReloadOutlined, MedicineBoxOutlined, InboxOutlined, SearchOutlined, DownOutlined, RightOutlined, DollarOutlined, CheckOutlined, PrinterOutlined, LeftOutlined, ScheduleOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, RobotOutlined, ReloadOutlined, MedicineBoxOutlined, InboxOutlined, SearchOutlined, DownOutlined, RightOutlined, DollarOutlined, CheckOutlined, PrinterOutlined, LeftOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import Markdown from 'react-markdown';
@@ -41,14 +41,14 @@ import PrescriptionModal from '../../components/PrescriptionModal';
 import PrescriptionPrint from '../../components/PrescriptionPrint';
 import BillingDrawer from '../../components/BillingDrawer';
 import PrintCenterDrawer from '../../components/PrintCenterDrawer';
-import FollowUpDrawer from '../../components/FollowUpDrawer';
+import FollowUpPanel from '../../components/FollowUpPanel';
 import { listRecordBillings } from '../../api/billing';
 import type { BillingRecord } from '../../api/billing';
 import { useAuth } from '../../store/auth';
 import useIsMobile from '../../hooks/useIsMobile';
 import { listPulses } from '../../api/pulse';
 import type { PulseItem } from '../../api/pulse';
-import { uploadFile, getFileUrl } from '../../api/upload';
+import { uploadFile, fetchFileBlob } from '../../api/upload';
 
 interface PatientOption {
   id: number;
@@ -116,8 +116,9 @@ export default function RecordForm() {
   const [billingPrescriptionId, setBillingPrescriptionId] = useState<number>(0);
   const [billingMap, setBillingMap] = useState<Record<number, BillingRecord>>({});
 
-  // Follow-up drawer state
-  const [followUpDrawerOpen, setFollowUpDrawerOpen] = useState(false);
+  // Follow-up panel: read highlight ID from URL
+  const followUpIdParam = searchParams.get('followup_id');
+  const highlightFollowUpId = followUpIdParam ? Number(followUpIdParam) : undefined;
 
   // Print center (mobile combined print+billing)
   const [printCenterOpen, setPrintCenterOpen] = useState(false);
@@ -164,6 +165,7 @@ export default function RecordForm() {
   const [tongueResult, setTongueResult] = useState<string>('');
   const [tongueDrawerOpen, setTongueDrawerOpen] = useState(false);  const [tongueImageUrl, setTongueImageUrl] = useState<string>('');
   const [tongueUploading, setTongueUploading] = useState(false);
+  const [tongueDeleting, setTongueDeleting] = useState(false);
 
   // Card 4 collapsible state (notes & attachments)
   const [notesExpanded, setNotesExpanded] = useState(false);
@@ -382,7 +384,7 @@ export default function RecordForm() {
           } catch { /* ignore */ }
         }
         if (record.tongue_image) {
-          setTongueImageUrl(getFileUrl(record.tongue_image));
+          fetchFileBlob(record.tongue_image).then(url => setTongueImageUrl(url)).catch(() => {});
         }
         if (record.tongue_analysis) {
           setTongueResult(record.tongue_analysis);
@@ -487,8 +489,18 @@ export default function RecordForm() {
       const body = res as unknown as { data: { file_path: string } };
       const filePath = body.data.file_path;
       form.setFieldValue('tongue_image', filePath);
-      setTongueImageUrl(getFileUrl(filePath));
-      message.success('舌象图片上传成功');
+      fetchFileBlob(filePath).then(url => setTongueImageUrl(url)).catch(() => {});
+      // 编辑模式下立即同步到后端，防止孤立文件
+      if (isEdit) {
+        try {
+          await updateRecord(Number(id), { tongue_image: filePath });
+          message.success('舌象图片上传成功');
+        } catch {
+          message.error('同步舌象图片失败，请手动保存');
+        }
+      } else {
+        message.success('舌象图片上传成功');
+      }
     } catch {
       message.error('上传失败');
     } finally {
@@ -1166,10 +1178,24 @@ export default function RecordForm() {
                 <Button
                   size="small"
                   danger
+                  loading={tongueDeleting}
                   style={{ position: 'absolute', top: 4, right: 4 }}
-                  onClick={() => {
+                  onClick={async () => {
                     form.setFieldValue('tongue_image', '');
                     setTongueImageUrl('');
+                    setTongueResult('');
+                    setTongueDrawerOpen(false);
+                    // 编辑模式下立即同步到后端，清除关联防止孤立数据
+                    if (isEdit) {
+                      setTongueDeleting(true);
+                      try {
+                        await updateRecord(Number(id), { tongue_image: '' });
+                      } catch {
+                        message.error('同步删除舌象图片失败，请手动保存');
+                      } finally {
+                        setTongueDeleting(false);
+                      }
+                    }
                   }}
                 >
                   删除
@@ -1316,7 +1342,13 @@ export default function RecordForm() {
             </div>
             <div style={{ display: attachmentsExpanded ? 'block' : 'none' }}>
               <Form.Item name="attachments" style={{ marginBottom: 0 }}>
-                <FileUpload />
+                <FileUpload onSync={isEdit ? async (updatedAttachments) => {
+                  try {
+                    await updateRecord(Number(id), { attachments: updatedAttachments });
+                  } catch {
+                    message.error('同步附件失败，请手动保存');
+                  }
+                } : undefined} />
               </Form.Item>
             </div>
           </div>
@@ -1326,7 +1358,7 @@ export default function RecordForm() {
         <Form.Item style={{ marginTop: 8 }}>
           <div className={isMobile ? 'record-form-actions' : undefined}>
             <Space>
-              <Button type="primary" htmlType="submit" loading={submitting}>
+              <Button type="primary" htmlType="submit" loading={submitting} disabled={tongueUploading || tongueDeleting}>
                 保存
               </Button>
             {hasPermission('prescription:create') && (
@@ -1379,14 +1411,6 @@ export default function RecordForm() {
                 loading={submitting}
               >
                 开方
-              </Button>
-            )}
-            {isEdit && hasPermission('followup:create') && (
-              <Button
-                icon={<ScheduleOutlined />}
-                onClick={() => setFollowUpDrawerOpen(true)}
-              >
-                {isMobile ? '回访' : '创建回访'}
               </Button>
             )}
             {!isMobile && <Button onClick={() => navigate('/records')}>取消</Button>}
@@ -1774,16 +1798,14 @@ export default function RecordForm() {
         />
       )}
 
-      {/* 快速创建回访抽屉 */}
-      {isEdit && (
-        <FollowUpDrawer
-          open={followUpDrawerOpen}
+      {/* 回访折叠面板 */}
+      {isEdit && hasPermission('followup:read') && recordPatient && (
+        <FollowUpPanel
           recordId={Number(id)}
-          patientId={recordPatient?.id ?? 0}
-          patientName={recordPatient?.name || ''}
-          visitDate={form.getFieldValue('visit_date')?.format?.('YYYY-MM-DD') || dayjs().format('YYYY-MM-DD')}
-          diagnosis={form.getFieldValue('diagnosis')}
-          onClose={() => setFollowUpDrawerOpen(false)}
+          patientId={recordPatient.id}
+          patientName={recordPatient.name}
+          patientPhone={recordPatient.phone}
+          highlightFollowUpId={highlightFollowUpId}
         />
       )}
 

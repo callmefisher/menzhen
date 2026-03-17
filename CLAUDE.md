@@ -6,44 +6,43 @@
 
 ## 开发原则
 
-### 0 review, 全面测试，代码自审,部署,总结
+### 1. review, 测试，部署,总结
 
 - 本条最重要,一定严格遵循以下流程,设计->实施->review->测试->部署->清晰总结
-- 对任务涉及的方案，代码，变更等进行全面review, 覆盖测试，单元和回归测试，并对review的意见优化修复，性能优化，代码简化等操作，然后部署直接执行deploy.sh，最后中文表格总结本次task改动变化，review，测试，部署结果
+- 对任务涉及的方案，代码，变更等进行全面review, 覆盖测试，单元和回归测试，并对review的意见优化修复，性能优化，代码简化等操作，
+- 部署直接执行deploy.sh
 - 严格review检查逻辑、边界条件、错误处理
-- 编写测试覆盖正常流程、边界、错误场景
+- 任何的代码改动都必须review，并编写测试覆盖正常流程、边界、错误场景
 
-### 1. 先设计后编码
+### 2. 先设计后编码
 - 清晰描述实现方案后再编码
 - 需求不明确时**先澄清**，不基于猜测编码
 
-### 2. 任务分解
+### 3. 任务分解
 - 涉及 >3 个文件时，必须分解为子任务
 - 按顺序逐个完成，避免大范围同时修改
 - 
-### 3. Bug 修复（TDD）
+### 4. Bug 修复（TDD）
 1. 先写能重现 Bug 的测试
 2. 确认测试失败
 3. 修复代码
 4. 确认测试通过
 5. 确保不破坏其他测试
 
-### 4. 持续学习规则
+### 5. 持续学习规则
 
 每次用户纠正 Claude 的错误后，需要：
 - 在本章节下方的「经验教训」中添加新规则
 - 规则应具体、可执行，防止类似问题再次发生
 
-### 5. 自动更新文档
+### 6. 自动更新文档
 
 每次新开发的服务，代码，文档，等需要及时总结更新CLAUDE.md和README,保持CLAUDE.md的行数在合理范围内，如果涉及更长篇幅的文档，需要作为子md文档，外链到CLAUDE.md中
 
 
 ### 经验教训
-- 前端测试需要在 `src/test/setup.ts` 中 polyfill `ResizeObserver` 和 `window.matchMedia`（antd 组件依赖）
-- `tsconfig.app.json` 需要 exclude 测试目录，避免 `global` 等 Node 类型在 build 时报错
+
 - **每次新增功能必须同步review，编写单元测试**：后端用 `testutil.SetupTestDB` + testify（middleware/service/handler 三层），前端用 vitest + testing-library（API service + store + page 组件），测试必须基于实际业务逻辑、覆盖正常流程/边界/错误场景，且全量测试通过（`go test ./...` + `npm test`）后才算完成
-- 及时用中文报告进度和总结
 - GORM AutoMigrate 遇到已有 FK 约束阻塞 drop index 时，需启用 `DisableForeignKeyConstraintWhenMigrating: true` 或手动删除 FK
 
 ---

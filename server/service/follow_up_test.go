@@ -100,7 +100,7 @@ func TestFollowUpList(t *testing.T) {
 	}
 
 	// ASC: earliest first
-	items, total, err := svc.List(tenantID, 0, "", "", "", "", 1, 10, "asc")
+	items, total, err := svc.List(tenantID, 0, 0, "", "", "", "", "", 1, 10, "asc")
 	require.NoError(t, err)
 	assert.Equal(t, int64(3), total)
 	assert.Len(t, items, 3)
@@ -109,7 +109,7 @@ func TestFollowUpList(t *testing.T) {
 	assert.Equal(t, "2026-03-22", items[2].PlannedDate)
 
 	// DESC: latest first
-	items, total, err = svc.List(tenantID, 0, "", "", "", "", 1, 10, "desc")
+	items, total, err = svc.List(tenantID, 0, 0, "", "", "", "", "", 1, 10, "desc")
 	require.NoError(t, err)
 	assert.Equal(t, int64(3), total)
 	assert.Equal(t, "2026-03-22", items[0].PlannedDate)
@@ -138,13 +138,13 @@ func TestFollowUpListFilterByStatus(t *testing.T) {
 	require.NoError(t, err)
 
 	// Filter pending only (future)
-	items, _, err := svc.List(tenantID, 0, "", "pending", "", "", 1, 10, "asc")
+	items, _, err := svc.List(tenantID, 0, 0, "", "pending", "", "", "", 1, 10, "asc")
 	require.NoError(t, err)
 	assert.Equal(t, 1, len(items))
 	assert.Equal(t, "pending", items[0].Status)
 
 	// Filter overdue
-	items, _, err = svc.List(tenantID, 0, "", "overdue", "", "", 1, 10, "asc")
+	items, _, err = svc.List(tenantID, 0, 0, "", "overdue", "", "", "", 1, 10, "asc")
 	require.NoError(t, err)
 	assert.Equal(t, 1, len(items))
 	assert.Equal(t, "overdue", items[0].Status)
@@ -172,7 +172,7 @@ func TestFollowUpListIsRecovered(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	items, total, err := svc.List(tenantID, 0, "", "", "", "", 1, 10, "asc")
+	items, total, err := svc.List(tenantID, 0, 0, "", "", "", "", "", 1, 10, "asc")
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), total)
 	// One recovered, one not
@@ -183,6 +183,18 @@ func TestFollowUpListIsRecovered(t *testing.T) {
 		}
 	}
 	assert.Equal(t, 1, recoveredCount)
+
+	// Filter recovered only
+	items, total, err = svc.List(tenantID, 0, 0, "", "", "true", "", "", 1, 10, "asc")
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	assert.True(t, items[0].IsRecovered)
+
+	// Filter not recovered only
+	items, total, err = svc.List(tenantID, 0, 0, "", "", "false", "", "", 1, 10, "asc")
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	assert.False(t, items[0].IsRecovered)
 }
 
 func TestFollowUpUpdate(t *testing.T) {
@@ -315,13 +327,13 @@ func TestFollowUpTenantIsolation(t *testing.T) {
 	})
 
 	// Tenant1 should only see its own
-	items, total, err := svc.List(tenant1.ID, 0, "", "", "", "", 1, 10, "asc")
+	items, total, err := svc.List(tenant1.ID, 0, 0, "", "", "", "", "", 1, 10, "asc")
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), total)
 	assert.Equal(t, "患者A", items[0].PatientName)
 
 	// Tenant2 should only see its own
-	items, total, err = svc.List(tenant2.ID, 0, "", "", "", "", 1, 10, "asc")
+	items, total, err = svc.List(tenant2.ID, 0, 0, "", "", "", "", "", 1, 10, "asc")
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), total)
 	assert.Equal(t, "患者B", items[0].PatientName)
@@ -352,4 +364,69 @@ func TestFollowUpStats(t *testing.T) {
 	assert.Equal(t, int64(1), stats.PendingCount)
 	assert.Equal(t, int64(1), stats.OverdueCount)
 	assert.Equal(t, int64(1), stats.CompletedCount)
+}
+
+func TestFollowUpStatsTotalCount(t *testing.T) {
+	svc, tenantID, userID, patientID, recordID := setupFollowUpTest(t)
+
+	// Create future pending
+	svc.Create(tenantID, userID, &CreateFollowUpRequest{
+		PatientID: patientID, RecordID: recordID, PlannedDate: "2099-12-31", Method: "电话",
+	})
+	// Create overdue (past pending)
+	svc.Create(tenantID, userID, &CreateFollowUpRequest{
+		PatientID: patientID, RecordID: recordID, PlannedDate: "2020-01-01", Method: "微信",
+	})
+	// Create completed
+	fu, _ := svc.Create(tenantID, userID, &CreateFollowUpRequest{
+		PatientID: patientID, RecordID: recordID, PlannedDate: "2026-03-01", Method: "到诊",
+	})
+	ad := "2026-03-02"
+	svc.Update(tenantID, fu.ID, &UpdateFollowUpRequest{ActualDate: &ad})
+
+	stats, err := svc.Stats(tenantID)
+	require.NoError(t, err)
+	assert.Equal(t, int64(3), stats.TotalCount)
+	assert.Equal(t, stats.PendingCount+stats.OverdueCount+stats.CompletedCount, stats.TotalCount)
+}
+
+func TestFollowUpListByRecordID(t *testing.T) {
+	svc, tenantID, userID, patientID, recordID := setupFollowUpTest(t)
+
+	// Create a second medical record
+	db := svc.DB
+	record2 := model.MedicalRecord{
+		TenantID: tenantID, PatientID: patientID, Diagnosis: "头痛",
+		VisitDate: time.Now(), CreatedBy: userID,
+	}
+	require.NoError(t, db.Create(&record2).Error)
+
+	// Create follow-ups for different records
+	svc.Create(tenantID, userID, &CreateFollowUpRequest{
+		PatientID: patientID, RecordID: recordID, PlannedDate: "2026-04-01", Method: "电话",
+	})
+	svc.Create(tenantID, userID, &CreateFollowUpRequest{
+		PatientID: patientID, RecordID: recordID, PlannedDate: "2026-04-02", Method: "微信",
+	})
+	svc.Create(tenantID, userID, &CreateFollowUpRequest{
+		PatientID: patientID, RecordID: record2.ID, PlannedDate: "2026-04-03", Method: "到诊",
+	})
+
+	// Filter by recordID should return only 2
+	items, total, err := svc.List(tenantID, 0, recordID, "", "", "", "", "", 1, 10, "asc")
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), total)
+	assert.Len(t, items, 2)
+
+	// Filter by record2.ID should return only 1
+	items, total, err = svc.List(tenantID, 0, record2.ID, "", "", "", "", "", 1, 10, "asc")
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	assert.Len(t, items, 1)
+	assert.Equal(t, "头痛", items[0].RecordDiagnosis)
+
+	// No filter should return all 3
+	items, total, err = svc.List(tenantID, 0, 0, "", "", "", "", "", 1, 10, "asc")
+	require.NoError(t, err)
+	assert.Equal(t, int64(3), total)
 }

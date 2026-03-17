@@ -38,9 +38,10 @@ func TestBackupService_ListLocalFiles(t *testing.T) {
 	t.Setenv("BACKUP_DIR", tmpDir)
 	t.Setenv("SITE_ID", "test")
 
-	// 创建测试文件
+	// 创建测试文件（.sql 和 .sql.gz 两种格式）
 	os.WriteFile(filepath.Join(tmpDir, "test_20260316_140000.sql"), []byte("dump"), 0644)
 	os.WriteFile(filepath.Join(tmpDir, "test_20260315_120000.sql"), []byte("dump2"), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "test_20260317_080000.sql.gz"), []byte("gzipped"), 0644)
 	os.WriteFile(filepath.Join(tmpDir, "other.txt"), []byte("skip"), 0644)
 
 	minioDir := filepath.Join(tmpDir, "minio")
@@ -51,7 +52,7 @@ func TestBackupService_ListLocalFiles(t *testing.T) {
 	result, err := svc.ListLocalFiles()
 
 	assert.NoError(t, err)
-	assert.Len(t, result.MySQL, 2)
+	assert.Len(t, result.MySQL, 3) // 2x .sql + 1x .sql.gz
 	assert.Len(t, result.MinIO, 1)
 	// 文件名匹配
 	assert.Equal(t, "test_minio_20260316_140000.tar.gz", result.MinIO[0].Filename)

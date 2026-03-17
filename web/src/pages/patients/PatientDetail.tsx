@@ -23,6 +23,7 @@ import {
 } from 'antd';
 import {
   EditOutlined,
+  EyeOutlined,
   PlusOutlined,
   DownOutlined,
   UpOutlined,
@@ -34,7 +35,7 @@ import {
 import { getPatient } from '../../api/patient';
 import { deleteRecord } from '../../api/record';
 import type { PrescriptionData } from '../../api/prescription';
-import { getFileUrl } from '../../api/upload';
+import { AuthImage, AuthAudio, AuthVideo } from '../../components/AuthMedia';
 import type { FollowUpListItem } from '../../api/followUp';
 import {
   listFollowUps,
@@ -43,6 +44,7 @@ import {
   deleteFollowUp,
 } from '../../api/followUp';
 import dayjs from 'dayjs';
+import { recoveredTagStyle, notRecoveredTagStyle } from '../../utils/followUpStyles';
 import { PatientFormModal } from './PatientForm';
 import useIsMobile from '../../hooks/useIsMobile';
 
@@ -107,6 +109,7 @@ export default function PatientDetail() {
   const [followUpSaving, setFollowUpSaving] = useState(false);
   const [editingFollowUp, setEditingFollowUp] = useState<FollowUpListItem | null>(null);
   const [isOtherMethod, setIsOtherMethod] = useState(false);
+  const [lastSavedFollowUpId, setLastSavedFollowUpId] = useState<number | null>(null);
 
   const fetchFollowUps = useCallback(async () => {
     if (!id) return;
@@ -141,6 +144,13 @@ export default function PatientDetail() {
     fetchPatient();
     fetchFollowUps();
   }, [fetchPatient, fetchFollowUps]);
+
+  // Clear followup highlight after 5s
+  useEffect(() => {
+    if (!lastSavedFollowUpId) return;
+    const timer = setTimeout(() => setLastSavedFollowUpId(null), 5000);
+    return () => clearTimeout(timer);
+  }, [lastSavedFollowUpId]);
 
   // Highlight record and prescription when returning from RecordForm (keep collapsed)
   useEffect(() => {
@@ -228,25 +238,26 @@ export default function PatientDetail() {
       if (editingFollowUp) {
         const data: Record<string, unknown> = {
           planned_date: values.planned_date.format('YYYY-MM-DD'),
+          actual_date: values.actual_date ? values.actual_date.format('YYYY-MM-DD') : '',
           method,
           content: values.content || '',
           record_id: values.record_id || null,
           is_recovered: values.is_recovered ?? false,
         };
-        if (values.actual_date) {
-          data.actual_date = values.actual_date.format('YYYY-MM-DD');
-        }
         await updateFollowUp(editingFollowUp.id, data);
         message.success('回访记录已更新');
+        setLastSavedFollowUpId(editingFollowUp.id);
       } else {
-        await createFollowUp({
+        const res = await createFollowUp({
           patient_id: Number(id),
           planned_date: values.planned_date.format('YYYY-MM-DD'),
           method,
           content: values.content || '',
           record_id: values.record_id || undefined,
         });
+        const body = res as any;
         message.success('回访记录已创建');
+        if (body.data?.id) setLastSavedFollowUpId(body.data.id);
       }
       setFollowUpModalOpen(false);
       fetchFollowUps();
@@ -326,6 +337,28 @@ export default function PatientDetail() {
   const recordMap = new Map(records.map((r) => [r.id, r]));
 
   return (
+    <>
+    {/* 悬浮返回按钮 */}
+    <div
+      onClick={() => navigate('/patients')}
+      style={{
+        position: 'fixed',
+        top: isMobile ? 10 : 12,
+        left: isMobile ? 60 : undefined,
+        right: isMobile ? undefined : 200,
+        zIndex: 999,
+        background: '#1677ff',
+        color: '#fff',
+        padding: isMobile ? '6px 16px' : '6px 16px',
+        borderRadius: 20,
+        fontSize: isMobile ? 14 : 13,
+        boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+        cursor: 'pointer',
+        userSelect: 'none',
+      }}
+    >
+      ← {isMobile ? '患者列表' : '返回患者列表'}
+    </div>
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Top section: Patient basic info */}
       <Card
@@ -477,10 +510,10 @@ export default function PatientDetail() {
                       <Button
                         type="link"
                         size="small"
-                        icon={<EditOutlined />}
+                        icon={<EyeOutlined />}
                         onClick={() => navigate(`/records/${record.id}?from=patient&patient_id=${patient.id}`)}
                       >
-                        编辑
+                        查看
                       </Button>
                       <Popconfirm
                         title="确定删除此诊疗记录？"
@@ -545,9 +578,9 @@ export default function PatientDetail() {
                               <Image.PreviewGroup>
                                 <Space wrap>
                                   {imageAttachments.map((att) => (
-                                    <Image
+                                    <AuthImage
                                       key={att.id}
-                                      src={getFileUrl(att.file_path)}
+                                      fileKey={att.file_path}
                                       alt={att.file_name}
                                       width={120}
                                       height={90}
@@ -584,13 +617,11 @@ export default function PatientDetail() {
                                   >
                                     {att.file_name}
                                   </Text>
-                                  <audio
-                                    controls
-                                    src={getFileUrl(att.file_path)}
+                                  <AuthAudio
+                                    key={att.id}
+                                    fileKey={att.file_path}
                                     style={{ width: '100%', maxWidth: isMobile ? undefined : 400 }}
-                                  >
-                                    您的浏览器不支持音频播放
-                                  </audio>
+                                  />
                                 </div>
                               ))}
                             </div>
@@ -617,17 +648,15 @@ export default function PatientDetail() {
                                   >
                                     {att.file_name}
                                   </Text>
-                                  <video
-                                    controls
-                                    src={getFileUrl(att.file_path)}
+                                  <AuthVideo
+                                    key={att.id}
+                                    fileKey={att.file_path}
                                     style={{
                                       width: '100%',
                                       maxWidth: isMobile ? undefined : 480,
                                       borderRadius: 4,
                                     }}
-                                  >
-                                    您的浏览器不支持视频播放
-                                  </video>
+                                  />
                                 </div>
                               ))}
                             </div>
@@ -708,6 +737,7 @@ export default function PatientDetail() {
               return (
                 <div
                   key={item.id}
+                  className={lastSavedFollowUpId === item.id ? 'followup-saved-highlight' : undefined}
                   style={{
                     display: 'flex',
                     alignItems: isMobile ? 'flex-start' : 'center',
@@ -734,9 +764,10 @@ export default function PatientDetail() {
                     >
                       {cfg.label}
                     </Tag>
-                    {item.is_recovered && (
-                      <Tag color="green" style={{ margin: 0, fontSize: 12 }}>已康复</Tag>
-                    )}
+                    {item.is_recovered
+                      ? <span style={recoveredTagStyle}>已康复</span>
+                      : <span style={notRecoveredTagStyle}>未康复</span>
+                    }
                     <span style={{ fontSize: 13, color: '#333', whiteSpace: 'nowrap' }}>
                       {item.planned_date}
                     </span>
@@ -750,7 +781,7 @@ export default function PatientDetail() {
                     color: '#666',
                     width: isMobile ? '100%' : undefined,
                   }}>
-                    {item.content && (
+                    {item.content && !/^已[经]?康复$/.test(item.content.trim()) && (
                       <div style={{
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
@@ -907,10 +938,9 @@ export default function PatientDetail() {
             </Form.Item>
           )}
           {records.length > 0 && (
-            <Form.Item name="record_id" label="关联诊疗记录">
+            <Form.Item name="record_id" label="关联诊疗记录" rules={[{ required: true, message: '请选择关联诊疗记录' }]}>
               <Select
-                allowClear
-                placeholder="选择关联的诊疗记录（可选）"
+                placeholder="选择关联的诊疗记录"
                 options={records.map((r) => ({
                   value: r.id,
                   label: `${r.visit_date?.slice(0, 10)} ${r.diagnosis?.slice(0, 30) || '(无诊断)'}`,
@@ -919,7 +949,7 @@ export default function PatientDetail() {
             </Form.Item>
           )}
           {editingFollowUp && (
-            <Form.Item name="actual_date" label="实际回访日期">
+            <Form.Item name="actual_date" label="实际回访日期" extra="清空此日期后，状态将恢复为待回访">
               <DatePicker style={{ width: '100%' }} placeholder="填写后自动标记为已完成" />
             </Form.Item>
           )}
@@ -958,5 +988,16 @@ export default function PatientDetail() {
         }
       />
     </div>
+    <style>{`
+      @keyframes followup-saved-flash {
+        0% { box-shadow: inset 0 0 0 2px #52c41a; background: #f6ffed; }
+        100% { box-shadow: none; background: transparent; }
+      }
+      .followup-saved-highlight {
+        box-shadow: inset 0 0 0 2px #52c41a;
+        animation: followup-saved-flash 5s ease-in-out forwards;
+      }
+    `}</style>
+    </>
   );
 }

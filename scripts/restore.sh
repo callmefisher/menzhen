@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -eo pipefail
 
 # Usage:
 #   restore.sh <backup-dir-path>              # Legacy: directory with database.sql + files/
@@ -33,25 +33,25 @@ LEGACY_DIR=""
 while [[ $# -gt 0 ]]; do
     case $1 in
         --auto)
-            # Find latest .sql matching SITE_ID
-            SQL_FILE=$(find "${BACKUP_DIR}" -maxdepth 1 -name "${SITE_ID}_*.sql" -type f | sort -r | head -1)
+            # Find latest .sql/.sql.gz matching SITE_ID
+            SQL_FILE=$(find "${BACKUP_DIR}" -maxdepth 1 \( -name "${SITE_ID}_*.sql.gz" -o -name "${SITE_ID}_*.sql" \) -type f | sort -r | head -1)
             # Find latest minio tar.gz matching SITE_ID
             MINIO_TAR=$(find "${BACKUP_DIR}/minio" -name "${SITE_ID}_minio_*.tar.gz" -type f 2>/dev/null | sort -r | head -1)
             # Fallback: try legacy format (no SITE_ID prefix)
             if [ -z "${SQL_FILE}" ]; then
                 echo "[$(date)] No SITE_ID=${SITE_ID} backups found, trying legacy format..."
-                SQL_FILE=$(find "${BACKUP_DIR}" -maxdepth 1 -name "*.sql" -type f | sort -r | head -1)
+                SQL_FILE=$(find "${BACKUP_DIR}" -maxdepth 1 \( -name "*.sql.gz" -o -name "*.sql" \) -type f | sort -r | head -1)
                 MINIO_TAR=$(find "${BACKUP_DIR}/minio" -name "minio_*.tar.gz" -type f 2>/dev/null | sort -r | head -1)
             fi
             # If no local backups found, try downloading from Qiniu
             if [ -z "${SQL_FILE}" ]; then
                 echo "[$(date)] No local backups found, trying to download from Qiniu..."
                 if python3 /scripts/download_from_qiniu.py --type all; then
-                    SQL_FILE=$(find "${BACKUP_DIR}" -maxdepth 1 -name "${SITE_ID}_*.sql" -type f | sort -r | head -1)
+                    SQL_FILE=$(find "${BACKUP_DIR}" -maxdepth 1 \( -name "${SITE_ID}_*.sql.gz" -o -name "${SITE_ID}_*.sql" \) -type f | sort -r | head -1)
                     MINIO_TAR=$(find "${BACKUP_DIR}/minio" -name "${SITE_ID}_minio_*.tar.gz" -type f 2>/dev/null | sort -r | head -1)
                     # Fallback after download: try legacy format
                     if [ -z "${SQL_FILE}" ]; then
-                        SQL_FILE=$(find "${BACKUP_DIR}" -maxdepth 1 -name "*.sql" -type f | sort -r | head -1)
+                        SQL_FILE=$(find "${BACKUP_DIR}" -maxdepth 1 \( -name "*.sql.gz" -o -name "*.sql" \) -type f | sort -r | head -1)
                         MINIO_TAR=$(find "${BACKUP_DIR}/minio" -name "minio_*.tar.gz" -type f 2>/dev/null | sort -r | head -1)
                     fi
                 fi
@@ -101,13 +101,23 @@ if [ -z "${SQL_FILE}" ] && [ -z "${MINIO_TAR}" ]; then
     exit 1
 fi
 
+# Helper: restore MySQL from .sql or .sql.gz
+restore_mysql() {
+    local file="$1"
+    echo ">> Restoring MySQL database from ${file}..."
+    if [[ "${file}" == *.sql.gz ]]; then
+        gunzip -c "${file}" | mysql -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASSWORD}" "${DB_NAME}"
+    else
+        mysql -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASSWORD}" "${DB_NAME}" < "${file}"
+    fi
+    echo "MySQL restore complete"
+}
+
 echo "[$(date)] Starting restore..."
 
 # 1. Restore MySQL (skip if no SQL file)
 if [ -n "${SQL_FILE}" ]; then
-    echo ">> Restoring MySQL database from ${SQL_FILE}..."
-    mysql -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASSWORD}" "${DB_NAME}" < "${SQL_FILE}"
-    echo "MySQL restore complete"
+    restore_mysql "${SQL_FILE}"
 else
     echo ">> 跳过 MySQL 恢复（未指定 SQL 文件）"
 fi

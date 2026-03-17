@@ -3,7 +3,9 @@ package handler
 import (
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strings"
 
@@ -18,36 +20,86 @@ import (
 
 // Allowed file extensions grouped by resource type.
 var allowedExtensions = map[string]string{
+	// image
 	".jpg":  "image",
 	".jpeg": "image",
 	".png":  "image",
 	".gif":  "image",
 	".bmp":  "image",
+	".webp": "image",
+	".svg":  "image",
+	// audio
 	".mp3":  "audio",
 	".wav":  "audio",
 	".ogg":  "audio",
 	".m4a":  "audio",
+	".flac": "audio",
+	".aac":  "audio",
+	// video
 	".mp4":  "video",
 	".avi":  "video",
 	".mov":  "video",
 	".mkv":  "video",
+	".webm": "video",
+	// document
+	".pdf":  "document",
+	".doc":  "document",
+	".docx": "document",
+	".xls":  "document",
+	".xlsx": "document",
+	".ppt":  "document",
+	".pptx": "document",
+	".txt":  "document",
+	".csv":  "document",
+	".rtf":  "document",
+	// archive
+	".zip": "archive",
+	".rar": "archive",
+	".7z":  "archive",
+	".gz":  "archive",
+	".tar": "archive",
 }
 
 // Content-Type mapping for common extensions used when proxying files.
 var extContentType = map[string]string{
+	// image
 	".jpg":  "image/jpeg",
 	".jpeg": "image/jpeg",
 	".png":  "image/png",
 	".gif":  "image/gif",
 	".bmp":  "image/bmp",
+	".webp": "image/webp",
+	".svg":  "image/svg+xml",
+	// audio
 	".mp3":  "audio/mpeg",
 	".wav":  "audio/wav",
 	".ogg":  "audio/ogg",
 	".m4a":  "audio/mp4",
+	".flac": "audio/flac",
+	".aac":  "audio/aac",
+	// video
 	".mp4":  "video/mp4",
 	".avi":  "video/x-msvideo",
 	".mov":  "video/quicktime",
 	".mkv":  "video/x-matroska",
+	".webm": "video/webm",
+	// document
+	".pdf":  "application/pdf",
+	".doc":  "application/msword",
+	".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+	".xls":  "application/vnd.ms-excel",
+	".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+	".ppt":  "application/vnd.ms-powerpoint",
+	".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+	".txt":  "text/plain",
+	".csv":  "text/csv",
+	".rtf":  "application/rtf",
+	// archive
+	".zip": "application/zip",
+	".rar": "application/vnd.rar",
+	".7z":  "application/x-7z-compressed",
+	".gz":  "application/gzip",
+	".tar": "application/x-tar",
 }
 
 // UploadHandler handles file upload and download endpoints.
@@ -85,7 +137,7 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": fmt.Sprintf("unsupported file type: %s. Allowed: images(.jpg,.jpeg,.png,.gif,.bmp), audio(.mp3,.wav,.ogg,.m4a), video(.mp4,.avi,.mov,.mkv)", ext),
+			"message": fmt.Sprintf("unsupported file type: %s. Allowed: images, audio, video, documents(.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.rtf), archives(.zip,.rar,.7z,.gz,.tar)", ext),
 		})
 		return
 	}
@@ -150,9 +202,10 @@ func (h *UploadHandler) CleanupOrphanFiles(c *gin.Context) {
 	}
 
 	if err != nil {
+		log.Printf("[CleanupOrphanFiles] cleanup failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
-			"message": "cleanup failed: " + err.Error(),
+			"message": "cleanup failed",
 		})
 		return
 	}
@@ -166,7 +219,7 @@ func (h *UploadHandler) CleanupOrphanFiles(c *gin.Context) {
 
 // GetFile handles GET /api/v1/files/*key.
 // It proxies the file from MinIO to the client with the correct Content-Type,
-// so that MinIO URLs are never exposed.
+// so that MinIO URLs are never exposed. Requires authentication and tenant isolation.
 func (h *UploadHandler) GetFile(c *gin.Context) {
 	// The *key param captures everything after /api/v1/files/
 	// Gin provides it with a leading slash, so we trim it.
@@ -176,6 +229,28 @@ func (h *UploadHandler) GetFile(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": "missing file key",
+		})
+		return
+	}
+
+	// Reject path traversal attempts.
+	if strings.Contains(key, "..") {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "invalid file key",
+		})
+		return
+	}
+
+	// Tenant isolation: key format is "{tenantID}/{type}/{uuid}.ext".
+	// Verify the file belongs to the caller's tenant.
+	tenantID := middleware.GetTenantID(c)
+	expectedPrefix := fmt.Sprintf("%d/", tenantID)
+	cleaned := filepath.ToSlash(filepath.Clean(key))
+	if !strings.HasPrefix(cleaned, expectedPrefix) {
+		c.JSON(http.StatusForbidden, gin.H{
+			"code":    403,
+			"message": "cannot access file belonging to another tenant",
 		})
 		return
 	}
@@ -218,6 +293,22 @@ func (h *UploadHandler) GetFile(c *gin.Context) {
 		}
 	}
 
+	// Force attachment for SVG to prevent stored XSS (SVG can contain <script>).
+	ext := strings.ToLower(filepath.Ext(key))
+	if ext == ".svg" {
+		contentType = "application/octet-stream"
+		fileName := filepath.Base(key)
+		encoded := url.PathEscape(fileName)
+		c.Header("Content-Disposition",
+			fmt.Sprintf(`attachment; filename="%s"; filename*=UTF-8''%s`, encoded, encoded))
+	} else if c.Query("download") == "1" {
+		// If ?download=1, set Content-Disposition to force browser download.
+		fileName := filepath.Base(key)
+		encoded := url.PathEscape(fileName)
+		c.Header("Content-Disposition",
+			fmt.Sprintf(`attachment; filename="%s"; filename*=UTF-8''%s`, encoded, encoded))
+	}
+
 	// Stream the object to the response.
 	c.Header("Content-Type", contentType)
 	c.Header("Content-Length", fmt.Sprintf("%d", info.Size))
@@ -228,4 +319,62 @@ func (h *UploadHandler) GetFile(c *gin.Context) {
 		// Just log the error silently.
 		_ = err
 	}
+}
+
+// DeleteUploadedFile handles DELETE /api/v1/upload.
+// It deletes a file from MinIO by its object key, ensuring the file belongs to the caller's tenant.
+// Request body: {"file_path": "tenant_id/resource_type/uuid.ext"}
+func (h *UploadHandler) DeleteUploadedFile(c *gin.Context) {
+	var req struct {
+		FilePath string `json:"file_path" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "missing file_path",
+		})
+		return
+	}
+
+	// Reject path traversal attempts.
+	if strings.Contains(req.FilePath, "..") {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "invalid file path",
+		})
+		return
+	}
+
+	// Verify the file belongs to the caller's tenant by checking the cleaned path prefix.
+	tenantID := middleware.GetTenantID(c)
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": "unauthorized",
+		})
+		return
+	}
+	expectedPrefix := fmt.Sprintf("%d/", tenantID)
+	cleaned := filepath.ToSlash(filepath.Clean(req.FilePath))
+	if !strings.HasPrefix(cleaned, expectedPrefix) {
+		c.JSON(http.StatusForbidden, gin.H{
+			"code":    403,
+			"message": "cannot delete file belonging to another tenant",
+		})
+		return
+	}
+
+	// Delete from MinIO.
+	if err := storage.DeleteFile(h.minioClient, h.bucket, cleaned); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "failed to delete file from storage",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+	})
 }
