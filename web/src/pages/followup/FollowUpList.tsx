@@ -107,11 +107,11 @@ export default function FollowUpList() {
     if (!lastSavedId) return;
     const inCurrentPage = data.some(item => item.id === lastSavedId);
     if (inCurrentPage) {
-      // Row is on current page, scroll to it
-      requestAnimationFrame(() => {
-        const el = document.querySelector('.followup-saved-highlight');
+      // Wait for DOM render then scroll to highlighted element
+      setTimeout(() => {
+        const el = document.querySelector(`[data-followup-id="${lastSavedId}"]`);
         el?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
-      });
+      }, 300);
     }
     const timer = setTimeout(() => setLastSavedId(null), 5000);
     return () => clearTimeout(timer);
@@ -448,6 +448,7 @@ export default function FollowUpList() {
       <Card
         key={item.id}
         size="small"
+        data-followup-id={item.id}
         style={{
           marginBottom: 8,
           ...(isOverdue ? { background: '#ffe8e6' } : {}),
@@ -747,6 +748,7 @@ export default function FollowUpList() {
             return cls.join(' ');
           }}
           onRow={(record) => ({
+            'data-followup-id': record.id,
             style: {
               ...(record.status === 'overdue' ? { background: '#ffe8e6' } : {}),
               ...(record.id === lastSavedId ? { outline: '2px solid #52c41a', outlineOffset: -2, borderRadius: 8 } : {}),
