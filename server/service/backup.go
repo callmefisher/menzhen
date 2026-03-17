@@ -261,7 +261,7 @@ func (s *BackupService) ListLocalFiles() (*BackupFileList, error) {
 				continue
 			}
 			name := e.Name()
-			if strings.HasPrefix(name, siteID+"_") && strings.HasSuffix(name, ".sql") {
+			if strings.HasPrefix(name, siteID+"_") && (strings.HasSuffix(name, ".sql.gz") || strings.HasSuffix(name, ".sql")) {
 				info, _ := e.Info()
 				if info != nil {
 					result.MySQL = append(result.MySQL, BackupFileInfo{
