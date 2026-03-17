@@ -107,18 +107,28 @@ export default function FollowUpList() {
     if (!lastSavedId) return;
     const inCurrentPage = data.some(item => item.id === lastSavedId);
     if (inCurrentPage) {
-      // Scroll after DOM settles: use setTimeout for mobile reliability
-      const scrollTimer = setTimeout(() => {
+      const doScroll = () => {
         const el = document.getElementById(`followup-row-${lastSavedId}`);
         el?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
-      }, 500);
-      const clearScrollTimer = () => clearTimeout(scrollTimer);
+      };
+      // Desktop: double rAF (fast); Mobile: setTimeout for reliable DOM timing
+      let scrollCleanup: (() => void) | undefined;
+      if (isMobile) {
+        const t = setTimeout(doScroll, 500);
+        scrollCleanup = () => clearTimeout(t);
+      } else {
+        let cancelled = false;
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => { if (!cancelled) doScroll(); });
+        });
+        scrollCleanup = () => { cancelled = true; };
+      }
       const timer = setTimeout(() => setLastSavedId(null), 5000);
-      return () => { clearScrollTimer(); clearTimeout(timer); };
+      return () => { scrollCleanup?.(); clearTimeout(timer); };
     }
     const timer = setTimeout(() => setLastSavedId(null), 5000);
     return () => clearTimeout(timer);
-  }, [lastSavedId, data]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lastSavedId, data, isMobile]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 电话为空的回访项，逐个查询患者电话并回填
   useEffect(() => {
