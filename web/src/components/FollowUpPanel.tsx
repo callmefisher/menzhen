@@ -40,6 +40,7 @@ export default function FollowUpPanel({ recordId, patientId, patientName, highli
   const [editing, setEditing] = useState<FollowUpListItem | null>(null);
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [isOtherMethod, setIsOtherMethod] = useState(false);
+  const [lastSavedId, setLastSavedId] = useState<number | null>(null);
   const [form] = Form.useForm();
   const highlightRef = useRef<HTMLDivElement>(null);
 
@@ -61,6 +62,13 @@ export default function FollowUpPanel({ recordId, patientId, patientName, highli
   }, [recordId, highlightFollowUpId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Clear highlight after 5s
+  useEffect(() => {
+    if (!lastSavedId) return;
+    const timer = setTimeout(() => setLastSavedId(null), 5000);
+    return () => clearTimeout(timer);
+  }, [lastSavedId]);
 
   useEffect(() => {
     if (highlightFollowUpId && highlightRef.current && !loading && items.some(i => i.id === highlightFollowUpId)) {
@@ -117,13 +125,14 @@ export default function FollowUpPanel({ recordId, patientId, patientName, highli
       if (editing) {
         const req: UpdateFollowUpReq = {
           planned_date: values.planned_date?.format('YYYY-MM-DD'),
-          actual_date: values.actual_date?.format('YYYY-MM-DD') ?? null,
+          actual_date: values.actual_date ? values.actual_date.format('YYYY-MM-DD') : '',
           method,
           content: values.content || '',
           is_recovered: values.is_recovered ?? false,
         };
         await updateFollowUp(editing.id, req);
         message.success('更新成功');
+        setLastSavedId(editing.id);
       } else {
         const req: CreateFollowUpReq = {
           patient_id: patientId,
@@ -132,8 +141,10 @@ export default function FollowUpPanel({ recordId, patientId, patientName, highli
           method,
           content: values.content || '',
         };
-        await createFollowUp(req);
+        const res = await createFollowUp(req);
+        const body = res as any;
         message.success('创建成功');
+        if (body.data?.id) setLastSavedId(body.data.id);
       }
       setModalOpen(false);
       fetchData();
@@ -199,16 +210,19 @@ export default function FollowUpPanel({ recordId, patientId, patientName, highli
               <>
                 {items.map((item) => {
                   const cfg = statusConfig[item.status] || statusConfig.pending;
-                  const isHighlight = highlightFollowUpId === item.id;
+                  const isHighlight = highlightFollowUpId === item.id || lastSavedId === item.id;
                   return (
                     <div
                       key={item.id}
-                      ref={isHighlight ? highlightRef : undefined}
+                      ref={highlightFollowUpId === item.id ? highlightRef : undefined}
                       className={isHighlight ? 'followup-highlight' : ''}
                       style={{ padding: isMobile ? '8px 0' : '10px 0', borderBottom: '1px solid #f5f5f5', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}
                     >
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <span style={{ background: cfg.bg, color: cfg.color, padding: '1px 8px', borderRadius: 10, fontSize: 11 }}>{cfg.label}</span>
+                        <span style={{ marginLeft: 4, fontSize: 11, color: item.is_recovered ? '#52c41a' : '#999' }}>
+                          {item.is_recovered ? '已康复' : '未康复'}
+                        </span>
                         <span style={{ marginLeft: 6, fontSize: 13 }}>{item.planned_date} · {item.method}</span>
                         {item.content && (
                           <div style={{ color: '#888', fontSize: 12, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
@@ -270,7 +284,7 @@ export default function FollowUpPanel({ recordId, patientId, patientName, highli
             </Form.Item>
           )}
           {editing && (
-            <Form.Item name="actual_date" label="实际回访日期">
+            <Form.Item name="actual_date" label="实际回访日期" extra="清空此日期后，状态将恢复为待回访">
               <DatePicker style={{ width: '100%' }} />
             </Form.Item>
           )}
@@ -292,6 +306,9 @@ export default function FollowUpPanel({ recordId, patientId, patientName, highli
         }
         .followup-highlight {
           animation: followup-highlight 2s ease-out;
+          border-radius: 6px;
+          padding-left: 8px !important;
+          padding-right: 8px !important;
         }
       `}</style>
     </>

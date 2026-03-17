@@ -107,6 +107,7 @@ export default function PatientDetail() {
   const [followUpSaving, setFollowUpSaving] = useState(false);
   const [editingFollowUp, setEditingFollowUp] = useState<FollowUpListItem | null>(null);
   const [isOtherMethod, setIsOtherMethod] = useState(false);
+  const [lastSavedFollowUpId, setLastSavedFollowUpId] = useState<number | null>(null);
 
   const fetchFollowUps = useCallback(async () => {
     if (!id) return;
@@ -141,6 +142,13 @@ export default function PatientDetail() {
     fetchPatient();
     fetchFollowUps();
   }, [fetchPatient, fetchFollowUps]);
+
+  // Clear followup highlight after 5s
+  useEffect(() => {
+    if (!lastSavedFollowUpId) return;
+    const timer = setTimeout(() => setLastSavedFollowUpId(null), 5000);
+    return () => clearTimeout(timer);
+  }, [lastSavedFollowUpId]);
 
   // Highlight record and prescription when returning from RecordForm (keep collapsed)
   useEffect(() => {
@@ -228,25 +236,26 @@ export default function PatientDetail() {
       if (editingFollowUp) {
         const data: Record<string, unknown> = {
           planned_date: values.planned_date.format('YYYY-MM-DD'),
+          actual_date: values.actual_date ? values.actual_date.format('YYYY-MM-DD') : '',
           method,
           content: values.content || '',
           record_id: values.record_id || null,
           is_recovered: values.is_recovered ?? false,
         };
-        if (values.actual_date) {
-          data.actual_date = values.actual_date.format('YYYY-MM-DD');
-        }
         await updateFollowUp(editingFollowUp.id, data);
         message.success('回访记录已更新');
+        setLastSavedFollowUpId(editingFollowUp.id);
       } else {
-        await createFollowUp({
+        const res = await createFollowUp({
           patient_id: Number(id),
           planned_date: values.planned_date.format('YYYY-MM-DD'),
           method,
           content: values.content || '',
           record_id: values.record_id || undefined,
         });
+        const body = res as any;
         message.success('回访记录已创建');
+        if (body.data?.id) setLastSavedFollowUpId(body.data.id);
       }
       setFollowUpModalOpen(false);
       fetchFollowUps();
@@ -326,6 +335,7 @@ export default function PatientDetail() {
   const recordMap = new Map(records.map((r) => [r.id, r]));
 
   return (
+    <>
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Top section: Patient basic info */}
       <Card
@@ -708,6 +718,7 @@ export default function PatientDetail() {
               return (
                 <div
                   key={item.id}
+                  className={lastSavedFollowUpId === item.id ? 'followup-saved-highlight' : undefined}
                   style={{
                     display: 'flex',
                     alignItems: isMobile ? 'flex-start' : 'center',
@@ -734,9 +745,10 @@ export default function PatientDetail() {
                     >
                       {cfg.label}
                     </Tag>
-                    {item.is_recovered && (
-                      <Tag color="green" style={{ margin: 0, fontSize: 12 }}>已康复</Tag>
-                    )}
+                    {item.is_recovered
+                      ? <Tag color="green" style={{ margin: 0, fontSize: 12 }}>已康复</Tag>
+                      : <Tag color="default" style={{ margin: 0, fontSize: 12 }}>未康复</Tag>
+                    }
                     <span style={{ fontSize: 13, color: '#333', whiteSpace: 'nowrap' }}>
                       {item.planned_date}
                     </span>
@@ -958,5 +970,16 @@ export default function PatientDetail() {
         }
       />
     </div>
+    <style>{`
+      @keyframes followup-saved-flash {
+        0% { border-color: #52c41a; background: #f6ffed; }
+        100% { border-color: transparent; background: transparent; }
+      }
+      .followup-saved-highlight {
+        border: 2px solid #52c41a !important;
+        animation: followup-saved-flash 5s ease-in-out forwards;
+      }
+    `}</style>
+    </>
   );
 }

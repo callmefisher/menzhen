@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Table, Button, Space, Input, Select, Modal, Form, DatePicker, message, Tag, Popconfirm, Pagination, Switch } from 'antd';
+import { Card, Table, Button, Space, Input, Select, Modal, Form, DatePicker, message, Tag, Popconfirm, Pagination, Switch, Tooltip } from 'antd';
 import { PlusOutlined, SearchOutlined, CaretUpOutlined, CaretDownOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { useAuth } from '../../store/auth';
@@ -31,6 +31,25 @@ const pillTabs: { key: PillTab; label: string; bgActive: string; colorActive: st
   { key: 'completed', label: '已完成', bgActive: '#f6ffed', colorActive: '#52c41a', bgInactive: '#f5f5f5', colorInactive: '#666', statsKey: 'completed_count' },
 ];
 
+// Quick date range helpers
+type QuickRangeKey = 'today' | 'week' | 'month';
+const getQuickRange = (key: QuickRangeKey): [string, string] => {
+  const today = dayjs();
+  switch (key) {
+    case 'today':
+      return [today.format('YYYY-MM-DD'), today.format('YYYY-MM-DD')];
+    case 'week': {
+      const d = today.day();
+      const diffToMonday = d === 0 ? 6 : d - 1;
+      const monday = today.subtract(diffToMonday, 'day');
+      const sunday = monday.add(6, 'day');
+      return [monday.format('YYYY-MM-DD'), sunday.format('YYYY-MM-DD')];
+    }
+    case 'month':
+      return [today.startOf('month').format('YYYY-MM-DD'), today.endOf('month').format('YYYY-MM-DD')];
+  }
+};
+
 export default function FollowUpList() {
   const isMobile = useIsMobile();
   const navigate = useNavigate();
@@ -43,6 +62,7 @@ export default function FollowUpList() {
   const [params, setParams] = useState({ page: 1, size: 20, patient_name: '', status: '', planned_date_from: '', planned_date_to: '', sort_order: 'asc' as 'asc' | 'desc' });
   const [stats, setStats] = useState<FollowUpStats>({ pending_count: 0, overdue_count: 0, today_count: 0, completed_count: 0, total_count: 0 });
   const [activeTab, setActiveTab] = useState<PillTab>('all');
+  const [lastSavedId, setLastSavedId] = useState<number | null>(null);
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -77,6 +97,13 @@ export default function FollowUpList() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => { fetchStats(); }, [fetchStats]);
+
+  // Clear highlight after 5s
+  useEffect(() => {
+    if (!lastSavedId) return;
+    const timer = setTimeout(() => setLastSavedId(null), 5000);
+    return () => clearTimeout(timer);
+  }, [lastSavedId]);
 
   // 电话为空的回访项，逐个查询患者电话并回填
   useEffect(() => {
@@ -123,6 +150,28 @@ export default function FollowUpList() {
     } catch { /* ignore */ }
   };
 
+  // Quick date range
+  const activeQuickRange = useMemo(() => {
+    const { planned_date_from: from, planned_date_to: to } = params;
+    if (!from && !to) return '';
+    for (const key of ['today', 'week', 'month'] as const) {
+      const [qf, qt] = getQuickRange(key);
+      if (from === qf && to === qt) return key;
+    }
+    return 'custom';
+  }, [params.planned_date_from, params.planned_date_to]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleQuickRange = (key: QuickRangeKey) => {
+    if (activeQuickRange === key) {
+      setParams({ ...params, planned_date_from: '', planned_date_to: '', page: 1 });
+      setActiveTab('all');
+    } else {
+      const [from, to] = getQuickRange(key);
+      setParams({ ...params, planned_date_from: from, planned_date_to: to, status: '', page: 1 });
+      setActiveTab('all');
+    }
+  };
+
   // CRUD handlers
   const handleAdd = () => {
     form.resetFields();
@@ -136,7 +185,6 @@ export default function FollowUpList() {
     setEditing(record);
     const isOther = !['电话', '微信', '到诊'].includes(record.method);
     setIsOtherMethod(isOther);
-    // 确保患者列表包含当前患者，这样 Select 能显示名字而非 ID
     setPatients((prev) => {
       const exists = prev.some((p) => p.id === record.patient_id);
       return exists ? prev : [...prev, { id: record.patient_id, name: record.patient_name }];
@@ -150,12 +198,10 @@ export default function FollowUpList() {
       content: record.content,
       is_recovered: record.is_recovered,
     });
-    // 先加载诊疗记录列表，再回填 record_id（避免被 handlePatientChange 清空）
     await handlePatientChange(record.patient_id);
     form.setFieldValue('record_id', record.record_id);
     setModalOpen(true);
 
-    // 电话为空时，重新查询患者电话并更新列表数据
     if (!record.patient_phone && record.patient_id) {
       try {
         const res = await getPatient(record.patient_id);
@@ -190,13 +236,14 @@ export default function FollowUpList() {
           patient_id: values.patient_id,
           record_id: values.record_id,
           planned_date: values.planned_date?.format('YYYY-MM-DD'),
-          actual_date: values.actual_date?.format('YYYY-MM-DD') ?? null,
+          actual_date: values.actual_date ? values.actual_date.format('YYYY-MM-DD') : '',
           method,
           content: values.content || '',
           is_recovered: values.is_recovered ?? false,
         };
         await updateFollowUp(editing.id, req);
         message.success('更新成功');
+        setLastSavedId(editing.id);
       } else {
         const req: CreateFollowUpReq = {
           patient_id: values.patient_id,
@@ -205,8 +252,10 @@ export default function FollowUpList() {
           method,
           content: values.content || '',
         };
-        await createFollowUp(req);
+        const res = await createFollowUp(req);
+        const body = res as any;
         message.success('新增成功');
+        if (body.data?.id) setLastSavedId(body.data.id);
       }
       setModalOpen(false);
       fetchData();
@@ -221,24 +270,30 @@ export default function FollowUpList() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const columns: ColumnsType<FollowUpListItem> = useMemo(() => [
     {
-      title: '患者姓名', dataIndex: 'patient_name', key: 'patient_name', width: 100,
+      title: '患者', dataIndex: 'patient_name', key: 'patient_name', width: 90,
       render: (name: string, record) => (
-        name === '已删除'
-          ? <span style={{ color: '#999' }}>{name}</span>
-          : <a onClick={() => navigate(`/patients/${record.patient_id}`)}>{name}</a>
+        <div>
+          {name === '已删除'
+            ? <span style={{ color: '#999' }}>{name}</span>
+            : <a onClick={() => navigate(`/patients/${record.patient_id}`)}>{name}</a>
+          }
+          <div style={{ fontSize: 11, color: record.is_recovered ? '#52c41a' : '#999' }}>
+            {record.is_recovered ? '已康复' : '未康复'}
+          </div>
+        </div>
       ),
     },
     {
-      title: '联系电话', dataIndex: 'patient_phone', key: 'patient_phone', width: 120,
+      title: '联系电话', dataIndex: 'patient_phone', key: 'patient_phone', width: 110,
       render: (phone: string) => phone || '—',
     },
     {
-      title: '关联诊疗', key: 'record', width: 180,
+      title: '关联诊疗', key: 'record', width: 150,
       render: (_, record) => {
         if (!record.record_id) return '—';
         if (!record.record_diagnosis) return <span style={{ color: '#999' }}>已删除</span>;
-        const short = record.record_diagnosis.length > 20
-          ? record.record_diagnosis.slice(0, 20) + '...'
+        const short = record.record_diagnosis.length > 15
+          ? record.record_diagnosis.slice(0, 15) + '...'
           : record.record_diagnosis;
         return (
           <div>
@@ -249,7 +304,7 @@ export default function FollowUpList() {
               style={{ fontSize: 12 }}
               onClick={() => navigate(`/records/${record.record_id}?followup_id=${record.id}`)}
             >
-              {record.record_visit_date} 查看详情 →
+              {record.record_visit_date} 详情 →
             </a>
           </div>
         );
@@ -268,29 +323,29 @@ export default function FollowUpList() {
           </span>
         </span>
       ),
-      dataIndex: 'planned_date', key: 'planned_date', width: 110,
+      dataIndex: 'planned_date', key: 'planned_date', width: 90,
     },
     {
-      title: '实际日期', dataIndex: 'actual_date', key: 'actual_date', width: 110,
+      title: '到访日期', dataIndex: 'actual_date', key: 'actual_date', width: 90,
       render: (v: string | null) => v || '—',
     },
     {
-      title: '状态', key: 'status', width: 80,
+      title: '状态', key: 'status', width: 75,
       render: (_, record) => {
         const cfg = statusConfig[record.status] || statusConfig.pending;
         return <Tag color={cfg.color}>{cfg.label}</Tag>;
       },
     },
     {
-      title: '康复', key: 'is_recovered', width: 80,
-      render: (_, record) => (
-        record.is_recovered
-          ? <Tag color="green">已康复</Tag>
-          : <Tag color="default">未康复</Tag>
-      ),
+      title: '回访内容', dataIndex: 'content', key: 'content', ellipsis: true,
+      render: (content: string) => content ? (
+        <Tooltip title={content}>
+          <span style={{ color: '#666' }}>{content}</span>
+        </Tooltip>
+      ) : '—',
     },
     {
-      title: '操作', key: 'action', width: 120,
+      title: '操作', key: 'action', width: 100,
       render: (_, record) => (
         <Space size="small">
           {hasPermission('followup:update') && (
@@ -325,12 +380,20 @@ export default function FollowUpList() {
   const renderMobileCard = (item: FollowUpListItem) => {
     const cfg = statusConfig[item.status] || statusConfig.pending;
     const borderColor = item.status === 'overdue' ? '#ff4d4f' : item.is_recovered ? '#52c41a' : undefined;
+    const isHighlighted = item.id === lastSavedId;
     return (
-      <Card key={item.id} size="small" style={{ marginBottom: 8, borderLeft: borderColor ? `3px solid ${borderColor}` : undefined }}>
+      <Card
+        key={item.id}
+        size="small"
+        className={isHighlighted ? 'followup-saved-highlight' : undefined}
+        style={{ marginBottom: 8, borderLeft: borderColor ? `3px solid ${borderColor}` : undefined }}
+      >
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
           <a onClick={() => navigate(`/patients/${item.patient_id}`)} style={{ fontWeight: 500 }}>{item.patient_name}</a>
           <Space size={4}>
-            {item.is_recovered && <Tag color="green">已康复</Tag>}
+            <span style={{ fontSize: 11, color: item.is_recovered ? '#52c41a' : '#999' }}>
+              {item.is_recovered ? '已康复' : '未康复'}
+            </span>
             <Tag color={cfg.color}>{cfg.label}</Tag>
           </Space>
         </div>
@@ -349,7 +412,7 @@ export default function FollowUpList() {
             </a>
           </div>
         )}
-        {item.content && <div style={{ marginTop: 4, color: '#888', fontSize: 12 }}>{item.content}</div>}
+        {item.content && <div style={{ marginTop: 4, color: '#888', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.content}</div>}
         <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
           {hasPermission('followup:update') && <Button size="small" onClick={() => handleEdit(item)}>编辑</Button>}
           {hasPermission('followup:delete') && (
@@ -394,7 +457,7 @@ export default function FollowUpList() {
   const renderPillTabs = () => (
     <div style={{
       display: 'flex',
-      gap: 8,
+      gap: isMobile ? 8 : 10,
       marginBottom: 16,
       ...(isMobile ? { overflowX: 'auto', whiteSpace: 'nowrap' as const, flexWrap: 'nowrap' as const, paddingBottom: 4 } : { flexWrap: 'wrap' as const }),
     }}>
@@ -405,11 +468,11 @@ export default function FollowUpList() {
             key={key}
             onClick={() => handleTabClick(key)}
             style={{
-              padding: isMobile ? '4px 12px' : '6px 16px',
+              padding: isMobile ? '4px 12px' : '7px 20px',
               background: isActive ? bgActive : bgInactive,
               color: isActive ? colorActive : colorInactive,
               borderRadius: 20,
-              fontSize: isMobile ? 12 : 13,
+              fontSize: isMobile ? 12 : 15,
               cursor: 'pointer',
               fontWeight: isActive ? 500 : 400,
               flexShrink: 0,
@@ -438,6 +501,21 @@ export default function FollowUpList() {
       {isMobile && hasPermission('followup:create') && (
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} style={{ width: 'calc(50% - 4px)' }} aria-label="新增回访" />
       )}
+      <Space.Compact size={isMobile ? 'small' : 'middle'}>
+        {([
+          { key: 'today' as const, label: '今日' },
+          { key: 'week' as const, label: '本周' },
+          { key: 'month' as const, label: '本月' },
+        ]).map(({ key, label }) => (
+          <Button
+            key={key}
+            type={activeQuickRange === key ? 'primary' : 'default'}
+            onClick={() => handleQuickRange(key)}
+          >
+            {label}
+          </Button>
+        ))}
+      </Space.Compact>
       {isMobile ? (
         <div style={{ display: 'flex', gap: 4, width: '100%' }}>
           <DatePicker
@@ -542,7 +620,7 @@ export default function FollowUpList() {
           </Form.Item>
         )}
         {editing && (
-          <Form.Item name="actual_date" label="实际回访日期">
+          <Form.Item name="actual_date" label="实际回访日期" extra="清空此日期后，状态将恢复为待回访">
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
         )}
@@ -583,7 +661,12 @@ export default function FollowUpList() {
           dataSource={data}
           rowKey="id"
           loading={loading}
-          rowClassName={(record) => record.status === 'overdue' ? 'follow-up-overdue-row' : ''}
+          rowClassName={(record) => {
+            const cls: string[] = [];
+            if (record.status === 'overdue') cls.push('follow-up-overdue-row');
+            if (record.id === lastSavedId) cls.push('followup-saved-highlight');
+            return cls.join(' ');
+          }}
           pagination={{
             current: params.page,
             pageSize: params.size,
@@ -595,7 +678,18 @@ export default function FollowUpList() {
         />
       )}
       {renderModal()}
-      <style>{`.follow-up-overdue-row { background: #fff2f0 !important; }`}</style>
+      <style>{`
+        .follow-up-overdue-row { background: #fff2f0 !important; }
+        @keyframes followup-saved-flash {
+          0% { border-color: #52c41a; background: #f6ffed; }
+          100% { border-color: transparent; background: transparent; }
+        }
+        .followup-saved-highlight {
+          border: 2px solid #52c41a !important;
+          border-radius: 8px;
+          animation: followup-saved-flash 5s ease-in-out forwards;
+        }
+      `}</style>
     </>
   );
 }
