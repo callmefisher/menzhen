@@ -448,8 +448,11 @@ export default function FollowUpList() {
       <Card
         key={item.id}
         size="small"
-        className={isHighlighted ? 'followup-saved-highlight' : undefined}
-        style={{ marginBottom: 8, ...(isOverdue ? { background: '#ffe8e6' } : {}) }}
+        style={{
+          marginBottom: 8,
+          ...(isOverdue ? { background: '#ffe8e6' } : {}),
+          ...(isHighlighted ? { outline: '2px solid #52c41a', outlineOffset: -2, background: isOverdue ? '#ffe8e6' : '#f6ffed' } : {}),
+        }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
           <a style={{ color: '#1677ff', fontWeight: 500 }} onClick={() => navigate(`/patients/${item.patient_id}`)}>{item.patient_name}</a>
@@ -743,6 +746,12 @@ export default function FollowUpList() {
             if (record.id === lastSavedId) cls.push('followup-saved-highlight');
             return cls.join(' ');
           }}
+          onRow={(record) => ({
+            style: {
+              ...(record.status === 'overdue' ? { background: '#ffe8e6' } : {}),
+              ...(record.id === lastSavedId ? { outline: '2px solid #52c41a', outlineOffset: -2, borderRadius: 8 } : {}),
+            },
+          })}
           pagination={{
             current: params.page,
             pageSize: params.size,
@@ -755,15 +764,10 @@ export default function FollowUpList() {
       )}
       {renderModal()}
       <style>{`
-        .follow-up-overdue-row { background: #ffe8e6 !important; }
-        @keyframes followup-saved-flash {
-          0% { box-shadow: inset 0 0 0 2px #52c41a, 0 0 12px rgba(82, 196, 26, 0.3); }
-          100% { box-shadow: none; }
-        }
-        .followup-saved-highlight {
-          box-shadow: inset 0 0 0 2px #52c41a;
-          border-radius: 8px;
-          animation: followup-saved-flash 5s ease-in-out;
+        .follow-up-overdue-row > td.ant-table-cell { background: #ffe8e6 !important; }
+        .followup-saved-highlight > td.ant-table-cell {
+          background: #f6ffed !important;
+          transition: background 3s ease-out;
         }
       `}</style>
     </>
