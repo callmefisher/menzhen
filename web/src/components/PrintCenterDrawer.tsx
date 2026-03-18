@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   Drawer,
   Segmented,
@@ -64,6 +64,12 @@ function escapeHtml(s: string | undefined | null): string {
 
 /* ---------- print template builders ---------- */
 
+/* ---------- shelf tag helper ---------- */
+function shelfTagHtml(shelfNo: string | undefined): string {
+  if (!shelfNo) return '';
+  return `<span style="display:inline-block;background:#e6f4ff;color:#1677ff;border:1px solid #91caff;border-radius:3px;padding:0 4px;font-size:11px;font-weight:bold;margin-right:4px;font-family:monospace;vertical-align:middle">${escapeHtml(shelfNo)}</span>`;
+}
+
 function buildPrescriptionHtml(
   prescription: PrescriptionData,
   patientName?: string,
@@ -71,6 +77,7 @@ function buildPrescriptionHtml(
   chiefComplaint?: string,
   treatment?: string,
   timeStr?: string,
+  shelfMap?: Record<string, string>,
 ): string {
   const allItems = prescription.items || [];
   const herbs = allItems.filter((i) => !i.category || i.category === 'herb');
@@ -101,7 +108,7 @@ function buildPrescriptionHtml(
             <div class="herb-column"><ul class="herb-list">
               ${col.map((item) => `
                 <li>
-                  <span class="herb-name">${escapeHtml(item.herb_name)}</span>
+                  <span class="herb-name">${shelfMap ? shelfTagHtml(shelfMap[item.herb_name]) : ''}${escapeHtml(item.herb_name)}</span>
                   <span class="herb-dosage">${escapeHtml(item.dosage)}克</span>
                   <span class="herb-notes">${escapeHtml(item.notes)}</span>
                 </li>
@@ -117,7 +124,7 @@ function buildPrescriptionHtml(
           <ul class="herb-list">
             ${patents.map((item) => `
               <li>
-                <span class="herb-name">${escapeHtml(item.herb_name)}</span>
+                <span class="herb-name">${shelfMap ? shelfTagHtml(shelfMap[item.herb_name]) : ''}${escapeHtml(item.herb_name)}</span>
                 <span class="herb-dosage">${escapeHtml(item.dosage)}盒</span>
                 <span class="herb-notes">${escapeHtml(item.notes)}</span>
               </li>
@@ -164,7 +171,7 @@ function buildBillingHtml(
       ${herbs.length > 0 ? `
         <div style="font-size:13px;font-weight:bold;margin-bottom:4px">中药明细：</div>
         <table><thead><tr><th>药名</th><th>用量</th><th>单价(元/克)</th><th>小计(元)</th></tr></thead><tbody>
-          ${herbs.map((item) => `<tr><td>${escapeHtml(item.herb_name)}${!item.in_stock ? ' *' : ''}</td><td>${item.dosage_val}g × ${item.doses}付</td><td>${item.in_stock ? item.unit_price.toFixed(2) : '-'}</td><td>${item.item_cost.toFixed(2)}</td></tr>`).join('')}
+          ${herbs.map((item) => `<tr><td style="text-align:left">${shelfTagHtml(item.shelf_no)}${escapeHtml(item.herb_name)}${!item.in_stock ? ' *' : ''}</td><td>${item.dosage_val}g × ${item.doses}付</td><td>${item.in_stock ? item.unit_price.toFixed(2) : '-'}</td><td>${item.item_cost.toFixed(2)}</td></tr>`).join('')}
         </tbody></table>
       ` : ''}
       ${detail.total_doses > 0 ? `<div style="text-align:right;font-size:13px;margin-top:6px;margin-bottom:2px">共 <b>${detail.total_doses}</b> 付</div>` : ''}
@@ -172,7 +179,7 @@ function buildBillingHtml(
         <div style="margin-top:8px">
           <div style="font-size:13px;font-weight:bold;margin-bottom:4px">中成药明细：</div>
           <table><thead><tr><th>药名</th><th>用量</th><th>单价(元/盒)</th><th>小计(元)</th></tr></thead><tbody>
-            ${patents.map((item) => `<tr><td>${escapeHtml(item.herb_name)}${!item.in_stock ? ' *' : ''}</td><td>${item.dosage_val}盒</td><td>${item.in_stock ? item.unit_price.toFixed(2) : '-'}</td><td>${item.item_cost.toFixed(2)}</td></tr>`).join('')}
+            ${patents.map((item) => `<tr><td style="text-align:left">${shelfTagHtml(item.shelf_no)}${escapeHtml(item.herb_name)}${!item.in_stock ? ' *' : ''}</td><td>${item.dosage_val}盒</td><td>${item.in_stock ? item.unit_price.toFixed(2) : '-'}</td><td>${item.item_cost.toFixed(2)}</td></tr>`).join('')}
           </tbody></table>
         </div>
       ` : ''}
@@ -277,7 +284,7 @@ export default function PrintCenterDrawer({
     const timeStr = getCurrentBeijingTime();
     let body = '';
     if (mode === 'prescription' || mode === 'combined') {
-      body += buildPrescriptionHtml(prescription, patientName, patientAge, chiefComplaint, treatment, timeStr);
+      body += buildPrescriptionHtml(prescription, patientName, patientAge, chiefComplaint, treatment, timeStr, shelfMap);
     }
     if (mode === 'combined') {
       body += '<hr class="print-separator" />';
@@ -304,6 +311,15 @@ export default function PrintCenterDrawer({
 
   const billingHerbs = (billingDetail?.items || []).filter((i) => i.category === 'herb');
   const billingPatents = (billingDetail?.items || []).filter((i) => i.category === 'patent');
+
+  // Build shelf map from billing detail for prescription preview and print
+  const shelfMap = useMemo<Record<string, string>>(() => {
+    const m: Record<string, string> = {};
+    for (const item of billingDetail?.items ?? []) {
+      if (item.shelf_no) m[item.herb_name] = item.shelf_no;
+    }
+    return m;
+  }, [billingDetail?.items]);
 
   const MODE_OPTIONS = [
     { label: '仅打印处方', value: 'prescription' as const },
@@ -375,6 +391,10 @@ export default function PrintCenterDrawer({
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 12px', lineHeight: '24px' }}>
                         {rxHerbs.map((h) => (
                           <span key={h.id} style={{ whiteSpace: 'nowrap', fontSize: 14 }}>
+                            {shelfMap[h.herb_name]
+                              ? <Tag color="blue" style={{ fontSize: 11, padding: '0 4px', marginRight: 4, fontFamily: 'monospace' }}>{shelfMap[h.herb_name]}</Tag>
+                              : <Tag style={{ fontSize: 11, padding: '0 4px', marginRight: 4, fontFamily: 'monospace', color: '#bbb' }}>--</Tag>
+                            }
                             {h.herb_name} <span style={{ color: '#1677ff' }}>{h.dosage}克</span>
                             {h.notes && <span style={{ color: '#999' }}>({h.notes})</span>}
                           </span>
@@ -387,6 +407,10 @@ export default function PrintCenterDrawer({
                       <div style={{ fontSize: 14, fontWeight: 500, color: '#555', marginBottom: 4 }}>中成药：</div>
                       {rxPatents.map((p) => (
                         <span key={p.id} style={{ whiteSpace: 'nowrap', fontSize: 14, marginRight: 12 }}>
+                          {shelfMap[p.herb_name]
+                            ? <Tag color="blue" style={{ fontSize: 11, padding: '0 4px', marginRight: 4, fontFamily: 'monospace' }}>{shelfMap[p.herb_name]}</Tag>
+                            : <Tag style={{ fontSize: 11, padding: '0 4px', marginRight: 4, fontFamily: 'monospace', color: '#bbb' }}>--</Tag>
+                          }
                           <span style={{ color: '#722ed1' }}>[成药]</span> {p.herb_name} <span style={{ color: '#1677ff' }}>{p.dosage}盒</span>
                         </span>
                       ))}
@@ -450,6 +474,10 @@ export default function PrintCenterDrawer({
                           >
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <div style={{ fontWeight: 500, fontSize: 14 }}>
+                                {item.shelf_no
+                                  ? <Tag color="blue" style={{ fontSize: 11, padding: '0 4px', marginRight: 4, fontFamily: 'monospace' }}>{item.shelf_no}</Tag>
+                                  : <Tag style={{ fontSize: 11, padding: '0 4px', marginRight: 4, fontFamily: 'monospace', color: '#bbb' }}>--</Tag>
+                                }
                                 {item.herb_name}
                                 {!item.in_stock && <Tag color="orange" style={{ marginLeft: 4, fontSize: 11 }}>无库存</Tag>}
                               </div>
@@ -482,6 +510,10 @@ export default function PrintCenterDrawer({
                           >
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <div style={{ fontWeight: 500, fontSize: 14 }}>
+                                {item.shelf_no
+                                  ? <Tag color="blue" style={{ fontSize: 11, padding: '0 4px', marginRight: 4, fontFamily: 'monospace' }}>{item.shelf_no}</Tag>
+                                  : <Tag style={{ fontSize: 11, padding: '0 4px', marginRight: 4, fontFamily: 'monospace', color: '#bbb' }}>--</Tag>
+                                }
                                 <Tag color="purple" style={{ fontSize: 11, marginRight: 4 }}>成药</Tag>
                                 {item.herb_name}
                                 {!item.in_stock && <Tag color="orange" style={{ marginLeft: 4, fontSize: 11 }}>无库存</Tag>}

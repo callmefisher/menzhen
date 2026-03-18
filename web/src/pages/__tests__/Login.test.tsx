@@ -30,6 +30,11 @@ vi.mock('antd', async () => {
   };
 });
 
+// Mock LoginBackground to render children without canvas/animation
+vi.mock('../LoginBackground', () => ({
+  default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+}));
+
 describe('Login', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -45,28 +50,22 @@ describe('Login', () => {
   it('renders login form with username and password fields', () => {
     renderLogin();
 
-    expect(screen.getByPlaceholderText('用户名')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('密码')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('请输入用户名')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('请输入密码')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /登\s*录/ })).toBeInTheDocument();
     expect(screen.getByText('记住我')).toBeInTheDocument();
-    expect(screen.getByText('患者病历管理系统')).toBeInTheDocument();
+    expect(screen.getByText('欢迎回来')).toBeInTheDocument();
     expect(screen.getByText('立即注册')).toBeInTheDocument();
   });
 
-  it('shows validation errors when submitting empty form', async () => {
-    const user = userEvent.setup();
+  it('has required attributes on inputs for validation', () => {
     renderLogin();
 
-    await user.click(screen.getByRole('button', { name: /登\s*录/ }));
+    const usernameInput = screen.getByPlaceholderText('请输入用户名');
+    const passwordInput = screen.getByPlaceholderText('请输入密码');
 
-    await waitFor(() => {
-      expect(screen.getByText('请输入用户名')).toBeInTheDocument();
-    });
-    await waitFor(() => {
-      expect(screen.getByText('请输入密码')).toBeInTheDocument();
-    });
-
-    expect(mockLogin).not.toHaveBeenCalled();
+    expect(usernameInput).toBeRequired();
+    expect(passwordInput).toBeRequired();
   });
 
   it('calls login with credentials on valid form submission', async () => {
@@ -74,12 +73,12 @@ describe('Login', () => {
     const user = userEvent.setup();
     renderLogin();
 
-    await user.type(screen.getByPlaceholderText('用户名'), 'admin');
-    await user.type(screen.getByPlaceholderText('密码'), 'password123');
+    await user.type(screen.getByPlaceholderText('请输入用户名'), 'admin');
+    await user.type(screen.getByPlaceholderText('请输入密码'), 'password123');
     await user.click(screen.getByRole('button', { name: /登\s*录/ }));
 
     await waitFor(() => {
-      expect(mockLogin).toHaveBeenCalledWith('admin', 'password123', undefined);
+      expect(mockLogin).toHaveBeenCalledWith('admin', 'password123', false);
     });
   });
 });

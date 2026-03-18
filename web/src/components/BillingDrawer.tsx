@@ -40,6 +40,8 @@ interface BillingDrawerProps {
   /** When true, hide billing action buttons (仅收费/收费并出库) — print-only mode */
   printOnly?: boolean;
   onClose: () => void;
+  /** Called after successful billing (仅收费 or 收费并出库) with the prescriptionId */
+  onSuccess?: (prescriptionId: number) => void;
 }
 
 export default function BillingDrawer({
@@ -51,6 +53,7 @@ export default function BillingDrawer({
   doctorName,
   printOnly,
   onClose,
+  onSuccess,
 }: BillingDrawerProps) {
   const isMobile = useIsMobile();
   const [loading, setLoading] = useState(false);
@@ -109,6 +112,7 @@ export default function BillingDrawer({
         });
       }
       message.success('收费记录已保存');
+      onSuccess?.(prescriptionId || 0);
       onClose();
     } catch {
       message.error('保存失败');
@@ -126,6 +130,7 @@ export default function BillingDrawer({
       });
       message.success('收费并出库成功');
       await loadDetail();
+      onSuccess?.(prescriptionId || 0);
       onClose();
     } catch (err: unknown) {
       const errMsg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;

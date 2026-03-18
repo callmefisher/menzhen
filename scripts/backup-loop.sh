@@ -34,6 +34,9 @@ get_backup_age() {
 # --- MySQL backup loop ---
 mysql_loop() {
     local prev_interval=""
+    # Skip immediate backup on first boot — wait one full interval first.
+    # This prevents upload storms when SITE_ID changes (redeploy).
+    local first_run=true
     while true; do
         reload_env
         SITE_ID="${SITE_ID:-default}"
@@ -54,12 +57,18 @@ mysql_loop() {
             age="${age_sql}"
         fi
         if [ -z "${age}" ]; then
-            echo "[$(date)] MySQL: no backup found, triggering immediate..."
-            /scripts/backup.sh
+            if [ "${first_run}" = true ]; then
+                echo "[$(date)] MySQL: no backup found for SITE_ID=${SITE_ID}, waiting one interval before first backup..."
+                first_run=false
+            else
+                echo "[$(date)] MySQL: no backup found, triggering..."
+                /scripts/backup.sh
+            fi
         elif [ "${age}" -ge "${MYSQL_INTERVAL}" ]; then
             echo "[$(date)] MySQL: last backup ${age}s ago (>= ${MYSQL_INTERVAL}s), triggering backup..."
             /scripts/backup.sh
         fi
+        first_run=false
         sleep ${POLL_INTERVAL}
     done
 }
@@ -68,6 +77,8 @@ mysql_loop() {
 minio_loop() {
     MINIO_BACKUP_DIR="${BACKUP_DIR}/minio"
     local prev_interval=""
+    # Skip immediate backup on first boot — same reason as mysql_loop
+    local first_run=true
     while true; do
         reload_env
         SITE_ID="${SITE_ID:-default}"
@@ -79,12 +90,18 @@ minio_loop() {
         fi
         age=$(get_backup_age "${MINIO_BACKUP_DIR}" "${SITE_ID}_minio_*.tar.gz")
         if [ -z "${age}" ]; then
-            echo "[$(date)] MinIO: no backup found, triggering immediate..."
-            /scripts/backup-minio.sh
+            if [ "${first_run}" = true ]; then
+                echo "[$(date)] MinIO: no backup found for SITE_ID=${SITE_ID}, waiting one interval before first backup..."
+                first_run=false
+            else
+                echo "[$(date)] MinIO: no backup found, triggering..."
+                /scripts/backup-minio.sh
+            fi
         elif [ "${age}" -ge "${MINIO_INTERVAL}" ]; then
             echo "[$(date)] MinIO: last backup ${age}s ago (>= ${MINIO_INTERVAL}s), triggering backup..."
             /scripts/backup-minio.sh
         fi
+        first_run=false
         sleep ${POLL_INTERVAL}
     done
 }

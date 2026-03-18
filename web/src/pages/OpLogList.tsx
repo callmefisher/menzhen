@@ -45,6 +45,8 @@ const ACTION_MAP: Record<string, { label: string; color: string }> = {
   stock_in: { label: '入库', color: 'cyan' },
   batch_stock_in: { label: '批量入库', color: 'cyan' },
   deduct_stock: { label: '扣减库存', color: 'orange' },
+  backup: { label: '备份', color: 'purple' },
+  restore: { label: '恢复', color: 'magenta' },
 };
 
 const RESOURCE_TYPE_MAP: Record<string, string> = {
@@ -57,6 +59,7 @@ const RESOURCE_TYPE_MAP: Record<string, string> = {
   inventory_drug: '库存药物',
   follow_up: '回访',
   billing: '收费',
+  system: '系统操作',
 };
 
 // Resource types that are associated with a patient
@@ -66,6 +69,8 @@ const PATIENT_RELATED = new Set(['record', 'medical_record', 'prescription', 'at
 function getResourceDisplayName(record: OpLogItem): string | undefined {
   const data = record.new_data || record.old_data;
   if (!data) return undefined;
+  // system resource (backup/restore): show tenant name
+  if (record.resource_type === 'system') return data.tenant_name || undefined;
   // patient resource: name is a direct field
   if (record.resource_type === 'patient') return data.name || undefined;
   // inventory_drug: drug name is a direct field
@@ -358,8 +363,53 @@ function BatchStockInView({ record, isMobile }: { record: OpLogItem; isMobile: b
   );
 }
 
+/** Check if a record has expandable detail */
+function hasExpandableDetail(record: OpLogItem): boolean {
+  if (record.action === 'backup' || record.action === 'restore' || record.action === 'deduct_stock' || record.action === 'batch_stock_in') {
+    return !!(record.new_data);
+  }
+  return computeDiff(record.action, record.old_data, record.new_data, record.resource_type).length > 0;
+}
+
+/** Special view for backup/restore actions showing operation details */
+function BackupRestoreView({ record, isMobile }: { record: OpLogItem; isMobile: boolean }) {
+  const data = record.new_data;
+  if (!data) return <div style={{ color: '#999', padding: 8 }}>无变更数据</div>;
+
+  const isBackup = record.action === 'backup';
+  const statusColor = data.status === 'success' ? '#52c41a' : '#ff4d4f';
+  const statusText = data.status === 'success' ? '成功' : '失败';
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{
+        display: 'flex', flexWrap: 'wrap', gap: isMobile ? 6 : 12,
+        padding: '6px 10px',
+        background: isBackup ? '#f9f0ff' : '#fff0f6',
+        borderRadius: 4, fontSize: 13,
+      }}>
+        {data.tenant_name && <span><b>诊所：</b>{data.tenant_name}</span>}
+        {isBackup ? (
+          <span><b>备份类型：</b>{data.backup_type_label || data.backup_type}</span>
+        ) : (
+          <>
+            <span><b>恢复来源：</b>{data.source_label || data.source}</span>
+            {data.mysql_file && <span><b>MySQL文件：</b>{data.mysql_file}</span>}
+            {data.minio_file && <span><b>MinIO文件：</b>{data.minio_file}</span>}
+          </>
+        )}
+        <span><b>状态：</b><span style={{ color: statusColor, fontWeight: 600 }}>{statusText}</span></span>
+      </div>
+    </div>
+  );
+}
+
 // --- Diff rendering ---
 function DiffView({ record, isMobile }: { record: OpLogItem; isMobile: boolean }) {
+  // Special rendering for backup/restore
+  if (record.action === 'backup' || record.action === 'restore') {
+    return <BackupRestoreView record={record} isMobile={isMobile} />;
+  }
   // Special rendering for deduct_stock
   if (record.action === 'deduct_stock') {
     return <DeductStockView record={record} isMobile={isMobile} />;
@@ -593,9 +643,7 @@ export default function OpLogList() {
     const resourceLabel = RESOURCE_TYPE_MAP[record.resource_type] || record.resource_type;
     const displayName = getResourceDisplayName(record);
     const expanded = expandedIds.has(record.id);
-    const hasDetail = (record.action === 'deduct_stock' || record.action === 'batch_stock_in')
-      ? !!(record.new_data)
-      : computeDiff(record.action, record.old_data, record.new_data, record.resource_type).length > 0;
+    const hasDetail = hasExpandableDetail(record);
 
     const isSelected = selectedRowKeys.includes(record.id);
 
@@ -871,10 +919,7 @@ export default function OpLogList() {
             expandedRowRender: (record) => (
               <DiffView record={record} isMobile={false} />
             ),
-            rowExpandable: (record) =>
-              (record.action === 'deduct_stock' || record.action === 'batch_stock_in')
-                ? !!(record.new_data)
-                : computeDiff(record.action, record.old_data, record.new_data, record.resource_type).length > 0,
+            rowExpandable: (record) => hasExpandableDetail(record),
           }}
           pagination={{
             current: params.page,

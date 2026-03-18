@@ -5,23 +5,59 @@ import (
 	"net/http"
 	"regexp"
 
+	"github.com/callmefisher/menzhen/server/middleware"
+	"github.com/callmefisher/menzhen/server/model"
 	"github.com/callmefisher/menzhen/server/service"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // safeFilename 验证文件名只包含安全字符，防止路径穿越
 var safeFilename = regexp.MustCompile(`^[A-Za-z0-9_.\-]+$`)
 
+// backupTypeLabels 备份类型的中文标签
+var backupTypeLabels = map[string]string{
+	"full":  "全量备份",
+	"mysql": "仅备份MySQL",
+	"minio": "仅备份MinIO",
+}
+
 // BackupHandler 备份恢复 HTTP handler
 type BackupHandler struct {
 	svc *service.BackupService
+	db  *gorm.DB
 }
 
 // NewBackupHandler 创建备份 handler（单例 service 实例）
-func NewBackupHandler() *BackupHandler {
+func NewBackupHandler(db *gorm.DB) *BackupHandler {
 	return &BackupHandler{
 		svc: service.NewBackupService(),
+		db:  db,
 	}
+}
+
+// getTenantName 查询租户名称
+func (h *BackupHandler) getTenantName(tenantID uint64) string {
+	if tenantID == 0 {
+		return ""
+	}
+	var tenant model.Tenant
+	if err := h.db.Select("name").First(&tenant, tenantID).Error; err != nil {
+		return ""
+	}
+	return tenant.Name
+}
+
+// getUserRealName 查询用户真实姓名，回退到 username
+func (h *BackupHandler) getUserRealName(userID uint64, fallback string) string {
+	if userID == 0 {
+		return fallback
+	}
+	var user model.User
+	if err := h.db.Select("real_name").First(&user, userID).Error; err == nil && user.RealName != "" {
+		return user.RealName
+	}
+	return fallback
 }
 
 // DockerStatus GET /backup/docker-status
@@ -40,7 +76,26 @@ func (h *BackupHandler) TriggerBackup(c *gin.Context) {
 		return
 	}
 
-	taskID, err := h.svc.TriggerBackup(req.Type)
+	// 提取用户上下文（在 goroutine 前捕获）
+	tenantID := middleware.GetTenantID(c)
+	userID := middleware.GetUserID(c)
+	userName := h.getUserRealName(userID, middleware.GetUsername(c))
+	tenantName := h.getTenantName(tenantID)
+
+	onComplete := func(status string) {
+		newData := map[string]interface{}{
+			"backup_type":       req.Type,
+			"backup_type_label": backupTypeLabels[req.Type],
+			"status":            status,
+			"tenant_name":       tenantName,
+		}
+		svc := service.NewOpLogService(h.db)
+		if err := svc.CreateOpLog(tenantID, userID, userName, "backup", "system", 0, nil, newData); err != nil {
+			log.Printf("[oplog] failed to record backup oplog: %v", err)
+		}
+	}
+
+	taskID, err := h.svc.TriggerBackup(req.Type, onComplete)
 	if err != nil {
 		c.JSON(http.StatusConflict, gin.H{"code": 409, "message": err.Error()})
 		return
@@ -108,7 +163,37 @@ func (h *BackupHandler) TriggerRestore(c *gin.Context) {
 		return
 	}
 
-	taskID, err := h.svc.TriggerRestore(req.Source, req.MySQLFile, req.MinIOFile)
+	// 提取用户上下文（在 goroutine 前捕获）
+	tenantID := middleware.GetTenantID(c)
+	userID := middleware.GetUserID(c)
+	userName := h.getUserRealName(userID, middleware.GetUsername(c))
+	tenantName := h.getTenantName(tenantID)
+
+	sourceLabel := "本地恢复"
+	if req.Source == "cloud" {
+		sourceLabel = "云端恢复"
+	}
+
+	onComplete := func(status string) {
+		newData := map[string]interface{}{
+			"source":       req.Source,
+			"source_label": sourceLabel,
+			"status":       status,
+			"tenant_name":  tenantName,
+		}
+		if req.MySQLFile != "" {
+			newData["mysql_file"] = req.MySQLFile
+		}
+		if req.MinIOFile != "" {
+			newData["minio_file"] = req.MinIOFile
+		}
+		svc := service.NewOpLogService(h.db)
+		if err := svc.CreateOpLog(tenantID, userID, userName, "restore", "system", 0, nil, newData); err != nil {
+			log.Printf("[oplog] failed to record restore oplog: %v", err)
+		}
+	}
+
+	taskID, err := h.svc.TriggerRestore(req.Source, req.MySQLFile, req.MinIOFile, onComplete)
 	if err != nil {
 		c.JSON(http.StatusConflict, gin.H{"code": 409, "message": err.Error()})
 		return

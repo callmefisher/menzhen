@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>排队叫号 — 门诊管理系统</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/antd@5.22.0/dist/reset.min.css">
+<style>
+/* ═══════ Ant Design Token Simulation ═══════ */
+:root{
+  --primary:#52c41a;--primary-hover:#73d13d;--primary-bg:#f6ffed;--primary-border:#b7eb8f;
+  --error:#ff4d4f;--warning:#faad14;--info:#1677ff;--success:#52c41a;
+  --text:#000000e0;--text-secondary:#00000073;--text-tertiary:#00000040;
+  --border:#d9d9d9;--border-light:#f0f0f0;--bg-container:#fff;--bg-layout:#f5f5f5;
+  --bg-elevated:#fff;--radius:8px;--radius-sm:6px;
+  --sidebar-bg:#1A2E1A;--sidebar-item:#ffffffa6;--sidebar-active:#fff;--sidebar-active-bg:#52c41a20;
+  --font:-apple-system,'PingFang SC','Noto Sans SC','Microsoft YaHei',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font);color:var(--text);font-size:14px;line-height:1.5714;background:var(--bg-layout)}
+button{font-family:inherit;cursor:pointer;border:none;background:none;font-size:inherit}
+input,select{font-family:inherit;font-size:inherit}
+
+/* ═══════ Layout (matches existing system) ═══════ */
+.app{display:flex;min-height:100vh}
+.sider{
+  width:220px;min-height:100vh;background:var(--sidebar-bg);
+  display:flex;flex-direction:column;flex-shrink:0;
+  box-shadow:2px 0 8px rgba(0,0,0,.15);z-index:10;position:fixed;left:0;top:0;bottom:0;
+}
+.sider-logo{
+  height:56px;display:flex;align-items:center;padding:0 20px;
+  border-bottom:1px solid #ffffff15;gap:10px;
+}
+.sider-logo h1{color:#fff;font-size:16px;font-weight:600;white-space:nowrap}
+.sider-menu{flex:1;overflow-y:auto;padding:8px 0}
+.menu-item{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 20px;margin:2px 8px;border-radius:var(--radius);
+  color:var(--sidebar-item);font-size:14px;cursor:pointer;
+  transition:all .2s;text-decoration:none;
+}
+.menu-item:hover{color:#fff;background:#ffffff0d}
+.menu-item.active{color:var(--sidebar-active);background:var(--sidebar-active-bg);font-weight:500}
+.menu-item .icon{width:16px;text-align:center;font-style:normal;font-size:15px}
+.menu-group-title{
+  padding:16px 20px 6px;font-size:12px;color:#ffffff40;
+  letter-spacing:1px;text-transform:uppercase;
+}
+
+.layout-right{margin-left:220px;flex:1;display:flex;flex-direction:column;min-height:100vh}
+.topbar{
+  height:56px;background:var(--bg-container);border-bottom:1px solid var(--border-light);
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 24px;position:sticky;top:0;z-index:9;
+}
+.topbar-left{display:flex;align-items:center;gap:12px}
+.topbar-title{font-size:16px;font-weight:600}
+.topbar-right{display:flex;align-items:center;gap:16px;color:var(--text-secondary);font-size:13px}
+.user-avatar{
+  width:32px;height:32px;border-radius:50%;background:var(--primary);
+  color:#fff;display:flex;align-items:center;justify-content:center;
+  font-size:13px;font-weight:600;
+}
+.content{padding:24px;flex:1}
+
+/* ═══════ Ant-style Components ═══════ */
+.ant-card{
+  background:var(--bg-container);border-radius:var(--radius);
+  border:1px solid var(--border-light);
+  box-shadow:0 1px 2px rgba(0,0,0,.03),0 1px 6px -1px rgba(0,0,0,.02),0 2px 4px rgba(0,0,0,.02);
+}
+.ant-card-head{
+  padding:12px 24px;border-bottom:1px solid var(--border-light);
+  display:flex;align-items:center;justify-content:space-between;min-height:48px;
+}
+.ant-card-head-title{font-size:15px;font-weight:600}
+.ant-card-body{padding:24px}
+.ant-card-body.compact{padding:0}
+
+.ant-btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  padding:4px 15px;height:32px;border-radius:var(--radius-sm);
+  font-size:14px;font-weight:400;border:1px solid var(--border);
+  background:#fff;color:var(--text);transition:all .2s;
+}
+.ant-btn:hover{color:var(--primary);border-color:var(--primary)}
+.ant-btn-primary{background:var(--primary);color:#fff;border-color:var(--primary)}
+.ant-btn-primary:hover{background:var(--primary-hover);border-color:var(--primary-hover);color:#fff}
+.ant-btn-danger{color:var(--error);border-color:var(--error)}
+.ant-btn-danger:hover{color:#ff7875;border-color:#ff7875}
+.ant-btn-link{border:none;color:var(--primary);padding:0;height:auto;background:none}
+.ant-btn-link:hover{color:var(--primary-hover)}
+.ant-btn-sm{height:24px;padding:0 7px;font-size:12px;border-radius:4px}
+.ant-btn-lg{height:40px;padding:6px 24px;font-size:16px}
+.ant-btn:disabled{opacity:.4;cursor:not-allowed}
+
+.ant-tag{
+  display:inline-flex;align-items:center;padding:0 7px;height:22px;
+  border-radius:4px;font-size:12px;line-height:20px;border:1px solid;
+}
+.ant-tag-blue{background:#e6f4ff;color:#1677ff;border-color:#91caff}
+.ant-tag-green{background:#f6ffed;color:#52c41a;border-color:#b7eb8f}
+.ant-tag-red{background:#fff2f0;color:#ff4d4f;border-color:#ffccc7}
+.ant-tag-orange{background:#fff7e6;color:#fa8c16;border-color:#ffd591}
+.ant-tag-default{background:#fafafa;color:#00000073;border-color:#d9d9d9}
+.ant-tag-processing{background:#e6f4ff;color:#1677ff;border-color:#91caff;animation:antPulse 2s infinite}
+@keyframes antPulse{0%,100%{opacity:1}50%{opacity:.65}}
+
+.ant-statistic{text-align:center}
+.ant-statistic-title{font-size:13px;color:var(--text-secondary);margin-bottom:4px}
+.ant-statistic-value{font-size:28px;font-weight:600;line-height:1.2}
+
+.ant-table{width:100%;border-collapse:collapse;font-size:14px}
+.ant-table th{
+  background:#fafafa;padding:12px 16px;text-align:left;
+  font-weight:600;color:var(--text-secondary);font-size:13px;
+  border-bottom:1px solid var(--border-light);white-space:nowrap;
+}
+.ant-table td{
+  padding:12px 16px;border-bottom:1px solid var(--border-light);
+  vertical-align:middle;
+}
+.ant-table tr:hover td{background:#fafafa}
+.ant-table tr.row-seeing td{background:#fff2f0}
+.ant-table tr.row-seeing:hover td{background:#fff1ee}
+
+.ant-input{
+  padding:4px 11px;height:32px;border:1px solid var(--border);
+  border-radius:var(--radius-sm);outline:none;transition:all .2s;width:100%;
+}
+.ant-input:focus{border-color:var(--primary);box-shadow:0 0 0 2px rgba(82,196,26,.1)}
+.ant-select{
+  padding:4px 11px;height:32px;border:1px solid var(--border);
+  border-radius:var(--radius-sm);background:#fff;outline:none;
+  transition:all .2s;appearance:none;min-width:120px;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' fill='none' stroke='%2300000073' stroke-width='1.5'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 8px center;padding-right:28px;
+}
+.ant-select:focus{border-color:var(--primary);box-shadow:0 0 0 2px rgba(82,196,26,.1)}
+
+/* ═══════ Page Tabs (Ant Tabs style) ═══════ */
+.ant-tabs{margin-bottom:20px}
+.ant-tabs-nav{display:flex;border-bottom:1px solid var(--border-light);gap:0}
+.ant-tabs-tab{
+  padding:12px 16px;color:var(--text-secondary);font-size:14px;
+  cursor:pointer;transition:all .2s;position:relative;border-bottom:2px solid transparent;
+  margin-bottom:-1px;
+}
+.ant-tabs-tab:hover{color:var(--primary)}
+.ant-tabs-tab.active{color:var(--primary);font-weight:500;border-bottom-color:var(--primary)}
+.ant-tabs-content{display:none;animation:tabFade .2s}
+.ant-tabs-content.active{display:block}
+@keyframes tabFade{from{opacity:0}to{opacity:1}}
+
+/* ═══════ Workspace Layout ═══════ */
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px}
+.ws-grid{display:grid;grid-template-columns:1fr 420px;gap:20px;align-items:start}
+@media(max-width:1100px){.ws-grid{grid-template-columns:1fr}}
+
+/* Current Patient */
+.cp-card{border:2px solid var(--primary-border);border-radius:var(--radius)}
+.cp-card .ant-card-head{background:var(--primary-bg);border-bottom-color:var(--primary-border)}
+.cp-banner{
+  display:flex;align-items:center;gap:20px;padding:20px 24px;
+  background:linear-gradient(135deg,#f6ffed,#e6fffb);border-bottom:1px solid var(--border-light);
+}
+.cp-num{
+  width:56px;height:56px;border-radius:12px;background:var(--primary);color:#fff;
+  display:flex;align-items:center;justify-content:center;
+  font-size:22px;font-weight:700;flex-shrink:0;
+}
+.cp-name{font-size:20px;font-weight:600;margin-bottom:2px}
+.cp-meta{color:var(--text-secondary);font-size:13px}
+.cp-info-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:20px}
+.cp-info-item{font-size:13px}
+.cp-info-item .label{color:var(--text-tertiary);margin-bottom:2px}
+.cp-info-item .val{font-weight:500}
+.cp-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+.empty-state{padding:48px;text-align:center;color:var(--text-secondary)}
+.empty-state .icon{font-size:48px;margin-bottom:12px;opacity:.4}
+.empty-state .text{font-size:14px;margin-bottom:16px}
+
+/* Queue sidebar */
+.q-filter{display:flex;gap:8px;padding:12px 16px;border-bottom:1px solid var(--border-light);flex-wrap:wrap}
+.q-filter-btn{
+  padding:2px 10px;height:24px;border-radius:4px;font-size:12px;
+  border:1px solid var(--border);background:#fff;color:var(--text-secondary);
+  transition:all .2s;display:inline-flex;align-items:center;
+}
+.q-filter-btn:hover{color:var(--primary);border-color:var(--primary)}
+.q-filter-btn.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+.q-search-bar{padding:8px 12px;border-bottom:1px solid var(--border-light)}
+.q-scroll{max-height:480px;overflow-y:auto}
+.q-item{
+  display:flex;align-items:center;gap:10px;padding:10px 16px;
+  border-bottom:1px solid var(--border-light);transition:background .15s;
+}
+.q-item:last-child{border-bottom:none}
+.q-item:hover{background:#fafafa}
+.q-item.is-seeing{background:#fff2f0}
+.q-item.is-seeing:hover{background:#fff1ee}
+.q-seq{
+  width:28px;height:28px;border-radius:6px;flex-shrink:0;font-size:12px;font-weight:600;
+  display:flex;align-items:center;justify-content:center;
+}
+.qs-booked{background:#e6f4ff;color:#1677ff}
+.qs-waiting{background:#f6ffed;color:#52c41a}
+.qs-seeing{background:#ff4d4f;color:#fff;animation:antPulse 2s infinite}
+.qs-done{background:#f5f5f5;color:#00000040}
+.qs-missed{background:#fff7e6;color:#fa8c16}
+.q-info{flex:1;min-width:0}
+.q-name{font-size:13px;font-weight:500;display:flex;align-items:center;gap:6px}
+.q-detail{font-size:12px;color:var(--text-tertiary);margin-top:1px}
+.q-action{flex-shrink:0}
+
+/* Walk-in */
+.walkin-bar{
+  display:flex;gap:8px;align-items:end;padding:12px 16px;
+  border-top:1px solid var(--border-light);background:#fafafa;
+  border-radius:0 0 var(--radius) var(--radius);flex-wrap:wrap;
+}
+.walkin-bar .fg{display:flex;flex-direction:column;gap:2px;flex:1;min-width:80px}
+.walkin-bar .fg label{font-size:11px;color:var(--text-tertiary);font-weight:500}
+
+/* ═══════ Booking ═══════ */
+.date-bar{display:flex;gap:8px;margin-bottom:20px;overflow-x:auto;padding-bottom:4px}
+.date-chip{
+  min-width:64px;padding:8px;text-align:center;border-radius:var(--radius-sm);
+  border:1px solid var(--border);background:#fff;cursor:pointer;transition:all .2s;
+}
+.date-chip:hover{border-color:var(--primary)}
+.date-chip.active{border-color:var(--primary);background:var(--primary-bg);color:var(--primary)}
+.date-chip .wd{font-size:12px;color:var(--text-tertiary)}
+.date-chip .dd{font-size:18px;font-weight:600;margin:2px 0}
+.date-chip .mm{font-size:11px;color:var(--text-secondary)}
+.date-chip.active .dd{color:var(--primary)}
+
+.doc-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+.doc-item{cursor:pointer;transition:all .2s}
+.doc-item.selected{border-color:var(--primary);box-shadow:0 0 0 2px rgba(82,196,26,.15)}
+.doc-row{display:flex;gap:14px;padding:16px}
+.doc-avatar{
+  width:48px;height:48px;border-radius:10px;flex-shrink:0;color:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:600;
+}
+.doc-info h4{font-size:15px;font-weight:600;margin-bottom:2px}
+.doc-info .sp{font-size:13px;color:var(--primary)}
+.doc-info .cnt{font-size:12px;color:var(--text-tertiary);margin-top:2px}
+.slots-wrap{padding:0 16px 16px;border-top:1px solid var(--border-light);display:none}
+.doc-item.selected .slots-wrap{display:block}
+.slot-grid{display:flex;flex-wrap:wrap;gap:6px;padding-top:12px}
+.slot-chip{
+  padding:5px 14px;border-radius:4px;font-size:13px;
+  border:1px solid var(--border);background:#fff;cursor:pointer;transition:all .2s;
+}
+.slot-chip:hover:not(.taken){border-color:var(--primary);color:var(--primary);background:var(--primary-bg)}
+.slot-chip.taken{background:#f5f5f5;color:var(--text-tertiary);cursor:not-allowed;text-decoration:line-through}
+.slot-chip.picked{background:var(--primary);color:#fff;border-color:var(--primary)}
+
+/* ═══════ Schedule ═══════ */
+.sch-grid{
+  display:grid;grid-template-columns:72px repeat(7,1fr);gap:1px;
+  background:var(--border-light);border-radius:var(--radius);overflow:hidden;
+  border:1px solid var(--border-light);
+}
+.sch-hd{background:#fafafa;padding:10px 6px;text-align:center;font-weight:600;font-size:13px}
+.sch-hd small{font-weight:400;color:var(--text-tertiary);display:block;font-size:11px}
+.sch-time{background:#fafafa;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text-secondary);text-align:center;line-height:1.4;padding:6px}
+.sch-cell{background:#fff;padding:8px;min-height:64px}
+.sch-doc{
+  display:inline-block;padding:2px 7px;border-radius:4px;font-size:11px;
+  font-weight:500;margin:2px;white-space:nowrap;
+}
+.sd-0{background:#f6ffed;color:#52c41a}.sd-1{background:#fff7e6;color:#fa8c16}
+.sd-2{background:#f9f0ff;color:#722ed1}.sd-3{background:#fff2f0;color:#ff4d4f}
+
+/* ═══════ Modal ═══════ */
+.modal-mask{
+  position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;
+  display:none;align-items:center;justify-content:center;padding:20px;
+}
+.modal-mask.show{display:flex}
+.modal-wrap{
+  background:#fff;border-radius:var(--radius);width:100%;max-width:400px;
+  box-shadow:0 6px 16px rgba(0,0,0,.08),0 3px 6px -4px rgba(0,0,0,.12),0 9px 28px 8px rgba(0,0,0,.05);
+  animation:modalEnter .2s;
+}
+@keyframes modalEnter{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:none}}
+.modal-hd{padding:16px 24px;border-bottom:1px solid var(--border-light);display:flex;justify-content:space-between;align-items:center}
+.modal-hd h3{font-size:16px;font-weight:600}
+.modal-bd{padding:24px}
+.modal-ft{padding:12px 24px;border-top:1px solid var(--border-light);display:flex;justify-content:flex-end;gap:8px}
+
+/* ═══════ Notification ═══════ */
+.ant-message{
+  position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:200;
+  background:#fff;border-radius:var(--radius);padding:10px 16px;
+  box-shadow:0 6px 16px rgba(0,0,0,.08),0 3px 6px -4px rgba(0,0,0,.12);
+  display:none;font-size:14px;align-items:center;gap:8px;
+}
+.ant-message.show{display:inline-flex}
+.ant-message .msg-icon{font-size:16px}
+.msg-success .msg-icon{color:var(--success)}
+.msg-error .msg-icon{color:var(--error)}
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- ═══════ Sidebar ═══════ -->
+<aside class="sider">
+  <div class="sider-logo">
+    <span style="font-size:22px">🏥</span>
+    <h1>门诊管理系统</h1>
+  </div>
+  <nav class="sider-menu">
+    <a class="menu-item" href="#"><i class="icon">👤</i>患者管理</a>
+    <a class="menu-item" href="#"><i class="icon">📋</i>病历列表</a>
+    <a class="menu-item active" href="#"><i class="icon">📢</i>排队叫号</a>
+    <div class="menu-group-title">中医药</div>
+    <a class="menu-item" href="#"><i class="icon">🌿</i>中药查询</a>
+    <a class="menu-item" href="#"><i class="icon">📜</i>方剂查询</a>
+    <a class="menu-item" href="#"><i class="icon">🧬</i>经络穴位</a>
+    <a class="menu-item" href="#"><i class="icon">💓</i>脉象</a>
+    <div class="menu-group-title">运营</div>
+    <a class="menu-item" href="#"><i class="icon">📦</i>库存药物</a>
+    <a class="menu-item" href="#"><i class="icon">📊</i>统计概览</a>
+    <div class="menu-group-title">系统</div>
+    <a class="menu-item" href="#"><i class="icon">⚙️</i>系统设置</a>
+    <a class="menu-item" href="#"><i class="icon">📝</i>操作日志</a>
+  </nav>
+</aside>
+
+<!-- ═══════ Right Layout ═══════ -->
+<div class="layout-right">
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="topbar-title">排队叫号</span>
+    </div>
+    <div class="topbar-right">
+      <span id="clock"></span>
+      <div class="user-avatar">张</div>
+      <span>张医生</span>
+    </div>
+  </header>
+
+  <div class="content">
+    <!-- Ant Tabs -->
+    <div class="ant-tabs">
+      <div class="ant-tabs-nav">
+        <div class="ant-tabs-tab active" data-t="ws">今日工作台</div>
+        <div class="ant-tabs-tab" data-t="book">预约管理</div>
+        <div class="ant-tabs-tab" data-t="sch">排班设置</div>
+      </div>
+    </div>
+
+    <!-- ══════ Tab: 今日工作台 ══════ -->
+    <div class="ant-tabs-content active" id="tab-ws">
+      <div class="stats-row" id="statsRow"></div>
+      <div class="ws-grid">
+        <div id="leftCol"></div>
+        <div>
+          <div class="ant-card">
+            <div class="ant-card-head">
+              <span class="ant-card-head-title">候诊队列</span>
+              <div class="q-filter">
+                <button class="q-filter-btn active" id="fAll" onclick="setF('all')">全部</button>
+                <button class="q-filter-btn" id="fActive" onclick="setF('active')">进行中</button>
+                <button class="q-filter-btn" id="fDone" onclick="setF('done')">已完成</button>
+              </div>
+            </div>
+            <div class="q-search-bar">
+              <input class="ant-input" placeholder="搜索姓名 / 手机号" id="qSearch" oninput="renderQ()" style="height:28px;font-size:13px">
+            </div>
+            <div class="q-scroll" id="qList"></div>
+            <div class="walkin-bar">
+              <div class="fg"><label>现场取号</label><input class="ant-input" placeholder="姓名" id="wiName" style="height:28px;font-size:13px"></div>
+              <div class="fg"><label>医生</label>
+                <select class="ant-select" id="wiDoc" style="height:28px;font-size:13px">
+                  <option value="0">张明德</option><option value="1">李秀芳</option>
+                  <option value="2">王建国</option><option value="3">陈慧心</option>
+                </select>
+              </div>
+              <button class="ant-btn ant-btn-primary ant-btn-sm" onclick="doWalkin()">取号</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ Tab: 预约管理 ══════ -->
+    <div class="ant-tabs-content" id="tab-book">
+      <div class="ant-card" style="margin-bottom:20px">
+        <div class="ant-card-head"><span class="ant-card-head-title">选择日期</span></div>
+        <div class="ant-card-body"><div class="date-bar" id="dateBar"></div></div>
+      </div>
+      <div class="ant-card">
+        <div class="ant-card-head"><span class="ant-card-head-title">选择医生与时段</span></div>
+        <div class="ant-card-body"><div class="doc-list" id="docList"></div></div>
+      </div>
+    </div>
+
+    <!-- ══════ Tab: 排班设置 ══════ -->
+    <div class="ant-tabs-content" id="tab-sch">
+      <div class="ant-card">
+        <div class="ant-card-head">
+          <span class="ant-card-head-title">本周排班</span>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="ant-btn ant-btn-sm">‹ 上周</button>
+            <span style="font-weight:500;font-size:13px" id="schWeek"></span>
+            <button class="ant-btn ant-btn-sm">下周 ›</button>
+          </div>
+        </div>
+        <div class="ant-card-body compact"><div id="schGrid"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- Modal -->
+<div class="modal-mask" id="mMask" onclick="if(event.target===this)mClose()">
+  <div class="modal-wrap">
+    <div class="modal-hd"><h3 id="mT"></h3><button style="font-size:18px;color:var(--text-tertiary)" onclick="mClose()">✕</button></div>
+    <div class="modal-bd" id="mB"></div>
+    <div class="modal-ft" id="mF"></div>
+  </div>
+</div>
+
+<!-- Message -->
+<div class="ant-message" id="msgEl"><span class="msg-icon"></span><span class="msg-text"></span></div>
+
+<script>
+const D=[
+  {id:0,n:'张明德',s:'中医内科',r:'诊室1',c:'#389e0d'},
+  {id:1,n:'李秀芳',s:'针灸推拿',r:'诊室2',c:'#d48806'},
+  {id:2,n:'王建国',s:'中医骨伤',r:'诊室3',c:'#531dab'},
+  {id:3,n:'陈慧心',s:'中医妇科',r:'诊室4',c:'#cf1322'},
+];
+const SL=['08:30','09:00','09:30','10:00','10:30','11:00','11:30','14:00','14:30','15:00','15:30','16:00','16:30','17:00'];
+let seq=20,filter='all';
+const P=[
+  {id:1,n:'刘小明',g:'男',a:45,ph:'138****2041',sq:1,d:0,st:'done',t:'08:32',bt:'08:30',sr:'预约',nt:''},
+  {id:2,n:'赵美兰',g:'女',a:62,ph:'139****8876',sq:2,d:0,st:'done',t:'09:05',bt:'09:00',sr:'预约',nt:''},
+  {id:3,n:'孙志强',g:'男',a:38,ph:'136****1234',sq:3,d:0,st:'seeing',t:'09:28',bt:'09:30',sr:'预约',nt:'反复咳嗽两周'},
+  {id:4,n:'周雪梅',g:'女',a:55,ph:'137****4567',sq:4,d:0,st:'waiting',t:'09:45',bt:'10:00',sr:'预约',nt:''},
+  {id:5,n:'钱大海',g:'男',a:41,ph:'135****7890',sq:5,d:0,st:'waiting',t:'09:50',bt:'10:30',sr:'现场',nt:''},
+  {id:6,n:'吴丽华',g:'女',a:33,ph:'188****3456',sq:6,d:0,st:'waiting',t:'10:02',bt:'11:00',sr:'预约',nt:''},
+  {id:7,n:'郑国栋',g:'男',a:58,ph:'150****6789',sq:7,d:1,st:'done',t:'08:35',bt:'08:30',sr:'预约',nt:''},
+  {id:8,n:'王秋月',g:'女',a:29,ph:'151****2345',sq:8,d:1,st:'seeing',t:'09:10',bt:'09:00',sr:'预约',nt:'颈椎疼痛一月'},
+  {id:9,n:'黄建民',g:'男',a:67,ph:'152****8901',sq:9,d:1,st:'waiting',t:'09:42',bt:'09:30',sr:'预约',nt:''},
+  {id:10,n:'林美玲',g:'女',a:44,ph:'153****4567',sq:10,d:1,st:'waiting',t:'10:00',bt:'10:00',sr:'现场',nt:''},
+  {id:11,n:'陈大勇',g:'男',a:50,ph:'155****1234',sq:11,d:2,st:'seeing',t:'08:40',bt:'08:30',sr:'预约',nt:'膝关节疼痛半年'},
+  {id:12,n:'何晓燕',g:'女',a:36,ph:'156****5678',sq:12,d:2,st:'waiting',t:'09:15',bt:'09:00',sr:'预约',nt:''},
+  {id:13,n:'张玉珍',g:'女',a:31,ph:'158****9012',sq:13,d:3,st:'seeing',t:'08:38',bt:'08:30',sr:'预约',nt:'月经不调三月'},
+  {id:14,n:'罗小红',g:'女',a:27,ph:'159****3456',sq:14,d:3,st:'waiting',t:'09:20',bt:'09:00',sr:'预约',nt:''},
+  {id:15,n:'马文静',g:'女',a:42,ph:'180****7890',sq:15,d:3,st:'booked',t:'',bt:'10:00',sr:'预约',nt:''},
+  {id:16,n:'高志远',g:'男',a:53,ph:'181****2345',sq:16,d:0,st:'booked',t:'',bt:'11:30',sr:'预约',nt:''},
+];
+const tk={0:['08:30','09:00','09:30','10:00','10:30','11:00'],1:['08:30','09:00','09:30','10:00'],2:['08:30','09:00'],3:['08:30','09:00','10:00']};
+
+// ═══ Tabs ═══
+document.querySelectorAll('.ant-tabs-tab').forEach(t=>t.addEventListener('click',()=>{
+  document.querySelectorAll('.ant-tabs-tab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.ant-tabs-content').forEach(x=>x.classList.remove('active'));
+  t.classList.add('active');
+  document.getElementById('tab-'+t.dataset.t).classList.add('active');
+}));
+
+// ═══ Clock ═══
+!function ck(){
+  document.getElementById('clock').textContent=new Date().toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',weekday:'short',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+  setTimeout(ck,1000);
+}();
+
+// ═══ Message ═══
+function msg(text,type='success'){
+  const el=document.getElementById('msgEl');
+  el.querySelector('.msg-icon').textContent=type==='success'?'✓':'✕';
+  el.querySelector('.msg-text').textContent=text;
+  el.className='ant-message show msg-'+type;
+  clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('show'),2500);
+}
+
+// ═══ Modal ═══
+function mOpen(t,b,f){document.getElementById('mT').textContent=t;document.getElementById('mB').innerHTML=b;document.getElementById('mF').innerHTML=f;document.getElementById('mMask').classList.add('show')}
+function mClose(){document.getElementById('mMask').classList.remove('show')}
+
+// ═══ Stats ═══
+function renderStats(){
+  const w=P.filter(p=>p.st==='waiting').length,s=P.filter(p=>p.st==='seeing').length,
+        d=P.filter(p=>p.st==='done').length,b=P.filter(p=>p.st==='booked').length;
+  document.getElementById('statsRow').innerHTML=[
+    ['就诊中',s,'var(--error)'],['候诊中',w,'var(--warning)'],['已完成',d,'var(--success)'],['待签到',b,'var(--info)']
+  ].map(([l,v,c])=>`<div class="ant-card" style="padding:16px"><div class="ant-statistic"><div class="ant-statistic-title">${l}</div><div class="ant-statistic-value" style="color:${c}">${v}</div></div></div>`).join('');
+}
+
+// ═══ Left: Current Patients ═══
+function renderLeft(){
+  const seeing=P.filter(p=>p.st==='seeing'),waitAll=P.filter(p=>p.st==='waiting');
+  let h='';
+  if(seeing.length){
+    const byD={};seeing.forEach(p=>{(byD[p.d]=byD[p.d]||[]).push(p)});
+    h+=Object.entries(byD).map(([did,ps])=>{
+      const doc=D[did],p=ps[0],dw=waitAll.filter(x=>x.d==did);
+      return `<div class="ant-card cp-card" style="margin-bottom:16px">
+        <div class="cp-banner">
+          <div class="cp-num">${String(p.sq).padStart(3,'0')}</div>
+          <div><div class="cp-name">${p.n}</div><div class="cp-meta">${p.g} · ${p.a}岁 · ${doc.n} · ${doc.r} · <span class="ant-tag ant-tag-red" style="margin:0">就诊中</span></div></div>
+        </div>
+        <div class="ant-card-body">
+          <div class="cp-info-grid">
+            <div class="cp-info-item"><div class="label">预约时段</div><div class="val">${p.bt}</div></div>
+            <div class="cp-info-item"><div class="label">签到时间</div><div class="val">${p.t}</div></div>
+            <div class="cp-info-item"><div class="label">主诉</div><div class="val">${p.nt||'—'}</div></div>
+          </div>
+          <div class="cp-actions">
+            <button class="ant-btn ant-btn-primary" onclick="doComplete(${p.id})">✓ 完成就诊</button>
+            ${dw.length?`<button class="ant-btn" onclick="doComplete(${p.id},1)">完成并叫下一位</button>`:''}
+            <button class="ant-btn ant-btn-danger ant-btn-sm" onclick="doMiss(${p.id})">过号</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  // Idle doctors with waiters
+  const sDocs=new Set(seeing.map(p=>p.d));
+  D.filter(d=>!sDocs.has(d.id)&&waitAll.some(p=>p.d===d.id)).forEach(doc=>{
+    const w=waitAll.filter(p=>p.d===doc.id),nx=w[0];
+    h+=`<div class="ant-card" style="margin-bottom:16px">
+      <div class="empty-state" style="padding:32px">
+        <div class="icon">🩺</div>
+        <div class="text">${doc.n} · ${doc.r} — 等候 ${w.length} 人</div>
+        <button class="ant-btn ant-btn-primary ant-btn-lg" onclick="doCall(${doc.id})">📢 叫号：${nx.n}（${String(nx.sq).padStart(3,'0')}）</button>
+      </div>
+    </div>`;
+  });
+  if(!h){
+    const bk=P.filter(p=>p.st==='booked');
+    h=`<div class="ant-card"><div class="empty-state"><div class="icon">☕</div><div class="text">当前暂无候诊患者</div>${bk.length?`<div style="color:var(--text-tertiary)">还有 ${bk.length} 位预约未签到</div>`:''}</div></div>`;
+  }
+  document.getElementById('leftCol').innerHTML=h;
+}
+
+// ═══ Queue ═══
+function setF(f){
+  filter=f;
+  ['All','Active','Done'].forEach(x=>{const el=document.getElementById('f'+x);el.className='q-filter-btn'+(el.id==='f'+{all:'All',active:'Active',done:'Done'}[f]?' active':'')});
+  renderQ();
+}
+function renderQ(){
+  const s=document.getElementById('qSearch').value.trim().toLowerCase();
+  let list=[...P];
+  if(filter==='active')list=list.filter(p=>['booked','waiting','seeing'].includes(p.st));
+  else if(filter==='done')list=list.filter(p=>p.st==='done');
+  if(s)list=list.filter(p=>p.n.includes(s)||p.ph.includes(s));
+  const ord={seeing:0,waiting:1,booked:2,missed:3,done:4};
+  list.sort((a,b)=>(ord[a.st]??9)-(ord[b.st]??9)||a.sq-b.sq);
+  const el=document.getElementById('qList');
+  if(!list.length){el.innerHTML='<div style="padding:24px;text-align:center;color:var(--text-tertiary)">无匹配记录</div>';return}
+  const stL={booked:'已预约',waiting:'候诊中',seeing:'就诊中',done:'已完成',missed:'过号'};
+  const tgC={booked:'blue',waiting:'green',seeing:'red',done:'default',missed:'orange'};
+  el.innerHTML=list.map(p=>{
+    let act='';
+    if(p.st==='booked')act=`<button class="ant-btn ant-btn-primary ant-btn-sm" onclick="doCheckin(${p.id})">签到</button>`;
+    else if(p.st==='waiting')act=`<button class="ant-btn ant-btn-sm" onclick="doCall(${p.d},${p.id})">叫号</button>`;
+    else if(p.st==='missed')act=`<button class="ant-btn ant-btn-sm" onclick="doRequeue(${p.id})">重排</button>`;
+    return `<div class="q-item${p.st==='seeing'?' is-seeing':''}">
+      <div class="q-seq qs-${p.st}">${String(p.sq).padStart(2,'0')}</div>
+      <div class="q-info">
+        <div class="q-name">${p.n} <span class="ant-tag ant-tag-${tgC[p.st]}">${stL[p.st]}</span>${p.sr==='现场'?'<span class="ant-tag ant-tag-orange">现场</span>':''}</div>
+        <div class="q-detail">${D[p.d].n} · ${p.bt?'约'+p.bt:''}${p.t?' · 到'+p.t:''}</div>
+      </div>
+      <div class="q-action">${act}</div>
+    </div>`;
+  }).join('');
+}
+
+// ═══ Actions ═══
+function now(){const n=new Date();return n.getHours().toString().padStart(2,'0')+':'+n.getMinutes().toString().padStart(2,'0')}
+function doCheckin(id){const p=P.find(x=>x.id===id);if(!p)return;p.st='waiting';p.t=now();refresh();msg(`${p.n} 签到成功，序号 ${String(p.sq).padStart(3,'0')}`)}
+function doCall(did,sid){
+  let p;if(sid)p=P.find(x=>x.id===sid&&x.st==='waiting');
+  else{const w=P.filter(x=>x.d===did&&x.st==='waiting').sort((a,b)=>a.sq-b.sq);p=w[0]}
+  if(!p){msg('暂无等候患者','error');return}p.st='seeing';refresh();
+  msg(`请 ${p.n}（${String(p.sq).padStart(3,'0')}号）到 ${D[p.d].r}`);
+}
+function doComplete(id,next){
+  const p=P.find(x=>x.id===id);if(!p)return;const did=p.d;p.st='done';
+  if(next){const w=P.filter(x=>x.d===did&&x.st==='waiting').sort((a,b)=>a.sq-b.sq);
+    if(w.length){w[0].st='seeing';msg(`${p.n} 完成，已叫号 ${w[0].n}`)}else msg(`${p.n} 完成，无下一位`)}
+  else msg(`${p.n} 就诊完成`);refresh();
+}
+function doMiss(id){const p=P.find(x=>x.id===id);if(!p)return;p.st='missed';refresh();msg(`${p.n} 已过号`,'error')}
+function doRequeue(id){const p=P.find(x=>x.id===id);if(!p)return;seq++;p.sq=seq;p.st='waiting';refresh();msg(`${p.n} 重排至 ${String(seq).padStart(3,'0')}号`)}
+function doWalkin(){
+  const nm=document.getElementById('wiName').value.trim(),did=+document.getElementById('wiDoc').value;
+  if(!nm){msg('请输入姓名','error');return}seq++;
+  P.push({id:100+seq,n:nm,g:'',a:'',ph:'',sq:seq,d:did,st:'waiting',t:now(),bt:now(),sr:'现场',nt:''});
+  document.getElementById('wiName').value='';refresh();
+  msg(`${nm} 取号 ${String(seq).padStart(3,'0')}，${D[did].n} · ${D[did].r}`);
+}
+function refresh(){renderStats();renderLeft();renderQ()}
+
+// ═══ Booking ═══
+let sDate=0,sDoc=null,sSlot=null;
+function renderDates(){
+  const today=new Date(),el=document.getElementById('dateBar');el.innerHTML='';
+  const wd=['周日','周一','周二','周三','周四','周五','周六'];
+  for(let i=0;i<7;i++){const d=new Date(today);d.setDate(d.getDate()+i);
+    el.innerHTML+=`<div class="date-chip${i===sDate?' active':''}" onclick="sDate=${i};sDoc=null;sSlot=null;renderDates();renderDocs()">
+      <div class="wd">${i===0?'今天':wd[d.getDay()]}</div><div class="dd">${d.getDate()}</div><div class="mm">${d.getMonth()+1}月</div></div>`}
+}
+function renderDocs(){
+  document.getElementById('docList').innerHTML=D.map(doc=>{
+    const t=sDate===0?(tk[doc.id]||[]):[],av=SL.length-t.length,sel=sDoc===doc.id;
+    return `<div class="ant-card doc-item${sel?' selected':''}" onclick="sDoc=${sel?'null':doc.id};sSlot=null;renderDocs()">
+      <div class="doc-row">
+        <div class="doc-avatar" style="background:${doc.c}">${doc.n[0]}</div>
+        <div class="doc-info"><h4>${doc.n}</h4><div class="sp">${doc.s}</div><div class="cnt">可约 <b style="color:var(--warning)">${av}</b> / ${SL.length}</div></div>
+      </div>
+      <div class="slots-wrap"><div class="slot-grid">${SL.map(s=>{
+        const taken=t.includes(s),pk=sSlot===s&&sel;
+        return `<div class="slot-chip${taken?' taken':''}${pk?' picked':''}" onclick="event.stopPropagation();${taken?'':`pickSlot(${doc.id},'${s}')`}">${s}</div>`;
+      }).join('')}</div></div></div>`;
+  }).join('');
+}
+function pickSlot(did,slot){
+  sDoc=did;sSlot=slot;renderDocs();
+  const doc=D[did],today=new Date();today.setDate(today.getDate()+sDate);
+  const ds=`${today.getMonth()+1}月${today.getDate()}日`;
+  mOpen('确认预约',`<div style="background:#fafafa;border-radius:8px;padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px">
+    <div><span style="color:var(--text-tertiary)">医生</span><br><b>${doc.n}</b></div>
+    <div><span style="color:var(--text-tertiary)">科室</span><br><b>${doc.s}</b></div>
+    <div><span style="color:var(--text-tertiary)">日期</span><br><b>${ds}</b></div>
+    <div><span style="color:var(--text-tertiary)">时段</span><br><b>${slot}</b></div></div>`,
+  `<button class="ant-btn" onclick="mClose()">取消</button><button class="ant-btn ant-btn-primary" onclick="confirmBook(${did},'${slot}')">确认预约</button>`);
+}
+function confirmBook(did,slot){
+  (tk[did]=tk[did]||[]).push(slot);seq++;
+  P.push({id:200+seq,n:'新患者',g:'',a:'',ph:'',sq:seq,d:did,st:'booked',t:'',bt:slot,sr:'预约',nt:''});
+  mClose();renderDocs();refresh();msg(`预约成功：${D[did].n} ${slot}`);
+}
+
+// ═══ Schedule ═══
+function renderSch(){
+  const today=new Date(),dow=today.getDay(),mon=new Date(today);
+  mon.setDate(today.getDate()-(dow===0?6:dow-1));
+  const sun=new Date(mon.getTime()+6*864e5);
+  document.getElementById('schWeek').textContent=`${mon.getMonth()+1}月${mon.getDate()}日 - ${sun.getMonth()+1}月${sun.getDate()}日`;
+  const wds=['周一','周二','周三','周四','周五','周六','周日'],per=['上午<br><small>08:30-12:00</small>','下午<br><small>14:00-17:30</small>'];
+  const data=[[0,0,0],[0,0,1],[0,1,0],[0,1,1],[0,2,0],[0,3,0],[0,3,1],[0,4,0],[0,4,1],
+    [1,0,0],[1,0,1],[1,1,0],[1,2,0],[1,2,1],[1,3,0],[1,4,0],
+    [2,0,0],[2,1,0],[2,1,1],[2,2,0],[2,3,0],[2,3,1],[2,4,0],[2,4,1],[2,5,0],
+    [3,1,0],[3,1,1],[3,2,0],[3,3,0],[3,4,0],[3,4,1],[3,5,0]];
+  let h='<div class="sch-grid"><div class="sch-hd"></div>';
+  for(let d=0;d<7;d++){const dt=new Date(mon);dt.setDate(mon.getDate()+d);
+    h+=`<div class="sch-hd">${wds[d]}<small>${dt.getMonth()+1}/${dt.getDate()}</small></div>`}
+  for(let p=0;p<2;p++){h+=`<div class="sch-time">${per[p]}</div>`;
+    for(let d=0;d<7;d++){const c=data.filter(s=>s[1]===d&&s[2]===p).map(s=>D[s[0]]);
+      h+=`<div class="sch-cell">${c.map(doc=>`<span class="sch-doc sd-${doc.id}">${doc.n}</span>`).join('')}${!c.length?'<span style="color:var(--text-tertiary);font-size:11px">休</span>':''}</div>`}}
+  h+='</div>';document.getElementById('schGrid').innerHTML=h;
+}
+
+// ═══ Init ═══
+setF('active');renderStats();renderLeft();renderQ();renderDates();renderDocs();renderSch();
+</script>
+</body>
+</html>

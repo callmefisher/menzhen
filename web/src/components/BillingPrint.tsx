@@ -1,5 +1,6 @@
 import { useRef, useImperativeHandle, forwardRef } from 'react';
 import type { BillingDetail } from '../api/billing';
+import ShelfTag from './ShelfTag';
 
 export interface BillingPrintHandle {
   print: () => void;
@@ -105,7 +106,7 @@ const BillingPrint = forwardRef<BillingPrintHandle, BillingPrintProps>(
                   <tbody>
                     {herbs.map((item, idx) => (
                       <tr key={idx}>
-                        <td>{item.herb_name}{!item.in_stock && ' *'}</td>
+                        <td style={{ textAlign: 'left' }}><ShelfTag shelfNo={item.shelf_no} />{item.herb_name}{!item.in_stock && ' *'}</td>
                         <td>{item.dosage_val}g × {item.doses}付</td>
                         <td>{item.in_stock ? item.unit_price.toFixed(2) : '-'}</td>
                         <td>{item.item_cost.toFixed(2)}</td>
@@ -137,7 +138,7 @@ const BillingPrint = forwardRef<BillingPrintHandle, BillingPrintProps>(
                   <tbody>
                     {patents.map((item, idx) => (
                       <tr key={idx}>
-                        <td>{item.herb_name}{!item.in_stock && ' *'}</td>
+                        <td style={{ textAlign: 'left' }}><ShelfTag shelfNo={item.shelf_no} />{item.herb_name}{!item.in_stock && ' *'}</td>
                         <td>{item.dosage_val}盒</td>
                         <td>{item.in_stock ? item.unit_price.toFixed(2) : '-'}</td>
                         <td>{item.item_cost.toFixed(2)}</td>

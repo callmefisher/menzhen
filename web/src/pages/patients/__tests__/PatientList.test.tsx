@@ -27,6 +27,7 @@ const mockDeletePatient = vi.fn();
 vi.mock('../../../api/patient', () => ({
   listPatients: (...args: unknown[]) => mockListPatients(...args),
   deletePatient: (...args: unknown[]) => mockDeletePatient(...args),
+  findPatientPage: vi.fn().mockResolvedValue(1),
 }));
 
 vi.mock('../PatientForm', () => ({

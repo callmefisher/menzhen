@@ -16,6 +16,11 @@ vi.mock('antd', async () => {
   return { ...actual, message: { error: vi.fn(), success: vi.fn(), warning: vi.fn() } };
 });
 
+// Mock LoginBackground to render children without canvas/animation
+vi.mock('../LoginBackground', () => ({
+  default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+}));
+
 function renderRegister() {
   return render(
     <MemoryRouter>
@@ -28,14 +33,13 @@ describe('Register', () => {
   it('renders registration form with all fields', () => {
     const { container } = renderRegister();
 
-    expect(screen.getByText('注册账号')).toBeInTheDocument();
+    expect(screen.getByText('创建账号')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('诊所编码（默认：default）')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('用户名')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('密码')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('确认密码')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('真实姓名')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('请输入用户名')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('密码（至少 6 位）')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('再次输入密码')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('请输入真实姓名')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('手机号（选填）')).toBeInTheDocument();
-    // Submit button: Ant Design renders <button type="submit"><span>注册</span></button>
     const submitBtn = container.querySelector('button[type="submit"]');
     expect(submitBtn).toBeInTheDocument();
     expect(submitBtn!.textContent).toMatch(/注\s*册/);
@@ -44,9 +48,8 @@ describe('Register', () => {
   it('renders link to login page', () => {
     renderRegister();
 
-    expect(screen.getByText('已有账号？')).toBeInTheDocument();
+    expect(screen.getByText('返回登录')).toBeInTheDocument();
     const loginLink = screen.getByText('返回登录');
-    expect(loginLink).toBeInTheDocument();
     expect(loginLink.closest('a')).toHaveAttribute('href', '/login');
   });
 });

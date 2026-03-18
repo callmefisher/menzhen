@@ -3,6 +3,7 @@ import { Button } from 'antd';
 import { PrinterOutlined } from '@ant-design/icons';
 import type { PrescriptionData } from '../api/prescription';
 import useIsMobile from '../hooks/useIsMobile';
+import ShelfTag from './ShelfTag';
 
 interface PrescriptionPrintProps {
   prescription: PrescriptionData;
@@ -12,6 +13,8 @@ interface PrescriptionPrintProps {
   treatment?: string;
   /** Render as icon-only button (for card header placement). */
   iconOnly?: boolean;
+  /** Map of herb_name → shelf_no for displaying shelf tags. */
+  shelfMap?: Record<string, string>;
 }
 
 function getCurrentBeijingTime(): string {
@@ -38,6 +41,7 @@ export default function PrescriptionPrint({
   chiefComplaint,
   treatment,
   iconOnly,
+  shelfMap,
 }: PrescriptionPrintProps) {
   const isMobile = useIsMobile();
   const printRef = useRef<HTMLDivElement>(null);
@@ -154,7 +158,7 @@ export default function PrescriptionPrint({
                       <ul className="herb-list">
                         {column.map((item) => (
                           <li key={item.id}>
-                            <span className="herb-name">{item.herb_name}</span>
+                            <span className="herb-name">{shelfMap && <ShelfTag shelfNo={shelfMap[item.herb_name]} />}{item.herb_name}</span>
                             <span className="herb-dosage">{item.dosage}克</span>
                             <span className="herb-notes">{item.notes || ''}</span>
                           </li>
@@ -177,7 +181,7 @@ export default function PrescriptionPrint({
                 <ul className="herb-list">
                   {patents.map((item) => (
                     <li key={item.id}>
-                      <span className="herb-name">{item.herb_name}</span>
+                      <span className="herb-name">{shelfMap && <ShelfTag shelfNo={shelfMap[item.herb_name]} />}{item.herb_name}</span>
                       <span className="herb-dosage">{item.dosage}盒</span>
                       <span className="herb-notes">{item.notes || ''}</span>
                     </li>

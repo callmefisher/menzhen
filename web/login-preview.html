@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录页预览 — 中医诊疗系统</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700;900&family=Noto+Sans+SC:wght@300;400;500;600&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --accent: #3DD68C;
+    --accent-dim: #2BA86A;
+    --accent-secondary: #2DD4A8;
+    --accent-glow: 61, 214, 140;
+    --ink: #080E1E;
+    --ink-card: rgba(10, 18, 40, 0.55);
+    --text-primary: #E8ECF4;
+    --text-secondary: #8A94A8;
+  }
+
+  html { height: 100%; }
+  body {
+    min-height: 100%;
+    font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--ink);
+    color: var(--text-primary);
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  /* ====== Animated gradient mesh background ====== */
+  .bg-mesh {
+    position: fixed; inset: 0; z-index: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(ellipse 80% 60% at 10% 20%, rgba(var(--accent-glow), 0.18) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 80% at 85% 75%, rgba(var(--accent-glow), 0.12) 0%, transparent 55%),
+      radial-gradient(ellipse 50% 50% at 50% 50%, rgba(100, 80, 220, 0.08) 0%, transparent 60%),
+      linear-gradient(160deg, #060C1A 0%, #0C1628 30%, #0A1225 60%, #080E1E 100%);
+    animation: meshShift 12s ease-in-out infinite alternate;
+    will-change: filter;
+  }
+  @keyframes meshShift {
+    0%   { filter: hue-rotate(0deg) brightness(1); }
+    50%  { filter: hue-rotate(8deg) brightness(1.1); }
+    100% { filter: hue-rotate(-5deg) brightness(1.05); }
+  }
+
+  /* ====== Aurora bands ====== */
+  .aurora {
+    position: fixed; inset: 0; z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  .aurora-band {
+    position: absolute;
+    width: 200%; height: 300px;
+    border-radius: 50%;
+    filter: blur(80px);
+    opacity: 0;
+    animation: auroraPulse 8s ease-in-out infinite;
+    will-change: opacity, transform;
+  }
+  .aurora-band-1 {
+    background: linear-gradient(90deg, transparent 0%, rgba(var(--accent-glow), 0.25) 30%, rgba(var(--accent-glow), 0.15) 50%, transparent 80%);
+    top: -5%; left: -30%; transform: rotate(-8deg);
+  }
+  .aurora-band-2 {
+    background: linear-gradient(90deg, transparent 10%, rgba(var(--accent-glow), 0.12) 40%, rgba(100, 80, 220, 0.1) 60%, transparent 90%);
+    top: 15%; left: -20%; transform: rotate(-4deg);
+    animation-delay: -3s; height: 200px;
+  }
+  .aurora-band-3 {
+    background: linear-gradient(90deg, transparent 0%, rgba(var(--accent-glow), 0.1) 50%, transparent 100%);
+    bottom: 5%; left: -10%; transform: rotate(5deg);
+    animation-delay: -5s; height: 250px;
+  }
+  @keyframes auroraPulse {
+    0%, 100% { opacity: 0.3; transform: translateX(0) rotate(-8deg); }
+    30%      { opacity: 0.7; }
+    50%      { opacity: 0.5; transform: translateX(5%) rotate(-6deg); }
+    80%      { opacity: 0.8; }
+  }
+
+  /* ====== Floating energy rings ====== */
+  .energy-ring {
+    position: fixed; border-radius: 50%;
+    border: 1px solid rgba(var(--accent-glow), 0.15);
+    pointer-events: none; z-index: 0;
+    will-change: opacity, transform;
+  }
+  .ring-1 { width: 500px; height: 500px; top: -10%; right: -8%; animation: ringRotate 30s linear infinite, ringPulse 6s ease-in-out infinite; }
+  .ring-2 { width: 350px; height: 350px; bottom: -5%; left: -5%; border-style: dashed; animation: ringRotate 25s linear infinite reverse, ringPulse 8s ease-in-out infinite; animation-delay: -2s; }
+  .ring-3 { width: 200px; height: 200px; top: 30%; left: 15%; animation: ringRotate 20s linear infinite, ringPulse 5s ease-in-out infinite; animation-delay: -4s; }
+  @keyframes ringRotate { to { transform: rotate(360deg); } }
+  @keyframes ringPulse {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 0.7; border-color: rgba(var(--accent-glow), 0.3); }
+  }
+
+  /* ====== Canvas ====== */
+  #particle-canvas { position: fixed; inset: 0; z-index: 1; pointer-events: none; }
+
+  /* ====== Bright ambient orbs ====== */
+  .ambient-orb {
+    position: fixed; border-radius: 50%;
+    pointer-events: none; z-index: 0;
+    animation: orbFloat 16s ease-in-out infinite;
+    will-change: transform;
+  }
+  .orb-1 { width: 700px; height: 700px; top: -20%; left: -10%; background: radial-gradient(circle, rgba(var(--accent-glow), 0.3) 0%, rgba(var(--accent-glow), 0.08) 40%, transparent 70%); filter: blur(60px); }
+  .orb-2 { width: 500px; height: 500px; bottom: -15%; right: -8%; background: radial-gradient(circle, rgba(var(--accent-glow), 0.22) 0%, rgba(100, 80, 220, 0.06) 50%, transparent 70%); filter: blur(50px); animation-delay: -6s; }
+  .orb-3 { width: 350px; height: 350px; top: 40%; left: 55%; background: radial-gradient(circle, rgba(var(--accent-glow), 0.18) 0%, transparent 65%); filter: blur(40px); animation-delay: -11s; }
+  @keyframes orbFloat {
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    33% { transform: translate(40px, -50px) scale(1.08); }
+    66% { transform: translate(-30px, 30px) scale(0.94); }
+  }
+
+  /* ====== TCM floating symbols ====== */
+  .tcm-symbol {
+    position: fixed; font-family: 'Noto Serif SC', serif;
+    color: var(--accent); font-size: 140px; font-weight: 900;
+    user-select: none; pointer-events: none; z-index: 1;
+    opacity: 0.07;
+    text-shadow: 0 0 60px rgba(var(--accent-glow), 0.3);
+  }
+  .tcm-1 { top: 3%; left: 6%; animation: sym 25s ease-in-out infinite; }
+  .tcm-2 { bottom: 5%; right: 6%; animation: sym 30s ease-in-out infinite reverse; }
+  .tcm-3 { top: 45%; left: 68%; font-size: 90px; animation: sym 20s ease-in-out infinite; animation-delay: -7s; }
+  @keyframes sym {
+    0%, 100% { transform: translate(0,0) rotate(0deg); }
+    25% { transform: translate(18px,-25px) rotate(4deg); }
+    50% { transform: translate(-12px,15px) rotate(-3deg); }
+    75% { transform: translate(22px,8px) rotate(2deg); }
+  }
+
+  /* ====== Ink strokes ====== */
+  .ink-stroke { position: fixed; z-index: 0; pointer-events: none; opacity: 0.18; }
+  .ink-stroke svg { width: 100%; height: 100%; }
+  .ink-stroke-1 { top: 6%; right: 3%; width: 400px; height: 220px; }
+  .ink-stroke-2 { bottom: 8%; left: 2%; width: 320px; height: 200px; }
+  .stroke-a { stroke: var(--accent); opacity: 0.5; }
+  .stroke-b { stroke: var(--accent-dim); opacity: 0.35; }
+
+  /* ====== Star field ====== */
+  .star-field {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      radial-gradient(1.5px 1.5px at 15% 25%, rgba(255,255,255,0.25), transparent),
+      radial-gradient(1px 1px at 35% 60%, rgba(255,255,255,0.2), transparent),
+      radial-gradient(1.5px 1.5px at 55% 15%, rgba(255,255,255,0.18), transparent),
+      radial-gradient(1px 1px at 75% 45%, rgba(255,255,255,0.22), transparent),
+      radial-gradient(1.5px 1.5px at 90% 80%, rgba(255,255,255,0.15), transparent),
+      radial-gradient(1px 1px at 25% 85%, rgba(255,255,255,0.2), transparent),
+      radial-gradient(1.5px 1.5px at 65% 75%, rgba(255,255,255,0.17), transparent),
+      radial-gradient(1px 1px at 45% 40%, rgba(255,255,255,0.24), transparent),
+      radial-gradient(1px 1px at 80% 20%, rgba(255,255,255,0.19), transparent),
+      radial-gradient(1.5px 1.5px at 10% 55%, rgba(255,255,255,0.16), transparent),
+      radial-gradient(1px 1px at 50% 90%, rgba(255,255,255,0.21), transparent),
+      radial-gradient(1px 1px at 70% 10%, rgba(255,255,255,0.18), transparent);
+    animation: twinkle 6s ease-in-out infinite alternate;
+  }
+  @keyframes twinkle { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.7; } }
+
+  /* ====== Customizer bar (collapsible) ====== */
+  .customizer-bar {
+    position: fixed; top: 20px; right: 20px; z-index: 200;
+    display: flex; align-items: center; gap: 0;
+    background: rgba(10, 18, 40, 0.7);
+    -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px);
+    border-radius: 14px;
+    border: 1px solid rgba(var(--accent-glow), 0.2);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3), 0 0 20px rgba(var(--accent-glow), 0.05);
+    overflow: hidden;
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .customizer-toggle {
+    display: flex; align-items: center; justify-content: center;
+    width: 42px; height: 42px;
+    background: none; border: none; color: var(--accent);
+    cursor: pointer; flex-shrink: 0; transition: all 0.3s; padding: 0;
+  }
+  .customizer-toggle:hover { color: var(--text-primary); }
+  .customizer-toggle svg { width: 18px; height: 18px; transition: transform 0.3s; }
+  .customizer-bar.expanded .customizer-toggle svg { transform: rotate(90deg); }
+  .customizer-body {
+    display: flex; align-items: center; gap: 12px;
+    max-width: 0; opacity: 0; padding: 0;
+    overflow: hidden;
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .customizer-bar.expanded .customizer-body {
+    max-width: 500px; opacity: 1; padding: 0 16px 0 4px;
+  }
+  .customizer-body > label { font-size: 12px; color: var(--text-secondary); white-space: nowrap; font-weight: 500; }
+  .customizer-input {
+    padding: 6px 12px;
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 8px; color: var(--accent);
+    font-size: 13px; font-family: 'Noto Serif SC', serif; font-weight: 600;
+    width: 180px; outline: none; transition: all 0.3s;
+  }
+  .customizer-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(var(--accent-glow), 0.15); }
+  .theme-pills { display: flex; gap: 6px; flex-shrink: 0; }
+  .theme-pill { width: 24px; height: 24px; border-radius: 50%; border: 2.5px solid transparent; cursor: pointer; transition: all 0.3s; outline: none; }
+  .theme-pill:focus-visible { box-shadow: 0 0 0 2px var(--accent), 0 0 14px rgba(255,255,255,0.2); }
+  .theme-pill:hover { transform: scale(1.2); }
+  .theme-pill.active { border-color: #fff; box-shadow: 0 0 14px rgba(255,255,255,0.3); }
+  .pill-jade    { background: linear-gradient(135deg, #3DD68C, #2DD4A8); }
+  .pill-amber   { background: linear-gradient(135deg, #D4A843, #E8C45A); }
+  .pill-crimson { background: linear-gradient(135deg, #E84057, #FF6B6B); }
+  .pill-azure   { background: linear-gradient(135deg, #4A90D9, #63B3ED); }
+
+  .save-toast {
+    position: fixed; top: 70px; right: 20px; z-index: 201;
+    background: rgba(10, 18, 40, 0.85);
+    -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+    border: 1px solid rgba(var(--accent-glow), 0.25);
+    border-radius: 10px; padding: 8px 16px;
+    font-size: 12px; color: var(--accent);
+    pointer-events: none; opacity: 0; transform: translateY(-8px);
+    transition: all 0.3s ease;
+  }
+  .save-toast.show { opacity: 1; transform: translateY(0); }
+
+  /* ====== Main layout ====== */
+  .login-wrapper {
+    position: relative; z-index: 10;
+    display: flex; justify-content: center; align-items: center;
+    min-height: 100vh; padding: 20px;
+  }
+
+  .login-container {
+    display: flex;
+    width: 920px; max-width: 100%;
+    border-radius: 28px;
+    -webkit-backdrop-filter: blur(50px) saturate(1.6); backdrop-filter: blur(50px) saturate(1.6);
+    border: 1px solid rgba(var(--accent-glow), 0.18);
+    box-shadow:
+      0 0 100px rgba(var(--accent-glow), 0.08),
+      0 40px 80px rgba(0, 0, 0, 0.45),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06),
+      inset 0 -1px 0 rgba(var(--accent-glow), 0.05);
+  }
+
+  /* ====== Left panel ====== */
+  .brand-panel {
+    flex: 1; padding: 48px 40px;
+    display: flex; flex-direction: column; justify-content: center;
+    position: relative; overflow: hidden;
+    background: linear-gradient(160deg, rgba(var(--accent-glow), 0.1) 0%, rgba(var(--accent-glow), 0.02) 40%, transparent 70%);
+  }
+  .brand-panel::before {
+    content: ''; position: absolute; right: 0; top: 8%; bottom: 8%; width: 1px;
+    background: linear-gradient(to bottom, transparent, rgba(var(--accent-glow), 0.2), transparent);
+  }
+  .brand-panel::after {
+    content: ''; position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(var(--accent-glow), 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(var(--accent-glow), 0.03) 1px, transparent 1px);
+    background-size: 40px 40px; pointer-events: none;
+  }
+
+  .brand-icon {
+    width: 72px; height: 72px; border-radius: 20px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 28px;
+    box-shadow: 0 8px 32px rgba(var(--accent-glow), 0.4);
+    position: relative;
+  }
+  .brand-icon::after {
+    content: ''; position: absolute; inset: -5px; border-radius: 25px;
+    border: 1.5px solid rgba(var(--accent-glow), 0.35);
+    animation: iconPulse 3s ease-in-out infinite;
+  }
+  @keyframes iconPulse { 0%, 100% { transform: scale(1); opacity: 0.6; } 50% { transform: scale(1.1); opacity: 0; } }
+  .brand-icon svg { width: 36px; height: 36px; fill: white; }
+
+  .brand-title-area { position: relative; z-index: 1; }
+  .brand-label { font-family: 'Noto Serif SC', serif; font-size: 13px; font-weight: 600; letter-spacing: 6px; color: var(--accent); margin-bottom: 12px; }
+  .brand-title {
+    font-family: 'Noto Serif SC', serif; font-size: 32px; font-weight: 900;
+    line-height: 1.3; margin-bottom: 16px;
+    background: linear-gradient(135deg, #fff 0%, var(--accent) 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    transition: transform 0.15s ease;
+  }
+  .brand-desc { font-size: 14px; line-height: 1.8; color: var(--text-secondary); max-width: 300px; }
+  .brand-features { margin-top: 36px; display: flex; flex-direction: column; gap: 14px; position: relative; z-index: 1; }
+  .feature-item { display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--text-secondary); }
+  .feature-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px rgba(var(--accent-glow), 0.6); flex-shrink: 0; }
+
+  /* ====== Right panel ====== */
+  .form-panel { width: 400px; padding: 48px 40px; display: flex; flex-direction: column; justify-content: center; }
+  .form-header { margin-bottom: 36px; }
+  .form-header h2 { font-family: 'Noto Serif SC', serif; font-size: 24px; font-weight: 700; margin-bottom: 8px; }
+  .form-header p { font-size: 13px; color: var(--text-secondary); }
+
+  /* Login and register page elements: show immediately */
+
+  /* ====== Form ====== */
+  .form-group { margin-bottom: 22px; }
+  .form-label { display: block; font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 8px; letter-spacing: 1px; text-transform: uppercase; }
+  .input-wrapper { position: relative; }
+  .input-icon { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; color: var(--text-secondary); transition: color 0.3s; pointer-events: none; z-index: 2; }
+  .form-input {
+    width: 100%; padding: 14px 16px 14px 46px;
+    background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px; color: var(--text-primary);
+    font-size: 14px; font-family: inherit;
+    transition: all 0.3s ease; outline: none;
+    position: relative; z-index: 1;
+  }
+  .form-input::placeholder { color: rgba(138, 148, 168, 0.6); }
+  .form-input:hover { border-color: rgba(255, 255, 255, 0.18); background: rgba(255, 255, 255, 0.07); }
+  .form-input:focus { border-color: var(--accent); background: rgba(var(--accent-glow), 0.06); box-shadow: 0 0 0 3px rgba(var(--accent-glow), 0.12), 0 0 24px rgba(var(--accent-glow), 0.08); }
+  .form-input:focus + .input-icon, .form-input:focus ~ .input-icon { color: var(--accent); }
+
+  /* ====== Options ====== */
+  .form-options { display: flex; justify-content: space-between; align-items: center; margin-bottom: 28px; }
+  .checkbox-wrapper { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: var(--text-secondary); user-select: none; }
+  .checkbox-wrapper input[type="checkbox"] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+  .custom-checkbox { width: 18px; height: 18px; border: 1.5px solid rgba(255,255,255,0.18); border-radius: 5px; display: flex; align-items: center; justify-content: center; transition: all 0.3s; flex-shrink: 0; }
+  .custom-checkbox svg { width: 12px; height: 12px; opacity: 0; transform: scale(0.5); transition: all 0.2s; }
+  .checkbox-wrapper input:checked + .custom-checkbox { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 10px rgba(var(--accent-glow), 0.3); }
+  .checkbox-wrapper input:checked + .custom-checkbox svg { opacity: 1; transform: scale(1); }
+  .forgot-link { font-size: 13px; color: var(--accent); text-decoration: none; transition: opacity 0.2s; }
+  .forgot-link:hover { opacity: 0.7; }
+
+  /* ====== Button ====== */
+  .login-btn {
+    width: 100%; padding: 15px; border: none; border-radius: 12px;
+    font-size: 15px; font-weight: 600; font-family: inherit;
+    cursor: pointer; position: relative; overflow: hidden;
+    color: #0A0F1A;
+    background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+    box-shadow: 0 4px 28px rgba(var(--accent-glow), 0.4);
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .login-btn::before {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(135deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%);
+    transform: translateX(-100%); transition: transform 0.6s ease;
+  }
+  .login-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 50px rgba(var(--accent-glow), 0.5), 0 0 80px rgba(var(--accent-glow), 0.15); }
+  .login-btn:hover::before { transform: translateX(100%); }
+  .login-btn:active { transform: translateY(0); }
+
+  @keyframes shimmer { 0% { background-position: -200% center; } 100% { background-position: 200% center; } }
+  .login-btn.loading { background: linear-gradient(90deg, var(--accent-dim), var(--accent), var(--accent-dim)) !important; background-size: 200% 100% !important; animation: shimmer 1.5s infinite !important; pointer-events: none; }
+
+  /* ====== Footer ====== */
+  .form-footer { text-align: center; margin-top: 28px; font-size: 13px; color: var(--text-secondary); }
+  .form-footer a { color: var(--accent); text-decoration: none; font-weight: 500; transition: opacity 0.2s; }
+  .form-footer a:hover { opacity: 0.7; }
+
+  /* ====== Password toggle ====== */
+  .password-toggle { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-secondary); cursor: pointer; padding: 4px; transition: color 0.2s; display: flex; align-items: center; z-index: 2; }
+  .password-toggle:hover { color: var(--accent); }
+  .password-toggle svg { width: 18px; height: 18px; }
+
+  /* ====== Page footer ====== */
+  .page-footer { text-align: center; padding: 24px 0 20px; position: relative; z-index: 10; pointer-events: none; }
+  .page-footer .version { font-size: 11px; color: rgba(138, 148, 168, 0.4); letter-spacing: 2px; margin-bottom: 4px; }
+  .page-footer .copyright { font-size: 10px; color: rgba(138, 148, 168, 0.3); letter-spacing: 1px; }
+
+  /* ====== Theme transition ====== */
+  .theme-transitioning, .theme-transitioning *, .theme-transitioning *::before, .theme-transitioning *::after { transition-duration: 0.6s !important; }
+
+  /* ====== Form page switching ====== */
+  .form-page.hidden { display: none; }
+
+  /* ====== Register form tighter spacing ====== */
+  .register-form .form-group { margin-bottom: 14px; }
+  .register-form .form-label { margin-bottom: 5px; }
+  .register-form .form-input { padding-top: 10px; padding-bottom: 10px; }
+
+  /* ====== Animation toggle button (desktop only) ====== */
+  .anim-toggle {
+    position: fixed; bottom: 20px; left: 20px; z-index: 300;
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(10, 18, 40, 0.7);
+    -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+    border: 1px solid rgba(var(--accent-glow), 0.2);
+    border-radius: 10px; padding: 8px 14px;
+    cursor: pointer; user-select: none;
+    font-size: 11px; color: var(--text-secondary);
+    transition: all 0.3s;
+  }
+  .anim-toggle:hover { border-color: rgba(var(--accent-glow), 0.4); color: var(--text-primary); }
+  .anim-toggle-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px rgba(var(--accent-glow), 0.5);
+    transition: all 0.3s;
+  }
+  .anim-toggle-dot.off { background: #555; box-shadow: none; }
+
+  /* ====== NO ANIMATIONS MODE ====== */
+  .no-animations,
+  .no-animations * {
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+    transition-duration: 0s !important;
+  }
+  .no-animations .aurora,
+  .no-animations .energy-ring,
+  .no-animations .tcm-symbol,
+  .no-animations .star-field,
+  .no-animations .ink-stroke { opacity: 0 !important; }
+  .no-animations .bg-mesh { animation: none !important; filter: none !important; }
+  .no-animations .ambient-orb { animation: none !important; }
+  .no-animations .brand-icon::after { animation: none !important; opacity: 0 !important; }
+  .no-animations #particle-canvas { opacity: 0 !important; }
+  .no-animations .anim-toggle { opacity: 1 !important; }
+
+  /* ====== Responsive: tablet & phone ====== */
+  @media (max-width: 800px) {
+    .brand-panel { display: none; }
+    .login-container { width: 100%; max-width: 420px; border-radius: 20px; }
+    .form-panel { width: 100%; padding: 32px 22px; }
+    .form-header { margin-bottom: 24px; }
+    .form-header h2 { font-size: 20px; }
+    .register-form .form-group { margin-bottom: 10px; }
+    .register-form .form-label { margin-bottom: 4px; font-size: 11px; }
+    .register-form .form-input { padding-top: 9px; padding-bottom: 9px; font-size: 13px; }
+    .login-btn { padding: 13px; font-size: 14px; }
+    .form-footer { margin-top: 18px; }
+    .customizer-bar { top: 12px; right: 12px; }
+    .customizer-body { flex-direction: column; align-items: flex-start; gap: 8px; }
+    .customizer-bar.expanded .customizer-body { max-width: 220px; padding: 8px 12px 12px 4px; }
+    .customizer-input { width: 160px; font-size: 12px; }
+    .login-wrapper { min-height: auto; padding: 60px 16px 0; }
+    .anim-toggle { display: none; } /* hide on mobile */
+  }
+
+  @media (max-width: 380px) {
+    .form-panel { padding: 24px 16px; }
+    .register-form .form-group { margin-bottom: 8px; }
+    .register-form .form-input { padding-top: 8px; padding-bottom: 8px; padding-left: 38px; }
+    .register-form .input-icon { left: 12px; width: 16px; height: 16px; }
+    .form-header h2 { font-size: 18px; }
+    .form-header { margin-bottom: 18px; }
+    .login-btn { padding: 11px; }
+  }
+
+  /* ====== Accessibility: reduced motion ====== */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+    .aurora, .energy-ring, .star-field { display: none; }
+    #particle-canvas { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="bg-mesh" id="bgMesh"></div>
+<div class="star-field"></div>
+<div class="aurora" id="aurora">
+  <div class="aurora-band aurora-band-1"></div>
+  <div class="aurora-band aurora-band-2"></div>
+  <div class="aurora-band aurora-band-3"></div>
+</div>
+
+<div class="energy-ring ring-1"></div>
+<div class="energy-ring ring-2"></div>
+<div class="energy-ring ring-3"></div>
+
+<div class="ambient-orb orb-1" id="orb1"></div>
+<div class="ambient-orb orb-2" id="orb2"></div>
+<div class="ambient-orb orb-3" id="orb3"></div>
+
+<div class="tcm-symbol tcm-1">医</div>
+<div class="tcm-symbol tcm-2">药</div>
+<div class="tcm-symbol tcm-3">脉</div>
+
+<div class="ink-stroke ink-stroke-1">
+  <svg viewBox="0 0 400 220" fill="none">
+    <path class="stroke-a" d="M20 110 Q90 20, 200 80 T380 55" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <path class="stroke-b" d="M50 160 Q130 60, 240 130 T400 105" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+  </svg>
+</div>
+<div class="ink-stroke ink-stroke-2">
+  <svg viewBox="0 0 320 200" fill="none">
+    <path class="stroke-a" d="M10 90 Q70 170, 160 100 T300 140" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  </svg>
+</div>
+
+<canvas id="particle-canvas"></canvas>
+
+<!-- Customizer -->
+<div class="customizer-bar" id="customizerBar">
+  <button class="customizer-toggle" id="customizerToggle" title="自定义设置">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+  </button>
+  <div class="customizer-body">
+    <label for="sysNameInput">名称</label>
+    <input type="text" class="customizer-input" id="sysNameInput" value="岐黄诊疗系统" maxlength="20" />
+    <label>主题</label>
+    <div class="theme-pills" id="themePills" role="radiogroup" aria-label="主题颜色">
+      <div class="theme-pill pill-jade active" data-theme="jade" title="翡翠" role="radio" tabindex="0" aria-checked="true" aria-label="翡翠"></div>
+      <div class="theme-pill pill-amber" data-theme="amber" title="琥珀" role="radio" tabindex="0" aria-checked="false" aria-label="琥珀"></div>
+      <div class="theme-pill pill-crimson" data-theme="crimson" title="朱砂" role="radio" tabindex="0" aria-checked="false" aria-label="朱砂"></div>
+      <div class="theme-pill pill-azure" data-theme="azure" title="青瓷" role="radio" tabindex="0" aria-checked="false" aria-label="青瓷"></div>
+    </div>
+  </div>
+</div>
+<div class="save-toast" id="saveToast">已保存到本地</div>
+
+<!-- Animation toggle (desktop only) -->
+<div class="anim-toggle" id="animToggle" role="button" tabindex="0" aria-pressed="false" aria-label="切换动画">
+  <span class="anim-toggle-dot" id="animDot"></span>
+  <span id="animLabel">动画: 开</span>
+</div>
+
+<!-- Main card -->
+<div class="login-wrapper">
+  <div class="login-container">
+    <div class="brand-panel">
+      <div class="brand-icon" id="brandIcon">
+        <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+      </div>
+      <div class="brand-title-area">
+        <div class="brand-label">中医智慧 · 数字赋能</div>
+        <h1 class="brand-title" id="brandTitle">岐黄诊疗系统</h1>
+        <p class="brand-desc">融汇传统医学智慧与现代数字技术，为临床诊疗提供全方位智能化支持。</p>
+      </div>
+      <div class="brand-features">
+        <div class="feature-item"><span class="feature-dot"></span>患者病历全生命周期管理</div>
+        <div class="feature-item"><span class="feature-dot"></span>中药方剂智能辅助开方</div>
+        <div class="feature-item"><span class="feature-dot"></span>五运六气 · 经络穴位查询</div>
+        <div class="feature-item"><span class="feature-dot"></span>多维度统计分析与报表</div>
+      </div>
+    </div>
+
+    <div class="form-panel">
+      <!-- LOGIN -->
+      <div class="form-page" id="loginPage">
+        <div class="form-header"><h2>欢迎回来</h2><p>请登录您的账户以继续</p></div>
+        <form id="loginForm">
+          <div class="form-group">
+            <label class="form-label">用户名</label>
+            <div class="input-wrapper">
+              <input type="text" class="form-input" placeholder="请输入用户名" autocomplete="off" required />
+              <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">密码</label>
+            <div class="input-wrapper">
+              <input type="password" id="passwordField" class="form-input" style="padding-right:46px" placeholder="请输入密码" required />
+              <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              <button type="button" class="password-toggle" id="pwdToggle" aria-label="显示密码" aria-pressed="false">
+                <svg id="eyeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="form-options">
+            <label class="checkbox-wrapper">
+              <input type="checkbox" id="rememberMe" />
+              <span class="custom-checkbox"><svg viewBox="0 0 12 12" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="2 6 5 9 10 3"/></svg></span>
+              记住我
+            </label>
+            <a href="javascript:void(0)" class="forgot-link">忘记密码？</a>
+          </div>
+          <button type="submit" class="login-btn" id="loginBtn">登 录</button>
+        </form>
+        <div class="form-footer">还没有账号？ <a href="javascript:void(0)" id="goRegister">立即注册</a></div>
+      </div>
+
+      <!-- REGISTER -->
+      <div class="form-page hidden" id="registerPage">
+        <div class="form-header"><h2>创建账号</h2><p>填写以下信息完成注册</p></div>
+        <form id="registerForm" class="register-form">
+          <div class="form-group">
+            <label class="form-label">诊所编码</label>
+            <div class="input-wrapper">
+              <input type="text" class="form-input" placeholder="诊所编码（默认：default）" value="default" required />
+              <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">用户名</label>
+            <div class="input-wrapper">
+              <input type="text" class="form-input" placeholder="请输入用户名" autocomplete="off" required />
+              <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">密码</label>
+            <div class="input-wrapper">
+              <input type="password" class="form-input" placeholder="密码（至少 6 位）" required minlength="6" />
+              <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">确认密码</label>
+            <div class="input-wrapper">
+              <input type="password" id="regConfirm" class="form-input" placeholder="再次输入密码" required />
+              <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">真实姓名</label>
+            <div class="input-wrapper">
+              <input type="text" class="form-input" placeholder="请输入真实姓名" required />
+              <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M8 12h8M8 16h4"/></svg>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">手机号 <span style="color:var(--text-secondary);font-weight:400;text-transform:none;letter-spacing:0">(选填)</span></label>
+            <div class="input-wrapper">
+              <input type="tel" class="form-input" placeholder="手机号（选填）" />
+              <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+            </div>
+          </div>
+          <button type="submit" class="login-btn" id="registerBtn" style="margin-top:6px">注 册</button>
+        </form>
+        <div class="form-footer" style="margin-top:16px">已有账号？ <a href="javascript:void(0)" id="goLogin">返回登录</a></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="page-footer">
+  <div class="version">V 2.0 · DESIGNED WITH CARE</div>
+  <div class="copyright">&copy; 2024-2026 空无 All Rights Reserved</div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  var STORAGE_KEY = 'login-page-config';
+  var PARTICLE_COUNT = window.innerWidth <= 800 ? 40 : 100;
+  var CONNECT_DIST = 160;
+  var CONNECT_DIST2 = CONNECT_DIST * CONNECT_DIST;
+  var MOUSE_DIST = 140;
+  var MOUSE_DIST2 = MOUSE_DIST * MOUSE_DIST;
+  var VALID_THEMES = ['jade', 'amber', 'crimson', 'azure'];
+
+  var THEMES = {
+    jade:    { accent: '#3DD68C', dim: '#2BA86A', secondary: '#2DD4A8', glow: '61, 214, 140',   hue: 155, sat: 70,  purple: '80, 60, 200' },
+    amber:   { accent: '#D4A843', dim: '#B8922E', secondary: '#E8C45A', glow: '212, 168, 67',   hue: 42,  sat: 65,  purple: '180, 120, 60' },
+    crimson: { accent: '#E84057', dim: '#C4293E', secondary: '#FF6B6B', glow: '232, 64, 87',    hue: 352, sat: 75,  purple: '160, 50, 180' },
+    azure:   { accent: '#4A90D9', dim: '#3672B5', secondary: '#63B3ED', glow: '74, 144, 217',   hue: 212, sat: 60,  purple: '60, 80, 220' },
+  };
+  var active = 'jade';
+  var animEnabled = true;
+  var rafId = 0;
+  var collapseTimer = null;
+
+  // DOM refs
+  var $ = function(id) { return document.getElementById(id); };
+  var root = document.documentElement;
+  var sysNameInput = $('sysNameInput'), brandTitle = $('brandTitle');
+  var loginForm = $('loginForm'), loginBtn = $('loginBtn');
+  var pwdToggle = $('pwdToggle'), passwordField = $('passwordField'), eyeIcon = $('eyeIcon');
+  var canvas = $('particle-canvas'), ctx = canvas.getContext('2d');
+  var customizerBar = $('customizerBar'), customizerToggle = $('customizerToggle');
+  var saveToast = $('saveToast');
+  var loginPage = $('loginPage'), registerPage = $('registerPage');
+  var goRegister = $('goRegister'), goLogin = $('goLogin');
+  var registerForm = $('registerForm'), registerBtn = $('registerBtn');
+  var animToggle = $('animToggle'), animDot = $('animDot'), animLabel = $('animLabel');
+
+  // ============ localStorage ============
+  function loadConfig() {
+    try { var r = localStorage.getItem(STORAGE_KEY); return r ? JSON.parse(r) : null; }
+    catch (e) { return null; }
+  }
+  function saveConfig() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ sysName: sysNameInput.value, theme: active })); }
+    catch (e) {}
+    saveToast.classList.add('show');
+    setTimeout(function() { saveToast.classList.remove('show'); }, 1500);
+  }
+
+  // ============ Customizer collapse/expand ============
+  function scheduleCollapse(delay) {
+    clearTimeout(collapseTimer);
+    collapseTimer = setTimeout(function() { customizerBar.classList.remove('expanded'); }, delay || 1500);
+  }
+  customizerToggle.addEventListener('click', function() {
+    var expanded = customizerBar.classList.toggle('expanded');
+    if (expanded) clearTimeout(collapseTimer);
+  });
+
+  // ============ System name ============
+  sysNameInput.addEventListener('input', function() {
+    brandTitle.textContent = this.value || '诊疗系统';
+    applyTitleGradient();
+    clearTimeout(collapseTimer);
+  });
+  sysNameInput.addEventListener('blur', function() { saveConfig(); scheduleCollapse(800); });
+  sysNameInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); sysNameInput.blur(); } });
+
+  function applyTitleGradient() {
+    var t = THEMES[active];
+    brandTitle.style.background = 'linear-gradient(135deg, #fff 0%, ' + t.accent + ' 100%)';
+    brandTitle.style.webkitBackgroundClip = 'text';
+    brandTitle.style.webkitTextFillColor = 'transparent';
+    brandTitle.style.backgroundClip = 'text';
+  }
+
+  // ============ Theme switch ============
+  var themePills = $('themePills');
+  themePills.addEventListener('click', handleThemePick);
+  themePills.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleThemePick(e); }
+  });
+
+  function handleThemePick(e) {
+    var pill = e.target.closest('.theme-pill');
+    if (!pill) return;
+    var name = pill.dataset.theme;
+    if (!name || !THEMES[name] || name === active) return;
+    themePills.querySelectorAll('.theme-pill').forEach(function(p) {
+      p.classList.remove('active');
+      p.setAttribute('aria-checked', 'false');
+    });
+    pill.classList.add('active');
+    pill.setAttribute('aria-checked', 'true');
+    document.body.classList.add('theme-transitioning');
+    applyTheme(name);
+    setTimeout(function() { document.body.classList.remove('theme-transitioning'); }, 700);
+    saveConfig();
+    scheduleCollapse(1200);
+  }
+
+  function applyTheme(name) {
+    var t = THEMES[name];
+    active = name;
+    root.style.setProperty('--accent', t.accent);
+    root.style.setProperty('--accent-dim', t.dim);
+    root.style.setProperty('--accent-secondary', t.secondary);
+    root.style.setProperty('--accent-glow', t.glow);
+
+    $('orb1').style.background = 'radial-gradient(circle, rgba(' + t.glow + ', 0.3) 0%, rgba(' + t.glow + ', 0.08) 40%, transparent 70%)';
+    $('orb2').style.background = 'radial-gradient(circle, rgba(' + t.glow + ', 0.22) 0%, rgba(' + t.purple + ', 0.06) 50%, transparent 70%)';
+    $('orb3').style.background = 'radial-gradient(circle, rgba(' + t.glow + ', 0.18) 0%, transparent 65%)';
+
+    $('bgMesh').style.background = [
+      'radial-gradient(ellipse 80% 60% at 10% 20%, rgba(' + t.glow + ', 0.18) 0%, transparent 60%)',
+      'radial-gradient(ellipse 60% 80% at 85% 75%, rgba(' + t.glow + ', 0.12) 0%, transparent 55%)',
+      'radial-gradient(ellipse 50% 50% at 50% 50%, rgba(' + t.purple + ', 0.08) 0%, transparent 60%)',
+      'linear-gradient(160deg, #060C1A 0%, #0C1628 30%, #0A1225 60%, #080E1E 100%)'
+    ].join(', ');
+
+    var bands = document.querySelectorAll('.aurora-band');
+    bands[0].style.background = 'linear-gradient(90deg, transparent 0%, rgba(' + t.glow + ', 0.25) 30%, rgba(' + t.glow + ', 0.15) 50%, transparent 80%)';
+    bands[1].style.background = 'linear-gradient(90deg, transparent 10%, rgba(' + t.glow + ', 0.12) 40%, rgba(' + t.purple + ', 0.1) 60%, transparent 90%)';
+    bands[2].style.background = 'linear-gradient(90deg, transparent 0%, rgba(' + t.glow + ', 0.1) 50%, transparent 100%)';
+
+    applyTitleGradient();
+
+    $('brandIcon').style.background = 'linear-gradient(135deg, ' + t.accent + ', ' + t.secondary + ')';
+    $('brandIcon').style.boxShadow = '0 8px 32px rgba(' + t.glow + ', 0.4)';
+    document.querySelector('.brand-panel').style.background = 'linear-gradient(160deg, rgba(' + t.glow + ', 0.1) 0%, rgba(' + t.glow + ', 0.02) 40%, transparent 70%)';
+
+    var bg = 'linear-gradient(135deg, ' + t.accent + ', ' + t.secondary + ')';
+    var sh = '0 4px 28px rgba(' + t.glow + ', 0.4)';
+    loginBtn.style.background = bg; loginBtn.style.boxShadow = sh;
+    registerBtn.style.background = bg; registerBtn.style.boxShadow = sh;
+
+    document.querySelectorAll('.stroke-a').forEach(function(p) { p.setAttribute('stroke', t.accent); });
+    document.querySelectorAll('.stroke-b').forEach(function(p) { p.setAttribute('stroke', t.dim); });
+  }
+
+  // ============ Load saved config ============
+  var saved = loadConfig();
+  if (saved) {
+    if (saved.sysName) { sysNameInput.value = saved.sysName; brandTitle.textContent = saved.sysName; }
+    if (saved.theme && VALID_THEMES.indexOf(saved.theme) !== -1) {
+      themePills.querySelectorAll('.theme-pill').forEach(function(p) {
+        p.classList.remove('active');
+        p.setAttribute('aria-checked', 'false');
+      });
+      var target = themePills.querySelector('[data-theme="' + saved.theme + '"]');
+      if (target) { target.classList.add('active'); target.setAttribute('aria-checked', 'true'); }
+      applyTheme(saved.theme);
+    }
+  }
+
+  // ============ Page switching (instant) ============
+  function switchPage(from, to) {
+    from.classList.add('hidden');
+    to.classList.remove('hidden');
+    if (window.innerWidth <= 800) window.scrollTo(0, 0);
+  }
+  goRegister.addEventListener('click', function() { switchPage(loginPage, registerPage); });
+  goLogin.addEventListener('click', function() { switchPage(registerPage, loginPage); });
+
+  // ============ Register submit (with password confirm validation) ============
+  registerForm.addEventListener('submit', function(e) {
+    e.preventDefault();
+    var inputs = registerForm.querySelectorAll('input[type="password"]');
+    var pwd = inputs[0].value, confirm = inputs[1].value;
+    if (pwd !== confirm) {
+      $('regConfirm').setCustomValidity('两次输入的密码不一致');
+      $('regConfirm').reportValidity();
+      return;
+    }
+    $('regConfirm').setCustomValidity('');
+    var t = THEMES[active];
+    registerBtn.classList.add('loading');
+    registerBtn.textContent = '注册中...';
+    setTimeout(function() {
+      registerBtn.classList.remove('loading');
+      registerBtn.style.background = 'linear-gradient(135deg, #52C41A, #73D13D)';
+      registerBtn.style.boxShadow = '0 4px 28px rgba(82, 196, 26, 0.4)';
+      registerBtn.textContent = '\u2713 注册成功';
+      setTimeout(function() {
+        registerBtn.style.background = 'linear-gradient(135deg, ' + t.accent + ', ' + t.secondary + ')';
+        registerBtn.style.boxShadow = '0 4px 28px rgba(' + t.glow + ', 0.4)';
+        registerBtn.textContent = '注 册';
+        switchPage(registerPage, loginPage);
+      }, 1500);
+    }, 1500);
+  });
+  // Clear custom validity on input
+  $('regConfirm').addEventListener('input', function() { this.setCustomValidity(''); });
+
+  // ============ Password toggle ============
+  pwdToggle.addEventListener('click', function() {
+    var show = passwordField.type === 'password';
+    passwordField.type = show ? 'text' : 'password';
+    pwdToggle.setAttribute('aria-label', show ? '隐藏密码' : '显示密码');
+    pwdToggle.setAttribute('aria-pressed', show ? 'true' : 'false');
+    eyeIcon.innerHTML = show
+      ? '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>'
+      : '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+  });
+
+  // ============ Login submit ============
+  loginForm.addEventListener('submit', function(e) {
+    e.preventDefault();
+    var t = THEMES[active];
+    loginBtn.classList.add('loading');
+    loginBtn.textContent = '登录中...';
+    setTimeout(function() {
+      loginBtn.classList.remove('loading');
+      loginBtn.style.background = 'linear-gradient(135deg, #52C41A, #73D13D)';
+      loginBtn.style.boxShadow = '0 4px 28px rgba(82, 196, 26, 0.4)';
+      loginBtn.textContent = '\u2713 登录成功';
+      setTimeout(function() {
+        loginBtn.style.background = 'linear-gradient(135deg, ' + t.accent + ', ' + t.secondary + ')';
+        loginBtn.style.boxShadow = '0 4px 28px rgba(' + t.glow + ', 0.4)';
+        loginBtn.textContent = '登 录';
+      }, 2000);
+    }, 1500);
+  });
+
+  // ============ Animation toggle (with rAF start/stop) ============
+  function setAnim(on) {
+    animEnabled = on;
+    if (on) {
+      document.body.classList.remove('no-animations');
+      animDot.classList.remove('off');
+      animLabel.textContent = '动画: 开';
+      animToggle.setAttribute('aria-pressed', 'false');
+      startParticles();
+    } else {
+      document.body.classList.add('no-animations');
+      animDot.classList.add('off');
+      animLabel.textContent = '动画: 关';
+      animToggle.setAttribute('aria-pressed', 'true');
+      stopParticles();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+  }
+  animToggle.addEventListener('click', function() { setAnim(!animEnabled); });
+  animToggle.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setAnim(!animEnabled); }
+  });
+
+  // Respect prefers-reduced-motion
+  var motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+  if (motionQuery.matches) setAnim(false);
+  motionQuery.addEventListener('change', function(e) { setAnim(!e.matches); });
+
+  // Pause when tab is hidden
+  document.addEventListener('visibilitychange', function() {
+    if (document.hidden) stopParticles();
+    else if (animEnabled) startParticles();
+  });
+
+  // ============ Particles (optimized: squared distance, no sqrt for connections) ============
+  var particles = [];
+  var mouseX = -9999, mouseY = -9999;
+
+  function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+  resize();
+  window.addEventListener('resize', resize);
+  document.addEventListener('mousemove', function(e) { mouseX = e.clientX; mouseY = e.clientY; });
+
+  function Pt() {
+    this.x = Math.random() * canvas.width;
+    this.y = Math.random() * canvas.height;
+    this.s = Math.random() * 2.5 + 0.8;
+    this.vx = (Math.random() - 0.5) * 0.5;
+    this.vy = (Math.random() - 0.5) * 0.5;
+    this.o = Math.random() * 0.5 + 0.2;
+    this.bo = this.o;
+  }
+  Pt.prototype.update = function() {
+    this.x += this.vx; this.y += this.vy;
+    var dx = this.x - mouseX, dy = this.y - mouseY;
+    var d2 = dx * dx + dy * dy;
+    if (d2 < MOUSE_DIST2) {
+      var f = (1 - Math.sqrt(d2) / MOUSE_DIST) * 0.02;
+      this.x += dx * f; this.y += dy * f;
+      this.o = Math.min(this.bo + 0.35, 0.9);
+    } else {
+      this.o += (this.bo - this.o) * 0.04;
+    }
+    var w = canvas.width, h = canvas.height;
+    if (this.x < -20 || this.x > w + 20 || this.y < -20 || this.y > h + 20) {
+      this.x = Math.random() * w; this.y = Math.random() * h;
+    }
+  };
+
+  for (var i = 0; i < PARTICLE_COUNT; i++) particles.push(new Pt());
+
+  function frame() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    var t = THEMES[active], n = particles.length;
+    // Update all
+    for (var i = 0; i < n; i++) particles[i].update();
+    // Draw connections (squared distance, no sqrt)
+    for (var i = 0; i < n; i++) {
+      var pi = particles[i];
+      for (var j = i + 1; j < n; j++) {
+        var pj = particles[j];
+        var dx = pi.x - pj.x, dy = pi.y - pj.y;
+        var d2 = dx * dx + dy * dy;
+        if (d2 < CONNECT_DIST2) {
+          ctx.beginPath(); ctx.moveTo(pi.x, pi.y); ctx.lineTo(pj.x, pj.y);
+          ctx.strokeStyle = 'rgba(' + t.glow + ',' + ((1 - Math.sqrt(d2) / CONNECT_DIST) * 0.18) + ')';
+          ctx.lineWidth = 0.6; ctx.stroke();
+        }
+      }
+      // Draw particle
+      ctx.beginPath(); ctx.arc(pi.x, pi.y, pi.s, 0, Math.PI * 2);
+      ctx.fillStyle = 'hsla(' + t.hue + ',' + t.sat + '%,65%,' + pi.o + ')';
+      ctx.fill();
+    }
+    rafId = requestAnimationFrame(frame);
+  }
+
+  function startParticles() { if (!rafId) rafId = requestAnimationFrame(frame); }
+  function stopParticles() { if (rafId) { cancelAnimationFrame(rafId); rafId = 0; } }
+
+  // Start
+  if (animEnabled) startParticles();
+})();
+</script>
+</body>
+</html>

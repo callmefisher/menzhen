@@ -7,6 +7,7 @@ vi.mock('../../../api/herb', () => ({
   listHerbs: vi.fn(),
   listHerbCategories: vi.fn().mockResolvedValue({ data: [] }),
   deleteHerb: vi.fn(),
+  findHerbPage: vi.fn().mockResolvedValue(1),
 }));
 
 // Mock useAuth
