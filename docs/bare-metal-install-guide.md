@@ -27,11 +27,28 @@
 
 ### macOS
 
-1. 双击 `start-wizard.command`
-2. 如果提示"无法打开，因为无法验证开发者"：
-   - 右键点击文件 → 选择「打开」→ 点击「打开」
+**方法一（推荐）：打开终端粘贴一行命令**
+
+1. 打开「终端」应用（在 启动台 → 其他 中，或按 `⌘+空格` 搜索"终端"）
+2. 粘贴以下命令并按回车：
+   ```bash
+   mkdir -p ~/menzhen && cd ~/menzhen && curl -fsSLO https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command && bash start-wizard.command
+   ```
 3. 如果提示安装开发者工具，点击「安装」等待完成后按回车
 4. 浏览器会自动打开安装向导页面
+
+**方法二：下载后双击**
+
+1. 下载 `start-wizard.command` 到一个空文件夹
+2. 打开「终端」，运行以下命令修复权限（将路径替换为实际下载位置）：
+   ```bash
+   chmod +x ~/Downloads/start-wizard.command
+   ```
+3. 双击 `start-wizard.command`
+4. 如果提示"无法打开，因为无法验证开发者"：
+   - 右键点击文件 → 选择「打开」→ 点击「打开」
+5. 如果提示安装开发者工具，点击「安装」等待完成后按回车
+6. 浏览器会自动打开安装向导页面
 
 ### Ubuntu / CentOS 桌面版
 
@@ -93,6 +110,15 @@
 
 ### Windows 提示"winget 不可用"
 Windows 10 较旧版本可能没有 winget。请手动从 https://www.python.org/downloads/ 下载安装 Python 3，安装时**勾选"Add Python to PATH"**。
+
+### macOS 提示"没有正确的访问权限"
+从网上下载的 `.command` 文件默认没有执行权限。打开终端运行：
+```bash
+chmod +x start-wizard.command
+```
+如果还提示"无法验证开发者"，右键点击文件 → 选择「打开」。
+
+**推荐**：直接使用上方"方法一"的终端命令，可完全避免权限问题。
 
 ### macOS 提示"command not found: python3"
 双击 `start-wizard.command` 后脚本会自动引导安装。如果失败，从 https://www.python.org/downloads/ 下载 macOS 安装包。

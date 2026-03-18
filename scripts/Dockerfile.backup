@@ -1,10 +1,11 @@
 FROM alpine:3.19
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
 RUN apk add --no-cache mysql-client bash curl findutils python3 py3-pip tzdata
 # Install MinIO Client (mc)
 RUN curl -fsSL https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/bin/mc && \
     chmod +x /usr/local/bin/mc
 # Install Qiniu Python SDK
-RUN pip3 install --break-system-packages qiniu
+RUN pip3 install --break-system-packages -i https://pypi.tuna.tsinghua.edu.cn/simple/ qiniu
 COPY backup-loop.sh backup.sh backup-minio.sh restore.sh upload_to_qiniu.py download_from_qiniu.py cleanup_qiniu.py /scripts/
 RUN chmod +x /scripts/*.sh /scripts/*.py
 CMD ["/scripts/backup-loop.sh"]
