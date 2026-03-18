@@ -156,7 +156,8 @@ func (s *BackupService) HasRunningTask(taskType string) bool {
 }
 
 // TriggerBackup 异步触发备份
-func (s *BackupService) TriggerBackup(backupType string) (string, error) {
+// onComplete 可选回调，任务结束时调用，参数为最终状态 ("success" / "failed")
+func (s *BackupService) TriggerBackup(backupType string, onComplete func(status string)) (string, error) {
 	s.CleanupOldTasks()
 	if s.HasRunningTask(backupType) {
 		return "", fmt.Errorf("已有同类型备份任务正在运行")
@@ -187,10 +188,16 @@ func (s *BackupService) TriggerBackup(backupType string) (string, error) {
 			err = fmt.Errorf("unknown backup type: %s", backupType)
 		}
 
+		var finalStatus string
 		if err != nil {
-			s.UpdateTask(taskID, "failed", output+"\nError: "+err.Error())
+			finalStatus = "failed"
+			s.UpdateTask(taskID, finalStatus, output+"\nError: "+err.Error())
 		} else {
-			s.UpdateTask(taskID, "success", output)
+			finalStatus = "success"
+			s.UpdateTask(taskID, finalStatus, output)
+		}
+		if onComplete != nil {
+			onComplete(finalStatus)
 		}
 	}()
 
@@ -198,7 +205,8 @@ func (s *BackupService) TriggerBackup(backupType string) (string, error) {
 }
 
 // TriggerRestore 异步触发恢复
-func (s *BackupService) TriggerRestore(source, mysqlFile, minioFile string) (string, error) {
+// onComplete 可选回调，任务结束时调用，参数为最终状态 ("success" / "failed")
+func (s *BackupService) TriggerRestore(source, mysqlFile, minioFile string, onComplete func(status string)) (string, error) {
 	s.CleanupOldTasks()
 	if s.HasRunningTask("restore") {
 		return "", fmt.Errorf("已有任务正在运行，请等待完成")
@@ -216,6 +224,9 @@ func (s *BackupService) TriggerRestore(source, mysqlFile, minioFile string) (str
 			// cloud: 下载用户选择的特定文件
 			if mysqlFile == "" && minioFile == "" {
 				s.UpdateTask(taskID, "failed", "未指定任何备份文件")
+				if onComplete != nil {
+					onComplete("failed")
+				}
 				return
 			}
 			s.UpdateTask(taskID, "running", "正在从七牛云下载备份文件...\n")
@@ -229,6 +240,9 @@ func (s *BackupService) TriggerRestore(source, mysqlFile, minioFile string) (str
 			dlOutput, dlErr := s.dockerExecStreaming(taskID, dlArgs...)
 			if dlErr != nil {
 				s.UpdateTask(taskID, "failed", dlOutput+"\nDownload Error: "+dlErr.Error())
+				if onComplete != nil {
+					onComplete("failed")
+				}
 				return
 			}
 			// 再恢复
@@ -240,10 +254,13 @@ func (s *BackupService) TriggerRestore(source, mysqlFile, minioFile string) (str
 			err = restoreErr
 		}
 
+		var finalStatus string
 		if err != nil {
-			s.UpdateTask(taskID, "failed", output+"\nError: "+err.Error())
+			finalStatus = "failed"
+			s.UpdateTask(taskID, finalStatus, output+"\nError: "+err.Error())
 		} else {
-			s.UpdateTask(taskID, "success", output)
+			finalStatus = "success"
+			s.UpdateTask(taskID, finalStatus, output)
 			// MySQL 恢复后延迟重启 API 容器，让压缩配置重新生效
 			if mysqlFile != "" {
 				go func() {
@@ -253,6 +270,9 @@ func (s *BackupService) TriggerRestore(source, mysqlFile, minioFile string) (str
 					}
 				}()
 			}
+		}
+		if onComplete != nil {
+			onComplete(finalStatus)
 		}
 	}()
 

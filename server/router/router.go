@@ -325,7 +325,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		authenticated.POST("/db/cleanup", middleware.RequirePermission(db, "user:manage"), dbCleanupHandler.CleanupOrphanData)
 
 		// Backup & Restore routes (super admin only).
-		backupHandler := handler.NewBackupHandler()
+		backupHandler := handler.NewBackupHandler(db)
 		backupRoutes := authenticated.Group("/backup")
 		{
 			backupRoutes.GET("/docker-status", middleware.RequirePermission(db, "user:manage"), backupHandler.DockerStatus)

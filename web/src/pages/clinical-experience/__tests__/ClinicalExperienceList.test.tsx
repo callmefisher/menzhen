@@ -26,6 +26,7 @@ vi.mock('../../../api/clinicalExperience', () => ({
   listClinicalExperienceCategories: (...args: unknown[]) => mockListClinicalExperienceCategories(...args),
   createClinicalExperience: vi.fn(),
   updateClinicalExperience: vi.fn(),
+  findClinicalExperiencePage: vi.fn().mockResolvedValue(1),
 }));
 
 describe('ClinicalExperienceList', () => {

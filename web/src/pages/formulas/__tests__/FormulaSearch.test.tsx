@@ -8,6 +8,7 @@ vi.mock('../../../api/formula', () => ({
   updateFormulaComposition: vi.fn(),
   updateFormulaName: vi.fn(),
   deleteFormula: vi.fn(),
+  findFormulaPage: vi.fn().mockResolvedValue(1),
 }));
 
 // Mock useAuth

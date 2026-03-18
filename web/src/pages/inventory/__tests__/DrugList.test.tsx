@@ -19,6 +19,7 @@ vi.mock('../../../api/inventory', () => ({
   deleteInventoryDrug: vi.fn(),
   stockInDrug: vi.fn(),
   batchStockIn: vi.fn(),
+  findDrugPage: vi.fn().mockResolvedValue(1),
 }));
 
 describe('DrugList', () => {

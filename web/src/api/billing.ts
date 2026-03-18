@@ -10,6 +10,7 @@ export interface BillingDetailItem {
   unit_price: number;
   item_cost: number;
   in_stock: boolean;
+  shelf_no: string;
 }
 
 export interface BillingDetail {

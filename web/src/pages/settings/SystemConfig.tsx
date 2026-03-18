@@ -144,6 +144,14 @@ export default function SystemConfig() {
   const [dbScanning, setDbScanning] = useState(false);
   const [dbCleaning, setDbCleaning] = useState(false);
   const [dbCleanupResult, setDbCleanupResult] = useState<DBCleanupResult | null>(null);
+  const restartTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  // Cleanup restart timer on unmount
+  useEffect(() => {
+    return () => {
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+    };
+  }, []);
 
   // Collect all number-type field keys for type conversion
   const numberFields = new Set(
@@ -247,7 +255,7 @@ export default function SystemConfig() {
           await restartService();
           message.success('服务正在重启，请稍候...');
           // 等待服务重启后自动刷新页面
-          setTimeout(() => window.location.reload(), 6000);
+          restartTimerRef.current = setTimeout(() => window.location.reload(), 6000);
         } catch {
           message.error('重启请求失败');
           setRestarting(false);

@@ -42,8 +42,8 @@ import PrescriptionPrint from '../../components/PrescriptionPrint';
 import BillingDrawer from '../../components/BillingDrawer';
 import PrintCenterDrawer from '../../components/PrintCenterDrawer';
 import FollowUpPanel from '../../components/FollowUpPanel';
-import { listRecordBillings } from '../../api/billing';
-import type { BillingRecord } from '../../api/billing';
+import { listRecordBillings, getPrescriptionBilling } from '../../api/billing';
+import type { BillingRecord, BillingDetail } from '../../api/billing';
 import { useAuth } from '../../store/auth';
 import useIsMobile from '../../hooks/useIsMobile';
 import { listPulses } from '../../api/pulse';
@@ -115,6 +115,8 @@ export default function RecordForm() {
   const [billingPrintOnly, setBillingPrintOnly] = useState(false);
   const [billingPrescriptionId, setBillingPrescriptionId] = useState<number>(0);
   const [billingMap, setBillingMap] = useState<Record<number, BillingRecord>>({});
+  // Shelf number maps: prescriptionId → { herbName → shelfNo }
+  const [shelfMaps, setShelfMaps] = useState<Record<number, Record<string, string>>>({});
 
   // Follow-up panel: read highlight ID from URL
   const followUpIdParam = searchParams.get('followup_id');
@@ -179,6 +181,15 @@ export default function RecordForm() {
   const watchedNotes = Form.useWatch('notes', form);
   const watchedAttachments = Form.useWatch('attachments', form);
 
+  // Cleanup timers and SSE streams on unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+      aiAbortRef.current?.abort();
+      tongueAbortRef.current?.abort();
+    };
+  }, []);
+
   // Auto-expand notes/attachments when they have content
   useEffect(() => {
     if (watchedNotes) setNotesExpanded(true);
@@ -238,21 +249,50 @@ export default function RecordForm() {
     }
   }, [id]);
 
+  // Load shelf maps for prescriptions with items (separate from loadPrescriptions to avoid N+1 on every edit)
+  const loadShelfMaps = useCallback(async (list: PrescriptionData[]) => {
+    const withItems = list.filter((p) => p.items?.length > 0);
+    if (withItems.length === 0) { setShelfMaps({}); return; }
+    const maps: Record<number, Record<string, string>> = {};
+    await Promise.all(withItems.map(async (p) => {
+      try {
+        const bRes = await getPrescriptionBilling(p.id);
+        const bBody = bRes as unknown as { data: BillingDetail };
+        const m: Record<string, string> = {};
+        for (const item of bBody.data?.items ?? []) {
+          if (item.shelf_no) m[item.herb_name] = item.shelf_no;
+        }
+        if (Object.keys(m).length > 0) maps[p.id] = m;
+      } catch { /* skip */ }
+    }));
+    setShelfMaps(maps);
+  }, []);
+
   // Scroll to and highlight the newly saved prescription
   useEffect(() => {
     if (!lastSavedPrescriptionId || prescriptions.length === 0) return;
     if (!prescriptions.some((p) => p.id === lastSavedPrescriptionId)) return;
+    const timers: ReturnType<typeof setTimeout>[] = [];
     const el = document.querySelector(`[data-prescription-id="${lastSavedPrescriptionId}"]`);
     if (el) {
-      setTimeout(() => {
+      timers.push(setTimeout(() => {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }, 100);
+      }, 100));
     }
-    const timer = setTimeout(() => {
+    timers.push(setTimeout(() => {
       setLastSavedPrescriptionId(null);
-    }, 5000);
-    return () => clearTimeout(timer);
+    }, 5000));
+    return () => timers.forEach(clearTimeout);
   }, [lastSavedPrescriptionId, prescriptions]);
+
+  // Load shelf maps once when prescriptions first load
+  const shelfMapsLoadedRef = useRef(false);
+  useEffect(() => {
+    if (prescriptions.length > 0 && !shelfMapsLoadedRef.current) {
+      shelfMapsLoadedRef.current = true;
+      loadShelfMaps(prescriptions);
+    }
+  }, [prescriptions, loadShelfMaps]);
 
   const loadBillings = useCallback(async () => {
     if (!id) return;
@@ -1660,6 +1700,7 @@ export default function RecordForm() {
                               patientAge={recordPatient?.age}
                               chiefComplaint={form.getFieldValue('chief_complaint')}
                               treatment={form.getFieldValue('treatment')}
+                              shelfMap={shelfMaps[item.id]}
                               iconOnly
                             />
                           </>
@@ -1770,6 +1811,10 @@ export default function RecordForm() {
         patientAge={recordPatient?.age}
         doctorName={user?.real_name || user?.username}
         printOnly={billingPrintOnly}
+        onSuccess={(rxId) => {
+          if (rxId > 0) setLastSavedPrescriptionId(rxId);
+          loadShelfMaps(prescriptions);
+        }}
         onClose={() => {
           setBillingDrawerOpen(false);
           setBillingPrintOnly(false);

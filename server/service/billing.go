@@ -48,6 +48,7 @@ type BillingDetailItem struct {
 	UnitPrice float64 `json:"unit_price"`
 	ItemCost  float64 `json:"item_cost"`
 	InStock   bool    `json:"in_stock"`
+	ShelfNo   string  `json:"shelf_no"`
 }
 
 // BillingDetail is the full billing detail response.
@@ -124,6 +125,7 @@ func (s *BillingService) GetBillingDetail(tenantID, prescriptionID uint64) (*Bil
 
 		if drug, ok := drugMap[pi.HerbName]; ok {
 			item.InStock = true
+			item.ShelfNo = drug.ShelfNo
 			if category == "herb" {
 				// Inventory stores herb price as 元/500克, convert to 元/克.
 				item.UnitPrice = drug.SellingPrice / 500
