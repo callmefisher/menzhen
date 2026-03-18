@@ -1,17 +1,12 @@
 #!/bin/bash
 # ============================================================
-#  门诊系统安装向导 — 一键启动脚本 (Mac / Ubuntu)
-#  Mac 用户：双击此文件即可
-#  Ubuntu 用户：终端运行 bash start-wizard.sh
+#  门诊系统安装向导 — 一键启动脚本 (Mac / Ubuntu / Linux)
+#  Mac 用户：双击 start-wizard.command
+#  Linux 用户：终端运行 bash start-wizard.sh
 # ============================================================
 
 # 切换到脚本所在目录（无论从哪里双击打开）
 cd "$(dirname "$0")"
-
-# Ensure .command file is executable (for macOS double-click)
-if [ -f "start-wizard.command" ]; then
-    chmod +x "start-wizard.command" 2>/dev/null
-fi
 
 echo ""
 echo "====================================="
@@ -68,6 +63,8 @@ install_python_mac() {
     if command -v brew &>/dev/null; then
         echo "    检测到软件管理工具，正在自动安装..."
         if brew install python3; then
+            # Refresh PATH for current shell (Apple Silicon / Intel)
+            eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv 2>/dev/null)" 2>/dev/null
             echo "    Python3 安装成功!"
             return 0
         fi
@@ -198,7 +195,16 @@ if [[ ! -f "deploy-wizard.py" ]]; then
     fi
 
     if [[ -f "deploy-wizard.py" ]]; then
-        echo "[*] 向导程序下载完成!"
+        # Validate: should be a Python script, not an HTML error page
+        if head -1 deploy-wizard.py | grep -q "python3\|^#"; then
+            echo "[*] 向导程序下载完成!"
+        else
+            echo "[!] 下载的文件无效（可能是网络错误页面）"
+            rm -f deploy-wizard.py
+            echo "    请检查网络连接后重试"
+            read -p "按回车退出..."
+            exit 1
+        fi
     else
         echo "[!] 下载失败，请检查网络连接"
         read -p "按回车退出..."
