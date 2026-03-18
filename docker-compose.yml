@@ -31,8 +31,6 @@ services:
   mysql:
     image: mysql:8.0
     command: --default-authentication-plugin=mysql_native_password
-    ports:
-      - "3306:3306"
     env_file: .env
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
@@ -51,6 +49,8 @@ services:
   minio:
     image: minio/minio
     command: server /data --console-address ":9001"
+    ports:
+      - "127.0.0.1:9001:9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
