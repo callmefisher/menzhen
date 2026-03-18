@@ -5,6 +5,7 @@ Cross-platform: Mac / Windows / Linux (Ubuntu, CentOS, etc.)
 Usage: python3 deploy-wizard.py
 """
 
+import errno
 import http.server
 import json
 import os
@@ -51,15 +52,55 @@ ENV_SCHEMA = [
 # ---------------------------------------------------------------------------
 
 def get_local_ip():
-    """Get the primary local IP address."""
+    """Get the primary local IP address, preferring LAN over VPN/virtual interfaces."""
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
-    except Exception:
+        # Collect all non-loopback IPv4 addresses
+        import netifaces
+        candidates = []
+        for iface in netifaces.interfaces():
+            addrs = netifaces.ifaddresses(iface).get(netifaces.AF_INET, [])
+            for a in addrs:
+                ip = a.get("addr", "")
+                if ip and not ip.startswith("127."):
+                    candidates.append((iface, ip))
+    except ImportError:
+        # netifaces not available, use socket method with VPN filtering
+        candidates = []
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            s.close()
+            candidates = [("default", ip)]
+        except Exception:
+            pass
+
+    if not candidates:
         return "127.0.0.1"
+
+    # Filter: prefer LAN IPs (192.168.x.x, 10.x.x.x but not 10.8.x.x VPN, 172.16-31.x.x)
+    def ip_priority(item):
+        _, ip = item
+        parts = ip.split(".")
+        if len(parts) != 4:
+            return 9
+        try:
+            # 192.168.x.x — typical home/office LAN, highest priority
+            if ip.startswith("192.168."):
+                return 0
+            # 172.16-31.x.x — private range (but can also be Docker)
+            if parts[0] == "172" and 16 <= int(parts[1]) <= 31:
+                return 1
+            # 10.x.x.x but NOT 10.8.x.x (OpenVPN) or 10.255.x.x (VPN)
+            if parts[0] == "10" and parts[1] not in ("8", "255"):
+                return 2
+        except (ValueError, IndexError):
+            pass
+        # Everything else (VPN, tunnel, etc.)
+        return 9
+
+    candidates.sort(key=ip_priority)
+    return candidates[0][1]
 
 
 def detect_os():
@@ -241,7 +282,8 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
 
         if self.path == "/api/detect-ip":
             ip = get_local_ip()
-            self._send_json({"ip": ip})
+            reachable = False if ip == "127.0.0.1" else check_service(ip, timeout=2)
+            self._send_json({"ip": ip, "reachable": reachable})
             return
 
         if self.path == "/api/check-service":
@@ -398,32 +440,42 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 if check_command("brew"):
                     stream_command(self, ["brew", "install", "--cask", "docker"])
                 else:
-                    # Install Homebrew first, then Docker Desktop
+                    # Install Homebrew (Chinese mirror) first, then Docker Desktop
                     stream_command(self, [
                         "bash", "-c",
-                        'echo "正在安装 Homebrew（软件管理工具）..." && '
+                        'echo "正在安装 Homebrew（使用国内镜像，安装脚本仍需访问 GitHub）..." && '
+                        'export HOMEBREW_BREW_GIT_REMOTE="https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/brew.git" && '
+                        'export HOMEBREW_CORE_GIT_REMOTE="https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/homebrew-core.git" && '
+                        'export HOMEBREW_API_DOMAIN="https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles/api" && '
+                        'export HOMEBREW_BOTTLE_DOMAIN="https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles" && '
                         '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" && '
                         'for p in /opt/homebrew/bin/brew /usr/local/bin/brew; do [ -f "$p" ] && eval "$($p shellenv)" && break; done && '
+                        'command -v brew >/dev/null || { echo "Homebrew 安装后仍无法找到 brew，请重试"; exit 1; } && '
                         'brew install --cask docker && '
                         'echo "Docker Desktop 安装完成！请在启动台中打开 Docker 应用。"'
                     ])
             elif os_key == "linux":
-                # Use Docker official install script — handles all distros
+                # Post-install: configure Docker Hub mirrors (China acceleration)
+                # Only writes if daemon.json doesn't exist yet (fresh install)
+                DOCKER_POST_INSTALL = (
+                    "sudo systemctl enable docker && "
+                    "sudo systemctl start docker && "
+                    "if [ ! -f /etc/docker/daemon.json ]; then "
+                    "sudo mkdir -p /etc/docker && "
+                    "echo '{\"registry-mirrors\":[\"https://docker.m.daocloud.io\"]}' "
+                    "| sudo tee /etc/docker/daemon.json > /dev/null && "
+                    "sudo systemctl restart docker; fi && "
+                    "echo 'Docker 安装完成（已配置国内镜像加速）!'"
+                )
                 if check_command("curl"):
                     stream_command(self, [
                         "bash", "-c",
-                        "curl -fsSL https://get.docker.com | sh && "
-                        "sudo systemctl enable docker && "
-                        "sudo systemctl start docker && "
-                        "echo 'Docker 安装完成!'"
+                        "curl -fsSL https://get.docker.com | sh -s -- --mirror Aliyun && " + DOCKER_POST_INSTALL
                     ])
                 elif check_command("wget"):
                     stream_command(self, [
                         "bash", "-c",
-                        "wget -qO- https://get.docker.com | sh && "
-                        "sudo systemctl enable docker && "
-                        "sudo systemctl start docker && "
-                        "echo 'Docker 安装完成!'"
+                        "wget -qO- https://get.docker.com | sh -s -- --mirror Aliyun && " + DOCKER_POST_INSTALL
                     ])
                 else:
                     # Try installing curl first, then Docker
@@ -434,10 +486,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         "  command -v yum >/dev/null && sudo yum install -y curl || "
                         "  command -v dnf >/dev/null && sudo dnf install -y curl"
                         ") && "
-                        "curl -fsSL https://get.docker.com | sh && "
-                        "sudo systemctl enable docker && "
-                        "sudo systemctl start docker && "
-                        "echo 'Docker 安装完成!'"
+                        "curl -fsSL https://get.docker.com | sh -s -- --mirror Aliyun && " + DOCKER_POST_INSTALL
                     ])
             elif os_key == "windows":
                 if check_command("winget"):
@@ -1110,6 +1159,18 @@ function esc(s) {
   return d.innerHTML;
 }
 
+// Pick best URL: prefer http://IP when reachable, fallback to localhost
+function pickUrl(ip, reachable) {
+  if (ip && ip !== '127.0.0.1' && reachable) return `http://${ip}`;
+  return 'http://localhost';
+}
+function lanHint(ip, reachable, primaryUrl) {
+  if (!ip || ip === '127.0.0.1') return '';
+  const lanUrl = `http://${ip}`;
+  if (lanUrl === primaryUrl) return '';
+  return `<span style="font-size:13px; color:var(--text-secondary);">局域网内其他设备访问: <strong>${esc(lanUrl)}</strong></span>`;
+}
+
 let state = {
   step: 1,
   os: '',
@@ -1276,6 +1337,10 @@ async function renderStep2(el) {
     `;
   }
 
+  // Prefer IP when reachable, fallback to localhost
+  const sysUrl = pickUrl(data.ip, data.available);
+  const lanExtra = lanHint(data.ip, data.available, sysUrl);
+
   if (data.status === 'running') {
     el.innerHTML = `
       ${osMismatchHtml}
@@ -1283,7 +1348,8 @@ async function renderStep2(el) {
       <p class="subtitle">检测到系统已经安装好了，可以直接使用。</p>
       <div class="status-item" style="flex-direction:column; align-items:flex-start; gap:8px;">
         <span>访问地址</span>
-        <a href="${esc(data.url)}" target="_blank" style="font-size:24px; font-weight:700; color:var(--primary); text-decoration:underline;">${esc(data.url)}</a>
+        <a href="${esc(sysUrl)}" target="_blank" style="font-size:24px; font-weight:700; color:var(--primary); text-decoration:underline;">${esc(sysUrl)}</a>
+        ${lanExtra}
       </div>
       <div class="hint-box green" style="text-align:center;">
         系统运行正常！您可以直接点击下方按钮打开系统。<br>
@@ -1292,7 +1358,7 @@ async function renderStep2(el) {
       <div class="actions">
         <button class="btn btn-secondary" onclick="state.step=1;render();">&larr; 上一步</button>
         <div>
-          <a href="${esc(data.url)}" target="_blank" class="btn btn-success">打开系统</a>
+          <a href="${esc(sysUrl)}" target="_blank" class="btn btn-success">打开系统</a>
           <button class="btn btn-primary" id="redeployBtn" style="margin-left:8px;">重新安装 &rarr;</button>
         </div>
       </div>
@@ -1307,7 +1373,7 @@ async function renderStep2(el) {
       <p class="subtitle">检测到系统已安装过，但部分服务未正常运行，可能需要修复。</p>
       <div class="status-item" style="flex-direction:column; align-items:flex-start; gap:8px;">
         <span>访问地址（当前不可用）</span>
-        <span style="font-size:22px; font-weight:700; color:var(--warning);">http://${esc(data.ip)}</span>
+        <span style="font-size:22px; font-weight:700; color:var(--warning);">${esc(sysUrl)}</span>
       </div>
       <div class="hint-box yellow">
         <strong>系统已安装但服务异常。</strong><br>
@@ -1395,7 +1461,7 @@ async function renderStep2(el) {
       <p class="subtitle">在这台电脑上还没有安装系统，请继续下一步进行安装。</p>
       <div class="status-item" style="flex-direction:column; align-items:flex-start; gap:8px;">
         <span>安装后的访问地址</span>
-        <span style="font-size:22px; font-weight:700; color:var(--primary);">http://${esc(data.ip)}</span>
+        <span style="font-size:22px; font-weight:700; color:var(--primary);">${esc(pickUrl(data.ip, false))}</span>
       </div>
       <div class="hint-box yellow">
         系统还没有安装，点击下方按钮继续安装。
@@ -1850,9 +1916,12 @@ async function showDeployResult(el) {
 
   await new Promise(r => setTimeout(r, 3000));
 
-  const svcData = await api('/api/service-status');
-  const ipData = await api('/api/detect-ip');
-  const url = `http://${ipData.ip}`;
+  let svcData = { services: [] };
+  let ipData = { ip: '', reachable: false };
+  try { svcData = await api('/api/service-status'); } catch (_) {}
+  try { ipData = await api('/api/detect-ip'); } catch (_) {}
+  const url = pickUrl(ipData.ip, ipData.reachable);
+  const lanExtra = lanHint(ipData.ip, ipData.reachable, url);
 
   const svcNameMap = {
     api: '后台服务',
@@ -1886,6 +1955,7 @@ async function showDeployResult(el) {
       <p style="font-size:15px; margin:8px 0;">系统已安装完成，可以开始使用了。</p>
       <p style="color:var(--danger); font-size:14px;">首次登录后请及时修改默认密码。</p>
       <div class="url"><a href="${esc(url)}" target="_blank">${esc(url)}</a></div>
+      ${lanExtra ? `<p style="margin-top:4px;">${lanExtra}</p>` : ''}
       <a href="${esc(url)}" target="_blank" class="btn btn-success" style="font-size:18px; padding:14px 40px;">
         点击打开系统
       </a>
@@ -2033,32 +2103,49 @@ def main():
 
     class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
         daemon_threads = True
+        allow_reuse_address = True
+
+    bind_addr = "127.0.0.1" if desktop else "0.0.0.0"
+
+    # Try WIZARD_PORT first, then next ports if occupied
+    port = WIZARD_PORT
+    server = None
+    for attempt in range(10):
+        try:
+            server = ThreadedHTTPServer((bind_addr, port), WizardHandler)
+            break
+        except OSError as e:
+            if e.errno in (errno.EADDRINUSE, 10048):  # EADDRINUSE: macOS=48, Linux=98; Windows=10048
+                print(f"  [!] 端口 {port} 已被占用，尝试 {port + 1}...")
+                port += 1
+            else:
+                raise
+
+    if server is None:
+        print(f"  [!] 端口 {WIZARD_PORT}-{port} 均被占用，无法启动向导")
+        print("  请关闭占用端口的程序后重试")
+        return
+
+    if port != WIZARD_PORT:
+        print(f"  [*] 已自动切换到端口 {port}")
 
     if desktop:
-        # Desktop mode: bind to localhost only (safe)
-        bind_addr = "127.0.0.1"
-        server = ThreadedHTTPServer((bind_addr, WIZARD_PORT), WizardHandler)
-
         def open_browser():
             time.sleep(1)
-            webbrowser.open(f"http://localhost:{WIZARD_PORT}")
+            webbrowser.open(f"http://localhost:{port}")
 
         threading.Thread(target=open_browser, daemon=True).start()
 
-        print(f"  向导已启动: http://localhost:{WIZARD_PORT}")
+        print(f"  向导已启动: http://localhost:{port}")
         print("  浏览器将自动打开，如未打开请手动复制上方地址到浏览器")
     else:
-        # Server mode: bind to all interfaces so remote browser can access
-        bind_addr = "0.0.0.0"
-        server = ThreadedHTTPServer((bind_addr, WIZARD_PORT), WizardHandler)
-
         print(f"  向导已启动（服务器模式）")
         print()
         print(f"  请在您自己电脑的浏览器中打开:")
         print()
-        print(f"    http://{ip}:{WIZARD_PORT}")
+        print(f"    http://{ip}:{port}")
         print()
-        print(f"  如果打不开，请检查防火墙是否放行了 {WIZARD_PORT} 端口")
+        print(f"  如果打不开，请检查防火墙是否放行了 {port} 端口")
 
         # Server mode: periodically print current IP in case it changes
         def print_ip_loop():
@@ -2068,7 +2155,7 @@ def main():
                 cur_ip = get_local_ip()
                 if cur_ip != last_ip:
                     print(f"\n  [提示] 检测到IP变化: {last_ip} -> {cur_ip}")
-                    print(f"  新地址: http://{cur_ip}:{WIZARD_PORT}\n")
+                    print(f"  新地址: http://{cur_ip}:{port}\n")
                     last_ip = cur_ip
 
         threading.Thread(target=print_ip_loop, daemon=True).start()

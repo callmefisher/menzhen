@@ -2,7 +2,7 @@
 # ============================================================
 #  门诊系统安装向导 — 一键启动脚本 (Mac / Ubuntu / Linux)
 #  Mac 用户：双击 start-wizard.command
-#  Linux 用户：终端运行 bash start-wizard.sh
+#  Linux 用户：终端运行 bash start-wizard.command
 # ============================================================
 
 # 切换到脚本所在目录（无论从哪里双击打开）
@@ -196,7 +196,7 @@ if [[ ! -f "deploy-wizard.py" ]]; then
 
     if [[ -f "deploy-wizard.py" ]]; then
         # Validate: should be a Python script, not an HTML error page
-        if head -1 deploy-wizard.py | grep -q "python3\|^#"; then
+        if head -1 deploy-wizard.py | grep -qE "^#!.*python"; then
             echo "[*] 向导程序下载完成!"
         else
             echo "[!] 下载的文件无效（可能是网络错误页面）"
@@ -219,10 +219,7 @@ echo ""
 echo "====================================="
 echo "  正在启动安装向导..."
 echo "  浏览器会自动打开"
-echo "  如果没有自动打开，请手动在浏览器输入:"
-echo ""
-echo "  http://localhost:9527"
-echo ""
+echo "  如果没有自动打开，请查看终端输出的地址"
 echo "====================================="
 echo ""
 echo "提示：按 Ctrl+C 可随时停止向导"

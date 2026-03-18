@@ -21,6 +21,14 @@ fi
 echo "Docker 版本: $(docker --version)"
 echo "Docker Compose 版本: $(docker compose version --short)"
 
+# Check Docker Hub mirror configuration (important for China mainland)
+if ! docker info 2>/dev/null | grep -q "Registry Mirrors"; then
+    echo ""
+    echo "提示: 未检测到 Docker Hub 镜像加速配置"
+    echo "  国内网络建议先运行: sudo bash scripts/setup-docker-mirror.sh"
+    echo ""
+fi
+
 # 2. Generate .env if not exists
 if [ ! -f .env ]; then
     echo ">> 生成 .env 配置文件..."
