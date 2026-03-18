@@ -93,7 +93,21 @@
 
 ## 部署极简——5 分钟上线
 
-不需要专业 IT，不需要买服务器机房。一台普通电脑 + Docker，就能跑起来：
+不需要专业 IT，不需要买服务器机房。一台普通电脑就能跑起来。
+
+### 零基础一键安装（推荐）
+
+下载一个文件，双击即可，脚本自动安装所有依赖：
+
+| 操作系统 | 下载并双击 |
+|----------|-----------|
+| Windows | [`start-wizard.bat`](https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.bat) |
+| macOS | [`start-wizard.command`](https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command) |
+| Linux 桌面 / Server | 终端运行: `curl -fsSLO https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.sh && bash start-wizard.sh` |
+
+> 详细步骤见 [裸机安装指南](docs/bare-metal-install-guide.md)
+
+### 开发者快速部署（已有 Docker + Git）
 
 ```bash
 git clone <repo-url> && cd menzhen
@@ -226,6 +240,7 @@ menzhen/
 
 | 文档 | 说明 |
 |------|------|
+| [裸机安装指南](docs/bare-metal-install-guide.md) | Windows/macOS/Linux 零基础一键安装步骤 |
 | [Codebase 全局上下文](docs/codebase.md) | 文件结构、数据模型（20 表逐字段）、API 路由清单 |
 | [运维操作手册](docs/operations-guide.md) | 部署、备份、恢复、监控完整指南 |
 

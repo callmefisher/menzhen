@@ -36,6 +36,7 @@ mysql_loop() {
     local prev_interval=""
     # Skip immediate backup on first boot — wait one full interval first.
     # This prevents upload storms when SITE_ID changes (redeploy).
+    # Skip first poll cycle to prevent upload storm on redeploy / SITE_ID change
     local first_run=true
     while true; do
         reload_env
@@ -45,6 +46,12 @@ mysql_loop() {
         if [ "${MYSQL_INTERVAL}" != "${prev_interval}" ]; then
             echo "[$(date)] MySQL: interval changed: ${prev_interval:-<init>} -> ${MYSQL_INTERVAL}s"
             prev_interval="${MYSQL_INTERVAL}"
+        fi
+        if [ "${first_run}" = true ]; then
+            echo "[$(date)] MySQL: first poll, skipping (SITE_ID=${SITE_ID})"
+            first_run=false
+            sleep ${POLL_INTERVAL}
+            continue
         fi
         # Check both .sql.gz (new) and .sql (legacy), use the youngest
         age_gz=$(get_backup_age "${BACKUP_DIR}" "${SITE_ID}_*.sql.gz")
@@ -57,18 +64,12 @@ mysql_loop() {
             age="${age_sql}"
         fi
         if [ -z "${age}" ]; then
-            if [ "${first_run}" = true ]; then
-                echo "[$(date)] MySQL: no backup found for SITE_ID=${SITE_ID}, waiting one interval before first backup..."
-                first_run=false
-            else
-                echo "[$(date)] MySQL: no backup found, triggering..."
-                /scripts/backup.sh
-            fi
+            echo "[$(date)] MySQL: no backup found, triggering..."
+            /scripts/backup.sh
         elif [ "${age}" -ge "${MYSQL_INTERVAL}" ]; then
             echo "[$(date)] MySQL: last backup ${age}s ago (>= ${MYSQL_INTERVAL}s), triggering backup..."
             /scripts/backup.sh
         fi
-        first_run=false
         sleep ${POLL_INTERVAL}
     done
 }
@@ -77,7 +78,7 @@ mysql_loop() {
 minio_loop() {
     MINIO_BACKUP_DIR="${BACKUP_DIR}/minio"
     local prev_interval=""
-    # Skip immediate backup on first boot — same reason as mysql_loop
+    # Skip first poll cycle — same reason as mysql_loop
     local first_run=true
     while true; do
         reload_env
@@ -88,20 +89,20 @@ minio_loop() {
             echo "[$(date)] MinIO: interval changed: ${prev_interval:-<init>} -> ${MINIO_INTERVAL}s"
             prev_interval="${MINIO_INTERVAL}"
         fi
+        if [ "${first_run}" = true ]; then
+            echo "[$(date)] MinIO: first poll, skipping (SITE_ID=${SITE_ID})"
+            first_run=false
+            sleep ${POLL_INTERVAL}
+            continue
+        fi
         age=$(get_backup_age "${MINIO_BACKUP_DIR}" "${SITE_ID}_minio_*.tar.gz")
         if [ -z "${age}" ]; then
-            if [ "${first_run}" = true ]; then
-                echo "[$(date)] MinIO: no backup found for SITE_ID=${SITE_ID}, waiting one interval before first backup..."
-                first_run=false
-            else
-                echo "[$(date)] MinIO: no backup found, triggering..."
-                /scripts/backup-minio.sh
-            fi
+            echo "[$(date)] MinIO: no backup found, triggering..."
+            /scripts/backup-minio.sh
         elif [ "${age}" -ge "${MINIO_INTERVAL}" ]; then
             echo "[$(date)] MinIO: last backup ${age}s ago (>= ${MINIO_INTERVAL}s), triggering backup..."
             /scripts/backup-minio.sh
         fi
-        first_run=false
         sleep ${POLL_INTERVAL}
     done
 }

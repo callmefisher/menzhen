@@ -403,7 +403,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         "bash", "-c",
                         'echo "正在安装 Homebrew（软件管理工具）..." && '
                         '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" && '
-                        'if [ -f /opt/homebrew/bin/brew ]; then eval "$(/opt/homebrew/bin/brew shellenv)"; fi && '
+                        'for p in /opt/homebrew/bin/brew /usr/local/bin/brew; do [ -f "$p" ] && eval "$($p shellenv)" && break; done && '
                         'brew install --cask docker && '
                         'echo "Docker Desktop 安装完成！请在启动台中打开 Docker 应用。"'
                     ])

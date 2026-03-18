@@ -94,7 +94,7 @@ set "WIZARD_URL=https://raw.githubusercontent.com/callmefisher/menzhen/main/depl
 if not exist "%~dp0deploy-wizard.py" (
     echo.
     echo [*] 未找到向导程序，正在自动下载...
-    powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%WIZARD_URL%' -OutFile '%~dp0deploy-wizard.py' -UseBasicParsing; Write-Output '[*] 下载完成!' } catch { Write-Output '[x] 下载失败，请检查网络连接'; exit 1 }"
+    powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%WIZARD_URL%' -OutFile '%~dp0deploy-wizard.py' -UseBasicParsing } catch { Write-Output '[x] 下载失败，请检查网络连接'; exit 1 }"
     if not exist "%~dp0deploy-wizard.py" (
         echo.
         echo [x] 下载失败，请手动下载 deploy-wizard.py
@@ -104,6 +104,18 @@ if not exist "%~dp0deploy-wizard.py" (
         pause
         exit /b 1
     )
+    :: 校验下载的文件是否为有效 Python 脚本（而非 HTML 错误页）
+    findstr /m "python3" "%~dp0deploy-wizard.py" >nul 2>&1
+    if not "!ERRORLEVEL!"=="0" (
+        echo.
+        echo [x] 下载的文件无效（可能是网络错误页面）
+        del /f "%~dp0deploy-wizard.py" >nul 2>&1
+        echo     请检查网络连接后重试
+        echo.
+        pause
+        exit /b 1
+    )
+    echo [*] 向导程序下载完成!
 )
 
 :: ------------------------------------------------------------------
