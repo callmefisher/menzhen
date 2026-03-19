@@ -899,6 +899,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "docker compose build && "
                     "echo [3/3] 正在重启服务... && "
                     "docker compose up -d && "
+                    "docker compose restart nginx && "
                     "echo 更新完成!"
                 ]
             else:
@@ -915,6 +916,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "docker compose build && "
                     "echo '[3/3] 正在重启服务...' && "
                     "docker compose up -d && "
+                    "docker compose restart nginx && "
                     "echo '更新完成!'"
                 ]
             stream_command(self, cmd)
