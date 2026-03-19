@@ -632,14 +632,30 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
         if self.path == "/api/start-docker":
             os_key, _ = detect_os()
             if os_key == "mac":
-                # Open Docker Desktop app, then wait for daemon
+                # Open Docker Desktop app, then wait for daemon (90 * 2s = 3min)
                 stream_command(self, [
                     "bash", "-c",
                     "open -a Docker && echo '正在启动 Docker Desktop...' && "
-                    "for i in $(seq 1 60); do "
-                    "  docker info >/dev/null 2>&1 && echo 'Docker 已启动!' && exit 0; "
-                    "  echo \"等待中... ($i/60)\"; sleep 2; "
-                    "done; echo 'Docker 启动超时'; exit 1"
+                    "for i in $(seq 1 90); do "
+                    "  docker info >/dev/null 2>&1 && echo 'Docker 已启动!' && break; "
+                    "  echo \"等待中... ($i/90)\"; sleep 2; "
+                    "done; "
+                    "docker info >/dev/null 2>&1 || { "
+                    "echo '=== Docker 启动超时，以下为诊断信息 ==='; "
+                    "echo '--- docker info ---'; docker info 2>&1 || true; "
+                    "echo '--- docker version ---'; docker version 2>&1 || true; "
+                    "echo '--- Docker Desktop 进程 ---'; ps aux | grep -i '[d]ocker' || true; "
+                    "echo '请手动打开 Docker Desktop 应用，确认其正常运行后刷新页面。'; exit 1; }; "
+                    "if [ -f docker-compose.yml ]; then "
+                    "  STOPPED=$(docker compose ps -a --format '{{.State}}' 2>/dev/null | grep -v '^[[:space:]]*$' | grep -cv 'running' || echo 0); "
+                    "  if [ \"${STOPPED:-0}\" -gt 0 ]; then "
+                    "    echo \"检测到 $STOPPED 个服务未运行，正在启动...\"; "
+                    "    docker compose up -d 2>&1; "
+                    "    echo '服务启动完成!'; "
+                    "  else "
+                    "    echo '所有服务已在运行，无需重启。'; "
+                    "  fi; "
+                    "fi; exit 0"
                 ])
             elif os_key == "windows":
                 stream_command(self, [
@@ -653,18 +669,57 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "  Write-Output '尝试直接启动...'; Start-Process 'Docker Desktop' -EA SilentlyContinue; "
                     "}; "
                     "Write-Output '等待 Docker 启动...'; "
-                    "for ($i=1; $i -le 60; $i++) { "
+                    "for ($i=1; $i -le 90; $i++) { "
                     "  $null = & docker info 2>&1; "
-                    "  if ($LASTEXITCODE -eq 0) { Write-Output 'Docker 已启动!'; exit 0 }; "
-                    "  Write-Output \"等待中... ($i/60)\"; "
+                    "  if ($LASTEXITCODE -eq 0) { Write-Output 'Docker 已启动!'; break }; "
+                    "  Write-Output \"等待中... ($i/90)\"; "
                     "  Start-Sleep -Seconds 2; "
                     "}; "
-                    "Write-Output 'Docker 启动超时，请手动打开 Docker Desktop'; exit 1"
+                    "$null = & docker info 2>&1; "
+                    "if ($LASTEXITCODE -ne 0) { "
+                    "  Write-Output '=== Docker 启动超时，以下为诊断信息 ==='; "
+                    "  Write-Output '--- docker info ---'; & docker info 2>&1; "
+                    "  Write-Output '--- docker version ---'; & docker version 2>&1; "
+                    "  Write-Output '--- Docker Desktop 进程 ---'; Get-Process *docker* -EA SilentlyContinue | Format-Table Name,Id,CPU -Auto; "
+                    "  Write-Output '请手动打开 Docker Desktop 应用，确认其正常运行后刷新页面。'; exit 1; "
+                    "}; "
+                    "if (Test-Path 'docker-compose.yml') { "
+                    "  $stopped = @(& docker compose ps -a --format '{{.State}}' 2>$null | Where-Object { $_ -and $_ -ne 'running' }).Count; "
+                    "  if ($stopped -gt 0) { "
+                    "    Write-Output \"检测到 $stopped 个服务未运行，正在启动...\"; "
+                    "    & docker compose up -d 2>&1; "
+                    "    Write-Output '服务启动完成!'; "
+                    "  } else { "
+                    "    Write-Output '所有服务已在运行，无需重启。'; "
+                    "  }; "
+                    "}; exit 0"
                 ])
             else:
+                # Linux: systemctl start + wait for daemon (90 * 2s = 3min)
                 stream_command(self, [
                     "bash", "-c",
-                    "sudo systemctl start docker && echo 'Docker 已启动!' || echo 'Docker 启动失败'"
+                    "echo '正在启动 Docker 服务...' && "
+                    "sudo systemctl start docker 2>&1; "
+                    "for i in $(seq 1 90); do "
+                    "  docker info >/dev/null 2>&1 && echo 'Docker 已启动!' && break; "
+                    "  echo \"等待中... ($i/90)\"; sleep 2; "
+                    "done; "
+                    "docker info >/dev/null 2>&1 || { "
+                    "echo '=== Docker 启动超时，以下为诊断信息 ==='; "
+                    "echo '--- systemctl status docker ---'; sudo systemctl status docker 2>&1 || true; "
+                    "echo '--- docker info ---'; docker info 2>&1 || true; "
+                    "echo '--- journalctl 最近日志 ---'; sudo journalctl -u docker --no-pager -n 20 2>&1 || true; "
+                    "echo '请检查 Docker 服务状态后刷新页面。'; exit 1; }; "
+                    "if [ -f docker-compose.yml ]; then "
+                    "  STOPPED=$(docker compose ps -a --format '{{.State}}' 2>/dev/null | grep -v '^[[:space:]]*$' | grep -cv 'running' || echo 0); "
+                    "  if [ \"${STOPPED:-0}\" -gt 0 ]; then "
+                    "    echo \"检测到 $STOPPED 个服务未运行，正在启动...\"; "
+                    "    docker compose up -d 2>&1; "
+                    "    echo '服务启动完成!'; "
+                    "  else "
+                    "    echo '所有服务已在运行，无需重启。'; "
+                    "  fi; "
+                    "fi; exit 0"
                 ])
             return
 
@@ -901,22 +956,22 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             body = self._read_body()
             src_dir = body.get("path", "").strip()
             if not src_dir:
-                self._send_json({"error": "请输入目录路径"}, 400)
+                self._send_json({"ok": False, "error": "请输入目录路径"})
                 return
             # Resolve and validate path
             src_path = Path(src_dir).resolve()
             if not src_path.is_dir():
-                self._send_json({"error": "指定的目录不存在"}, 400)
+                self._send_json({"ok": False, "error": "指定的目录不存在"})
                 return
             src_env = src_path / ".env"
             if not src_env.exists():
-                self._send_json({"error": "该目录下未找到 .env 文件"}, 400)
+                self._send_json({"ok": False, "error": "该目录下未找到 .env 文件"})
                 return
             env_path = SCRIPT_DIR / ".env"
             try:
                 shutil.copy2(str(src_env), str(env_path))
             except OSError as e:
-                self._send_json({"error": f"复制失败：{e.strerror}"}, 500)
+                self._send_json({"ok": False, "error": f"复制失败：{e.strerror}"})
                 return
             self._send_json({"ok": True})
             return
