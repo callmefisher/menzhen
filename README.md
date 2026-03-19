@@ -107,7 +107,7 @@
 **macOS / Linux 一键安装命令：**
 
 ```bash
-mkdir -p ~/menzhen && cd ~/menzhen && (curl -fLO "https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command" 2>/dev/null || wget -q "https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command") && bash start-wizard.command
+mkdir -p ~/menzhen && cd ~/menzhen && curl -fLO "https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command" && bash start-wizard.command
 ```
 
 > 详细步骤见 [裸机安装指南](docs/bare-metal-install-guide.md)
