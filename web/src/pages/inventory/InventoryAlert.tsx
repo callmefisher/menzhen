@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, Table, Button, Space, InputNumber, Tag, message } from 'antd';
 import { ReloadOutlined, BellOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
@@ -42,6 +42,9 @@ export default function InventoryAlert() {
   const [editConfig, setEditConfig] = useState<AlertConfig>(loadConfig);
   const [alertRows, setAlertRows] = useState<AlertRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [lastScanTime, setLastScanTime] = useState<Date | null>(null);
+  const lastScanRef = useRef<number>(0);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const runScan = useCallback(async () => {
     setLoading(true);
@@ -72,6 +75,8 @@ export default function InventoryAlert() {
         });
       }
       setAlertRows(rows);
+      setLastScanTime(new Date());
+      lastScanRef.current = Date.now();
     } catch {
       // handled by interceptor
     } finally {
@@ -81,27 +86,58 @@ export default function InventoryAlert() {
 
   // Run scan on mount and on config changes — clear muted so all alerts re-evaluate
   useEffect(() => {
+    let cancelled = false;
     localStorage.removeItem('inventory-alert-muted');
-    runScan();
+    runScan().then(() => {
+      if (!cancelled) window.dispatchEvent(new Event('inventory-alert-changed'));
+    });
+    return () => { cancelled = true; };
   }, [runScan, config]);
 
   // Clear muted list and re-scan when inventory data changes
   useEffect(() => {
     const onDataChanged = () => {
       localStorage.removeItem('inventory-alert-muted');
-      runScan();
+      runScan().then(() => {
+        window.dispatchEvent(new Event('inventory-alert-changed'));
+      });
     };
     window.addEventListener('inventory-data-changed', onDataChanged);
     return () => window.removeEventListener('inventory-data-changed', onDataChanged);
   }, [runScan]);
 
-  // Set up periodic scan timer
+  // Robust periodic scan: setTimeout chain + visibilitychange fallback
   useEffect(() => {
     const intervalMs = config.scanInterval * 60 * 1000;
-    const timer = setInterval(() => {
-      runScan();
-    }, intervalMs);
-    return () => clearInterval(timer);
+
+    const scheduleNext = () => {
+      timerRef.current = setTimeout(async () => {
+        await runScan();
+        window.dispatchEvent(new Event('inventory-alert-changed'));
+        scheduleNext();
+      }, intervalMs);
+    };
+    scheduleNext();
+
+    // When page becomes visible, check if we missed a scan cycle
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        const elapsed = Date.now() - lastScanRef.current;
+        if (elapsed >= intervalMs) {
+          if (timerRef.current) clearTimeout(timerRef.current);
+          runScan().then(() => {
+            window.dispatchEvent(new Event('inventory-alert-changed'));
+            scheduleNext();
+          });
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [config.scanInterval, runScan]);
 
   const handleSaveConfig = () => {
@@ -345,15 +381,22 @@ export default function InventoryAlert() {
           </Space>
         }
         extra={
-          <Button
-            icon={<ReloadOutlined />}
-            onClick={handleManualScan}
-            loading={loading}
-            type="default"
-            size={isMobile ? 'small' : 'middle'}
-          >
-            {!isMobile && '立即扫描'}
-          </Button>
+          <Space size={isMobile ? 4 : 8}>
+            {lastScanTime && (
+              <span style={{ fontSize: 12, color: '#999' }}>
+                {lastScanTime.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              </span>
+            )}
+            <Button
+              icon={<ReloadOutlined />}
+              onClick={handleManualScan}
+              loading={loading}
+              type="default"
+              size={isMobile ? 'small' : 'middle'}
+            >
+              {!isMobile && '立即扫描'}
+            </Button>
+          </Space>
         }
         size={isMobile ? 'small' : 'default'}
         styles={isMobile ? { body: { padding: 8 } } : undefined}

@@ -12,6 +12,7 @@ import os
 import platform
 import re
 import secrets
+import shlex
 import shutil
 import socket
 import socketserver
@@ -27,9 +28,21 @@ from datetime import datetime
 from pathlib import Path
 
 WIZARD_PORT = 9527
+WIZARD_VERSION = "2026.03.19"
 SCRIPT_DIR = Path(__file__).resolve().parent
+SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
 REPO_URL = "https://github.com/callmefisher/menzhen.git"
+WIZARD_RAW_URL = "https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py"
+
+# Global update status: "updated", "up_to_date", "failed", "skipped"
+_update_status = "skipped"
+_update_message = ""
+
+# Heartbeat: browser page sends periodic pings; server shuts down when page closes
+# Note: _last_heartbeat is accessed from multiple threads; float assignment is
+# atomic under CPython's GIL, which is sufficient for this deployment tool.
+_last_heartbeat = 0.0  # timestamp of last heartbeat (0 = none received yet)
 
 # .env 变量定义：(key, 中文名, 分组, 是否自动生成, 默认值提示)
 ENV_SCHEMA = [
@@ -251,15 +264,16 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(json.dumps(data, ensure_ascii=False).encode())
 
     def _read_body(self):
-        length = int(self.headers.get("Content-Length", 0))
-        if length > self.MAX_BODY_SIZE:
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except (ValueError, TypeError):
             return {}
-        if length:
-            try:
-                return json.loads(self.rfile.read(length))
-            except (json.JSONDecodeError, ValueError):
-                return {}
-        return {}
+        if length <= 0 or length > self.MAX_BODY_SIZE:
+            return {}
+        try:
+            return json.loads(self.rfile.read(length))
+        except (json.JSONDecodeError, ValueError):
+            return {}
 
     def do_OPTIONS(self):
         self.send_response(204)
@@ -333,6 +347,32 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 "docker_running": docker_running,
                 "docker_partial": docker_partial,
             })
+            return
+
+        if self.path == "/api/heartbeat":
+            global _last_heartbeat
+            _last_heartbeat = time.time()
+            self._send_json({"ok": True})
+            return
+
+        if self.path == "/api/version":
+            self._send_json({
+                "version": WIZARD_VERSION,
+                "update_status": _update_status,
+                "update_message": _update_message,
+            })
+            return
+
+        if self.path == "/api/get-existing-site-id":
+            env_path = SCRIPT_DIR / ".env"
+            site_id = ""
+            if env_path.exists():
+                for line in env_path.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if line.startswith("SITE_ID=") and not line.startswith("#"):
+                        site_id = line.split("=", 1)[1].strip()
+                        break
+            self._send_json({"site_id": site_id, "exists": bool(site_id)})
             return
 
         if self.path == "/api/generate-site-id":
@@ -646,11 +686,13 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     'echo 代码下载完成!'
                 ])
             else:
+                q_dir = shlex.quote(script_dir)
+                q_url = shlex.quote(REPO_URL)
                 stream_command(self, [
                     "bash", "-c",
-                    f"cd '{script_dir}' && "
+                    f"cd {q_dir} && "
                     "git init && "
-                    f"git remote add origin '{REPO_URL}' 2>/dev/null || git remote set-url origin '{REPO_URL}' && "
+                    f"git remote add origin {q_url} 2>/dev/null || git remote set-url origin {q_url} && "
                     "git fetch origin && "
                     "git checkout -f origin/main -- . && "
                     "echo '代码下载完成!'"
@@ -692,8 +734,8 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
         if self.path == "/api/save-site-id":
             body = self._read_body()
             site_id = body.get("site_id", "")
-            if not site_id or not re.fullmatch(r"[A-Za-z0-9]{1,64}", site_id):
-                self._send_json({"error": "站点编号格式不正确，只能包含英文字母和数字"}, 400)
+            if not site_id or not re.fullmatch(r"[A-Za-z0-9]{1,20}", site_id):
+                self._send_json({"error": "站点编号格式不正确：只能包含英文字母和数字，长度不超过20位"}, 400)
                 return
             # Write SITE_ID to .env
             env_path = SCRIPT_DIR / ".env"
@@ -1126,6 +1168,7 @@ header p {
   <header style="position:relative;">
     <h1>门诊系统安装向导</h1>
     <p>跟着步骤一步一步操作，轻松完成系统安装</p>
+    <div id="versionBanner" style="display:none; margin-top:8px; padding:8px 14px; border-radius:6px; font-size:13px;"></div>
     <button class="help-btn" onclick="document.getElementById('helpModal').classList.add('show')">需要帮助？</button>
   </header>
 
@@ -1477,22 +1520,48 @@ async function renderStep2(el) {
 
 // ---- 第三步：站点编号 ----
 async function renderStep3(el) {
+  // 先显示加载中
+  el.innerHTML = '<h2>第三步：设置站点编号</h2><p class="subtitle"><span class="spinner"></span> 正在检测已有配置...</p>';
+
+  // 检测系统中是否已有 SITE_ID
+  let existingSiteId = '';
+  try {
+    const existing = await api('/api/get-existing-site-id');
+    if (existing.exists && existing.site_id) {
+      existingSiteId = existing.site_id;
+      if (!state.siteId) state.siteId = existingSiteId;
+    }
+  } catch(e) { /* ignore */ }
+
+  const hasExisting = !!existingSiteId;
+
   el.innerHTML = `
     <h2>第三步：设置站点编号</h2>
     <p class="subtitle">
       每个诊所需要一个唯一的站点编号，用来区分不同诊所的数据。<br>
       如果您已有编号，请在下方输入；如果是新安装，请点击「自动生成」。
     </p>
+    ${hasExisting ? `
+    <div id="siteIdExisting" style="background:#dbeafe; border:2px solid #3b82f6; padding:16px; border-radius:8px; margin-bottom:16px;">
+      <div style="font-size:16px; font-weight:700; color:#1e40af; margin-bottom:6px;">
+        &#128270; 检测到已有站点编号
+      </div>
+      <div style="font-size:15px; color:#1e3a5f; line-height:1.6;">
+        系统中已配置站点编号：<strong style="font-size:18px; color:#1d4ed8; letter-spacing:1px;">${esc(existingSiteId)}</strong><br>
+        该编号已自动填入下方输入框。如需更改请直接修改。
+      </div>
+    </div>` : ''}
     <div class="input-group">
-      <input type="text" id="siteIdInput" placeholder="请输入或点击右侧按钮自动生成" value="${state.siteId}" />
+      <input type="text" id="siteIdInput" maxlength="20" placeholder="请输入或点击右侧按钮自动生成" value="${esc(state.siteId)}" />
       <button class="btn btn-secondary" id="genBtn">自动生成</button>
+    </div>
+    <div id="siteIdHint" style="font-size:13px; color:var(--text-secondary); margin-bottom:8px;">
+      仅允许英文字母和数字，长度不超过20位
     </div>
     <div id="siteIdGenerated" style="display:none; background:#dcfce7; padding:14px; border-radius:8px; font-size:16px; margin-bottom:12px;">
       已为您生成编号，请现在<strong>拍照或抄写保存</strong>！
     </div>
-    <div id="siteIdError" style="display:none; color:var(--danger); font-size:15px; margin-bottom:8px;">
-      请先输入编号，或点击「自动生成」按钮
-    </div>
+    <div id="siteIdError" style="display:none; color:var(--danger); font-size:15px; margin-bottom:8px;"></div>
     <div style="margin-top:16px; padding:16px; background:#fef9c3; border:2px solid #f59e0b; border-radius:8px;">
       <div style="font-size:16px; font-weight:700; color:#92400e; margin-bottom:8px;">
         &#9888;&#65039; 重要提醒
@@ -1509,20 +1578,58 @@ async function renderStep3(el) {
     </div>
   `;
 
+  const inputEl = el.querySelector('#siteIdInput');
+  const errorEl = el.querySelector('#siteIdError');
+  const hintEl = el.querySelector('#siteIdHint');
+
+  // 实时校验输入
+  function validateInput(val) {
+    if (!val) {
+      errorEl.style.display = 'none';
+      hintEl.style.color = 'var(--text-secondary)';
+      return true; // 空值在提交时检查
+    }
+    if (val.length > 20) {
+      errorEl.textContent = '编号长度不能超过20位';
+      errorEl.style.display = 'block';
+      hintEl.style.color = 'var(--danger)';
+      return false;
+    }
+    if (!/^[A-Za-z0-9]+$/.test(val)) {
+      errorEl.textContent = '编号只能包含英文字母（A-Z、a-z）和数字（0-9）';
+      errorEl.style.display = 'block';
+      hintEl.style.color = 'var(--danger)';
+      return false;
+    }
+    errorEl.style.display = 'none';
+    hintEl.style.color = 'var(--text-secondary)';
+    return true;
+  }
+
+  inputEl.addEventListener('input', () => {
+    validateInput(inputEl.value.trim());
+  });
+
   el.querySelector('#genBtn').onclick = async () => {
     const data = await api('/api/generate-site-id');
-    el.querySelector('#siteIdInput').value = data.site_id;
+    inputEl.value = data.site_id;
     state.siteId = data.site_id;
     el.querySelector('#siteIdGenerated').style.display = 'block';
-    el.querySelector('#siteIdError').style.display = 'none';
+    errorEl.style.display = 'none';
+    hintEl.style.color = 'var(--text-secondary)';
+    // 隐藏已有编号提示（已重新生成）
+    const existingEl = el.querySelector('#siteIdExisting');
+    if (existingEl) existingEl.style.display = 'none';
   };
 
   el.querySelector('#nextBtn').onclick = async () => {
-    const val = el.querySelector('#siteIdInput').value.trim();
+    const val = inputEl.value.trim();
     if (!val) {
-      el.querySelector('#siteIdError').style.display = 'block';
+      errorEl.textContent = '请先输入编号，或点击「自动生成」按钮';
+      errorEl.style.display = 'block';
       return;
     }
+    if (!validateInput(val)) return;
     state.siteId = val;
     try {
       const resp = await api('/api/save-site-id', {
@@ -1531,13 +1638,13 @@ async function renderStep3(el) {
         body: JSON.stringify({ site_id: val })
       });
       if (resp.error) {
-        el.querySelector('#siteIdError').textContent = resp.error;
-        el.querySelector('#siteIdError').style.display = 'block';
+        errorEl.textContent = resp.error;
+        errorEl.style.display = 'block';
         return;
       }
     } catch(e) {
-      el.querySelector('#siteIdError').textContent = '保存失败，请重试';
-      el.querySelector('#siteIdError').style.display = 'block';
+      errorEl.textContent = '保存失败，请重试';
+      errorEl.style.display = 'block';
       return;
     }
     state.step = 4;
@@ -1977,7 +2084,49 @@ function openHelp(section) {
   }
 }
 
+// 版本检查 & 展示
+async function checkVersion() {
+  try {
+    const data = await api('/api/version');
+    const banner = document.getElementById('versionBanner');
+    if (!banner) return;
+    const status = data.update_status;
+    if (status === 'updated') {
+      banner.style.display = 'block';
+      banner.style.background = '#dcfce7';
+      banner.style.color = '#166534';
+      banner.innerHTML = '&#10003; 向导程序已自动更新到最新版本 (v' + esc(data.version) + ')';
+    } else if (status === 'up_to_date') {
+      banner.style.display = 'block';
+      banner.style.background = '#f0f9ff';
+      banner.style.color = '#1e40af';
+      banner.innerHTML = '&#10003; 向导程序已是最新版本 (v' + esc(data.version) + ')';
+    } else if (status === 'failed') {
+      banner.style.display = 'block';
+      banner.style.background = '#fef9c3';
+      banner.style.color = '#92400e';
+      banner.innerHTML = '&#9888; 无法检查更新，使用当前版本 (v' + esc(data.version) + ')';
+    } else {
+      // skipped — show version only
+      banner.style.display = 'block';
+      banner.style.background = '#f3f4f6';
+      banner.style.color = '#6b7280';
+      banner.innerHTML = '版本: v' + esc(data.version);
+    }
+  } catch(e) {
+    // Silently ignore version check errors
+  }
+}
+
+// 心跳：每5秒通知服务端页面仍在打开，关闭页面后服务端自动退出
+setInterval(() => {
+  fetch(API + '/api/heartbeat').catch(() => {});
+}, 5000);
+// 立即发送首次心跳
+fetch(API + '/api/heartbeat').catch(() => {});
+
 // 启动
+checkVersion();
 render();
 </script>
 
@@ -2087,13 +2236,93 @@ def has_desktop():
     return False
 
 
+def _extract_version(content):
+    """Extract WIZARD_VERSION from script content."""
+    m = re.search(r'^WIZARD_VERSION\s*=\s*["\']([^"\']+)["\']', content, re.MULTILINE)
+    return m.group(1) if m else ""
+
+
+def self_update():
+    """Check for updates and replace self if newer version available."""
+    global _update_status, _update_message
+    try:
+        print("  [*] 正在检查向导程序更新...")
+        req = urllib.request.Request(WIZARD_RAW_URL, headers={
+            "User-Agent": "deploy-wizard",
+            "Cache-Control": "no-cache",
+        })
+        resp = urllib.request.urlopen(req, timeout=10)
+        remote_content = resp.read().decode("utf-8")
+
+        # Validate it's a real Python script (shebang + minimum size)
+        if not remote_content.startswith("#!/usr/bin/env python") or len(remote_content) < 10000:
+            _update_status = "failed"
+            _update_message = "下载的文件无效或不完整"
+            print("  [!] 下载的文件无效或不完整，跳过更新")
+            return False
+
+        remote_version = _extract_version(remote_content)
+        if not remote_version or not re.fullmatch(r"\d{4}\.\d{2}\.\d{2}(\.\d+)?", remote_version):
+            _update_status = "failed"
+            _update_message = "无法识别远程版本"
+            print("  [!] 无法识别远程版本，跳过更新")
+            return False
+
+        # Compare versions (date-based string comparison: "2026.03.19" > "2026.03.18")
+        if remote_version <= WIZARD_VERSION:
+            _update_status = "up_to_date"
+            _update_message = f"当前版本 {WIZARD_VERSION} 已是最新"
+            print(f"  [*] 当前版本 {WIZARD_VERSION} 已是最新")
+            return False
+
+        # Write new version to a temp file, then replace
+        tmp_path = SCRIPT_PATH.parent / (SCRIPT_PATH.name + ".tmp")
+        tmp_path.write_text(remote_content, encoding="utf-8")
+
+        # Backup current
+        bak_path = SCRIPT_PATH.parent / (SCRIPT_PATH.name + ".bak")
+        if SCRIPT_PATH.exists():
+            shutil.copy2(str(SCRIPT_PATH), str(bak_path))
+
+        # Replace
+        shutil.move(str(tmp_path), str(SCRIPT_PATH))
+
+        _update_status = "updated"
+        _update_message = f"已从 {WIZARD_VERSION} 更新到 {remote_version}"
+        print(f"  [*] 向导程序已更新: {WIZARD_VERSION} -> {remote_version}")
+        print("  [*] 正在重新启动...")
+
+        # Re-exec with the new script.
+        # On Windows, os.execv spawns a child process and exits the parent;
+        # when launched via start-wizard.bat, WIZARD_SKIP_UPDATE=1 prevents
+        # this path from running, so Windows users go through the .bat update
+        # logic instead. Direct python invocation on Windows will re-exec fine.
+        os.execv(sys.executable, [sys.executable, str(SCRIPT_PATH)] + sys.argv[1:])
+        return True  # unreachable on POSIX; Windows child takes over
+
+    except (urllib.error.URLError, urllib.error.HTTPError, OSError) as e:
+        _update_status = "failed"
+        _update_message = f"检查更新失败: {e}"
+        print(f"  [!] 检查更新失败: {e}（继续使用当前版本）")
+        return False
+    except Exception as e:
+        _update_status = "failed"
+        _update_message = f"更新异常: {e}"
+        print(f"  [!] 更新异常: {e}（继续使用当前版本）")
+        return False
+
+
 def main():
+    # Self-update check (skip if WIZARD_SKIP_UPDATE env is set)
+    if not os.environ.get("WIZARD_SKIP_UPDATE"):
+        self_update()
+
     ip = get_local_ip()
     desktop = has_desktop()
 
     print()
     print("=" * 48)
-    print("  门诊系统安装向导")
+    print(f"  门诊系统安装向导 v{WIZARD_VERSION}")
     print("=" * 48)
     print(f"  项目目录: {SCRIPT_DIR}")
     print(f"  系统: {detect_os()[1]}")
@@ -2162,12 +2391,48 @@ def main():
 
     print()
     print("  按 Ctrl+C 可随时停止向导")
+    print("  关闭浏览器页面后，5分钟内可重新打开继续")
     print()
+
+    # Heartbeat watchdog: shut down server when browser page is closed.
+    # Two-phase: first wait 15s for reconnect, then wait another 5min.
+    # If no reconnect within 5min, shut down for real.
+    _HEARTBEAT_TIMEOUT = 15       # seconds before showing "disconnected"
+    _SHUTDOWN_GRACE_PERIOD = 300  # 5 minutes grace period before real shutdown
+
+    def heartbeat_watchdog():
+        while True:
+            time.sleep(5)
+            if _last_heartbeat > 0:  # at least one heartbeat received
+                elapsed = time.time() - _last_heartbeat
+                if elapsed > _HEARTBEAT_TIMEOUT:
+                    disconnected_at = time.time()
+                    print(f"\n  [*] 浏览器页面已关闭。")
+                    print(f"  [*] 等待重新打开（5分钟内重新打开页面即可继续）...")
+                    if desktop:
+                        url = f"http://localhost:{port}"
+                    else:
+                        url = f"http://{ip}:{port}"
+                    print(f"  [*] 地址: {url}")
+                    # Wait for reconnect or timeout
+                    while True:
+                        time.sleep(5)
+                        if _last_heartbeat > disconnected_at:
+                            # Page reconnected!
+                            print(f"\n  [*] 页面已重新连接，继续运行。")
+                            break
+                        if time.time() - disconnected_at > _SHUTDOWN_GRACE_PERIOD:
+                            print(f"\n  [*] 超过5分钟未重新打开页面，向导自动停止。")
+                            server.shutdown()
+                            return
+
+    threading.Thread(target=heartbeat_watchdog, daemon=True).start()
 
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         print("\n向导已停止。")
+    finally:
         server.server_close()
 
 

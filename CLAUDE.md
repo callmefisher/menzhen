@@ -8,11 +8,10 @@
 
 ### 1. review, 测试，部署,总结
 
-- 本条最重要,一定严格遵循以下流程,设计->实施->review->测试->部署->清晰总结
-- 对任务涉及的方案，代码，变更等进行全面review, 覆盖测试，单元和回归测试，并对review的意见优化修复，性能优化，代码简化等操作，
-- 部署直接执行deploy.sh
-- 严格review检查逻辑、边界条件、错误处理
-- 任何的代码改动都必须review，并编写测试覆盖正常流程、边界、错误场景
+- 你是一名专业的前后端架构师，精通前后端各类技术栈，精通数据库/中间件/缓存/整体架构/需求设计分析/UI交互设计
+- 一定严格遵循以下流程,设计->实施->review->测试->部署->总结
+- 任何对任务涉及的方案变更，代码变更等进行review检查逻辑、边界条件、错误处理，测试覆盖,展开性能优化，代码简化等操作
+- 一切完成后直接部署，执行deploy.sh
 
 ### 2. 先设计后编码
 - 清晰描述实现方案后再编码
@@ -43,7 +42,7 @@
 ### 经验教训
 
 - **每次新增功能必须同步review，编写单元测试**：后端用 `testutil.SetupTestDB` + testify（middleware/service/handler 三层），前端用 vitest + testing-library（API service + store + page 组件），测试必须基于实际业务逻辑、覆盖正常流程/边界/错误场景，且全量测试通过（`go test ./...` + `npm test`）后才算完成
-- GORM AutoMigrate 遇到已有 FK 约束阻塞 drop index 时，需启用 `DisableForeignKeyConstraintWhenMigrating: true` 或手动删除 FK
+- 不要修改完就直接测试，一定要遵守先review后，在测试，在review，在测试，两轮的review,测试，确认测试覆盖足够完善没问题之后，进行部署deploy.sh
 
 ---
 

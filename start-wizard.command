@@ -175,11 +175,45 @@ else
 fi
 
 # ------------------------------------------------------------------
-# 6. 检查向导脚本，不存在则自动下载
+# 6. 检查向导脚本，自动下载或更新到最新版本
 # ------------------------------------------------------------------
 WIZARD_URL="https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py"
 
-if [[ ! -f "deploy-wizard.py" ]]; then
+if [[ -f "deploy-wizard.py" ]]; then
+    echo ""
+    echo "[*] 检测到已有向导程序，正在检查更新..."
+    # Download to temp file for comparison
+    TEMP_FILE="deploy-wizard.py.download"
+    DOWNLOAD_OK=false
+    if command -v curl &>/dev/null; then
+        curl -fsSL "$WIZARD_URL" -o "$TEMP_FILE" 2>/dev/null && DOWNLOAD_OK=true
+    elif command -v wget &>/dev/null; then
+        wget -q "$WIZARD_URL" -O "$TEMP_FILE" 2>/dev/null && DOWNLOAD_OK=true
+    fi
+
+    if $DOWNLOAD_OK && [[ -f "$TEMP_FILE" ]]; then
+        # Validate: must be a Python script with shebang and version string
+        if head -1 "$TEMP_FILE" | grep -qE "^#!.*python"; then
+            if ! grep -q 'WIZARD_VERSION' "$TEMP_FILE"; then
+                echo "[!] 下载的文件缺少版本号，继续使用当前版本"
+                rm -f "$TEMP_FILE"
+            elif ! diff -q deploy-wizard.py "$TEMP_FILE" >/dev/null 2>&1; then
+                cp deploy-wizard.py deploy-wizard.py.bak
+                mv "$TEMP_FILE" deploy-wizard.py
+                echo "[*] 向导程序已更新到最新版本！（旧版本备份为 deploy-wizard.py.bak）"
+            else
+                echo "[*] 向导程序已是最新版本"
+                rm -f "$TEMP_FILE"
+            fi
+        else
+            echo "[!] 下载的文件无效，继续使用当前版本"
+            rm -f "$TEMP_FILE"
+        fi
+    else
+        echo "[!] 无法检查更新（网络不可用），继续使用当前版本"
+        rm -f "$TEMP_FILE" 2>/dev/null
+    fi
+else
     echo ""
     echo "[*] 未找到向导程序，正在自动下载..."
     if command -v curl &>/dev/null; then
@@ -225,7 +259,8 @@ echo ""
 echo "提示：按 Ctrl+C 可随时停止向导"
 echo ""
 
-python3 deploy-wizard.py
+# 由启动脚本已完成更新检查，跳过 Python 内置的自更新
+WIZARD_SKIP_UPDATE=1 python3 deploy-wizard.py
 
 # 双击打开时，防止窗口自动关闭
 echo ""
