@@ -1997,14 +1997,16 @@ async function renderStep2(el) {
     `;
     // 并行检测 .env 和镜像
     Promise.all([
-      api('/api/check-configs'),
+      api('/api/ensure-env'),
       api('/api/check-images'),
-    ]).then(([cfgData, imgData]) => {
-      const envExists = cfgData.configs.some(c => c.file === '.env' && c.exists);
+    ]).then(([envData, imgData]) => {
+      const envExists = envData.ok;
+      const envRecovered = envData.source && envData.source.startsWith('container:');
       const allImagesExist = imgData.images.every(i => i.exists);
       const missingImages = imgData.images.filter(i => !i.exists).map(i => i.image);
       const checkDiv = el.querySelector('#noContainerCheck');
       if (!checkDiv) return;
+      const recoveredHint = envRecovered ? '<div class="hint-box blue" style="margin-bottom:8px;">配置文件已从容器中自动恢复。</div>' : '';
 
       if (!envExists) {
         // .env 不存在 → 需要重新安装
@@ -2012,7 +2014,7 @@ async function renderStep2(el) {
         checkDiv.querySelector('#freshInstallBtn').onclick = () => { state.step = 3; render(); };
       } else if (!allImagesExist) {
         // .env 存在但镜像缺失 → 需要重新构建
-        checkDiv.innerHTML = '<div class="hint-box yellow"><strong>镜像缺失，需要重新构建。</strong><br>缺失镜像：' + missingImages.join('、') + '</div><div class="actions" style="margin-top:12px;"><button class="btn btn-primary" id="rebuildBtn">重新构建</button></div><div id="buildLog"></div>';
+        checkDiv.innerHTML = recoveredHint + '<div class="hint-box yellow"><strong>镜像缺失，需要重新构建。</strong><br>缺失镜像：' + missingImages.join('、') + '</div><div class="actions" style="margin-top:12px;"><button class="btn btn-primary" id="rebuildBtn">重新构建</button></div><div id="buildLog"></div>';
         checkDiv.querySelector('#rebuildBtn').onclick = () => {
           const btn = checkDiv.querySelector('#rebuildBtn');
           btn.disabled = true;
@@ -2039,7 +2041,7 @@ async function renderStep2(el) {
         };
       } else {
         // .env 存在且镜像齐全 → 可以直接启动
-        checkDiv.innerHTML = '<div class="hint-box green"><strong>环境就绪。</strong><br>配置文件和镜像均已就绪，可以直接启动服务。</div><div class="actions" style="margin-top:12px;"><button class="btn btn-success" id="startServicesBtn">启动服务</button></div>';
+        checkDiv.innerHTML = recoveredHint + '<div class="hint-box green"><strong>环境就绪。</strong><br>配置文件和镜像均已就绪，可以直接启动服务。</div><div class="actions" style="margin-top:12px;"><button class="btn btn-success" id="startServicesBtn">启动服务</button></div>';
         checkDiv.querySelector('#startServicesBtn').onclick = () => {
           const btn = checkDiv.querySelector('#startServicesBtn');
           btn.disabled = true;
