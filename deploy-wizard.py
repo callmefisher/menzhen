@@ -694,7 +694,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             # git clone fails on non-empty dir, so use init+pull instead
             # Exclude wizard files from checkout to avoid overwriting the
             # running script (shell reads by file offset; overwrite = garbled).
-            EXCLUDE = "':!deploy-wizard.py' ':!start-wizard.command' ':!start-wizard.bat'"
+            EXCLUDE = "':!deploy-wizard.py' ':!start-wizard.command' ':!start-wizard.bat' ':!start-wizard.sh'"
             os_key, _ = detect_os()
             script_dir = str(SCRIPT_DIR)
             if os_key == "windows":
@@ -725,23 +725,30 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
 
         if self.path == "/api/check-updates":
             # Check if there are new commits on origin/main
-            # 0. Check if git repo exists
+            # 0. Auto-init git repo if missing
             if not (SCRIPT_DIR / ".git").exists():
-                self._send_json({"has_updates": None, "error": "no_repo",
-                                 "message": "当前目录不是代码仓库，请先在第五步「准备程序」中下载代码"})
-                return
+                rc, _, err = run_command(["git", "init"])
+                if rc != 0:
+                    self._send_json({"has_updates": None, "error": "init_failed",
+                                     "message": f"初始化代码仓库失败: {err.strip()}"})
+                    return
+                run_command(["git", "remote", "add", "origin", REPO_URL])
+            # Ensure remote is set correctly
+            run_command(["git", "remote", "set-url", "origin", REPO_URL])
             # 1. git fetch
             rc, _, err = run_command(["git", "fetch", "origin"])
             if rc != 0:
                 self._send_json({"has_updates": None, "error": "fetch_failed",
                                  "message": f"无法连接远程仓库: {err.strip()}"})
                 return
-            # 2. Check HEAD validity
+            # 2. Check HEAD validity; if missing, set to origin/main
             rc_head, _, _ = run_command(["git", "rev-parse", "HEAD"])
             if rc_head != 0:
-                self._send_json({"has_updates": None, "error": "no_head",
-                                 "message": "本地版本信息缺失，请先点击「同步代码」"})
-                return
+                rc_reset, _, _ = run_command(["git", "reset", "origin/main"])
+                if rc_reset != 0:
+                    self._send_json({"has_updates": None, "error": "no_head",
+                                     "message": "无法获取远程版本信息"})
+                    return
             # 3. Compare HEAD..origin/main
             rc, out, _ = run_command(["git", "log", "HEAD..origin/main",
                                       "--oneline", "--no-decorate", "-n", "50"])
@@ -763,13 +770,24 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
 
         if self.path == "/api/pull-and-rebuild":
             # Pull latest code, rebuild images, restart services — all streamed
-            EXCLUDE = "':!deploy-wizard.py' ':!start-wizard.command' ':!start-wizard.bat'"
+            EXCLUDE = "':!deploy-wizard.py' ':!start-wizard.command' ':!start-wizard.bat' ':!start-wizard.sh'"
+            q_url = shlex.quote(REPO_URL)
+            # Ensure git repo is initialized (idempotent)
+            GIT_INIT = (
+                "git rev-parse --git-dir >/dev/null 2>&1 || git init && "
+                f"git remote set-url origin {q_url} 2>/dev/null || git remote add origin {q_url} && "
+            )
             os_key, _ = detect_os()
             if os_key == "windows":
                 q_dir = str(SCRIPT_DIR)
+                GIT_INIT_WIN = (
+                    "git rev-parse --git-dir >nul 2>&1 || git init && "
+                    f'git remote set-url origin "{REPO_URL}" 2>nul || git remote add origin "{REPO_URL}" && '
+                )
                 cmd = [
                     "cmd", "/c",
                     f'cd /d "{q_dir}" && '
+                    f"{GIT_INIT_WIN}"
                     "echo [1/3] 正在拉取最新代码... && "
                     "git fetch origin && "
                     f"git checkout -f origin/main -- . {EXCLUDE} && "
@@ -785,6 +803,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 cmd = [
                     "bash", "-c",
                     f"cd {q_dir} && "
+                    f"{GIT_INIT}"
                     "echo '[1/3] 正在拉取最新代码...' && "
                     "git fetch origin && "
                     f"git checkout -f origin/main -- . {EXCLUDE} && "
@@ -840,11 +859,27 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             # Check if SITE_ID already exists — refuse to overwrite without force
             env_path = SCRIPT_DIR / ".env"
             existing_id = ""
+            # Check .env file
             if env_path.exists():
                 for line in env_path.read_text(encoding="utf-8").splitlines():
                     line = line.strip()
                     if line.startswith("SITE_ID=") and not line.startswith("#"):
                         existing_id = line.split("=", 1)[1].strip()
+                        break
+            # Also check running containers if .env has no SITE_ID
+            if not existing_id:
+                for cname in ("menzhen-api-1", "menzhen-api"):
+                    rc, out, _ = run_command([
+                        "docker", "inspect", "--format",
+                        '{{range .Config.Env}}{{println .}}{{end}}',
+                        cname,
+                    ])
+                    if rc == 0 and out.strip():
+                        for line in out.strip().splitlines():
+                            if line.startswith("SITE_ID="):
+                                existing_id = line.split("=", 1)[1].strip()
+                                break
+                    if existing_id:
                         break
             if existing_id and existing_id == site_id:
                 # Same value, no write needed
