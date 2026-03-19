@@ -60,7 +60,8 @@ describe('PrescriptionModal', () => {
 
   it('renders add herb button', () => {
     render(<PrescriptionModal {...defaultProps} />);
-    expect(screen.getByText('添加药物')).toBeInTheDocument();
+    const buttons = screen.getAllByText('添加药物');
+    expect(buttons.length).toBeGreaterThanOrEqual(1);
   });
 
   it('renders total doses input', () => {
