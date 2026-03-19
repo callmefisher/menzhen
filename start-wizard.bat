@@ -86,12 +86,44 @@ pause
 exit /b 1
 
 :: ------------------------------------------------------------------
-:: 3. 检查向导脚本，不存在则自动下载
+:: 3. 检查向导脚本，自动下载或更新到最新版本
 :: ------------------------------------------------------------------
 :CHECK_FILE
 set "WIZARD_URL=https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py"
 
-if not exist "%~dp0deploy-wizard.py" (
+if exist "%~dp0deploy-wizard.py" (
+    echo.
+    echo [*] 检测到已有向导程序，正在检查更新...
+    powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%WIZARD_URL%' -OutFile '%~dp0deploy-wizard.py.download' -UseBasicParsing } catch { if (Test-Path '%~dp0deploy-wizard.py.download') { Remove-Item '%~dp0deploy-wizard.py.download' -Force } }"
+    if exist "%~dp0deploy-wizard.py.download" (
+        :: 校验第一行是否包含 python shebang
+        powershell -Command "if ((Get-Content '%~dp0deploy-wizard.py.download' -TotalCount 1) -match '^#!/.*python') { exit 0 } else { exit 1 }"
+        if "!ERRORLEVEL!"=="0" (
+            :: 校验是否包含版本号
+            findstr /m "WIZARD_VERSION" "%~dp0deploy-wizard.py.download" >nul 2>&1
+            if "!ERRORLEVEL!"=="0" (
+                :: 比较文件是否相同
+                fc /b "%~dp0deploy-wizard.py" "%~dp0deploy-wizard.py.download" >nul 2>&1
+                if not "!ERRORLEVEL!"=="0" (
+                    copy /y "%~dp0deploy-wizard.py" "%~dp0deploy-wizard.py.bak" >nul 2>&1
+                    move /y "%~dp0deploy-wizard.py.download" "%~dp0deploy-wizard.py" >nul 2>&1
+                    echo [*] 向导程序已更新到最新版本！
+                ) else (
+                    echo [*] 向导程序已是最新版本
+                    del /f "%~dp0deploy-wizard.py.download" >nul 2>&1
+                )
+            ) else (
+                echo [!] 下载的文件缺少版本号，继续使用当前版本
+                del /f "%~dp0deploy-wizard.py.download" >nul 2>&1
+            )
+        ) else (
+            echo [!] 下载的文件无效，继续使用当前版本
+            del /f "%~dp0deploy-wizard.py.download" >nul 2>&1
+        )
+    ) else (
+        echo [!] 无法检查更新（网络不可用），继续使用当前版本
+    )
+) else (
     echo.
     echo [*] 未找到向导程序，正在自动下载...
     powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%WIZARD_URL%' -OutFile '%~dp0deploy-wizard.py' -UseBasicParsing } catch { Write-Output '[x] 下载失败，请检查网络连接'; exit 1 }"
@@ -104,8 +136,8 @@ if not exist "%~dp0deploy-wizard.py" (
         pause
         exit /b 1
     )
-    :: 校验下载的文件是否为有效 Python 脚本（而非 HTML 错误页）
-    findstr /m "python3" "%~dp0deploy-wizard.py" >nul 2>&1
+    :: 校验第一行是否包含 python shebang（排除 HTML 错误页）
+    powershell -Command "if ((Get-Content '%~dp0deploy-wizard.py' -TotalCount 1) -match '^#!/.*python') { exit 0 } else { exit 1 }"
     if not "!ERRORLEVEL!"=="0" (
         echo.
         echo [x] 下载的文件无效（可能是网络错误页面）
@@ -133,6 +165,7 @@ echo.
 
 cd /d "%~dp0"
 set PYTHONIOENCODING=utf-8
+set WIZARD_SKIP_UPDATE=1
 !PYTHON_CMD! deploy-wizard.py
 
 echo.

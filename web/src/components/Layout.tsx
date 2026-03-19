@@ -83,8 +83,21 @@ export default function AppLayout() {
     };
 
     checkAlerts();
+    let lastCheck = Date.now();
     const interval = JSON.parse(localStorage.getItem('inventory-alert-config') || '{}').scanInterval ?? 30;
-    const timer = setInterval(checkAlerts, interval * 60 * 1000);
+    const intervalMs = interval * 60 * 1000;
+    let timer = setInterval(() => { checkAlerts(); lastCheck = Date.now(); }, intervalMs);
+
+    // Re-check when page becomes visible after being hidden, then reset interval
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible' && Date.now() - lastCheck >= intervalMs) {
+        checkAlerts();
+        lastCheck = Date.now();
+        clearInterval(timer);
+        timer = setInterval(() => { checkAlerts(); lastCheck = Date.now(); }, intervalMs);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
 
     const onAlertChanged = () => checkAlerts();
     const onDataChanged = () => {
@@ -96,6 +109,7 @@ export default function AppLayout() {
 
     return () => {
       clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('inventory-alert-changed', onAlertChanged);
       window.removeEventListener('inventory-data-changed', onDataChanged);
     };

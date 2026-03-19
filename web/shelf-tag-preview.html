@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>货架号设计方案对比 - 桌面端 + 移动端</title>
+  <style>
+    @page { margin: 10mm; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, sans-serif; color: #333; background: #f0f2f5; padding: 20px; }
+
+    .page-title { text-align: center; font-size: 22px; font-weight: bold; margin-bottom: 6px; color: #1a1a1a; }
+    .page-subtitle { text-align: center; font-size: 13px; color: #999; margin-bottom: 30px; }
+
+    /* ---- Scheme card ---- */
+    .scheme {
+      background: #fff;
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      margin-bottom: 28px;
+      max-width: 1100px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .scheme-header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+    .scheme-badge {
+      display: inline-block; width: 28px; height: 28px; line-height: 28px;
+      text-align: center; border-radius: 50%; background: #1677ff; color: #fff;
+      font-weight: bold; font-size: 14px; flex-shrink: 0;
+    }
+    .scheme-badge.current { background: #999; }
+    .scheme-badge.b { background: #13c2c2; }
+    .scheme-badge.c { background: #722ed1; }
+    .scheme-badge.d { background: #eb2f96; }
+    .scheme-title { font-size: 16px; font-weight: bold; }
+    .scheme-desc { font-size: 12px; color: #888; margin-bottom: 16px; line-height: 1.6; }
+    .scheme-desc strong { color: #333; }
+
+    /* ---- Side-by-side previews ---- */
+    .preview-row {
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+    }
+    .preview-col {
+      flex: 1;
+      min-width: 0;
+    }
+    .preview-col.mobile {
+      flex: 0 0 375px;
+      max-width: 375px;
+    }
+    .preview-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #999;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .preview-label .icon { font-size: 14px; }
+    .mobile-frame {
+      border: 3px solid #222;
+      border-radius: 20px;
+      padding: 12px 8px;
+      background: #fff;
+      position: relative;
+    }
+    .mobile-frame::before {
+      content: '';
+      display: block;
+      width: 60px;
+      height: 4px;
+      background: #ddd;
+      border-radius: 2px;
+      margin: 0 auto 8px;
+    }
+
+    /* ---- Prescription mock ---- */
+    .rx-mock {
+      border: 1px solid #e8e8e8;
+      border-radius: 8px;
+      padding: 16px;
+      background: #fafafa;
+      font-family: "SimSun", "宋体", serif;
+    }
+    .rx-mock h3 { text-align: center; margin-bottom: 2px; font-size: 16px; letter-spacing: 6px; }
+    .rx-mock .sub { text-align: center; font-size: 11px; color: #aaa; margin-bottom: 10px; }
+    .rx-mock .info-row {
+      display: flex; justify-content: space-between; font-size: 13px;
+      padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid #ddd;
+    }
+    .rx-mock .rp { font-size: 16px; font-weight: bold; margin: 6px 0; }
+    .rx-mock .herb-list { list-style: none; padding: 0; margin: 0; }
+    .rx-mock .herb-list li {
+      display: flex; padding: 4px 0; border-bottom: 1px dashed #e0e0e0;
+      font-size: 13px; line-height: 22px; align-items: center;
+    }
+    .rx-mock .herb-name { flex: 1; display: flex; align-items: center; min-width: 0; }
+    .rx-mock .herb-dosage { width: 55px; text-align: right; flex-shrink: 0; }
+    .rx-mock .herb-notes { width: 70px; text-align: right; color: #888; flex-shrink: 0; }
+
+    /* ---- Mobile info-row stacks ---- */
+    .mobile-frame .rx-mock .info-row {
+      flex-direction: column;
+      gap: 2px;
+      font-size: 12px;
+    }
+    .mobile-frame .rx-mock h3 { font-size: 14px; letter-spacing: 4px; }
+    .mobile-frame .rx-mock .rp { font-size: 14px; margin: 4px 0; }
+    .mobile-frame .rx-mock .herb-list li { font-size: 12px; line-height: 20px; padding: 3px 0; }
+    .mobile-frame .rx-mock .herb-dosage { width: 45px; font-size: 12px; }
+    .mobile-frame .rx-mock .herb-notes { width: 50px; font-size: 11px; }
+    .mobile-frame .rx-mock { padding: 10px; }
+
+    /* ==== 旧方案 ==== */
+    .tag-current {
+      display: inline-block; background: #e6f4ff; color: #1677ff;
+      border: 1px solid #91caff; border-radius: 3px; padding: 0 4px;
+      font-size: 11px; font-weight: bold; margin-right: 4px;
+      font-family: monospace; vertical-align: middle;
+    }
+    .tag-current.empty { background: #f5f5f5; color: #bbb; border-color: #d9d9d9; }
+
+    /* ==== 方案 A: 深色高对比 + 固定宽度 ==== */
+    .tag-a {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 38px; background: #1677ff; color: #fff; border-radius: 4px;
+      padding: 1px 5px; font-size: 12px; font-weight: bold; margin-right: 6px;
+      font-family: monospace; vertical-align: middle; text-align: center;
+      letter-spacing: 0.5px;
+    }
+    .tag-a.empty { background: #e8e8e8; color: #bbb; }
+    /* 移动端 A */
+    .mobile-frame .tag-a { min-width: 32px; font-size: 11px; padding: 1px 4px; margin-right: 4px; }
+
+    /* ==== 方案 B: 独立左列 ==== */
+    .shelf-col-b {
+      width: 46px; flex-shrink: 0; text-align: center; margin-right: 8px;
+    }
+    .tag-b {
+      display: inline-block; background: #f6ffed; color: #389e0d;
+      border: 1px solid #b7eb8f; border-radius: 3px; padding: 1px 4px;
+      font-size: 12px; font-weight: bold; font-family: monospace;
+      min-width: 36px; text-align: center;
+    }
+    .tag-b.empty { background: #f5f5f5; color: #ccc; border-color: #e0e0e0; }
+    /* 移动端 B */
+    .mobile-frame .shelf-col-b { width: 38px; margin-right: 4px; }
+    .mobile-frame .tag-b { font-size: 11px; min-width: 30px; padding: 0 3px; }
+
+    /* ==== 方案 C: 胶囊黑底白字 ==== */
+    .tag-c {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 38px; background: #333; color: #fff; border-radius: 10px;
+      padding: 1px 7px; font-size: 11px; font-weight: bold; margin-right: 6px;
+      font-family: monospace; vertical-align: middle; text-align: center;
+    }
+    .tag-c.empty { background: #e8e8e8; color: #bbb; }
+    /* 移动端 C */
+    .mobile-frame .tag-c { min-width: 32px; font-size: 10px; padding: 1px 5px; margin-right: 4px; }
+
+    /* ==== 方案 D: 方括号文本 ==== */
+    .shelf-col-d {
+      width: 50px; flex-shrink: 0; font-family: monospace;
+      font-size: 13px; font-weight: bold; color: #d4380d; text-align: left; margin-right: 4px;
+    }
+    .shelf-col-d.empty { color: #ccc; }
+    /* 移动端 D */
+    .mobile-frame .shelf-col-d { width: 40px; font-size: 11px; margin-right: 2px; }
+
+    /* ---- Summary table ---- */
+    .summary-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 12px; }
+    .summary-table th, .summary-table td { padding: 8px; border-bottom: 1px solid #eee; }
+    .summary-table th { text-align: center; border-bottom: 2px solid #ccc; color: #555; font-size: 12px; }
+    .summary-table th:first-child, .summary-table td:first-child { text-align: left; }
+    .summary-table td:not(:first-child):not(:last-child) { text-align: center; }
+    .summary-table tr:nth-child(even) { background: #f9f9f9; }
+
+    /* Print */
+    @media print {
+      body { background: #fff; padding: 10px; }
+      .scheme { box-shadow: none; border: 1px solid #ddd; break-inside: avoid; }
+      .preview-col.mobile { flex: 0 0 300px; max-width: 300px; }
+      .mobile-frame { border-color: #999; }
+      .tag-a, .tag-c, .tag-b, .scheme-badge { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+
+    /* Responsive: stack on narrow screens */
+    @media (max-width: 800px) {
+      .preview-row { flex-direction: column; }
+      .preview-col.mobile { flex: 1 1 auto; max-width: 100%; }
+      .mobile-frame { border: none; border-radius: 0; padding: 0; }
+      .mobile-frame::before { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="page-title">货架号设计方案对比</div>
+<div class="page-subtitle">每个方案同时展示桌面端和移动端(375px)效果，可直接 Ctrl+P 打印对比</div>
+
+<!-- ==================== 旧方案 ==================== -->
+<div class="scheme">
+  <div class="scheme-header">
+    <span class="scheme-badge current">旧</span>
+    <span class="scheme-title">当前方案（对照组）</span>
+  </div>
+  <div class="scheme-desc">
+    浅蓝背景 <code>#e6f4ff</code> + 蓝字 11px，不固定宽度<br>
+    <strong>问题：</strong>打印对比度不够，药名不对齐，移动端标签挤压药名空间
+  </div>
+  <div class="preview-row">
+    <!-- Desktop -->
+    <div class="preview-col">
+      <div class="preview-label"><span class="icon">🖥</span> 桌面端</div>
+      <div class="rx-mock">
+        <h3>处 方 笺</h3><div class="sub">Prescription</div>
+        <div class="info-row"><span>姓名：张三</span><span>年龄：45岁</span><span>日期：2026年03月19日</span></div>
+        <div class="rp">Rp.</div>
+        <ul class="herb-list">
+          <li><span class="herb-name"><span class="tag-current">A3</span>黄芪</span><span class="herb-dosage">30克</span><span class="herb-notes"></span></li>
+          <li><span class="herb-name"><span class="tag-current">B12</span>当归</span><span class="herb-dosage">15克</span><span class="herb-notes">酒炙</span></li>
+          <li><span class="herb-name"><span class="tag-current">5</span>白术</span><span class="herb-dosage">12克</span><span class="herb-notes">炒</span></li>
+          <li><span class="herb-name"><span class="tag-current">C7</span>茯苓</span><span class="herb-dosage">15克</span><span class="herb-notes"></span></li>
+          <li><span class="herb-name"><span class="tag-current empty">--</span>甘草</span><span class="herb-dosage">6克</span><span class="herb-notes"></span></li>
+          <li><span class="herb-name"><span class="tag-current">中药柜2</span>陈皮</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
+          <li><span class="herb-name"><span class="tag-current">D1</span>柴胡</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
+        </ul>
+      </div>
+    </div>
+    <!-- Mobile -->
+    <div class="preview-col mobile">
+      <div class="preview-label"><span class="icon">📱</span> 移动端 375px</div>
+      <div class="mobile-frame">
+        <div class="rx-mock">
+          <h3>处 方 笺</h3><div class="sub">Prescription</div>
+          <div class="info-row"><span>姓名：张三</span><span>年龄：45岁</span><span>日期：2026-03-19</span></div>
+          <div class="rp">Rp.</div>
+          <ul class="herb-list">
+            <li><span class="herb-name"><span class="tag-current">A3</span>黄芪</span><span class="herb-dosage">30克</span><span class="herb-notes"></span></li>
+            <li><span class="herb-name"><span class="tag-current">B12</span>当归</span><span class="herb-dosage">15克</span><span class="herb-notes">酒炙</span></li>
+            <li><span class="herb-name"><span class="tag-current">5</span>白术</span><span class="herb-dosage">12克</span><span class="herb-notes">炒</span></li>
+            <li><span class="herb-name"><span class="tag-current">C7</span>茯苓</span><span class="herb-dosage">15克</span><span class="herb-notes"></span></li>
+            <li><span class="herb-name"><span class="tag-current empty">--</span>甘草</span><span class="herb-dosage">6克</span><span class="herb-notes"></span></li>
+            <li><span class="herb-name"><span class="tag-current">中药柜2</span>陈皮</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
+            <li><span class="herb-name"><span class="tag-current">D1</span>柴胡</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 方案 A ==================== -->
+<div class="scheme">
+  <div class="scheme-header">
+    <span class="scheme-badge">A</span>
+    <span class="scheme-title">深色高对比 + 固定宽度</span>
+  </div>
+  <div class="scheme-desc">
+    <strong>实心蓝底白字</strong>，桌面端 min-width:38px / 移动端 min-width:32px，字号 12px/11px<br>
+    打印对比度最高，固定宽度保证对齐，移动端自动缩小标签尺寸
+  </div>
+  <div class="preview-row">
+    <div class="preview-col">
+      <div class="preview-label"><span class="icon">🖥</span> 桌面端</div>
+      <div class="rx-mock">
+        <h3>处 方 笺</h3><div class="sub">Prescription</div>
+        <div class="info-row"><span>姓名：张三</span><span>年龄：45岁</span><span>日期：2026年03月19日</span></div>
+        <div class="rp">Rp.</div>
+        <ul class="herb-list">
+          <li><span class="herb-name"><span class="tag-a">A3</span>黄芪</span><span class="herb-dosage">30克</span><span class="herb-notes"></span></li>
+          <li><span class="herb-name"><span class="tag-a">B12</span>当归</span><span class="herb-dosage">15克</span><span class="herb-notes">酒炙</span></li>
+          <li><span class="herb-name"><span class="tag-a">5</span>白术</span><span class="herb-dosage">12克</span><span class="herb-notes">炒</span></li>
+          <li><span class="herb-name"><span class="tag-a">C7</span>茯苓</span><span class="herb-dosage">15克</span><span class="herb-notes"></span></li>
+          <li><span class="herb-name"><span class="tag-a empty">--</span>甘草</span><span class="herb-dosage">6克</span><span class="herb-notes"></span></li>
+          <li><span class="herb-name"><span class="tag-a">中药柜2</span>陈皮</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
+          <li><span class="herb-name"><span class="tag-a">D1</span>柴胡</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
+        </ul>
+      </div>
+    </div>
+    <div class="preview-col mobile">
+      <div class="preview-label"><span class="icon">📱</span> 移动端 375px</div>
+      <div class="mobile-frame">
+        <div class="rx-mock">
+          <h3>处 方 笺</h3><div class="sub">Prescription</div>
+          <div class="info-row"><span>姓名：张三</span><span>年龄：45岁</span><span>日期：2026-03-19</span></div>
+          <div class="rp">Rp.</div>
+          <ul class="herb-list">
+            <li><span class="herb-name"><span class="tag-a">A3</span>黄芪</span><span class="herb-dosage">30克</span><span class="herb-notes"></span></li>
+            <li><span class="herb-name"><span class="tag-a">B12</span>当归</span><span class="herb-dosage">15克</span><span class="herb-notes">酒炙</span></li>
+            <li><span class="herb-name"><span class="tag-a">5</span>白术</span><span class="herb-dosage">12克</span><span class="herb-notes">炒</span></li>
+            <li><span class="herb-name"><span class="tag-a">C7</span>茯苓</span><span class="herb-dosage">15克</span><span class="herb-notes"></span></li>
+            <li><span class="herb-name"><span class="tag-a empty">--</span>甘草</span><span class="herb-dosage">6克</span><span class="herb-notes"></span></li>
+            <li><span class="herb-name"><span class="tag-a">中药柜2</span>陈皮</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
+            <li><span class="herb-name"><span class="tag-a">D1</span>柴胡</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 方案 B ==================== -->
+<div class="scheme">
+  <div class="scheme-header">
+    <span class="scheme-badge b">B</span>
+    <span class="scheme-title">独立左列 + 绿色主题</span>
+  </div>
+  <div class="scheme-desc">
+    货架号独立成列：桌面端 46px / 移动端 38px，药名完全不受影响<br>
+    <strong>浅绿底绿字</strong>，对齐最完美。移动端缩小列宽 + 字号自适应
+  </div>
+  <div class="preview-row">
+    <div class="preview-col">
+      <div class="preview-label"><span class="icon">🖥</span> 桌面端</div>
+      <div class="rx-mock">
+        <h3>处 方 笺</h3><div class="sub">Prescription</div>
+        <div class="info-row"><span>姓名：张三</span><span>年龄：45岁</span><span>日期：2026年03月19日</span></div>
+        <div class="rp">Rp.</div>
+        <ul class="herb-list">
+          <li><span class="shelf-col-b"><span class="tag-b">A3</span></span><span class="herb-name">黄芪</span><span class="herb-dosage">30克</span><span class="herb-notes"></span></li>
+          <li><span class="shelf-col-b"><span class="tag-b">B12</span></span><span class="herb-name">当归</span><span class="herb-dosage">15克</span><span class="herb-notes">酒炙</span></li>
+          <li><span class="shelf-col-b"><span class="tag-b">5</span></span><span class="herb-name">白术</span><span class="herb-dosage">12克</span><span class="herb-notes">炒</span></li>
+          <li><span class="shelf-col-b"><span class="tag-b">C7</span></span><span class="herb-name">茯苓</span><span class="herb-dosage">15克</span><span class="herb-notes"></span></li>
+          <li><span class="shelf-col-b"><span class="tag-b empty">--</span></span><span class="herb-name">甘草</span><span class="herb-dosage">6克</span><span class="herb-notes"></span></li>
+          <li><span class="shelf-col-b"><span class="tag-b">柜2</span></span><span class="herb-name">陈皮</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
+          <li><span class="shelf-col-b"><span class="tag-b">D1</span></span><span class="herb-name">柴胡</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
+        </ul>
+      </div>
+    </div>
+    <div class="preview-col mobile">
+      <div class="preview-label"><span class="icon">📱</span> 移动端 375px</div>
+      <div class="mobile-frame">
+        <div class="rx-mock">
+          <h3>处 方 笺</h3><div class="sub">Prescription</div>
+          <div class="info-row"><span>姓名：张三</span><span>年龄：45岁</span><span>日期：2026-03-19</span></div>
+          <div class="rp">Rp.</div>
+          <ul class="herb-list">
+            <li><span class="shelf-col-b"><span class="tag-b">A3</span></span><span class="herb-name">黄芪</span><span class="herb-dosage">30克</span><span class="herb-notes"></span></li>
+            <li><span class="shelf-col-b"><span class="tag-b">B12</span></span><span class="herb-name">当归</span><span class="herb-dosage">15克</span><span class="herb-notes">酒炙</span></li>
+            <li><span class="shelf-col-b"><span class="tag-b">5</span></span><span class="herb-name">白术</span><span class="herb-dosage">12克</span><span class="herb-notes">炒</span></li>
+            <li><span class="shelf-col-b"><span class="tag-b">C7</span></span><span class="herb-name">茯苓</span><span class="herb-dosage">15克</span><span class="herb-notes"></span></li>
+            <li><span class="shelf-col-b"><span class="tag-b empty">--</span></span><span class="herb-name">甘草</span><span class="herb-dosage">6克</span><span class="herb-notes"></span></li>
+            <li><span class="shelf-col-b"><span class="tag-b">柜2</span></span><span class="herb-name">陈皮</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
+            <li><span class="shelf-col-b"><span class="tag-b">D1</span></span><span class="herb-name">柴胡</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 方案 C ==================== -->
+<div class="scheme">
+  <div class="scheme-header">
+    <span class="scheme-badge c">C</span>
+    <span class="scheme-title">胶囊标签 + 黑底白字</span>
+  </div>
+  <div class="scheme-desc">
+    圆角胶囊形，<strong>深灰底白字</strong>，对比度最高。桌面端 min-width:38px / 移动端 32px<br>
+    黑白打印效果最佳，移动端圆角胶囊视觉紧凑不压缩药名
+  </div>
+  <div class="preview-row">
+    <div class="preview-col">
+      <div class="preview-label"><span class="icon">🖥</span> 桌面端</div>
+      <div class="rx-mock">
+        <h3>处 方 笺</h3><div class="sub">Prescription</div>
+        <div class="info-row"><span>姓名：张三</span><span>年龄：45岁</span><span>日期：2026年03月19日</span></div>
+        <div class="rp">Rp.</div>
+        <ul class="herb-list">
+          <li><span class="herb-name"><span class="tag-c">A3</span>黄芪</span><span class="herb-dosage">30克</span><span class="herb-notes"></span></li>
+          <li><span class="herb-name"><span class="tag-c">B12</span>当归</span><span class="herb-dosage">15克</span><span class="herb-notes">酒炙</span></li>
+          <li><span class="herb-name"><span class="tag-c">5</span>白术</span><span class="herb-dosage">12克</span><span class="herb-notes">炒</span></li>
+          <li><span class="herb-name"><span class="tag-c">C7</span>茯苓</span><span class="herb-dosage">15克</span><span class="herb-notes"></span></li>
+          <li><span class="herb-name"><span class="tag-c empty">--</span>甘草</span><span class="herb-dosage">6克</span><span class="herb-notes"></span></li>
+          <li><span class="herb-name"><span class="tag-c">中药柜2</span>陈皮</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
+          <li><span class="herb-name"><span class="tag-c">D1</span>柴胡</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
+        </ul>
+      </div>
+    </div>
+    <div class="preview-col mobile">
+      <div class="preview-label"><span class="icon">📱</span> 移动端 375px</div>
+      <div class="mobile-frame">
+        <div class="rx-mock">
+          <h3>处 方 笺</h3><div class="sub">Prescription</div>
+          <div class="info-row"><span>姓名：张三</span><span>年龄：45岁</span><span>日期：2026-03-19</span></div>
+          <div class="rp">Rp.</div>
+          <ul class="herb-list">
+            <li><span class="herb-name"><span class="tag-c">A3</span>黄芪</span><span class="herb-dosage">30克</span><span class="herb-notes"></span></li>
+            <li><span class="herb-name"><span class="tag-c">B12</span>当归</span><span class="herb-dosage">15克</span><span class="herb-notes">酒炙</span></li>
+            <li><span class="herb-name"><span class="tag-c">5</span>白术</span><span class="herb-dosage">12克</span><span class="herb-notes">炒</span></li>
+            <li><span class="herb-name"><span class="tag-c">C7</span>茯苓</span><span class="herb-dosage">15克</span><span class="herb-notes"></span></li>
+            <li><span class="herb-name"><span class="tag-c empty">--</span>甘草</span><span class="herb-dosage">6克</span><span class="herb-notes"></span></li>
+            <li><span class="herb-name"><span class="tag-c">中药柜2</span>陈皮</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
+            <li><span class="herb-name"><span class="tag-c">D1</span>柴胡</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 方案 D ==================== -->
+<div class="scheme">
+  <div class="scheme-header">
+    <span class="scheme-badge d">D</span>
+    <span class="scheme-title">方括号文本 + 固定宽度列</span>
+  </div>
+  <div class="scheme-desc">
+    无背景色，<strong>橙红色纯文本 <code>[A3]</code></strong> 格式，桌面端 50px / 移动端 40px 固定列<br>
+    最省墨，无色差，移动端列宽自动收窄，药名空间最大
+  </div>
+  <div class="preview-row">
+    <div class="preview-col">
+      <div class="preview-label"><span class="icon">🖥</span> 桌面端</div>
+      <div class="rx-mock">
+        <h3>处 方 笺</h3><div class="sub">Prescription</div>
+        <div class="info-row"><span>姓名：张三</span><span>年龄：45岁</span><span>日期：2026年03月19日</span></div>
+        <div class="rp">Rp.</div>
+        <ul class="herb-list">
+          <li><span class="shelf-col-d">[A3]</span><span class="herb-name">黄芪</span><span class="herb-dosage">30克</span><span class="herb-notes"></span></li>
+          <li><span class="shelf-col-d">[B12]</span><span class="herb-name">当归</span><span class="herb-dosage">15克</span><span class="herb-notes">酒炙</span></li>
+          <li><span class="shelf-col-d">[5]</span><span class="herb-name">白术</span><span class="herb-dosage">12克</span><span class="herb-notes">炒</span></li>
+          <li><span class="shelf-col-d">[C7]</span><span class="herb-name">茯苓</span><span class="herb-dosage">15克</span><span class="herb-notes"></span></li>
+          <li><span class="shelf-col-d empty">[--]</span><span class="herb-name">甘草</span><span class="herb-dosage">6克</span><span class="herb-notes"></span></li>
+          <li><span class="shelf-col-d">[柜2]</span><span class="herb-name">陈皮</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
+          <li><span class="shelf-col-d">[D1]</span><span class="herb-name">柴胡</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
+        </ul>
+      </div>
+    </div>
+    <div class="preview-col mobile">
+      <div class="preview-label"><span class="icon">📱</span> 移动端 375px</div>
+      <div class="mobile-frame">
+        <div class="rx-mock">
+          <h3>处 方 笺</h3><div class="sub">Prescription</div>
+          <div class="info-row"><span>姓名：张三</span><span>年龄：45岁</span><span>日期：2026-03-19</span></div>
+          <div class="rp">Rp.</div>
+          <ul class="herb-list">
+            <li><span class="shelf-col-d">[A3]</span><span class="herb-name">黄芪</span><span class="herb-dosage">30克</span><span class="herb-notes"></span></li>
+            <li><span class="shelf-col-d">[B12]</span><span class="herb-name">当归</span><span class="herb-dosage">15克</span><span class="herb-notes">酒炙</span></li>
+            <li><span class="shelf-col-d">[5]</span><span class="herb-name">白术</span><span class="herb-dosage">12克</span><span class="herb-notes">炒</span></li>
+            <li><span class="shelf-col-d">[C7]</span><span class="herb-name">茯苓</span><span class="herb-dosage">15克</span><span class="herb-notes"></span></li>
+            <li><span class="shelf-col-d empty">[--]</span><span class="herb-name">甘草</span><span class="herb-dosage">6克</span><span class="herb-notes"></span></li>
+            <li><span class="shelf-col-d">[柜2]</span><span class="herb-name">陈皮</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
+            <li><span class="shelf-col-d">[D1]</span><span class="herb-name">柴胡</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 对比总结 ==================== -->
+<div class="scheme">
+  <div class="scheme-header">
+    <span class="scheme-title">方案对比总结</span>
+  </div>
+  <table class="summary-table">
+    <thead>
+      <tr>
+        <th style="text-align:left">方案</th>
+        <th>打印对比度</th>
+        <th>药名对齐</th>
+        <th>省墨</th>
+        <th>移动端适配</th>
+        <th style="text-align:left">适用场景</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="font-weight:600;color:#999;">旧 当前方案</td>
+        <td>★★☆☆☆</td><td>★★☆☆☆</td><td>★★★★☆</td><td>★★☆☆☆</td>
+        <td style="text-align:left;color:#999;">仅屏幕显示</td>
+      </tr>
+      <tr>
+        <td style="font-weight:600;color:#1677ff;">A 深色高对比</td>
+        <td>★★★★★</td><td>★★★★☆</td><td>★★★☆☆</td><td>★★★★☆</td>
+        <td style="text-align:left">彩色打印 + 屏幕兼顾</td>
+      </tr>
+      <tr>
+        <td style="font-weight:600;color:#13c2c2;">B 独立左列</td>
+        <td>★★★★☆</td><td>★★★★★</td><td>★★★★☆</td><td>★★★★★</td>
+        <td style="text-align:left">对齐要求高、移动端优先</td>
+      </tr>
+      <tr>
+        <td style="font-weight:600;color:#722ed1;">C 胶囊黑底</td>
+        <td>★★★★★</td><td>★★★★☆</td><td>★★☆☆☆</td><td>★★★★☆</td>
+        <td style="text-align:left">黑白打印、视觉最醒目</td>
+      </tr>
+      <tr>
+        <td style="font-weight:600;color:#eb2f96;">D 方括号文本</td>
+        <td>★★★★☆</td><td>★★★★★</td><td>★★★★★</td><td>★★★★★</td>
+        <td style="text-align:left">黑白打印机、最省墨</td>
+      </tr>
+    </tbody>
+  </table>
+  <div style="margin-top:16px;padding:12px;background:#f6f8fa;border-radius:8px;font-size:12px;line-height:1.8;color:#666;">
+    <strong style="color:#333;">移动端适配策略：</strong><br>
+    <span style="color:#1677ff;">A</span> — min-width 38→32px，字号 12→11px，间距 6→4px<br>
+    <span style="color:#13c2c2;">B</span> — 列宽 46→38px，标签 min-width 36→30px，字号 12→11px<br>
+    <span style="color:#722ed1;">C</span> — min-width 38→32px，字号 11→10px，padding 收窄<br>
+    <span style="color:#eb2f96;">D</span> — 列宽 50→40px，字号 13→11px，最省空间
+  </div>
+</div>
+
+</body>
+</html>
