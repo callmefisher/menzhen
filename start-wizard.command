@@ -186,9 +186,9 @@ if [[ -f "deploy-wizard.py" ]]; then
     TEMP_FILE="deploy-wizard.py.download"
     DOWNLOAD_OK=false
     if command -v curl &>/dev/null; then
-        curl -fsSL "$WIZARD_URL" -o "$TEMP_FILE" 2>/dev/null && DOWNLOAD_OK=true
+        curl -fSL "$WIZARD_URL" -o "$TEMP_FILE" 2>/dev/null && DOWNLOAD_OK=true
     elif command -v wget &>/dev/null; then
-        wget -q "$WIZARD_URL" -O "$TEMP_FILE" 2>/dev/null && DOWNLOAD_OK=true
+        wget "$WIZARD_URL" -O "$TEMP_FILE" 2>/dev/null && DOWNLOAD_OK=true
     fi
 
     if $DOWNLOAD_OK && [[ -f "$TEMP_FILE" ]]; then
@@ -216,10 +216,12 @@ if [[ -f "deploy-wizard.py" ]]; then
 else
     echo ""
     echo "[*] 未找到向导程序，正在自动下载..."
+    echo "    下载地址: $WIZARD_URL"
+    echo ""
     if command -v curl &>/dev/null; then
-        curl -fsSL "$WIZARD_URL" -o deploy-wizard.py
+        curl -fL --progress-bar "$WIZARD_URL" -o deploy-wizard.py
     elif command -v wget &>/dev/null; then
-        wget -q "$WIZARD_URL" -O deploy-wizard.py
+        wget --show-progress "$WIZARD_URL" -O deploy-wizard.py
     else
         echo "[!] 无法下载：curl 和 wget 均不可用"
         echo "    请手动下载 deploy-wizard.py 放到本脚本同一目录"

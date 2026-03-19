@@ -94,7 +94,8 @@ set "WIZARD_URL=https://raw.githubusercontent.com/callmefisher/menzhen/main/depl
 if exist "%~dp0deploy-wizard.py" (
     echo.
     echo [*] 检测到已有向导程序，正在检查更新...
-    powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%WIZARD_URL%' -OutFile '%~dp0deploy-wizard.py.download' -UseBasicParsing } catch { if (Test-Path '%~dp0deploy-wizard.py.download') { Remove-Item '%~dp0deploy-wizard.py.download' -Force } }"
+    echo     下载地址: %WIZARD_URL%
+    powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%WIZARD_URL%' -OutFile '%~dp0deploy-wizard.py.download' -UseBasicParsing } catch { Write-Output \"[!] 检查更新失败: $_\"; if (Test-Path '%~dp0deploy-wizard.py.download') { Remove-Item '%~dp0deploy-wizard.py.download' -Force } }"
     if exist "%~dp0deploy-wizard.py.download" (
         :: 校验第一行是否包含 python shebang
         powershell -Command "if ((Get-Content '%~dp0deploy-wizard.py.download' -TotalCount 1) -match '^#!/.*python') { exit 0 } else { exit 1 }"
@@ -126,7 +127,9 @@ if exist "%~dp0deploy-wizard.py" (
 ) else (
     echo.
     echo [*] 未找到向导程序，正在自动下载...
-    powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%WIZARD_URL%' -OutFile '%~dp0deploy-wizard.py' -UseBasicParsing } catch { Write-Output '[x] 下载失败，请检查网络连接'; exit 1 }"
+    echo     下载地址: %WIZARD_URL%
+    echo.
+    powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $ProgressPreference='Continue'; Invoke-WebRequest -Uri '%WIZARD_URL%' -OutFile '%~dp0deploy-wizard.py' } catch { Write-Output \"[x] 下载失败: $_\"; Write-Output '    请检查网络连接后重试'; exit 1 }"
     if not exist "%~dp0deploy-wizard.py" (
         echo.
         echo [x] 下载失败，请手动下载 deploy-wizard.py
