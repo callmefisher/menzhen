@@ -725,6 +725,11 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
 
         if self.path == "/api/check-updates":
             # Check if there are new commits on origin/main
+            # 0. Check if git repo exists
+            if not (SCRIPT_DIR / ".git").exists():
+                self._send_json({"has_updates": None, "error": "no_repo",
+                                 "message": "当前目录不是代码仓库，请先在第五步「准备程序」中下载代码"})
+                return
             # 1. git fetch
             rc, _, err = run_command(["git", "fetch", "origin"])
             if rc != 0:
@@ -828,11 +833,31 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
         if self.path == "/api/save-site-id":
             body = self._read_body()
             site_id = body.get("site_id", "")
+            force = body.get("force", False)
             if not site_id or not re.fullmatch(r"[A-Za-z0-9]{6,20}", site_id):
                 self._send_json({"error": "站点编号格式不正确：只能包含英文字母和数字，长度6-20位"}, 400)
                 return
-            # Write SITE_ID to .env
+            # Check if SITE_ID already exists — refuse to overwrite without force
             env_path = SCRIPT_DIR / ".env"
+            existing_id = ""
+            if env_path.exists():
+                for line in env_path.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if line.startswith("SITE_ID=") and not line.startswith("#"):
+                        existing_id = line.split("=", 1)[1].strip()
+                        break
+            if existing_id and existing_id == site_id:
+                # Same value, no write needed
+                self._send_json({"ok": True, "site_id": site_id, "skipped": True})
+                return
+            if existing_id and not force:
+                self._send_json({
+                    "error": "conflict",
+                    "message": f"站点编号已存在（{existing_id}），覆盖将导致数据隔离错误",
+                    "existing_id": existing_id,
+                }, 409)
+                return
+            # Write SITE_ID to .env
             if env_path.exists():
                 content = env_path.read_text(encoding="utf-8")
                 if re.search(r"^SITE_ID=", content, re.MULTILINE):
@@ -1713,22 +1738,100 @@ async function renderStep3(el) {
   const hasExisting = !!existingSiteId;
   const sourceHint = existingSource === 'container' ? '（从运行中的服务容器检测到）' : '（从本地配置文件检测到）';
 
+  // --- 已有编号：只读确认模式 ---
+  if (hasExisting) {
+    state.siteId = existingSiteId;
+    el.innerHTML = `
+      <h2>第三步：确认站点编号</h2>
+      <div style="background:#dbeafe; border:2px solid #3b82f6; padding:20px; border-radius:8px; margin-bottom:16px;">
+        <div style="font-size:16px; font-weight:700; color:#1e40af; margin-bottom:8px;">
+          检测到已有站点编号${esc(sourceHint)}
+        </div>
+        <div style="font-size:28px; font-weight:700; color:#1d4ed8; letter-spacing:2px; margin:12px 0;">
+          ${esc(existingSiteId)}
+        </div>
+        <div style="font-size:14px; color:#1e3a5f;">
+          此编号与您的数据绑定，确认无误后直接进入下一步。
+        </div>
+      </div>
+      <div id="siteIdError" style="display:none; color:var(--danger); font-size:15px; margin-bottom:8px;"></div>
+      <div style="font-size:14px; color:var(--text-secondary); margin-bottom:8px;">
+        <a href="javascript:void(0)" id="unlockBtn" style="color:var(--danger);">我要修改编号（危险操作）</a>
+      </div>
+      <div id="editSection" style="display:none;"></div>
+      <div class="actions">
+        <button class="btn btn-secondary" onclick="state.step=2;render();">&larr; 上一步</button>
+        <button class="btn btn-primary" id="nextBtn">确认，下一步 &rarr;</button>
+      </div>
+    `;
+    el.querySelector('#unlockBtn').onclick = () => {
+      showConfirm(
+        '修改站点编号会导致系统无法匹配已有数据！<br><br>除非您明确知道自己在做什么（如数据迁移），否则请勿修改。<br><br>确定要修改吗？',
+        () => {
+          const editDiv = el.querySelector('#editSection');
+          editDiv.style.display = 'block';
+          editDiv.innerHTML = `
+            <div style="padding:16px; background:#fef2f2; border:2px solid #dc2626; border-radius:8px; margin-bottom:12px;">
+              <div class="input-group" style="margin-bottom:8px;">
+                <input type="text" id="siteIdInput" maxlength="20" placeholder="输入新的站点编号" value="" style="border-color:#dc2626;" />
+                <button class="btn btn-secondary" id="genBtn">自动生成</button>
+              </div>
+              <div style="font-size:13px; color:var(--danger);">仅允许英文字母和数字，长度6-20位</div>
+            </div>
+          `;
+          el.querySelector('#unlockBtn').style.display = 'none';
+          // 替换"下一步"按钮行为为强制保存
+          const nextBtn = el.querySelector('#nextBtn');
+          nextBtn.textContent = '保存新编号，下一步 →';
+          nextBtn.className = 'btn btn-danger';
+          const errorEl = el.querySelector('#siteIdError');
+          const newInput = el.querySelector('#siteIdInput');
+          el.querySelector('#genBtn').onclick = async () => {
+            const d = await api('/api/generate-site-id');
+            newInput.value = d.site_id;
+          };
+          nextBtn.onclick = async () => {
+            const val = newInput.value.trim();
+            if (!val || !/^[A-Za-z0-9]{6,20}$/.test(val)) {
+              errorEl.textContent = '编号格式不正确（英文字母+数字，6-20位）';
+              errorEl.style.display = 'block';
+              return;
+            }
+            try {
+              const resp = await api('/api/save-site-id', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ site_id: val, force: true })
+              });
+              if (resp.error && resp.error !== 'conflict') {
+                errorEl.textContent = resp.error;
+                errorEl.style.display = 'block';
+                return;
+              }
+            } catch(e) {
+              errorEl.textContent = '保存失败，请重试';
+              errorEl.style.display = 'block';
+              return;
+            }
+            state.siteId = val;
+            state.step = 4;
+            render();
+          };
+        }
+      );
+    };
+    // 默认"下一步"：不写 .env，直接跳过
+    el.querySelector('#nextBtn').onclick = () => { state.step = 4; render(); };
+    return;
+  }
+
+  // --- 新安装：正常编辑模式 ---
   el.innerHTML = `
     <h2>第三步：设置站点编号</h2>
     <p class="subtitle">
       每个诊所需要一个唯一的站点编号，用来区分不同诊所的数据。<br>
       如果您已有编号，请在下方输入；如果是新安装，请点击「自动生成」。
     </p>
-    ${hasExisting ? `
-    <div id="siteIdExisting" style="background:#dbeafe; border:2px solid #3b82f6; padding:16px; border-radius:8px; margin-bottom:16px;">
-      <div style="font-size:16px; font-weight:700; color:#1e40af; margin-bottom:6px;">
-        &#128270; 检测到已有站点编号
-      </div>
-      <div style="font-size:15px; color:#1e3a5f; line-height:1.6;">
-        系统中已配置站点编号${esc(sourceHint)}：<strong style="font-size:18px; color:#1d4ed8; letter-spacing:1px;">${esc(existingSiteId)}</strong><br>
-        该编号已自动填入下方输入框。如需更改请直接修改。
-      </div>
-    </div>` : ''}
     <div class="input-group">
       <input type="text" id="siteIdInput" maxlength="20" placeholder="请输入或点击右侧按钮自动生成" value="${esc(state.siteId)}" />
       <button class="btn btn-secondary" id="genBtn">自动生成</button>
@@ -1760,12 +1863,11 @@ async function renderStep3(el) {
   const errorEl = el.querySelector('#siteIdError');
   const hintEl = el.querySelector('#siteIdHint');
 
-  // 实时校验输入
   function validateInput(val) {
     if (!val) {
       errorEl.style.display = 'none';
       hintEl.style.color = 'var(--text-secondary)';
-      return true; // 空值在提交时检查
+      return true;
     }
     if (!/^[A-Za-z0-9]+$/.test(val)) {
       errorEl.textContent = '编号只能包含英文字母（A-Z、a-z）和数字（0-9）';
@@ -1790,9 +1892,7 @@ async function renderStep3(el) {
     return true;
   }
 
-  inputEl.addEventListener('input', () => {
-    validateInput(inputEl.value.trim());
-  });
+  inputEl.addEventListener('input', () => { validateInput(inputEl.value.trim()); });
 
   el.querySelector('#genBtn').onclick = async () => {
     const data = await api('/api/generate-site-id');
@@ -1801,9 +1901,6 @@ async function renderStep3(el) {
     el.querySelector('#siteIdGenerated').style.display = 'block';
     errorEl.style.display = 'none';
     hintEl.style.color = 'var(--text-secondary)';
-    // 隐藏已有编号提示（已重新生成）
-    const existingEl = el.querySelector('#siteIdExisting');
-    if (existingEl) existingEl.style.display = 'none';
   };
 
   el.querySelector('#nextBtn').onclick = async () => {
@@ -1822,7 +1919,7 @@ async function renderStep3(el) {
         body: JSON.stringify({ site_id: val })
       });
       if (resp.error) {
-        errorEl.textContent = resp.error;
+        errorEl.textContent = typeof resp.error === 'string' ? resp.error : '保存失败';
         errorEl.style.display = 'block';
         return;
       }
