@@ -32,7 +32,7 @@
 1. 打开「终端」应用（在 启动台 → 其他 中，或按 `⌘+空格` 搜索"终端"）
 2. 粘贴以下命令并按回车：
    ```bash
-   mkdir -p ~/menzhen && cd ~/menzhen && curl -fLO "https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command" && bash start-wizard.command
+   mkdir -p ~/menzhen && cd ~/menzhen && (curl -fLO "https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command" 2>/dev/null || wget -q "https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command") && bash start-wizard.command
    ```
 3. 如果提示安装开发者工具，点击「安装」等待完成后按回车
 4. 浏览器会自动打开安装向导页面
@@ -53,13 +53,9 @@
 ### Ubuntu / CentOS 桌面版
 
 1. 打开「终端」应用
-2. 进入文件所在目录：
+2. 粘贴以下命令并按回车：
    ```bash
-   cd ~/menzhen    # 替换为你的实际路径
-   ```
-3. 运行脚本：
-   ```bash
-   bash start-wizard.command
+   mkdir -p ~/menzhen && cd ~/menzhen && (curl -fLO "https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command" 2>/dev/null || wget -q "https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command") && bash start-wizard.command
    ```
 4. 如果提示输入密码，输入你的登录密码（用于安装软件）
 5. 浏览器会自动打开安装向导页面
@@ -70,7 +66,7 @@
 2. 创建目录并下载脚本：
    ```bash
    mkdir -p ~/menzhen && cd ~/menzhen
-   curl -fLO "https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command"
+   curl -fLO "https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command" 2>/dev/null || wget -q "https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command"
    bash start-wizard.command
    ```
 3. 脚本启动后，在**本地电脑浏览器**中访问：
