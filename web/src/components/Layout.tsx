@@ -61,6 +61,11 @@ export default function AppLayout() {
   const [alertCount, setAlertCount] = useState(0);
   const [followUpCount, setFollowUpCount] = useState(0);
 
+  // Scroll to top on route change (fixes mobile login landing position)
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [location.pathname]);
+
   useEffect(() => {
     if (!hasPermission('inventory:read')) return;
 
@@ -71,7 +76,8 @@ export default function AppLayout() {
         const drugs: InventoryDrug[] = body.data?.list || [];
         const config = JSON.parse(localStorage.getItem('inventory-alert-config') || '{}');
 
-        const muted: number[] = JSON.parse(localStorage.getItem('inventory-alert-muted') || '[]');
+        const rawMuted = JSON.parse(localStorage.getItem('inventory-alert-muted') || '[]');
+        const muted: number[] = Array.isArray(rawMuted) ? rawMuted : [];
         const count = drugs.filter((d) => {
           if (muted.includes(d.id)) return false;
           const threshold = d.alert_threshold ?? (d.category === 'herb' ? (config.herbThreshold ?? 500) : (config.patentThreshold ?? 10));
@@ -82,24 +88,43 @@ export default function AppLayout() {
       } catch { /* ignore */ }
     };
 
+    // Mount: clear muted so login always shows fresh alerts
+    localStorage.removeItem('inventory-alert-muted');
     checkAlerts();
     let lastCheck = Date.now();
-    const interval = JSON.parse(localStorage.getItem('inventory-alert-config') || '{}').scanInterval ?? 30;
+    const alertConfig = JSON.parse(localStorage.getItem('inventory-alert-config') || '{}');
+    const interval = alertConfig.scanInterval ?? 30;
     const intervalMs = interval * 60 * 1000;
-    let timer = setInterval(() => { checkAlerts(); lastCheck = Date.now(); }, intervalMs);
+    let timer = setInterval(() => {
+      localStorage.removeItem('inventory-alert-muted');
+      checkAlerts();
+      lastCheck = Date.now();
+    }, intervalMs);
 
     // Re-check when page becomes visible after being hidden, then reset interval
     const onVisibility = () => {
       if (document.visibilityState === 'visible' && Date.now() - lastCheck >= intervalMs) {
+        localStorage.removeItem('inventory-alert-muted');
         checkAlerts();
         lastCheck = Date.now();
         clearInterval(timer);
-        timer = setInterval(() => { checkAlerts(); lastCheck = Date.now(); }, intervalMs);
+        timer = setInterval(() => {
+          localStorage.removeItem('inventory-alert-muted');
+          checkAlerts();
+          lastCheck = Date.now();
+        }, intervalMs);
       }
     };
     document.addEventListener('visibilitychange', onVisibility);
 
-    const onAlertChanged = () => checkAlerts();
+    const onAlertChanged = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail && typeof detail.count === 'number') {
+        setAlertCount(detail.count);
+      } else {
+        checkAlerts();
+      }
+    };
     const onDataChanged = () => {
       localStorage.removeItem('inventory-alert-muted');
       checkAlerts();
@@ -479,7 +504,7 @@ export default function AppLayout() {
           {siderContent}
         </Sider>
       )}
-      <AntLayout>
+      <AntLayout style={isMobile ? { paddingTop: 64 } : undefined}>
         <Header
           style={{
             padding: '0 16px',
@@ -488,6 +513,7 @@ export default function AppLayout() {
             alignItems: 'center',
             justifyContent: 'space-between',
             borderBottom: `1px solid ${themeConfig.headerBorder}`,
+            ...(isMobile ? { position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100, height: 64 } : {}),
           }}
         >
           <Button

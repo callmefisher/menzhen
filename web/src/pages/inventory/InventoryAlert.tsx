@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, Table, Button, Space, InputNumber, Tag, message } from 'antd';
-import { ReloadOutlined, BellOutlined } from '@ant-design/icons';
+import { ReloadOutlined, BellOutlined, ClearOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { listInventoryDrugs } from '../../api/inventory';
 import type { InventoryDrug } from '../../api/inventory';
@@ -46,7 +46,7 @@ export default function InventoryAlert() {
   const lastScanRef = useRef<number>(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const runScan = useCallback(async () => {
+  const runScan = useCallback(async (): Promise<number> => {
     setLoading(true);
     try {
       const res = await listInventoryDrugs({ size: 9999 });
@@ -54,11 +54,12 @@ export default function InventoryAlert() {
       const drugs: InventoryDrug[] = body.data?.list || [];
 
       const currentConfig = loadConfig();
-      const muted: number[] = JSON.parse(localStorage.getItem('inventory-alert-muted') || '[]');
+      const rawMuted = JSON.parse(localStorage.getItem('inventory-alert-muted') || '[]');
+      const muted: number[] = Array.isArray(rawMuted) ? rawMuted : [];
+      if (!Array.isArray(rawMuted)) localStorage.removeItem('inventory-alert-muted');
+
       const rows: AlertRow[] = [];
       for (const drug of drugs) {
-        if (muted.includes(drug.id)) continue;
-
         const threshold =
           drug.alert_threshold != null
             ? drug.alert_threshold
@@ -67,6 +68,7 @@ export default function InventoryAlert() {
             : currentConfig.patentThreshold;
 
         if (drug.stock > threshold) continue;
+        if (muted.includes(drug.id)) continue;
 
         rows.push({
           ...drug,
@@ -77,8 +79,9 @@ export default function InventoryAlert() {
       setAlertRows(rows);
       setLastScanTime(new Date());
       lastScanRef.current = Date.now();
+      return rows.length;
     } catch {
-      // handled by interceptor
+      return -1;
     } finally {
       setLoading(false);
     }
@@ -88,8 +91,8 @@ export default function InventoryAlert() {
   useEffect(() => {
     let cancelled = false;
     localStorage.removeItem('inventory-alert-muted');
-    runScan().then(() => {
-      if (!cancelled) window.dispatchEvent(new Event('inventory-alert-changed'));
+    runScan().then((count) => {
+      if (!cancelled && count >= 0) window.dispatchEvent(new CustomEvent('inventory-alert-changed', { detail: { count } }));
     });
     return () => { cancelled = true; };
   }, [runScan, config]);
@@ -98,8 +101,8 @@ export default function InventoryAlert() {
   useEffect(() => {
     const onDataChanged = () => {
       localStorage.removeItem('inventory-alert-muted');
-      runScan().then(() => {
-        window.dispatchEvent(new Event('inventory-alert-changed'));
+      runScan().then((count) => {
+        if (count >= 0) window.dispatchEvent(new CustomEvent('inventory-alert-changed', { detail: { count } }));
       });
     };
     window.addEventListener('inventory-data-changed', onDataChanged);
@@ -112,8 +115,9 @@ export default function InventoryAlert() {
 
     const scheduleNext = () => {
       timerRef.current = setTimeout(async () => {
-        await runScan();
-        window.dispatchEvent(new Event('inventory-alert-changed'));
+        localStorage.removeItem('inventory-alert-muted');
+        const count = await runScan();
+        if (count >= 0) window.dispatchEvent(new CustomEvent('inventory-alert-changed', { detail: { count } }));
         scheduleNext();
       }, intervalMs);
     };
@@ -125,8 +129,9 @@ export default function InventoryAlert() {
         const elapsed = Date.now() - lastScanRef.current;
         if (elapsed >= intervalMs) {
           if (timerRef.current) clearTimeout(timerRef.current);
-          runScan().then(() => {
-            window.dispatchEvent(new Event('inventory-alert-changed'));
+          localStorage.removeItem('inventory-alert-muted');
+          runScan().then((count) => {
+            if (count >= 0) window.dispatchEvent(new CustomEvent('inventory-alert-changed', { detail: { count } }));
             scheduleNext();
           });
         }
@@ -152,18 +157,31 @@ export default function InventoryAlert() {
   };
 
   const handleDismiss = (drugId: number) => {
-    const muted = JSON.parse(localStorage.getItem('inventory-alert-muted') || '[]');
+    const rawMuted = JSON.parse(localStorage.getItem('inventory-alert-muted') || '[]');
+    const muted: number[] = Array.isArray(rawMuted) ? rawMuted : [];
     muted.push(drugId);
     localStorage.setItem('inventory-alert-muted', JSON.stringify(muted));
-    setAlertRows((prev) => prev.filter((r) => r.id !== drugId));
-    window.dispatchEvent(new Event('inventory-alert-changed'));
+    const next = alertRows.filter((r) => r.id !== drugId);
+    setAlertRows(next);
+    window.dispatchEvent(new CustomEvent('inventory-alert-changed', { detail: { count: next.length } }));
     message.success('已忽略该告警');
+  };
+
+  const handleDismissAll = () => {
+    if (alertRows.length === 0) return;
+    const rawMuted = JSON.parse(localStorage.getItem('inventory-alert-muted') || '[]');
+    const existing: number[] = Array.isArray(rawMuted) ? rawMuted : [];
+    const muted = [...new Set([...existing, ...alertRows.map((r) => r.id)])];
+    localStorage.setItem('inventory-alert-muted', JSON.stringify(muted));
+    setAlertRows([]);
+    window.dispatchEvent(new CustomEvent('inventory-alert-changed', { detail: { count: 0 } }));
+    message.success(`已忽略全部 ${muted.length} 条告警`);
   };
 
   const handleManualScan = async () => {
     localStorage.removeItem('inventory-alert-muted');
-    await runScan();
-    window.dispatchEvent(new Event('inventory-alert-changed'));
+    const count = await runScan();
+    if (count >= 0) window.dispatchEvent(new CustomEvent('inventory-alert-changed', { detail: { count } }));
   };
 
   const columns: ColumnsType<AlertRow> = [
@@ -386,6 +404,17 @@ export default function InventoryAlert() {
               <span style={{ fontSize: 12, color: '#999' }}>
                 {lastScanTime.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
               </span>
+            )}
+            {alertRows.length > 0 && (
+              <Button
+                icon={<ClearOutlined />}
+                onClick={handleDismissAll}
+                type="default"
+                size={isMobile ? 'small' : 'middle'}
+                danger
+              >
+                {isMobile ? '忽略全部' : '忽略全部告警'}
+              </Button>
             )}
             <Button
               icon={<ReloadOutlined />}

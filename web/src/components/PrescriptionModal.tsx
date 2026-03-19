@@ -294,6 +294,8 @@ export default function PrescriptionModal({
   const duplicateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const patentSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Block submit when onBlur just found a duplicate (blur fires before click)
+  const validationBlockRef = useRef(false);
 
   // Cleanup all timers on unmount
   useEffect(() => {
@@ -305,8 +307,7 @@ export default function PrescriptionModal({
     };
   }, []);
 
-  const flashDuplicateRow = (tag: string, name: string) => {
-    message.warning(`「${name}」已存在，已定位到该药物`);
+  const highlightRow = (tag: string) => {
     setDuplicateHighlightTag(tag);
     if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
     scrollTimerRef.current = setTimeout(() => {
@@ -315,6 +316,29 @@ export default function PrescriptionModal({
     }, 50);
     if (duplicateTimerRef.current) clearTimeout(duplicateTimerRef.current);
     duplicateTimerRef.current = setTimeout(() => setDuplicateHighlightTag(null), 3000);
+  };
+
+  const flashDuplicateRow = (tag: string, name: string) => {
+    message.warning({ content: `「${name}」已存在，已定位到该药物`, style: { marginTop: isMobile ? '40vh' : undefined } });
+    highlightRow(tag);
+  };
+
+  const checkHerbDuplicate = (key: number, name: string) => {
+    if (!name.trim()) return;
+    const dup = herbRows.find((r) => r.key !== key && r.herb_name.trim() === name.trim());
+    if (!dup) return;
+    setHerbRows((prev) => prev.map((r) => (r.key === key ? { ...r, herb_name: '' } : r)));
+    validationBlockRef.current = true;
+    flashDuplicateRow(`herb-${dup.key}`, name.trim());
+  };
+
+  const checkPatentDuplicate = (key: number, name: string) => {
+    if (!name.trim()) return;
+    const dup = patentRows.find((r) => r.key !== key && r.name.trim() === name.trim());
+    if (!dup) return;
+    setPatentRows((prev) => prev.map((r) => (r.key === key ? { ...r, name: '' } : r)));
+    validationBlockRef.current = true;
+    flashDuplicateRow(`patent-${dup.key}`, name.trim());
   };
 
   const addHerbRow = () => {
@@ -329,19 +353,8 @@ export default function PrescriptionModal({
   };
 
   const updateHerbRow = (key: number, field: keyof HerbRow, value: string) => {
-    if (field === 'herb_name' && value.trim()) {
-      // Real-time duplicate check
-      setHerbRows((prev) => {
-        const existing = prev.find((r) => r.key !== key && r.herb_name.trim() === value.trim());
-        if (existing) {
-          flashDuplicateRow(`herb-${existing.key}`, value.trim());
-          return prev.map((r) => (r.key === key ? { ...r, herb_name: '' } : r));
-        }
-        return prev.map((r) => (r.key === key ? { ...r, [field]: value } : r));
-      });
-    } else {
-      setHerbRows((prev) => prev.map((r) => (r.key === key ? { ...r, [field]: value } : r)));
-    }
+    if (field === 'herb_name') validationBlockRef.current = false;
+    setHerbRows((prev) => prev.map((r) => (r.key === key ? { ...r, [field]: value } : r)));
   };
 
   // --- Patent medicine handlers ---
@@ -357,18 +370,8 @@ export default function PrescriptionModal({
   };
 
   const updatePatentRow = (key: number, field: keyof PatentRow, value: string | number | null) => {
-    if (field === 'name' && typeof value === 'string' && value.trim()) {
-      setPatentRows((prev) => {
-        const existing = prev.find((r) => r.key !== key && r.name.trim() === (value as string).trim());
-        if (existing) {
-          flashDuplicateRow(`patent-${existing.key}`, (value as string).trim());
-          return prev.map((r) => (r.key === key ? { ...r, name: '' } : r));
-        }
-        return prev.map((r) => (r.key === key ? { ...r, [field]: value } : r));
-      });
-    } else {
-      setPatentRows((prev) => prev.map((r) => (r.key === key ? { ...r, [field]: value } : r)));
-    }
+    if (field === 'name') validationBlockRef.current = false;
+    setPatentRows((prev) => prev.map((r) => (r.key === key ? { ...r, [field]: value } : r)));
   };
 
   const handlePatentNameSearch = (key: number, name: string) => {
@@ -426,42 +429,75 @@ export default function PrescriptionModal({
   const handlePatentSelect = (key: number, value: string) => {
     const opt = patentSearchOptions.find((o) => o.value === value);
     const inv = inventoryMapRef.current[value];
-    setPatentRows((prev) => {
-      const existing = prev.find((r) => r.key !== key && r.name.trim() === value.trim());
-      if (existing) {
-        flashDuplicateRow(`patent-${existing.key}`, value.trim());
-        return prev.map((r) => r.key === key ? { ...r, name: '' } : r);
-      }
-      return prev.map((r) => r.key === key ? {
+    const existing = patentRows.find((r) => r.key !== key && r.name.trim() === value.trim());
+    if (existing) {
+      setPatentRows((prev) => prev.map((r) => r.key === key ? { ...r, name: '' } : r));
+      flashDuplicateRow(`patent-${existing.key}`, value.trim());
+    } else {
+      setPatentRows((prev) => prev.map((r) => r.key === key ? {
         ...r,
         name: value,
         effects: opt?.effects || '',
         indications: opt?.indications || '',
         stock: inv ? inv.stock : null,
-      } : r);
-    });
+      } : r));
+    }
     setPatentSearchOptions([]);
   };
 
   const handleSubmit = async () => {
+    // Block if onBlur/onSelect just detected a duplicate (blur fires before click)
+    const wasBlocked = validationBlockRef.current;
+    validationBlockRef.current = false;
+    if (wasBlocked) return;
     try {
       const values = await form.validateFields();
       const validHerbs = herbRows.filter((r) => r.herb_name.trim());
       const validPatents = patentRows.filter((r) => r.name.trim());
 
-      // Final duplicate check before submit
+      // Duplicate check first (more severe issue)
       const herbNames = validHerbs.map((r) => r.herb_name.trim());
       const herbDup = herbNames.find((n, i) => herbNames.indexOf(n) !== i);
       if (herbDup) {
-        const first = herbRows.find((r) => r.herb_name.trim() === herbDup);
+        const first = validHerbs.find((r) => r.herb_name.trim() === herbDup);
+        setHerbRows((prev) => {
+          let kept = false;
+          return prev.map((r) => {
+            if (r.herb_name.trim() !== herbDup) return r;
+            if (!kept) { kept = true; return r; }
+            return { ...r, herb_name: '' };
+          });
+        });
         if (first) flashDuplicateRow(`herb-${first.key}`, herbDup);
         return;
       }
       const patentNames = validPatents.map((r) => r.name.trim());
       const patentDup = patentNames.find((n, i) => patentNames.indexOf(n) !== i);
       if (patentDup) {
-        const first = patentRows.find((r) => r.name.trim() === patentDup);
+        const first = validPatents.find((r) => r.name.trim() === patentDup);
+        setPatentRows((prev) => {
+          let kept = false;
+          return prev.map((r) => {
+            if (r.name.trim() !== patentDup) return r;
+            if (!kept) { kept = true; return r; }
+            return { ...r, name: '' };
+          });
+        });
         if (first) flashDuplicateRow(`patent-${first.key}`, patentDup);
+        return;
+      }
+
+      // Zero dosage check
+      const zeroDosageHerb = validHerbs.find((r) => !r.dosage.trim() || Number(r.dosage) <= 0);
+      if (zeroDosageHerb) {
+        message.warning({ content: `「${zeroDosageHerb.herb_name}」用量为0，请填写用量`, style: { marginTop: isMobile ? '40vh' : undefined } });
+        highlightRow(`herb-${zeroDosageHerb.key}`);
+        return;
+      }
+      const zeroQtyPatent = validPatents.find((r) => !r.needed_quantity.trim() || Number(r.needed_quantity) <= 0);
+      if (zeroQtyPatent) {
+        message.warning({ content: `「${zeroQtyPatent.name}」数量为0，请填写数量`, style: { marginTop: isMobile ? '40vh' : undefined } });
+        highlightRow(`patent-${zeroQtyPatent.key}`);
         return;
       }
 
@@ -547,7 +583,7 @@ export default function PrescriptionModal({
         return (
           <div>
             <Space>
-              <Input value={record.herb_name} onChange={(e) => updateHerbRow(record.key, 'herb_name', e.target.value)} placeholder="药名" />
+              <Input value={record.herb_name} onChange={(e) => updateHerbRow(record.key, 'herb_name', e.target.value)} onBlur={(e) => checkHerbDuplicate(record.key, e.target.value)} placeholder="药名" />
               <Button type="text" size="small" icon={<InfoCircleOutlined />}
                 onClick={() => { if (record.herb_name.trim()) { setHerbDetailName(record.herb_name.trim()); setHerbDetailOpen(true); } }}
                 disabled={!record.herb_name.trim()} />
@@ -620,6 +656,7 @@ export default function PrescriptionModal({
               onSearch={(val) => handlePatentNameSearch(record.key, val)}
               onSelect={(val) => handlePatentSelect(record.key, val)}
               onChange={(val) => updatePatentRow(record.key, 'name', val)}
+              onBlur={(e) => checkPatentDuplicate(record.key, (e.target as HTMLInputElement).value)}
               placeholder="搜索中成药名称"
               style={{ width: '100%' }}
               optionRender={(option) => (
@@ -723,6 +760,7 @@ export default function PrescriptionModal({
             onSearch={(val) => handlePatentNameSearch(row.key, val)}
             onSelect={(val) => handlePatentSelect(row.key, val)}
             onChange={(val) => updatePatentRow(row.key, 'name', val)}
+            onBlur={(e) => checkPatentDuplicate(row.key, (e.target as HTMLInputElement).value)}
             placeholder="搜索中成药名称"
             style={{ flex: 1 }}
             optionRender={(option) => (
@@ -906,6 +944,7 @@ export default function PrescriptionModal({
                       <Input
                         value={row.herb_name}
                         onChange={(e) => updateHerbRow(row.key, 'herb_name', e.target.value)}
+                        onBlur={(e) => checkHerbDuplicate(row.key, e.target.value)}
                         placeholder="药名"
                         style={{ flex: 1 }}
                       />
@@ -939,6 +978,7 @@ export default function PrescriptionModal({
               <Button type="dashed" block icon={<PlusOutlined />} onClick={addHerbRow} style={{ marginTop: 4 }}>添加药物</Button>
             </div>
           ) : (
+            <>
             <Table
               dataSource={herbRows}
               columns={herbColumns}
@@ -949,6 +989,8 @@ export default function PrescriptionModal({
               rowClassName={(record: HerbRow) => duplicateHighlightTag === `herb-${record.key}` ? 'duplicate-highlight' : ''}
               onRow={(record: HerbRow) => ({ 'data-dup-tag': `herb-${record.key}` } as React.HTMLAttributes<HTMLElement>)}
             />
+            <Button type="dashed" block icon={<PlusOutlined />} onClick={addHerbRow} style={{ marginTop: 8 }}>添加药物</Button>
+            </>
           )}
         </div>
 
@@ -985,6 +1027,7 @@ export default function PrescriptionModal({
               <Button type="dashed" block icon={<PlusOutlined />} onClick={addPatentRow} style={{ marginTop: 4 }}>添加中成药</Button>
             </div>
           ) : (
+            <>
             <Table
               dataSource={patentRows}
               columns={patentColumns}
@@ -995,6 +1038,8 @@ export default function PrescriptionModal({
               rowClassName={(record: PatentRow) => duplicateHighlightTag === `patent-${record.key}` ? 'duplicate-highlight' : ''}
               onRow={(record: PatentRow) => ({ 'data-dup-tag': `patent-${record.key}` } as React.HTMLAttributes<HTMLElement>)}
             />
+            <Button type="dashed" block icon={<PlusOutlined />} onClick={addPatentRow} style={{ marginTop: 8 }}>添加中成药</Button>
+            </>
           )}
         </div>
 

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   Card,
   Table,
@@ -125,8 +125,10 @@ export default function DrugList() {
 
   // Auto-search with debounce when status filter changes (clear = reset query)
   const [statusInited, setStatusInited] = useState(false);
+  const statusHandledRef = useRef(false);
   useEffect(() => {
     if (!statusInited) { setStatusInited(true); return; }
+    if (statusHandledRef.current) { statusHandledRef.current = false; return; }
     const timer = setTimeout(() => {
       setParams((prev) => ({
         ...prev,
@@ -665,21 +667,43 @@ export default function DrugList() {
   );
 
   // --- Mobile stats ---
+  const handleStatsClick = (status: string) => {
+    const newStatus = searchStatus === status ? '' : status;
+    statusHandledRef.current = true;
+    setSearchStatus(newStatus);
+    // Bypass debounce — apply filter immediately on click
+    setParams((prev) => ({
+      ...prev,
+      page: 1,
+      name: newStatus === '' ? '' : searchName,
+      category: newStatus === '' ? '' : searchCategory,
+      status: newStatus,
+    }));
+    if (newStatus === '') {
+      setSearchName('');
+      setSearchCategory('');
+    }
+  };
+
   const renderMobileStats = () => (
     <div style={{ display: 'flex', gap: 8, marginBottom: 12, textAlign: 'center' }}>
       {[
-        { label: '总数', value: stats.total, color: undefined },
-        { label: '充足', value: stats.sufficient, color: '#52c41a' },
-        { label: '偏低', value: stats.low, color: '#fa8c16' },
-        { label: '不足', value: stats.insufficient, color: '#ff4d4f' },
+        { label: '总数', value: stats.total, color: undefined, status: '' },
+        { label: '充足', value: stats.sufficient, color: '#52c41a', status: 'sufficient' },
+        { label: '偏低', value: stats.low, color: '#fa8c16', status: 'low' },
+        { label: '不足', value: stats.insufficient, color: '#ff4d4f', status: 'insufficient' },
       ].map((item) => (
         <div
           key={item.label}
+          onClick={() => handleStatsClick(item.status)}
           style={{
             flex: 1,
-            background: '#fafafa',
+            background: searchStatus === item.status ? (item.color ? `${item.color}15` : '#e6f7ff') : '#fafafa',
             borderRadius: 6,
             padding: '6px 0',
+            cursor: 'pointer',
+            border: searchStatus === item.status ? `1px solid ${item.color || '#1890ff'}` : '1px solid transparent',
+            transition: 'all 0.2s',
           }}
         >
           <div style={{ fontSize: 18, fontWeight: 600, color: item.color }}>{item.value}</div>
@@ -698,26 +722,33 @@ export default function DrugList() {
         {/* Statistics */}
         {isMobile ? renderMobileStats() : (
           <Row gutter={16} style={{ marginBottom: 16 }}>
-            <Col xs={12} sm={6}>
-              <Card size="small" style={{ textAlign: 'center' }}>
-                <Statistic title="药材总数" value={stats.total} />
-              </Card>
-            </Col>
-            <Col xs={12} sm={6}>
-              <Card size="small" style={{ textAlign: 'center' }}>
-                <Statistic title={<span style={{ color: '#52c41a' }}>库存充足</span>} value={stats.sufficient} valueStyle={{ color: '#52c41a' }} />
-              </Card>
-            </Col>
-            <Col xs={12} sm={6}>
-              <Card size="small" style={{ textAlign: 'center' }}>
-                <Statistic title={<span style={{ color: '#fa8c16' }}>库存偏低</span>} value={stats.low} valueStyle={{ color: '#fa8c16' }} />
-              </Card>
-            </Col>
-            <Col xs={12} sm={6}>
-              <Card size="small" style={{ textAlign: 'center' }}>
-                <Statistic title={<span style={{ color: '#ff4d4f' }}>库存不足</span>} value={stats.insufficient} valueStyle={{ color: '#ff4d4f' }} />
-              </Card>
-            </Col>
+            {[
+              { title: '药材总数', value: stats.total, color: undefined, status: '' },
+              { title: '库存充足', value: stats.sufficient, color: '#52c41a', status: 'sufficient' },
+              { title: '库存偏低', value: stats.low, color: '#fa8c16', status: 'low' },
+              { title: '库存不足', value: stats.insufficient, color: '#ff4d4f', status: 'insufficient' },
+            ].map((item) => (
+              <Col xs={12} sm={6} key={item.status}>
+                <Card
+                  size="small"
+                  hoverable
+                  onClick={() => handleStatsClick(item.status)}
+                  style={{
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                    borderColor: searchStatus === item.status ? (item.color || '#1890ff') : undefined,
+                    background: searchStatus === item.status ? (item.color ? `${item.color}08` : '#e6f7ff') : undefined,
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  <Statistic
+                    title={item.color ? <span style={{ color: item.color }}>{item.title}</span> : item.title}
+                    value={item.value}
+                    valueStyle={item.color ? { color: item.color } : undefined}
+                  />
+                </Card>
+              </Col>
+            ))}
           </Row>
         )}
 

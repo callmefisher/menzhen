@@ -70,11 +70,14 @@ export default function PrescriptionPrint({
             .prescription-print .clinical-info { font-size: 14px; margin-bottom: 4px; }
             .prescription-print .clinical-info .label { font-weight: bold; }
             .prescription-print .rp { font-size: 18px; font-weight: bold; margin: 8px 0; }
-            .prescription-print .herb-columns { display: flex; gap: 24px; }
-            .prescription-print .herb-column { flex: 1; }
+            .prescription-print .herb-columns { display: flex; gap: 24px; flex-wrap: wrap; }
+            .prescription-print .herb-column { flex: 1; min-width: 300px; }
             .prescription-print .herb-list { list-style: none; padding: 0; margin: 0; }
-            .prescription-print .herb-list li { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px dashed #ddd; font-size: 14px; }
-            .prescription-print .herb-name { flex: 1; }
+            .prescription-print .herb-list li { display: flex; align-items: center; padding: 5px 0; border-bottom: 1px dashed #ddd; font-size: 14px; }
+            .prescription-print .shelf-col { width: 46px; flex-shrink: 0; text-align: center; margin-right: 8px; }
+            .shelf-tag { display: inline-block; background: #f6ffed; color: #389e0d; border: 1px solid #b7eb8f; border-radius: 3px; padding: 1px 4px; font-size: 12px; font-weight: bold; font-family: monospace; min-width: 36px; text-align: center; }
+            .shelf-tag.empty { background: #f5f5f5; color: #ccc; border-color: #e0e0e0; }
+            .prescription-print .herb-name { flex: 1; white-space: nowrap; }
             .prescription-print .herb-dosage { width: 60px; text-align: right; }
             .prescription-print .herb-notes { width: 80px; text-align: right; color: #888; }
             .prescription-print .footer { margin-top: 16px; padding-top: 12px; border-top: 1px solid #ddd; font-size: 14px; }
@@ -158,7 +161,12 @@ export default function PrescriptionPrint({
                       <ul className="herb-list">
                         {column.map((item) => (
                           <li key={item.id}>
-                            <span className="herb-name">{shelfMap && <ShelfTag shelfNo={shelfMap[item.herb_name]} />}{item.herb_name}</span>
+                            {shelfMap && (
+                              <span className="shelf-col">
+                                <ShelfTag shelfNo={shelfMap[item.herb_name]} />
+                              </span>
+                            )}
+                            <span className="herb-name">{item.herb_name}</span>
                             <span className="herb-dosage">{item.dosage}克</span>
                             <span className="herb-notes">{item.notes || ''}</span>
                           </li>
@@ -181,7 +189,12 @@ export default function PrescriptionPrint({
                 <ul className="herb-list">
                   {patents.map((item) => (
                     <li key={item.id}>
-                      <span className="herb-name">{shelfMap && <ShelfTag shelfNo={shelfMap[item.herb_name]} />}{item.herb_name}</span>
+                      {shelfMap && (
+                        <span className="shelf-col">
+                          <ShelfTag shelfNo={shelfMap[item.herb_name]} />
+                        </span>
+                      )}
+                      <span className="herb-name">{item.herb_name}</span>
                       <span className="herb-dosage">{item.dosage}盒</span>
                       <span className="herb-notes">{item.notes || ''}</span>
                     </li>

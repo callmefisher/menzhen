@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>收费页 - 库存不足提示 设计预览</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; padding: 20px; }
+  .container { display: flex; gap: 24px; flex-wrap: wrap; justify-content: center; }
+  .preview-box { background: #fff; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); overflow: hidden; }
+  .desktop-box { width: 620px; }
+  .mobile-box { width: 375px; }
+  .label { text-align: center; padding: 8px; font-size: 13px; color: #999; background: #fafafa; }
+
+  /* Drawer header */
+  .drawer-header { padding: 12px 16px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+  .drawer-header .title { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .drawer-header .title .icon { color: #faad14; font-size: 18px; }
+  .print-btn { background: linear-gradient(135deg, #faad14, #d48806); color: #fff; border: none; padding: 4px 12px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; }
+
+  /* Stock alert banner */
+  .stock-alert { margin: 12px 16px 0; padding: 10px 14px; background: #fff2f0; border: 1px solid #ffccc7; border-radius: 8px; }
+  .stock-alert .alert-title { font-size: 14px; font-weight: 600; color: #cf1322; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+  .stock-alert .alert-title .warn-icon { font-size: 16px; }
+  .stock-alert .alert-item { font-size: 13px; color: #a8071a; padding: 2px 0; display: flex; align-items: center; gap: 4px; }
+  .stock-alert .alert-item .dot { width: 4px; height: 4px; border-radius: 50%; background: #ff4d4f; flex-shrink: 0; }
+  .stock-alert .alert-item .need { color: #cf1322; font-weight: 500; }
+  .stock-alert .alert-item .have { color: #8c8c8c; }
+
+  /* Content area */
+  .content { padding: 16px; }
+
+  /* Section title */
+  .section-title { font-weight: 600; font-size: 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+  .section-title .pill { background: #e6f4ff; color: #1677ff; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 500; }
+
+  /* Desktop items grid */
+  .desktop-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 12px; margin-bottom: 12px; }
+  .desktop-item { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; border-bottom: 1px dashed #eee; font-size: 13px; }
+  .desktop-item .left { display: flex; align-items: center; gap: 4px; }
+  .shelf-tag { font-size: 11px; padding: 0 4px; background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 4px; color: #389e0d; font-family: monospace; min-width: 36px; text-align: center; }
+  .shelf-tag.empty { color: #ccc; background: #fafafa; border-color: #d9d9d9; }
+  .no-stock-tag { font-size: 11px; padding: 0 4px; background: #fff7e6; border: 1px solid #ffd591; border-radius: 4px; color: #d46b08; }
+  .insufficient-tag { font-size: 11px; padding: 0 6px; background: #fff1f0; border: 1px solid #ffa39e; border-radius: 4px; color: #cf1322; font-weight: 500; white-space: nowrap; }
+  .price { color: #cf1322; font-weight: 500; white-space: nowrap; margin-left: 4px; }
+  .dosage { color: #666; white-space: nowrap; }
+
+  /* Mobile cards */
+  .mobile-card { background: #fff; border: 1px solid #f0f0f0; border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; }
+  .mobile-card.insufficient { border-color: #ffa39e; background: #fff8f7; }
+  .mobile-card .top { display: flex; justify-content: space-between; align-items: center; }
+  .mobile-card .name { font-weight: 500; font-size: 15px; display: flex; align-items: center; gap: 4px; }
+  .mobile-card .cost { font-size: 16px; font-weight: 600; color: #cf1322; }
+  .mobile-card .bottom { display: flex; justify-content: space-between; margin-top: 4px; color: #666; font-size: 14px; }
+  .mobile-card .stock-warn { margin-top: 4px; font-size: 12px; color: #cf1322; display: flex; align-items: center; gap: 4px; }
+
+  /* Summary */
+  .summary { margin-top: 16px; padding: 12px 16px; background: linear-gradient(135deg, #fff7e6, #fff1cc); border-radius: 10px; border: 1px solid #ffe58f; }
+  .summary-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; font-size: 14px; color: #666; }
+  .summary-row.total { padding-top: 10px; border-top: 1px solid #d9d9d9; font-size: 18px; font-weight: 700; color: #cf1322; margin-bottom: 0; }
+  .summary-row .val { font-weight: 600; color: #333; }
+
+  /* Footer */
+  .footer { padding: 12px 16px; border-top: 1px solid #eee; display: flex; justify-content: flex-end; gap: 8px; }
+  .btn { padding: 6px 16px; border-radius: 6px; font-size: 14px; cursor: pointer; border: 1px solid #d9d9d9; background: #fff; }
+  .btn-primary { background: linear-gradient(135deg, #52c41a, #389e0d); border-color: #389e0d; color: #fff; font-weight: 600; box-shadow: 0 2px 6px rgba(82,196,26,0.4); }
+
+  h2 { text-align: center; margin-bottom: 20px; color: #333; font-size: 20px; }
+  .desc { text-align: center; margin-bottom: 24px; color: #888; font-size: 14px; max-width: 700px; margin-left: auto; margin-right: auto; }
+</style>
+</head>
+<body>
+<h2>收费页 - 库存不足提示 设计预览</h2>
+<div class="desc">
+  当打开收费明细时，如果有药物库存不足，每个库存不足的药物行有单独标记（红色"缺Xg"标签），<br>
+  移动端卡片显示库存警告详情。
+</div>
+
+<div class="container">
+  <!-- Desktop Preview -->
+  <div class="preview-box desktop-box">
+    <div class="label">💻 桌面端</div>
+    <div class="drawer-header">
+      <div class="title">
+        <span class="icon">💰</span>
+        收费明细 — 小柴胡汤
+      </div>
+      <button class="print-btn">🖨️ 打印收费单</button>
+    </div>
+
+    <div class="content">
+      <div class="section-title">
+        💊 中药明细 <span class="pill">7付</span>
+      </div>
+      <div class="desktop-grid">
+        <div class="desktop-item">
+          <span class="left">
+            <span class="shelf-tag">A-01</span>
+            <span>柴胡</span>
+            <span class="dosage">12g×7付</span>
+          </span>
+          <span class="price">¥12.60</span>
+        </div>
+        <div class="desktop-item">
+          <span class="left">
+            <span class="shelf-tag">A-03</span>
+            <span>黄芩</span>
+            <span class="dosage">12g×7付</span>
+            <span class="insufficient-tag">缺54g</span>
+          </span>
+          <span class="price">¥8.40</span>
+        </div>
+        <div class="desktop-item">
+          <span class="left">
+            <span class="shelf-tag">B-02</span>
+            <span>半夏</span>
+            <span class="dosage">9g×7付</span>
+            <span class="insufficient-tag">缺53g</span>
+          </span>
+          <span class="price">¥9.45</span>
+        </div>
+        <div class="desktop-item">
+          <span class="left">
+            <span class="shelf-tag">A-05</span>
+            <span>生姜</span>
+            <span class="dosage">9g×7付</span>
+          </span>
+          <span class="price">¥3.15</span>
+        </div>
+        <div class="desktop-item">
+          <span class="left">
+            <span class="shelf-tag">A-02</span>
+            <span>人参</span>
+            <span class="dosage">6g×7付</span>
+          </span>
+          <span class="price">¥25.20</span>
+        </div>
+        <div class="desktop-item">
+          <span class="left">
+            <span class="shelf-tag">B-01</span>
+            <span>甘草</span>
+            <span class="dosage">6g×7付</span>
+          </span>
+          <span class="price">¥2.10</span>
+        </div>
+        <div class="desktop-item">
+          <span class="left">
+            <span class="shelf-tag">A-08</span>
+            <span>大枣</span>
+            <span class="dosage">10g×7付</span>
+          </span>
+          <span class="price">¥3.50</span>
+        </div>
+      </div>
+
+      <div class="section-title" style="margin-top: 12px;">
+        💊 中成药明细
+      </div>
+      <div class="desktop-grid">
+        <div class="desktop-item">
+          <span class="left">
+            <span class="shelf-tag empty">--</span>
+            <span>逍遥丸</span>
+            <span class="dosage">2盒</span>
+            <span class="no-stock-tag">无库存</span>
+          </span>
+          <span class="price">¥0.00</span>
+        </div>
+      </div>
+
+      <div class="summary">
+        <div class="summary-row">
+          <span>药费合计</span>
+          <span class="val">¥64.40</span>
+        </div>
+        <div class="summary-row">
+          <span>诊疗费</span>
+          <span class="val">¥100.00</span>
+        </div>
+        <div class="summary-row total">
+          <span>应收</span>
+          <span>¥164.40</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <button class="btn">仅收费</button>
+      <button class="btn btn-primary">收费并出库</button>
+    </div>
+  </div>
+
+  <!-- Mobile Preview -->
+  <div class="preview-box mobile-box">
+    <div class="label">📱 移动端</div>
+    <div class="drawer-header">
+      <div class="title" style="font-size: 17px;">
+        <span class="icon">💰</span>
+        收费明细
+      </div>
+      <button class="print-btn">打印</button>
+    </div>
+
+    <div class="content">
+      <div class="section-title" style="font-size: 16px;">
+        💊 中药明细 <span class="pill">7付</span>
+      </div>
+
+      <div class="mobile-card">
+        <div class="top">
+          <div class="name">柴胡</div>
+          <span class="cost">¥12.60</span>
+        </div>
+        <div class="bottom">
+          <span>12克 × 7付</span>
+          <span>单价: ¥0.15/克</span>
+        </div>
+      </div>
+
+      <div class="mobile-card insufficient">
+        <div class="top">
+          <div class="name">黄芩 <span class="insufficient-tag">缺54g</span></div>
+          <span class="cost">¥8.40</span>
+        </div>
+        <div class="bottom">
+          <span>12克 × 7付</span>
+          <span>单价: ¥0.10/克</span>
+        </div>
+        <div class="stock-warn">⚠️ 库存不足：需84g，仅剩30g</div>
+      </div>
+
+      <div class="mobile-card insufficient">
+        <div class="top">
+          <div class="name">半夏 <span class="insufficient-tag">缺53g</span></div>
+          <span class="cost">¥9.45</span>
+        </div>
+        <div class="bottom">
+          <span>9克 × 7付</span>
+          <span>单价: ¥0.15/克</span>
+        </div>
+        <div class="stock-warn">⚠️ 库存不足：需63g，仅剩10g</div>
+      </div>
+
+      <div class="mobile-card">
+        <div class="top">
+          <div class="name">生姜</div>
+          <span class="cost">¥3.15</span>
+        </div>
+        <div class="bottom">
+          <span>9克 × 7付</span>
+          <span>单价: ¥0.05/克</span>
+        </div>
+      </div>
+
+      <div class="section-title" style="font-size: 16px; margin-top: 12px;">
+        💊 中成药明细
+      </div>
+
+      <div class="mobile-card insufficient">
+        <div class="top">
+          <div class="name"><span style="background: #f9f0ff; color: #722ed1; padding: 1px 6px; border-radius: 4px; font-size: 12px; margin-right: 4px;">成药</span>逍遥丸 <span class="no-stock-tag">无库存</span></div>
+          <span class="cost">¥0.00</span>
+        </div>
+        <div class="bottom">
+          <span>2盒</span>
+          <span>单价: -</span>
+        </div>
+        <div class="stock-warn">⚠️ 未录入库存</div>
+      </div>
+
+      <div class="summary">
+        <div class="summary-row">
+          <span>药费合计</span>
+          <span class="val">¥64.40</span>
+        </div>
+        <div class="summary-row">
+          <span>诊疗费</span>
+          <span class="val">¥100.00</span>
+        </div>
+        <div class="summary-row total">
+          <span>应收</span>
+          <span>¥164.40</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <button class="btn">仅收费</button>
+      <button class="btn btn-primary">收费并出库</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>

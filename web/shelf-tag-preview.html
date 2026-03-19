@@ -3,98 +3,62 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>货架号设计方案对比 - 桌面端 + 移动端</title>
+  <title>方案B 最终设计 - 处方笺 + 收费单</title>
   <style>
-    @page { margin: 10mm; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: system-ui, -apple-system, sans-serif; color: #333; background: #f0f2f5; padding: 20px; }
 
     .page-title { text-align: center; font-size: 22px; font-weight: bold; margin-bottom: 6px; color: #1a1a1a; }
     .page-subtitle { text-align: center; font-size: 13px; color: #999; margin-bottom: 30px; }
 
-    /* ---- Scheme card ---- */
-    .scheme {
-      background: #fff;
-      border-radius: 12px;
-      padding: 24px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-      margin-bottom: 28px;
-      max-width: 1100px;
-      margin-left: auto;
-      margin-right: auto;
+    /* ---- Card ---- */
+    .card {
+      background: #fff; border-radius: 12px; padding: 24px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 28px;
+      max-width: 1100px; margin-left: auto; margin-right: auto;
     }
-    .scheme-header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
-    .scheme-badge {
+    .card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+    .card-badge {
       display: inline-block; width: 28px; height: 28px; line-height: 28px;
-      text-align: center; border-radius: 50%; background: #1677ff; color: #fff;
+      text-align: center; border-radius: 50%; background: #13c2c2; color: #fff;
       font-weight: bold; font-size: 14px; flex-shrink: 0;
     }
-    .scheme-badge.current { background: #999; }
-    .scheme-badge.b { background: #13c2c2; }
-    .scheme-badge.c { background: #722ed1; }
-    .scheme-badge.d { background: #eb2f96; }
-    .scheme-title { font-size: 16px; font-weight: bold; }
-    .scheme-desc { font-size: 12px; color: #888; margin-bottom: 16px; line-height: 1.6; }
-    .scheme-desc strong { color: #333; }
+    .card-badge.billing { background: #faad14; }
+    .card-title { font-size: 16px; font-weight: bold; }
+    .card-desc { font-size: 12px; color: #888; margin-bottom: 16px; line-height: 1.6; }
+    .card-desc strong { color: #333; }
 
-    /* ---- Side-by-side previews ---- */
-    .preview-row {
-      display: flex;
-      gap: 20px;
-      align-items: flex-start;
-    }
-    .preview-col {
-      flex: 1;
-      min-width: 0;
-    }
-    .preview-col.mobile {
-      flex: 0 0 375px;
-      max-width: 375px;
-    }
+    /* ---- Side-by-side ---- */
+    .preview-row { display: flex; gap: 20px; align-items: flex-start; }
+    .preview-col { flex: 1; min-width: 0; }
+    .preview-col.mobile { flex: 0 0 375px; max-width: 375px; }
     .preview-label {
-      font-size: 12px;
-      font-weight: 600;
-      color: #999;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      margin-bottom: 8px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
+      font-size: 12px; font-weight: 600; color: #999; text-transform: uppercase;
+      letter-spacing: 1px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;
     }
-    .preview-label .icon { font-size: 14px; }
     .mobile-frame {
-      border: 3px solid #222;
-      border-radius: 20px;
-      padding: 12px 8px;
-      background: #fff;
-      position: relative;
+      border: 3px solid #222; border-radius: 20px; padding: 12px 8px;
+      background: #fff; position: relative;
     }
     .mobile-frame::before {
-      content: '';
-      display: block;
-      width: 60px;
-      height: 4px;
-      background: #ddd;
-      border-radius: 2px;
-      margin: 0 auto 8px;
+      content: ''; display: block; width: 60px; height: 4px;
+      background: #ddd; border-radius: 2px; margin: 0 auto 8px;
     }
 
-    /* ---- Prescription mock ---- */
-    .rx-mock {
-      border: 1px solid #e8e8e8;
-      border-radius: 8px;
-      padding: 16px;
-      background: #fafafa;
-      font-family: "SimSun", "宋体", serif;
+    /* ==== 共用处方模拟 ==== */
+    .rx-mock, .bill-mock {
+      border: 1px solid #e8e8e8; border-radius: 8px; padding: 16px;
+      background: #fafafa; font-family: "SimSun", "宋体", serif;
     }
-    .rx-mock h3 { text-align: center; margin-bottom: 2px; font-size: 16px; letter-spacing: 6px; }
-    .rx-mock .sub { text-align: center; font-size: 11px; color: #aaa; margin-bottom: 10px; }
-    .rx-mock .info-row {
+    .rx-mock h3, .bill-mock h3 { text-align: center; margin-bottom: 2px; font-size: 16px; letter-spacing: 6px; }
+    .rx-mock .sub, .bill-mock .sub { text-align: center; font-size: 11px; color: #aaa; margin-bottom: 10px; }
+    .rx-mock .info-row, .bill-mock .info-row {
       display: flex; justify-content: space-between; font-size: 13px;
       padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid #ddd;
     }
     .rx-mock .rp { font-size: 16px; font-weight: bold; margin: 6px 0; }
+
+    /* ---- Herb list (处方) ---- */
     .rx-mock .herb-list { list-style: none; padding: 0; margin: 0; }
     .rx-mock .herb-list li {
       display: flex; padding: 4px 0; border-bottom: 1px dashed #e0e0e0;
@@ -104,409 +68,425 @@
     .rx-mock .herb-dosage { width: 55px; text-align: right; flex-shrink: 0; }
     .rx-mock .herb-notes { width: 70px; text-align: right; color: #888; flex-shrink: 0; }
 
-    /* ---- Mobile info-row stacks ---- */
-    .mobile-frame .rx-mock .info-row {
-      flex-direction: column;
-      gap: 2px;
-      font-size: 12px;
+    /* ---- Billing table ---- */
+    .bill-mock table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 4px; }
+    .bill-mock th, .bill-mock td {
+      border-bottom: 1px solid #e8e8e8; padding: 6px 8px;
+      text-align: center; vertical-align: middle;
     }
-    .mobile-frame .rx-mock h3 { font-size: 14px; letter-spacing: 4px; }
-    .mobile-frame .rx-mock .rp { font-size: 14px; margin: 4px 0; }
-    .mobile-frame .rx-mock .herb-list li { font-size: 12px; line-height: 20px; padding: 3px 0; }
-    .mobile-frame .rx-mock .herb-dosage { width: 45px; font-size: 12px; }
-    .mobile-frame .rx-mock .herb-notes { width: 50px; font-size: 11px; }
-    .mobile-frame .rx-mock { padding: 10px; }
-
-    /* ==== 旧方案 ==== */
-    .tag-current {
-      display: inline-block; background: #e6f4ff; color: #1677ff;
-      border: 1px solid #91caff; border-radius: 3px; padding: 0 4px;
-      font-size: 11px; font-weight: bold; margin-right: 4px;
-      font-family: monospace; vertical-align: middle;
+    .bill-mock th { font-weight: bold; border-bottom: 2px solid #ccc; color: #555; font-size: 12px; }
+    .bill-mock td:first-child { text-align: left; }
+    .bill-mock .section-label { font-size: 13px; font-weight: bold; margin-bottom: 4px; margin-top: 8px; }
+    .bill-mock .summary {
+      font-size: 14px; margin-top: 16px; padding-top: 12px; border-top: 1px solid #ddd;
     }
-    .tag-current.empty { background: #f5f5f5; color: #bbb; border-color: #d9d9d9; }
+    .bill-mock .summary .row { display: flex; justify-content: space-between; margin-bottom: 6px; }
+    .bill-mock .signature { margin-top: 24px; text-align: right; font-size: 14px; color: #666; }
+    .bill-mock .formula-row { font-size: 14px; margin-bottom: 10px; }
 
-    /* ==== 方案 A: 深色高对比 + 固定宽度 ==== */
-    .tag-a {
-      display: inline-flex; align-items: center; justify-content: center;
-      min-width: 38px; background: #1677ff; color: #fff; border-radius: 4px;
-      padding: 1px 5px; font-size: 12px; font-weight: bold; margin-right: 6px;
-      font-family: monospace; vertical-align: middle; text-align: center;
-      letter-spacing: 0.5px;
-    }
-    .tag-a.empty { background: #e8e8e8; color: #bbb; }
-    /* 移动端 A */
-    .mobile-frame .tag-a { min-width: 32px; font-size: 11px; padding: 1px 4px; margin-right: 4px; }
-
-    /* ==== 方案 B: 独立左列 ==== */
-    .shelf-col-b {
+    /* ==== 方案 B: 独立左列 + 绿色标签 ==== */
+    .shelf-col {
       width: 46px; flex-shrink: 0; text-align: center; margin-right: 8px;
     }
-    .tag-b {
+    .shelf-tag {
       display: inline-block; background: #f6ffed; color: #389e0d;
       border: 1px solid #b7eb8f; border-radius: 3px; padding: 1px 4px;
       font-size: 12px; font-weight: bold; font-family: monospace;
       min-width: 36px; text-align: center;
     }
-    .tag-b.empty { background: #f5f5f5; color: #ccc; border-color: #e0e0e0; }
-    /* 移动端 B */
-    .mobile-frame .shelf-col-b { width: 38px; margin-right: 4px; }
-    .mobile-frame .tag-b { font-size: 11px; min-width: 30px; padding: 0 3px; }
+    .shelf-tag.empty { background: #f5f5f5; color: #ccc; border-color: #e0e0e0; }
 
-    /* ==== 方案 C: 胶囊黑底白字 ==== */
-    .tag-c {
-      display: inline-flex; align-items: center; justify-content: center;
-      min-width: 38px; background: #333; color: #fff; border-radius: 10px;
-      padding: 1px 7px; font-size: 11px; font-weight: bold; margin-right: 6px;
-      font-family: monospace; vertical-align: middle; text-align: center;
+    /* 收费表中的货架列 */
+    .bill-mock .shelf-td {
+      width: 46px; text-align: center; padding: 4px 2px;
     }
-    .tag-c.empty { background: #e8e8e8; color: #bbb; }
-    /* 移动端 C */
-    .mobile-frame .tag-c { min-width: 32px; font-size: 10px; padding: 1px 5px; margin-right: 4px; }
+    .bill-mock .name-td { text-align: left; }
 
-    /* ==== 方案 D: 方括号文本 ==== */
-    .shelf-col-d {
-      width: 50px; flex-shrink: 0; font-family: monospace;
-      font-size: 13px; font-weight: bold; color: #d4380d; text-align: left; margin-right: 4px;
+    /* ==== 移动端适配 ==== */
+    .mobile-frame .rx-mock, .mobile-frame .bill-mock { padding: 10px; }
+    .mobile-frame .rx-mock h3, .mobile-frame .bill-mock h3 { font-size: 14px; letter-spacing: 4px; }
+    .mobile-frame .rx-mock .info-row, .mobile-frame .bill-mock .info-row {
+      flex-direction: column; gap: 2px; font-size: 12px;
     }
-    .shelf-col-d.empty { color: #ccc; }
-    /* 移动端 D */
-    .mobile-frame .shelf-col-d { width: 40px; font-size: 11px; margin-right: 2px; }
+    .mobile-frame .rx-mock .rp { font-size: 14px; margin: 4px 0; }
+    .mobile-frame .rx-mock .herb-list li { font-size: 12px; line-height: 20px; padding: 3px 0; }
+    .mobile-frame .rx-mock .herb-dosage { width: 45px; font-size: 12px; }
+    .mobile-frame .rx-mock .herb-notes { width: 45px; font-size: 11px; }
+    .mobile-frame .shelf-col { width: 38px; margin-right: 4px; }
+    .mobile-frame .shelf-tag { font-size: 11px; min-width: 30px; padding: 0 3px; }
 
-    /* ---- Summary table ---- */
-    .summary-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 12px; }
-    .summary-table th, .summary-table td { padding: 8px; border-bottom: 1px solid #eee; }
-    .summary-table th { text-align: center; border-bottom: 2px solid #ccc; color: #555; font-size: 12px; }
-    .summary-table th:first-child, .summary-table td:first-child { text-align: left; }
-    .summary-table td:not(:first-child):not(:last-child) { text-align: center; }
-    .summary-table tr:nth-child(even) { background: #f9f9f9; }
+    /* 移动端收费表 */
+    .mobile-frame .bill-mock table { font-size: 11px; }
+    .mobile-frame .bill-mock th, .mobile-frame .bill-mock td { padding: 4px 3px; }
+    .mobile-frame .bill-mock .shelf-td { width: 36px; padding: 3px 1px; }
+    .mobile-frame .bill-mock .shelf-tag { font-size: 10px; min-width: 26px; padding: 0 2px; }
+    .mobile-frame .bill-mock .section-label { font-size: 12px; }
+    .mobile-frame .bill-mock .summary { font-size: 12px; margin-top: 10px; padding-top: 8px; }
+    .mobile-frame .bill-mock .formula-row { font-size: 12px; }
+    .mobile-frame .bill-mock .signature { font-size: 12px; margin-top: 16px; }
 
-    /* Print */
-    @media print {
-      body { background: #fff; padding: 10px; }
-      .scheme { box-shadow: none; border: 1px solid #ddd; break-inside: avoid; }
-      .preview-col.mobile { flex: 0 0 300px; max-width: 300px; }
-      .mobile-frame { border-color: #999; }
-      .tag-a, .tag-c, .tag-b, .scheme-badge { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    }
-
-    /* Responsive: stack on narrow screens */
+    /* Responsive stack */
     @media (max-width: 800px) {
       .preview-row { flex-direction: column; }
       .preview-col.mobile { flex: 1 1 auto; max-width: 100%; }
       .mobile-frame { border: none; border-radius: 0; padding: 0; }
       .mobile-frame::before { display: none; }
     }
+    /* Print */
+    @media print {
+      body { background: #fff; padding: 10px; }
+      .card { box-shadow: none; border: 1px solid #ddd; break-inside: avoid; }
+      .preview-col.mobile { flex: 0 0 300px; max-width: 300px; }
+      .mobile-frame { border-color: #999; }
+      .shelf-tag, .card-badge { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
   </style>
 </head>
 <body>
 
-<div class="page-title">货架号设计方案对比</div>
-<div class="page-subtitle">每个方案同时展示桌面端和移动端(375px)效果，可直接 Ctrl+P 打印对比</div>
+<div class="page-title">方案 B 最终设计</div>
+<div class="page-subtitle">独立左列 + 绿色主题 — 处方笺 & 收费单双端对比</div>
 
-<!-- ==================== 旧方案 ==================== -->
-<div class="scheme">
-  <div class="scheme-header">
-    <span class="scheme-badge current">旧</span>
-    <span class="scheme-title">当前方案（对照组）</span>
+<!-- ==================== 处方笺 ==================== -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-badge">B</span>
+    <span class="card-title">处方笺 — 独立左列 + 绿色标签</span>
   </div>
-  <div class="scheme-desc">
-    浅蓝背景 <code>#e6f4ff</code> + 蓝字 11px，不固定宽度<br>
-    <strong>问题：</strong>打印对比度不够，药名不对齐，移动端标签挤压药名空间
+  <div class="card-desc">
+    货架号独立成列：桌面端 46px / 移动端 38px，浅绿底 <code>#f6ffed</code> + 绿字 <code>#389e0d</code><br>
+    <strong>药名完全不受货架号宽度影响</strong>，对齐完美。移动端 info-row 纵向排列，herb-list 字号自适应
   </div>
   <div class="preview-row">
     <!-- Desktop -->
     <div class="preview-col">
-      <div class="preview-label"><span class="icon">🖥</span> 桌面端</div>
+      <div class="preview-label"><span>🖥</span> 桌面端</div>
       <div class="rx-mock">
         <h3>处 方 笺</h3><div class="sub">Prescription</div>
-        <div class="info-row"><span>姓名：张三</span><span>年龄：45岁</span><span>日期：2026年03月19日</span></div>
+        <div class="info-row"><span>姓名：张三</span><span>年龄：45岁</span><span>日期：2026年03月19日 14:30</span></div>
+        <div style="font-size:14px;margin-bottom:4px">方剂：补中益气汤</div>
         <div class="rp">Rp.</div>
         <ul class="herb-list">
-          <li><span class="herb-name"><span class="tag-current">A3</span>黄芪</span><span class="herb-dosage">30克</span><span class="herb-notes"></span></li>
-          <li><span class="herb-name"><span class="tag-current">B12</span>当归</span><span class="herb-dosage">15克</span><span class="herb-notes">酒炙</span></li>
-          <li><span class="herb-name"><span class="tag-current">5</span>白术</span><span class="herb-dosage">12克</span><span class="herb-notes">炒</span></li>
-          <li><span class="herb-name"><span class="tag-current">C7</span>茯苓</span><span class="herb-dosage">15克</span><span class="herb-notes"></span></li>
-          <li><span class="herb-name"><span class="tag-current empty">--</span>甘草</span><span class="herb-dosage">6克</span><span class="herb-notes"></span></li>
-          <li><span class="herb-name"><span class="tag-current">中药柜2</span>陈皮</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
-          <li><span class="herb-name"><span class="tag-current">D1</span>柴胡</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
+          <li><span class="shelf-col"><span class="shelf-tag">A3</span></span><span class="herb-name">黄芪</span><span class="herb-dosage">30克</span><span class="herb-notes"></span></li>
+          <li><span class="shelf-col"><span class="shelf-tag">B12</span></span><span class="herb-name">当归</span><span class="herb-dosage">15克</span><span class="herb-notes">酒炙</span></li>
+          <li><span class="shelf-col"><span class="shelf-tag">5</span></span><span class="herb-name">白术</span><span class="herb-dosage">12克</span><span class="herb-notes">炒</span></li>
+          <li><span class="shelf-col"><span class="shelf-tag">C7</span></span><span class="herb-name">茯苓</span><span class="herb-dosage">15克</span><span class="herb-notes"></span></li>
+          <li><span class="shelf-col"><span class="shelf-tag empty">--</span></span><span class="herb-name">甘草</span><span class="herb-dosage">6克</span><span class="herb-notes"></span></li>
+          <li><span class="shelf-col"><span class="shelf-tag">柜2</span></span><span class="herb-name">陈皮</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
+          <li><span class="shelf-col"><span class="shelf-tag">D1</span></span><span class="herb-name">柴胡</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
+          <li><span class="shelf-col"><span class="shelf-tag">A8</span></span><span class="herb-name">升麻</span><span class="herb-dosage">6克</span><span class="herb-notes"></span></li>
+          <li><span class="shelf-col"><span class="shelf-tag">B4</span></span><span class="herb-name">党参</span><span class="herb-dosage">15克</span><span class="herb-notes"></span></li>
         </ul>
+        <div style="text-align:right;font-size:14px;margin-top:8px">共 7 付</div>
+        <div style="margin-top:12px;padding-top:10px;border-top:1px solid #ddd;font-size:14px">
+          <span>医嘱：</span><div style="padding-left:42px">日一剂，水煎服，早晚饭后温服</div>
+        </div>
+        <div style="margin-top:24px;text-align:right;font-size:14px;color:#666">医师：李明</div>
       </div>
     </div>
     <!-- Mobile -->
     <div class="preview-col mobile">
-      <div class="preview-label"><span class="icon">📱</span> 移动端 375px</div>
+      <div class="preview-label"><span>📱</span> 移动端 375px</div>
       <div class="mobile-frame">
         <div class="rx-mock">
           <h3>处 方 笺</h3><div class="sub">Prescription</div>
-          <div class="info-row"><span>姓名：张三</span><span>年龄：45岁</span><span>日期：2026-03-19</span></div>
+          <div class="info-row"><span>姓名：张三</span><span>年龄：45岁</span><span>日期：2026-03-19 14:30</span></div>
+          <div style="font-size:12px;margin-bottom:4px">方剂：补中益气汤</div>
           <div class="rp">Rp.</div>
           <ul class="herb-list">
-            <li><span class="herb-name"><span class="tag-current">A3</span>黄芪</span><span class="herb-dosage">30克</span><span class="herb-notes"></span></li>
-            <li><span class="herb-name"><span class="tag-current">B12</span>当归</span><span class="herb-dosage">15克</span><span class="herb-notes">酒炙</span></li>
-            <li><span class="herb-name"><span class="tag-current">5</span>白术</span><span class="herb-dosage">12克</span><span class="herb-notes">炒</span></li>
-            <li><span class="herb-name"><span class="tag-current">C7</span>茯苓</span><span class="herb-dosage">15克</span><span class="herb-notes"></span></li>
-            <li><span class="herb-name"><span class="tag-current empty">--</span>甘草</span><span class="herb-dosage">6克</span><span class="herb-notes"></span></li>
-            <li><span class="herb-name"><span class="tag-current">中药柜2</span>陈皮</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
-            <li><span class="herb-name"><span class="tag-current">D1</span>柴胡</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
+            <li><span class="shelf-col"><span class="shelf-tag">A3</span></span><span class="herb-name">黄芪</span><span class="herb-dosage">30克</span><span class="herb-notes"></span></li>
+            <li><span class="shelf-col"><span class="shelf-tag">B12</span></span><span class="herb-name">当归</span><span class="herb-dosage">15克</span><span class="herb-notes">酒炙</span></li>
+            <li><span class="shelf-col"><span class="shelf-tag">5</span></span><span class="herb-name">白术</span><span class="herb-dosage">12克</span><span class="herb-notes">炒</span></li>
+            <li><span class="shelf-col"><span class="shelf-tag">C7</span></span><span class="herb-name">茯苓</span><span class="herb-dosage">15克</span><span class="herb-notes"></span></li>
+            <li><span class="shelf-col"><span class="shelf-tag empty">--</span></span><span class="herb-name">甘草</span><span class="herb-dosage">6克</span><span class="herb-notes"></span></li>
+            <li><span class="shelf-col"><span class="shelf-tag">柜2</span></span><span class="herb-name">陈皮</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
+            <li><span class="shelf-col"><span class="shelf-tag">D1</span></span><span class="herb-name">柴胡</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
+            <li><span class="shelf-col"><span class="shelf-tag">A8</span></span><span class="herb-name">升麻</span><span class="herb-dosage">6克</span><span class="herb-notes"></span></li>
+            <li><span class="shelf-col"><span class="shelf-tag">B4</span></span><span class="herb-name">党参</span><span class="herb-dosage">15克</span><span class="herb-notes"></span></li>
           </ul>
+          <div style="text-align:right;font-size:12px;margin-top:6px">共 7 付</div>
+          <div style="margin-top:8px;padding-top:6px;border-top:1px solid #ddd;font-size:12px">
+            <span>医嘱：</span>日一剂，水煎服，早晚饭后温服
+          </div>
+          <div style="margin-top:16px;text-align:right;font-size:12px;color:#666">医师：李明</div>
         </div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- ==================== 方案 A ==================== -->
-<div class="scheme">
-  <div class="scheme-header">
-    <span class="scheme-badge">A</span>
-    <span class="scheme-title">深色高对比 + 固定宽度</span>
+<!-- ==================== 收费单 ==================== -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-badge billing">¥</span>
+    <span class="card-title">收费单 — 独立货架列 + 绿色标签</span>
   </div>
-  <div class="scheme-desc">
-    <strong>实心蓝底白字</strong>，桌面端 min-width:38px / 移动端 min-width:32px，字号 12px/11px<br>
-    打印对比度最高，固定宽度保证对齐，移动端自动缩小标签尺寸
+  <div class="card-desc">
+    表格新增独立「货架」列：桌面端 46px / 移动端 36px，与药名列完全分离<br>
+    <strong>药名列不再被货架号撑开</strong>，表格对齐稳定。移动端隐藏 notes 列、缩小字号
   </div>
   <div class="preview-row">
+    <!-- Desktop -->
     <div class="preview-col">
-      <div class="preview-label"><span class="icon">🖥</span> 桌面端</div>
-      <div class="rx-mock">
-        <h3>处 方 笺</h3><div class="sub">Prescription</div>
-        <div class="info-row"><span>姓名：张三</span><span>年龄：45岁</span><span>日期：2026年03月19日</span></div>
-        <div class="rp">Rp.</div>
-        <ul class="herb-list">
-          <li><span class="herb-name"><span class="tag-a">A3</span>黄芪</span><span class="herb-dosage">30克</span><span class="herb-notes"></span></li>
-          <li><span class="herb-name"><span class="tag-a">B12</span>当归</span><span class="herb-dosage">15克</span><span class="herb-notes">酒炙</span></li>
-          <li><span class="herb-name"><span class="tag-a">5</span>白术</span><span class="herb-dosage">12克</span><span class="herb-notes">炒</span></li>
-          <li><span class="herb-name"><span class="tag-a">C7</span>茯苓</span><span class="herb-dosage">15克</span><span class="herb-notes"></span></li>
-          <li><span class="herb-name"><span class="tag-a empty">--</span>甘草</span><span class="herb-dosage">6克</span><span class="herb-notes"></span></li>
-          <li><span class="herb-name"><span class="tag-a">中药柜2</span>陈皮</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
-          <li><span class="herb-name"><span class="tag-a">D1</span>柴胡</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
-        </ul>
+      <div class="preview-label"><span>🖥</span> 桌面端</div>
+      <div class="bill-mock">
+        <h3>收 费 单</h3><div class="sub">Billing Statement</div>
+        <div class="info-row"><span>姓名：张三</span><span>年龄：45岁</span><span>日期：2026年03月19日 14:30</span></div>
+        <div class="formula-row">方剂：补中益气汤</div>
+
+        <div class="section-label">中药明细：</div>
+        <table>
+          <thead>
+            <tr><th style="width:46px">货架</th><th style="text-align:left">药名</th><th>用量</th><th>单价(元/克)</th><th>小计(元)</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="shelf-td"><span class="shelf-tag">A3</span></td><td class="name-td">黄芪</td><td>30g × 7付</td><td>0.080</td><td>16.80</td></tr>
+            <tr><td class="shelf-td"><span class="shelf-tag">B12</span></td><td class="name-td">当归</td><td>15g × 7付</td><td>0.120</td><td>12.60</td></tr>
+            <tr><td class="shelf-td"><span class="shelf-tag">5</span></td><td class="name-td">白术</td><td>12g × 7付</td><td>0.060</td><td>5.04</td></tr>
+            <tr><td class="shelf-td"><span class="shelf-tag">C7</span></td><td class="name-td">茯苓</td><td>15g × 7付</td><td>0.050</td><td>5.25</td></tr>
+            <tr><td class="shelf-td"><span class="shelf-tag empty">--</span></td><td class="name-td">甘草 *</td><td>6g × 7付</td><td>-</td><td>0.00</td></tr>
+            <tr><td class="shelf-td"><span class="shelf-tag">柜2</span></td><td class="name-td">陈皮</td><td>10g × 7付</td><td>0.040</td><td>2.80</td></tr>
+            <tr><td class="shelf-td"><span class="shelf-tag">D1</span></td><td class="name-td">柴胡</td><td>10g × 7付</td><td>0.100</td><td>7.00</td></tr>
+            <tr><td class="shelf-td"><span class="shelf-tag">A8</span></td><td class="name-td">升麻</td><td>6g × 7付</td><td>0.090</td><td>3.78</td></tr>
+            <tr><td class="shelf-td"><span class="shelf-tag">B4</span></td><td class="name-td">党参</td><td>15g × 7付</td><td>0.150</td><td>15.75</td></tr>
+          </tbody>
+        </table>
+        <div style="text-align:right;font-size:13px;margin-top:6px">共 <b>7</b> 付</div>
+
+        <div class="section-label" style="margin-top:12px">中成药明细：</div>
+        <table>
+          <thead>
+            <tr><th style="width:46px">货架</th><th style="text-align:left">药名</th><th>用量</th><th>单价(元/盒)</th><th>小计(元)</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="shelf-td"><span class="shelf-tag">E2</span></td><td class="name-td">六味地黄丸</td><td>2盒</td><td>28.00</td><td>56.00</td></tr>
+          </tbody>
+        </table>
+
+        <div class="summary">
+          <div class="row"><span>药费合计：</span><span>¥125.02</span></div>
+          <div class="row"><span>诊疗费：</span><span>¥100.00</span></div>
+          <div class="row" style="font-weight:bold;font-size:16px"><span>实收：</span><span>¥225.02</span></div>
+        </div>
+        <div class="signature">收费员：李明</div>
       </div>
     </div>
+    <!-- Mobile -->
     <div class="preview-col mobile">
-      <div class="preview-label"><span class="icon">📱</span> 移动端 375px</div>
+      <div class="preview-label"><span>📱</span> 移动端 375px</div>
       <div class="mobile-frame">
-        <div class="rx-mock">
-          <h3>处 方 笺</h3><div class="sub">Prescription</div>
-          <div class="info-row"><span>姓名：张三</span><span>年龄：45岁</span><span>日期：2026-03-19</span></div>
-          <div class="rp">Rp.</div>
-          <ul class="herb-list">
-            <li><span class="herb-name"><span class="tag-a">A3</span>黄芪</span><span class="herb-dosage">30克</span><span class="herb-notes"></span></li>
-            <li><span class="herb-name"><span class="tag-a">B12</span>当归</span><span class="herb-dosage">15克</span><span class="herb-notes">酒炙</span></li>
-            <li><span class="herb-name"><span class="tag-a">5</span>白术</span><span class="herb-dosage">12克</span><span class="herb-notes">炒</span></li>
-            <li><span class="herb-name"><span class="tag-a">C7</span>茯苓</span><span class="herb-dosage">15克</span><span class="herb-notes"></span></li>
-            <li><span class="herb-name"><span class="tag-a empty">--</span>甘草</span><span class="herb-dosage">6克</span><span class="herb-notes"></span></li>
-            <li><span class="herb-name"><span class="tag-a">中药柜2</span>陈皮</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
-            <li><span class="herb-name"><span class="tag-a">D1</span>柴胡</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
-          </ul>
+        <div class="bill-mock">
+          <h3>收 费 单</h3><div class="sub">Billing Statement</div>
+          <div class="info-row"><span>姓名：张三</span><span>年龄：45岁</span><span>日期：2026-03-19 14:30</span></div>
+          <div class="formula-row">方剂：补中益气汤</div>
+
+          <div class="section-label">中药明细：</div>
+          <table>
+            <thead>
+              <tr><th style="width:36px">架</th><th style="text-align:left">药名</th><th>用量</th><th>单价</th><th>小计</th></tr>
+            </thead>
+            <tbody>
+              <tr><td class="shelf-td"><span class="shelf-tag">A3</span></td><td class="name-td">黄芪</td><td>30g×7</td><td>0.08</td><td>16.80</td></tr>
+              <tr><td class="shelf-td"><span class="shelf-tag">B12</span></td><td class="name-td">当归</td><td>15g×7</td><td>0.12</td><td>12.60</td></tr>
+              <tr><td class="shelf-td"><span class="shelf-tag">5</span></td><td class="name-td">白术</td><td>12g×7</td><td>0.06</td><td>5.04</td></tr>
+              <tr><td class="shelf-td"><span class="shelf-tag">C7</span></td><td class="name-td">茯苓</td><td>15g×7</td><td>0.05</td><td>5.25</td></tr>
+              <tr><td class="shelf-td"><span class="shelf-tag empty">--</span></td><td class="name-td">甘草*</td><td>6g×7</td><td>-</td><td>0.00</td></tr>
+              <tr><td class="shelf-td"><span class="shelf-tag">柜2</span></td><td class="name-td">陈皮</td><td>10g×7</td><td>0.04</td><td>2.80</td></tr>
+              <tr><td class="shelf-td"><span class="shelf-tag">D1</span></td><td class="name-td">柴胡</td><td>10g×7</td><td>0.10</td><td>7.00</td></tr>
+              <tr><td class="shelf-td"><span class="shelf-tag">A8</span></td><td class="name-td">升麻</td><td>6g×7</td><td>0.09</td><td>3.78</td></tr>
+              <tr><td class="shelf-td"><span class="shelf-tag">B4</span></td><td class="name-td">党参</td><td>15g×7</td><td>0.15</td><td>15.75</td></tr>
+            </tbody>
+          </table>
+          <div style="text-align:right;font-size:11px;margin-top:4px">共 <b>7</b> 付</div>
+
+          <div class="section-label" style="margin-top:8px">中成药明细：</div>
+          <table>
+            <thead>
+              <tr><th style="width:36px">架</th><th style="text-align:left">药名</th><th>用量</th><th>单价</th><th>小计</th></tr>
+            </thead>
+            <tbody>
+              <tr><td class="shelf-td"><span class="shelf-tag">E2</span></td><td class="name-td">六味地黄丸</td><td>2盒</td><td>28.00</td><td>56.00</td></tr>
+            </tbody>
+          </table>
+
+          <div class="summary">
+            <div class="row"><span>药费合计：</span><span>¥125.02</span></div>
+            <div class="row"><span>诊疗费：</span><span>¥100.00</span></div>
+            <div class="row" style="font-weight:bold;font-size:14px"><span>实收：</span><span>¥225.02</span></div>
+          </div>
+          <div class="signature">收费员：李明</div>
         </div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- ==================== 方案 B ==================== -->
-<div class="scheme">
-  <div class="scheme-header">
-    <span class="scheme-badge b">B</span>
-    <span class="scheme-title">独立左列 + 绿色主题</span>
+<!-- ==================== 合并打印 ==================== -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-badge" style="background:#722ed1">合</span>
+    <span class="card-title">合并打印 — 处方笺 + 收费单一张纸</span>
   </div>
-  <div class="scheme-desc">
-    货架号独立成列：桌面端 46px / 移动端 38px，药名完全不受影响<br>
-    <strong>浅绿底绿字</strong>，对齐最完美。移动端缩小列宽 + 字号自适应
+  <div class="card-desc">
+    实际打印效果预览：处方笺和收费单之间用虚线分隔，统一风格<br>
+    <strong>桌面端可直接 Ctrl+P 预览打印效果</strong>
   </div>
   <div class="preview-row">
+    <!-- Desktop combined -->
     <div class="preview-col">
-      <div class="preview-label"><span class="icon">🖥</span> 桌面端</div>
-      <div class="rx-mock">
-        <h3>处 方 笺</h3><div class="sub">Prescription</div>
-        <div class="info-row"><span>姓名：张三</span><span>年龄：45岁</span><span>日期：2026年03月19日</span></div>
-        <div class="rp">Rp.</div>
-        <ul class="herb-list">
-          <li><span class="shelf-col-b"><span class="tag-b">A3</span></span><span class="herb-name">黄芪</span><span class="herb-dosage">30克</span><span class="herb-notes"></span></li>
-          <li><span class="shelf-col-b"><span class="tag-b">B12</span></span><span class="herb-name">当归</span><span class="herb-dosage">15克</span><span class="herb-notes">酒炙</span></li>
-          <li><span class="shelf-col-b"><span class="tag-b">5</span></span><span class="herb-name">白术</span><span class="herb-dosage">12克</span><span class="herb-notes">炒</span></li>
-          <li><span class="shelf-col-b"><span class="tag-b">C7</span></span><span class="herb-name">茯苓</span><span class="herb-dosage">15克</span><span class="herb-notes"></span></li>
-          <li><span class="shelf-col-b"><span class="tag-b empty">--</span></span><span class="herb-name">甘草</span><span class="herb-dosage">6克</span><span class="herb-notes"></span></li>
-          <li><span class="shelf-col-b"><span class="tag-b">柜2</span></span><span class="herb-name">陈皮</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
-          <li><span class="shelf-col-b"><span class="tag-b">D1</span></span><span class="herb-name">柴胡</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
+      <div class="preview-label"><span>🖥</span> 桌面端 合并打印</div>
+      <div style="border:1px solid #e8e8e8;border-radius:8px;padding:16px;background:#fafafa;font-family:'SimSun','宋体',serif;">
+        <!-- Prescription part -->
+        <h3 style="text-align:center;font-size:16px;letter-spacing:6px;margin-bottom:2px">处 方 笺</h3>
+        <div style="text-align:center;font-size:11px;color:#aaa;margin-bottom:10px">Prescription</div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid #ddd">
+          <span>姓名：张三</span><span>年龄：45岁</span><span>日期：2026年03月19日 14:30</span>
+        </div>
+        <div style="font-size:14px;margin-bottom:4px">方剂：补中益气汤</div>
+        <div style="font-size:16px;font-weight:bold;margin:6px 0">Rp.</div>
+        <ul style="list-style:none;padding:0;margin:0">
+          <li style="display:flex;padding:4px 0;border-bottom:1px dashed #e0e0e0;font-size:13px;line-height:22px;align-items:center">
+            <span class="shelf-col"><span class="shelf-tag">A3</span></span><span style="flex:1">黄芪</span><span style="width:55px;text-align:right">30克</span><span style="width:70px"></span>
+          </li>
+          <li style="display:flex;padding:4px 0;border-bottom:1px dashed #e0e0e0;font-size:13px;line-height:22px;align-items:center">
+            <span class="shelf-col"><span class="shelf-tag">B12</span></span><span style="flex:1">当归</span><span style="width:55px;text-align:right">15克</span><span style="width:70px;text-align:right;color:#888">酒炙</span>
+          </li>
+          <li style="display:flex;padding:4px 0;border-bottom:1px dashed #e0e0e0;font-size:13px;line-height:22px;align-items:center">
+            <span class="shelf-col"><span class="shelf-tag">5</span></span><span style="flex:1">白术</span><span style="width:55px;text-align:right">12克</span><span style="width:70px;text-align:right;color:#888">炒</span>
+          </li>
+          <li style="display:flex;padding:4px 0;border-bottom:1px dashed #e0e0e0;font-size:13px;line-height:22px;align-items:center">
+            <span class="shelf-col"><span class="shelf-tag">C7</span></span><span style="flex:1">茯苓</span><span style="width:55px;text-align:right">15克</span><span style="width:70px"></span>
+          </li>
+          <li style="display:flex;padding:4px 0;border-bottom:1px dashed #e0e0e0;font-size:13px;line-height:22px;align-items:center">
+            <span class="shelf-col"><span class="shelf-tag empty">--</span></span><span style="flex:1">甘草</span><span style="width:55px;text-align:right">6克</span><span style="width:70px"></span>
+          </li>
         </ul>
+        <div style="text-align:right;font-size:14px;margin-top:8px">共 7 付</div>
+        <div style="margin-top:12px;padding-top:10px;border-top:1px solid #ddd;font-size:14px">
+          <span>医嘱：</span><span style="padding-left:10px">日一剂，水煎服</span>
+        </div>
+        <div style="margin-top:24px;text-align:right;font-size:14px;color:#666">医师：李明</div>
+
+        <!-- Separator -->
+        <hr style="border:none;border-top:2px dashed #999;margin:24px 0">
+
+        <!-- Billing part -->
+        <h3 style="text-align:center;font-size:16px;letter-spacing:6px;margin-bottom:2px">收 费 单</h3>
+        <div style="text-align:center;font-size:11px;color:#aaa;margin-bottom:10px">Billing Statement</div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid #ddd">
+          <span>姓名：张三</span><span>年龄：45岁</span><span>日期：2026年03月19日 14:30</span>
+        </div>
+        <div style="font-size:13px;font-weight:bold;margin-bottom:4px">中药明细：</div>
+        <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:4px">
+          <thead><tr style="border-bottom:2px solid #ccc">
+            <th style="width:46px;padding:6px 2px;text-align:center;color:#555;font-size:12px">货架</th>
+            <th style="text-align:left;padding:6px 8px;color:#555;font-size:12px">药名</th>
+            <th style="padding:6px 8px;text-align:center;color:#555;font-size:12px">用量</th>
+            <th style="padding:6px 8px;text-align:center;color:#555;font-size:12px">单价</th>
+            <th style="padding:6px 8px;text-align:center;color:#555;font-size:12px">小计</th>
+          </tr></thead>
+          <tbody>
+            <tr><td style="text-align:center;padding:4px 2px"><span class="shelf-tag">A3</span></td><td style="text-align:left;padding:4px 8px">黄芪</td><td style="text-align:center;padding:4px 8px">30g×7</td><td style="text-align:center;padding:4px 8px">0.080</td><td style="text-align:center;padding:4px 8px">16.80</td></tr>
+            <tr><td style="text-align:center;padding:4px 2px"><span class="shelf-tag">B12</span></td><td style="text-align:left;padding:4px 8px">当归</td><td style="text-align:center;padding:4px 8px">15g×7</td><td style="text-align:center;padding:4px 8px">0.120</td><td style="text-align:center;padding:4px 8px">12.60</td></tr>
+            <tr><td style="text-align:center;padding:4px 2px"><span class="shelf-tag">C7</span></td><td style="text-align:left;padding:4px 8px">茯苓</td><td style="text-align:center;padding:4px 8px">15g×7</td><td style="text-align:center;padding:4px 8px">0.050</td><td style="text-align:center;padding:4px 8px">5.25</td></tr>
+          </tbody>
+        </table>
+        <div style="font-size:14px;margin-top:16px;padding-top:12px;border-top:1px solid #ddd">
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span>药费合计：</span><span>¥69.02</span></div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span>诊疗费：</span><span>¥100.00</span></div>
+          <div style="display:flex;justify-content:space-between;font-weight:bold;font-size:16px"><span>实收：</span><span>¥169.02</span></div>
+        </div>
+        <div style="margin-top:24px;text-align:right;font-size:14px;color:#666">收费员：李明</div>
       </div>
     </div>
+    <!-- Mobile combined -->
     <div class="preview-col mobile">
-      <div class="preview-label"><span class="icon">📱</span> 移动端 375px</div>
+      <div class="preview-label"><span>📱</span> 移动端 合并打印</div>
       <div class="mobile-frame">
-        <div class="rx-mock">
-          <h3>处 方 笺</h3><div class="sub">Prescription</div>
-          <div class="info-row"><span>姓名：张三</span><span>年龄：45岁</span><span>日期：2026-03-19</span></div>
-          <div class="rp">Rp.</div>
-          <ul class="herb-list">
-            <li><span class="shelf-col-b"><span class="tag-b">A3</span></span><span class="herb-name">黄芪</span><span class="herb-dosage">30克</span><span class="herb-notes"></span></li>
-            <li><span class="shelf-col-b"><span class="tag-b">B12</span></span><span class="herb-name">当归</span><span class="herb-dosage">15克</span><span class="herb-notes">酒炙</span></li>
-            <li><span class="shelf-col-b"><span class="tag-b">5</span></span><span class="herb-name">白术</span><span class="herb-dosage">12克</span><span class="herb-notes">炒</span></li>
-            <li><span class="shelf-col-b"><span class="tag-b">C7</span></span><span class="herb-name">茯苓</span><span class="herb-dosage">15克</span><span class="herb-notes"></span></li>
-            <li><span class="shelf-col-b"><span class="tag-b empty">--</span></span><span class="herb-name">甘草</span><span class="herb-dosage">6克</span><span class="herb-notes"></span></li>
-            <li><span class="shelf-col-b"><span class="tag-b">柜2</span></span><span class="herb-name">陈皮</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
-            <li><span class="shelf-col-b"><span class="tag-b">D1</span></span><span class="herb-name">柴胡</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
+        <div style="font-family:'SimSun','宋体',serif;padding:10px;font-size:12px">
+          <h3 style="text-align:center;font-size:14px;letter-spacing:4px;margin-bottom:2px">处 方 笺</h3>
+          <div style="text-align:center;font-size:10px;color:#aaa;margin-bottom:8px">Prescription</div>
+          <div style="display:flex;flex-direction:column;gap:2px;font-size:12px;padding-bottom:6px;margin-bottom:6px;border-bottom:1px solid #ddd">
+            <span>姓名：张三</span><span>年龄：45岁</span><span>日期：2026-03-19 14:30</span>
+          </div>
+          <div style="font-size:12px;margin-bottom:4px">方剂：补中益气汤</div>
+          <div style="font-size:14px;font-weight:bold;margin:4px 0">Rp.</div>
+          <ul style="list-style:none;padding:0;margin:0">
+            <li style="display:flex;padding:3px 0;border-bottom:1px dashed #e0e0e0;font-size:12px;line-height:20px;align-items:center">
+              <span style="width:38px;flex-shrink:0;text-align:center;margin-right:4px"><span class="shelf-tag" style="font-size:11px;min-width:30px;padding:0 3px">A3</span></span><span style="flex:1">黄芪</span><span style="width:45px;text-align:right">30克</span>
+            </li>
+            <li style="display:flex;padding:3px 0;border-bottom:1px dashed #e0e0e0;font-size:12px;line-height:20px;align-items:center">
+              <span style="width:38px;flex-shrink:0;text-align:center;margin-right:4px"><span class="shelf-tag" style="font-size:11px;min-width:30px;padding:0 3px">B12</span></span><span style="flex:1">当归</span><span style="width:45px;text-align:right">15克</span><span style="width:40px;text-align:right;color:#888;font-size:11px">酒炙</span>
+            </li>
+            <li style="display:flex;padding:3px 0;border-bottom:1px dashed #e0e0e0;font-size:12px;line-height:20px;align-items:center">
+              <span style="width:38px;flex-shrink:0;text-align:center;margin-right:4px"><span class="shelf-tag" style="font-size:11px;min-width:30px;padding:0 3px">5</span></span><span style="flex:1">白术</span><span style="width:45px;text-align:right">12克</span><span style="width:40px;text-align:right;color:#888;font-size:11px">炒</span>
+            </li>
+            <li style="display:flex;padding:3px 0;border-bottom:1px dashed #e0e0e0;font-size:12px;line-height:20px;align-items:center">
+              <span style="width:38px;flex-shrink:0;text-align:center;margin-right:4px"><span class="shelf-tag" style="font-size:11px;min-width:30px;padding:0 3px">C7</span></span><span style="flex:1">茯苓</span><span style="width:45px;text-align:right">15克</span>
+            </li>
           </ul>
+          <div style="text-align:right;font-size:11px;margin-top:4px">共 7 付</div>
+          <div style="margin-top:6px;padding-top:4px;border-top:1px solid #ddd;font-size:11px">医嘱：日一剂，水煎服</div>
+          <div style="margin-top:12px;text-align:right;font-size:12px;color:#666">医师：李明</div>
+
+          <hr style="border:none;border-top:2px dashed #999;margin:16px 0">
+
+          <h3 style="text-align:center;font-size:14px;letter-spacing:4px;margin-bottom:2px">收 费 单</h3>
+          <div style="text-align:center;font-size:10px;color:#aaa;margin-bottom:8px">Billing Statement</div>
+          <div style="display:flex;flex-direction:column;gap:2px;font-size:12px;padding-bottom:6px;margin-bottom:6px;border-bottom:1px solid #ddd">
+            <span>姓名：张三</span><span>年龄：45岁</span><span>日期：2026-03-19</span>
+          </div>
+          <div style="font-size:11px;font-weight:bold;margin-bottom:4px">中药明细：</div>
+          <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:4px">
+            <thead><tr style="border-bottom:2px solid #ccc">
+              <th style="width:36px;padding:3px 1px;text-align:center;color:#555;font-size:10px">架</th>
+              <th style="text-align:left;padding:3px;color:#555;font-size:10px">药名</th>
+              <th style="padding:3px;text-align:center;color:#555;font-size:10px">用量</th>
+              <th style="padding:3px;text-align:center;color:#555;font-size:10px">单价</th>
+              <th style="padding:3px;text-align:center;color:#555;font-size:10px">小计</th>
+            </tr></thead>
+            <tbody>
+              <tr><td style="text-align:center;padding:3px 1px"><span class="shelf-tag" style="font-size:10px;min-width:26px;padding:0 2px">A3</span></td><td style="text-align:left;padding:3px">黄芪</td><td style="text-align:center;padding:3px">30g×7</td><td style="text-align:center;padding:3px">0.08</td><td style="text-align:center;padding:3px">16.80</td></tr>
+              <tr><td style="text-align:center;padding:3px 1px"><span class="shelf-tag" style="font-size:10px;min-width:26px;padding:0 2px">B12</span></td><td style="text-align:left;padding:3px">当归</td><td style="text-align:center;padding:3px">15g×7</td><td style="text-align:center;padding:3px">0.12</td><td style="text-align:center;padding:3px">12.60</td></tr>
+              <tr><td style="text-align:center;padding:3px 1px"><span class="shelf-tag" style="font-size:10px;min-width:26px;padding:0 2px">C7</span></td><td style="text-align:left;padding:3px">茯苓</td><td style="text-align:center;padding:3px">15g×7</td><td style="text-align:center;padding:3px">0.05</td><td style="text-align:center;padding:3px">5.25</td></tr>
+            </tbody>
+          </table>
+          <div style="font-size:12px;margin-top:10px;padding-top:8px;border-top:1px solid #ddd">
+            <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>药费合计：</span><span>¥69.02</span></div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>诊疗费：</span><span>¥100.00</span></div>
+            <div style="display:flex;justify-content:space-between;font-weight:bold;font-size:14px"><span>实收：</span><span>¥169.02</span></div>
+          </div>
+          <div style="margin-top:12px;text-align:right;font-size:12px;color:#666">收费员：李明</div>
         </div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- ==================== 方案 C ==================== -->
-<div class="scheme">
-  <div class="scheme-header">
-    <span class="scheme-badge c">C</span>
-    <span class="scheme-title">胶囊标签 + 黑底白字</span>
+<!-- ==================== 适配规则汇总 ==================== -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">移动端适配规则汇总</span>
   </div>
-  <div class="scheme-desc">
-    圆角胶囊形，<strong>深灰底白字</strong>，对比度最高。桌面端 min-width:38px / 移动端 32px<br>
-    黑白打印效果最佳，移动端圆角胶囊视觉紧凑不压缩药名
-  </div>
-  <div class="preview-row">
-    <div class="preview-col">
-      <div class="preview-label"><span class="icon">🖥</span> 桌面端</div>
-      <div class="rx-mock">
-        <h3>处 方 笺</h3><div class="sub">Prescription</div>
-        <div class="info-row"><span>姓名：张三</span><span>年龄：45岁</span><span>日期：2026年03月19日</span></div>
-        <div class="rp">Rp.</div>
-        <ul class="herb-list">
-          <li><span class="herb-name"><span class="tag-c">A3</span>黄芪</span><span class="herb-dosage">30克</span><span class="herb-notes"></span></li>
-          <li><span class="herb-name"><span class="tag-c">B12</span>当归</span><span class="herb-dosage">15克</span><span class="herb-notes">酒炙</span></li>
-          <li><span class="herb-name"><span class="tag-c">5</span>白术</span><span class="herb-dosage">12克</span><span class="herb-notes">炒</span></li>
-          <li><span class="herb-name"><span class="tag-c">C7</span>茯苓</span><span class="herb-dosage">15克</span><span class="herb-notes"></span></li>
-          <li><span class="herb-name"><span class="tag-c empty">--</span>甘草</span><span class="herb-dosage">6克</span><span class="herb-notes"></span></li>
-          <li><span class="herb-name"><span class="tag-c">中药柜2</span>陈皮</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
-          <li><span class="herb-name"><span class="tag-c">D1</span>柴胡</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
-        </ul>
-      </div>
-    </div>
-    <div class="preview-col mobile">
-      <div class="preview-label"><span class="icon">📱</span> 移动端 375px</div>
-      <div class="mobile-frame">
-        <div class="rx-mock">
-          <h3>处 方 笺</h3><div class="sub">Prescription</div>
-          <div class="info-row"><span>姓名：张三</span><span>年龄：45岁</span><span>日期：2026-03-19</span></div>
-          <div class="rp">Rp.</div>
-          <ul class="herb-list">
-            <li><span class="herb-name"><span class="tag-c">A3</span>黄芪</span><span class="herb-dosage">30克</span><span class="herb-notes"></span></li>
-            <li><span class="herb-name"><span class="tag-c">B12</span>当归</span><span class="herb-dosage">15克</span><span class="herb-notes">酒炙</span></li>
-            <li><span class="herb-name"><span class="tag-c">5</span>白术</span><span class="herb-dosage">12克</span><span class="herb-notes">炒</span></li>
-            <li><span class="herb-name"><span class="tag-c">C7</span>茯苓</span><span class="herb-dosage">15克</span><span class="herb-notes"></span></li>
-            <li><span class="herb-name"><span class="tag-c empty">--</span>甘草</span><span class="herb-dosage">6克</span><span class="herb-notes"></span></li>
-            <li><span class="herb-name"><span class="tag-c">中药柜2</span>陈皮</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
-            <li><span class="herb-name"><span class="tag-c">D1</span>柴胡</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ==================== 方案 D ==================== -->
-<div class="scheme">
-  <div class="scheme-header">
-    <span class="scheme-badge d">D</span>
-    <span class="scheme-title">方括号文本 + 固定宽度列</span>
-  </div>
-  <div class="scheme-desc">
-    无背景色，<strong>橙红色纯文本 <code>[A3]</code></strong> 格式，桌面端 50px / 移动端 40px 固定列<br>
-    最省墨，无色差，移动端列宽自动收窄，药名空间最大
-  </div>
-  <div class="preview-row">
-    <div class="preview-col">
-      <div class="preview-label"><span class="icon">🖥</span> 桌面端</div>
-      <div class="rx-mock">
-        <h3>处 方 笺</h3><div class="sub">Prescription</div>
-        <div class="info-row"><span>姓名：张三</span><span>年龄：45岁</span><span>日期：2026年03月19日</span></div>
-        <div class="rp">Rp.</div>
-        <ul class="herb-list">
-          <li><span class="shelf-col-d">[A3]</span><span class="herb-name">黄芪</span><span class="herb-dosage">30克</span><span class="herb-notes"></span></li>
-          <li><span class="shelf-col-d">[B12]</span><span class="herb-name">当归</span><span class="herb-dosage">15克</span><span class="herb-notes">酒炙</span></li>
-          <li><span class="shelf-col-d">[5]</span><span class="herb-name">白术</span><span class="herb-dosage">12克</span><span class="herb-notes">炒</span></li>
-          <li><span class="shelf-col-d">[C7]</span><span class="herb-name">茯苓</span><span class="herb-dosage">15克</span><span class="herb-notes"></span></li>
-          <li><span class="shelf-col-d empty">[--]</span><span class="herb-name">甘草</span><span class="herb-dosage">6克</span><span class="herb-notes"></span></li>
-          <li><span class="shelf-col-d">[柜2]</span><span class="herb-name">陈皮</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
-          <li><span class="shelf-col-d">[D1]</span><span class="herb-name">柴胡</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
-        </ul>
-      </div>
-    </div>
-    <div class="preview-col mobile">
-      <div class="preview-label"><span class="icon">📱</span> 移动端 375px</div>
-      <div class="mobile-frame">
-        <div class="rx-mock">
-          <h3>处 方 笺</h3><div class="sub">Prescription</div>
-          <div class="info-row"><span>姓名：张三</span><span>年龄：45岁</span><span>日期：2026-03-19</span></div>
-          <div class="rp">Rp.</div>
-          <ul class="herb-list">
-            <li><span class="shelf-col-d">[A3]</span><span class="herb-name">黄芪</span><span class="herb-dosage">30克</span><span class="herb-notes"></span></li>
-            <li><span class="shelf-col-d">[B12]</span><span class="herb-name">当归</span><span class="herb-dosage">15克</span><span class="herb-notes">酒炙</span></li>
-            <li><span class="shelf-col-d">[5]</span><span class="herb-name">白术</span><span class="herb-dosage">12克</span><span class="herb-notes">炒</span></li>
-            <li><span class="shelf-col-d">[C7]</span><span class="herb-name">茯苓</span><span class="herb-dosage">15克</span><span class="herb-notes"></span></li>
-            <li><span class="shelf-col-d empty">[--]</span><span class="herb-name">甘草</span><span class="herb-dosage">6克</span><span class="herb-notes"></span></li>
-            <li><span class="shelf-col-d">[柜2]</span><span class="herb-name">陈皮</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
-            <li><span class="shelf-col-d">[D1]</span><span class="herb-name">柴胡</span><span class="herb-dosage">10克</span><span class="herb-notes"></span></li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ==================== 对比总结 ==================== -->
-<div class="scheme">
-  <div class="scheme-header">
-    <span class="scheme-title">方案对比总结</span>
-  </div>
-  <table class="summary-table">
+  <table class="summary-table" style="margin-top:8px">
     <thead>
-      <tr>
-        <th style="text-align:left">方案</th>
-        <th>打印对比度</th>
-        <th>药名对齐</th>
-        <th>省墨</th>
-        <th>移动端适配</th>
-        <th style="text-align:left">适用场景</th>
-      </tr>
+      <tr><th style="text-align:left">元素</th><th>桌面端</th><th>移动端 (≤768px)</th></tr>
     </thead>
     <tbody>
-      <tr>
-        <td style="font-weight:600;color:#999;">旧 当前方案</td>
-        <td>★★☆☆☆</td><td>★★☆☆☆</td><td>★★★★☆</td><td>★★☆☆☆</td>
-        <td style="text-align:left;color:#999;">仅屏幕显示</td>
-      </tr>
-      <tr>
-        <td style="font-weight:600;color:#1677ff;">A 深色高对比</td>
-        <td>★★★★★</td><td>★★★★☆</td><td>★★★☆☆</td><td>★★★★☆</td>
-        <td style="text-align:left">彩色打印 + 屏幕兼顾</td>
-      </tr>
-      <tr>
-        <td style="font-weight:600;color:#13c2c2;">B 独立左列</td>
-        <td>★★★★☆</td><td>★★★★★</td><td>★★★★☆</td><td>★★★★★</td>
-        <td style="text-align:left">对齐要求高、移动端优先</td>
-      </tr>
-      <tr>
-        <td style="font-weight:600;color:#722ed1;">C 胶囊黑底</td>
-        <td>★★★★★</td><td>★★★★☆</td><td>★★☆☆☆</td><td>★★★★☆</td>
-        <td style="text-align:left">黑白打印、视觉最醒目</td>
-      </tr>
-      <tr>
-        <td style="font-weight:600;color:#eb2f96;">D 方括号文本</td>
-        <td>★★★★☆</td><td>★★★★★</td><td>★★★★★</td><td>★★★★★</td>
-        <td style="text-align:left">黑白打印机、最省墨</td>
-      </tr>
+      <tr><td style="font-weight:600">处方 - 货架列宽</td><td>46px</td><td>38px</td></tr>
+      <tr><td style="font-weight:600">处方 - 标签 min-width</td><td>36px</td><td>30px</td></tr>
+      <tr><td style="font-weight:600">处方 - 标签字号</td><td>12px</td><td>11px</td></tr>
+      <tr><td style="font-weight:600">处方 - 药名字号</td><td>13px</td><td>12px</td></tr>
+      <tr><td style="font-weight:600">处方 - 备注列宽</td><td>70px</td><td>45px</td></tr>
+      <tr><td style="font-weight:600">处方 - info-row</td><td>flex 横排</td><td>flex-direction: column</td></tr>
+      <tr style="border-top:2px solid #eee"><td style="font-weight:600">收费 - 货架列宽</td><td>46px</td><td>36px</td></tr>
+      <tr><td style="font-weight:600">收费 - 标签 min-width</td><td>36px</td><td>26px</td></tr>
+      <tr><td style="font-weight:600">收费 - 标签字号</td><td>12px</td><td>10px</td></tr>
+      <tr><td style="font-weight:600">收费 - 表格字号</td><td>13px</td><td>11px</td></tr>
+      <tr><td style="font-weight:600">收费 - 表头文案</td><td>货架 / 药名 / 用量 / 单价(元/克) / 小计(元)</td><td>架 / 药名 / 用量 / 单价 / 小计</td></tr>
+      <tr><td style="font-weight:600">收费 - summary 字号</td><td>14px → 16px(实收)</td><td>12px → 14px(实收)</td></tr>
     </tbody>
   </table>
-  <div style="margin-top:16px;padding:12px;background:#f6f8fa;border-radius:8px;font-size:12px;line-height:1.8;color:#666;">
-    <strong style="color:#333;">移动端适配策略：</strong><br>
-    <span style="color:#1677ff;">A</span> — min-width 38→32px，字号 12→11px，间距 6→4px<br>
-    <span style="color:#13c2c2;">B</span> — 列宽 46→38px，标签 min-width 36→30px，字号 12→11px<br>
-    <span style="color:#722ed1;">C</span> — min-width 38→32px，字号 11→10px，padding 收窄<br>
-    <span style="color:#eb2f96;">D</span> — 列宽 50→40px，字号 13→11px，最省空间
-  </div>
 </div>
 
 </body>

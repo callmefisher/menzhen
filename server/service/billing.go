@@ -39,16 +39,17 @@ func NewBillingService(db *gorm.DB) *BillingService {
 
 // BillingDetailItem represents a single drug line in the billing detail.
 type BillingDetailItem struct {
-	HerbName  string  `json:"herb_name"`
-	Category  string  `json:"category"`
-	Dosage    string  `json:"dosage"`
-	DosageVal float64 `json:"dosage_val"`
-	Unit      string  `json:"unit"`
-	Doses     int     `json:"doses"`
-	UnitPrice float64 `json:"unit_price"`
-	ItemCost  float64 `json:"item_cost"`
-	InStock   bool    `json:"in_stock"`
-	ShelfNo   string  `json:"shelf_no"`
+	HerbName      string  `json:"herb_name"`
+	Category      string  `json:"category"`
+	Dosage        string  `json:"dosage"`
+	DosageVal     float64 `json:"dosage_val"`
+	Unit          string  `json:"unit"`
+	Doses         int     `json:"doses"`
+	UnitPrice     float64 `json:"unit_price"`
+	ItemCost      float64 `json:"item_cost"`
+	InStock       bool    `json:"in_stock"`
+	StockQuantity float64 `json:"stock_quantity"`
+	ShelfNo       string  `json:"shelf_no"`
 }
 
 // BillingDetail is the full billing detail response.
@@ -125,6 +126,7 @@ func (s *BillingService) GetBillingDetail(tenantID, prescriptionID uint64) (*Bil
 
 		if drug, ok := drugMap[pi.HerbName]; ok {
 			item.InStock = true
+			item.StockQuantity = drug.Stock
 			item.ShelfNo = drug.ShelfNo
 			if category == "herb" {
 				// Inventory stores herb price as 元/500克, convert to 元/克.

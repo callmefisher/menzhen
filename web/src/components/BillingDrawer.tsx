@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Drawer,
-  Table,
   InputNumber,
   Button,
   Spin,
@@ -151,106 +150,124 @@ export default function BillingDrawer({
   const herbs = (detail?.items || []).filter((i) => i.category === 'herb');
   const patents = (detail?.items || []).filter((i) => i.category === 'patent');
 
+  // 计算药品库存缺口
+  const getStockShortage = (item: BillingDetail['items'][0]) => {
+    if (!item.in_stock) return { needed: 0, shortage: 0, insufficient: false, noStock: true };
+    const needed = item.category === 'herb' ? item.dosage_val * item.doses : item.dosage_val;
+    const shortage = needed - (item.stock_quantity ?? 0);
+    return { needed, shortage: Math.max(0, shortage), insufficient: shortage > 0, noStock: false };
+  };
+
   // -- Mobile card renderer for drug items --
-  const renderMobileHerbCard = (item: BillingDetail['items'][0]) => (
-    <Card
-      key={item.herb_name}
-      size="small"
-      style={{ marginBottom: 8, borderRadius: 8 }}
-      styles={{ body: { padding: '8px 12px' } }}
-    >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ fontWeight: 500, fontSize: 15 }}>
-          {item.herb_name}
-          {!item.in_stock && <Tag color="orange" style={{ marginLeft: 4, fontSize: 12 }}>无库存</Tag>}
+  const renderMobileHerbCard = (item: BillingDetail['items'][0], idx: number) => {
+    const stock = getStockShortage(item);
+    const isWarning = stock.noStock || stock.insufficient;
+    return (
+      <Card
+        key={`${item.herb_name}-${idx}`}
+        size="small"
+        style={{
+          marginBottom: 8, borderRadius: 8,
+          ...(isWarning ? { borderColor: '#ffa39e', background: '#fff8f7' } : {}),
+        }}
+        styles={{ body: { padding: '8px 12px' } }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontWeight: 500, fontSize: 15 }}>
+            {item.herb_name}
+            {stock.noStock && <Tag color="orange" style={{ marginLeft: 4, fontSize: 12 }}>无库存</Tag>}
+            {stock.insufficient && <Tag color="red" style={{ marginLeft: 4, fontSize: 12 }}>缺{Math.ceil(stock.shortage)}g</Tag>}
+          </div>
+          <span style={{ fontSize: 16, fontWeight: 600, color: '#cf1322' }}>¥{item.item_cost.toFixed(2)}</span>
         </div>
-        <span style={{ fontSize: 16, fontWeight: 600, color: '#cf1322' }}>¥{item.item_cost.toFixed(2)}</span>
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, color: '#666', fontSize: 14 }}>
-        <span>{item.dosage} × {item.doses}付</span>
-        <span>单价: {item.in_stock ? `¥${parseFloat(item.unit_price.toFixed(3))}/克` : '-'}</span>
-      </div>
-    </Card>
-  );
-
-  const renderMobilePatentCard = (item: BillingDetail['items'][0]) => (
-    <Card
-      key={item.herb_name}
-      size="small"
-      style={{ marginBottom: 8, borderRadius: 8 }}
-      styles={{ body: { padding: '8px 12px' } }}
-    >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ fontWeight: 500, fontSize: 15 }}>
-          <Tag color="purple" style={{ fontSize: 12, marginRight: 4 }}>成药</Tag>
-          {item.herb_name}
-          {!item.in_stock && <Tag color="orange" style={{ marginLeft: 4, fontSize: 12 }}>无库存</Tag>}
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, color: '#666', fontSize: 14 }}>
+          <span>{item.dosage_val}克 × {item.doses}付</span>
+          <span>单价: {item.in_stock ? `¥${parseFloat(item.unit_price.toFixed(3))}/克` : '-'}</span>
         </div>
-        <span style={{ fontSize: 16, fontWeight: 600, color: '#cf1322' }}>¥{item.item_cost.toFixed(2)}</span>
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, color: '#666', fontSize: 14 }}>
-        <span>{item.dosage}</span>
-        <span>单价: {item.in_stock ? `¥${parseFloat(item.unit_price.toFixed(3))}/盒` : '-'}</span>
-      </div>
-    </Card>
-  );
+        {stock.insufficient && (
+          <div style={{ marginTop: 4, fontSize: 12, color: '#cf1322', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span>⚠️ 库存不足：需{Math.ceil(stock.needed)}g，仅剩{Math.floor(item.stock_quantity ?? 0)}g</span>
+          </div>
+        )}
+        {stock.noStock && (
+          <div style={{ marginTop: 4, fontSize: 12, color: '#cf1322', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span>⚠️ 未录入库存</span>
+          </div>
+        )}
+      </Card>
+    );
+  };
 
-  // -- Desktop table columns --
-  const herbColumns = [
-    {
-      title: '药名',
-      dataIndex: 'herb_name',
-      key: 'herb_name',
-      render: (name: string, record: { in_stock: boolean }) => (
-        <span>{name}{!record.in_stock && <Tag color="orange" style={{ marginLeft: 4, fontSize: 11 }}>无库存</Tag>}</span>
-      ),
-    },
-    { title: '用量(克)', dataIndex: 'dosage_val', key: 'dosage_val', width: 90, align: 'center' as const },
-    {
-      title: '单价(元/克)',
-      dataIndex: 'unit_price',
-      key: 'unit_price',
-      width: 110,
-      align: 'right' as const,
-      render: (v: number, record: { in_stock: boolean }) => record.in_stock ? `¥${parseFloat(v.toFixed(3))}` : '-',
-    },
-    {
-      title: '小计(元)',
-      dataIndex: 'item_cost',
-      key: 'item_cost',
-      width: 100,
-      align: 'right' as const,
-      render: (v: number) => <span style={{ fontWeight: 600, color: '#cf1322' }}>¥{v.toFixed(2)}</span>,
-    },
-  ];
+  const renderMobilePatentCard = (item: BillingDetail['items'][0], idx: number) => {
+    const stock = getStockShortage(item);
+    const isWarning = stock.noStock || stock.insufficient;
+    return (
+      <Card
+        key={`${item.herb_name}-${idx}`}
+        size="small"
+        style={{
+          marginBottom: 8, borderRadius: 8,
+          ...(isWarning ? { borderColor: '#ffa39e', background: '#fff8f7' } : {}),
+        }}
+        styles={{ body: { padding: '8px 12px' } }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontWeight: 500, fontSize: 15 }}>
+            <Tag color="purple" style={{ fontSize: 12, marginRight: 4 }}>成药</Tag>
+            {item.herb_name}
+            {stock.noStock && <Tag color="orange" style={{ marginLeft: 4, fontSize: 12 }}>无库存</Tag>}
+            {stock.insufficient && <Tag color="red" style={{ marginLeft: 4, fontSize: 12 }}>缺{Math.ceil(stock.shortage)}盒</Tag>}
+          </div>
+          <span style={{ fontSize: 16, fontWeight: 600, color: '#cf1322' }}>¥{item.item_cost.toFixed(2)}</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, color: '#666', fontSize: 14 }}>
+          <span>{item.dosage_val}盒</span>
+          <span>单价: {item.in_stock ? `¥${parseFloat(item.unit_price.toFixed(3))}/盒` : '-'}</span>
+        </div>
+        {stock.insufficient && (
+          <div style={{ marginTop: 4, fontSize: 12, color: '#cf1322', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span>⚠️ 库存不足：需{Math.ceil(stock.needed)}盒，仅剩{Math.floor(item.stock_quantity ?? 0)}盒</span>
+          </div>
+        )}
+        {stock.noStock && (
+          <div style={{ marginTop: 4, fontSize: 12, color: '#cf1322', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span>⚠️ 未录入库存</span>
+          </div>
+        )}
+      </Card>
+    );
+  };
 
-  const patentColumns = [
-    {
-      title: '药名',
-      dataIndex: 'herb_name',
-      key: 'herb_name',
-      render: (name: string, record: { in_stock: boolean }) => (
-        <span>{name}{!record.in_stock && <Tag color="orange" style={{ marginLeft: 4, fontSize: 11 }}>无库存</Tag>}</span>
-      ),
-    },
-    { title: '用量(盒)', dataIndex: 'dosage_val', key: 'dosage_val', width: 90, align: 'center' as const },
-    {
-      title: '单价(元/盒)',
-      dataIndex: 'unit_price',
-      key: 'unit_price',
-      width: 110,
-      align: 'right' as const,
-      render: (v: number, record: { in_stock: boolean }) => record.in_stock ? `¥${parseFloat(v.toFixed(3))}` : '-',
-    },
-    {
-      title: '小计(元)',
-      dataIndex: 'item_cost',
-      key: 'item_cost',
-      width: 100,
-      align: 'right' as const,
-      render: (v: number) => <span style={{ fontWeight: 600, color: '#cf1322' }}>¥{v.toFixed(2)}</span>,
-    },
-  ];
+  // -- Desktop compact item renderer --
+  const renderDesktopItem = (item: BillingDetail['items'][0], unit: string, showDoses?: boolean, idx?: number) => {
+    const stock = getStockShortage(item);
+    const unitLabel = item.category === 'herb' ? 'g' : '盒';
+    return (
+      <div key={`${item.herb_name}-${idx}`} style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        padding: '4px 8px', borderBottom: '1px dashed #eee', fontSize: 13,
+      }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+          {item.shelf_no
+            ? <Tag color="green" style={{ fontSize: 11, padding: '0 4px', margin: 0, fontFamily: 'monospace', minWidth: 36, textAlign: 'center', flexShrink: 0 }}>{item.shelf_no}</Tag>
+            : <Tag style={{ fontSize: 11, padding: '0 4px', margin: 0, fontFamily: 'monospace', color: '#ccc', minWidth: 36, textAlign: 'center', flexShrink: 0 }}>--</Tag>
+          }
+          <span style={{ whiteSpace: 'nowrap' }}>{item.herb_name}</span>
+          <span style={{ color: '#666', whiteSpace: 'nowrap' }}>{item.dosage_val}{unit}{showDoses ? `×${item.doses}付` : ''}</span>
+          {stock.noStock && <Tag color="orange" style={{ fontSize: 11, margin: 0 }}>无库存</Tag>}
+          {stock.insufficient && (
+            <span style={{
+              fontSize: 11, padding: '0 6px', background: '#fff1f0', border: '1px solid #ffa39e',
+              borderRadius: 4, color: '#cf1322', fontWeight: 500, whiteSpace: 'nowrap',
+            }}>
+              缺{Math.ceil(stock.shortage)}{unitLabel}
+            </span>
+          )}
+        </span>
+        <span style={{ color: '#cf1322', fontWeight: 500, whiteSpace: 'nowrap', marginLeft: 4 }}>¥{item.item_cost.toFixed(2)}</span>
+      </div>
+    );
+  };
 
   const hasItems = herbs.length > 0 || patents.length > 0;
 
@@ -283,6 +300,7 @@ export default function BillingDrawer({
       }
       open={open}
       onClose={onClose}
+      destroyOnClose
       width={isMobile ? '100%' : 640}
       footer={printOnly ? null : (
         <div style={{
@@ -351,18 +369,17 @@ export default function BillingDrawer({
                 </div>
                 {isMobile ? (
                   <div style={{ marginBottom: 12 }}>
-                    {herbs.map(renderMobileHerbCard)}
+                    {herbs.map((item, i) => renderMobileHerbCard(item, i))}
                   </div>
                 ) : (
-                  <Table
-                    dataSource={herbs}
-                    columns={herbColumns}
-                    rowKey="herb_name"
-                    pagination={false}
-                    size="small"
-                    bordered
-                    style={{ marginBottom: 12 }}
-                  />
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(2, 1fr)',
+                    gap: '4px 12px',
+                    marginBottom: 12,
+                  }}>
+                    {herbs.map((item, i) => renderDesktopItem(item, 'g', true, i))}
+                  </div>
                 )}
               </>
             )}
@@ -376,18 +393,17 @@ export default function BillingDrawer({
                 </div>
                 {isMobile ? (
                   <div style={{ marginBottom: 12 }}>
-                    {patents.map(renderMobilePatentCard)}
+                    {patents.map((item, i) => renderMobilePatentCard(item, i))}
                   </div>
                 ) : (
-                  <Table
-                    dataSource={patents}
-                    columns={patentColumns}
-                    rowKey="herb_name"
-                    pagination={false}
-                    size="small"
-                    bordered
-                    style={{ marginBottom: 12 }}
-                  />
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(2, 1fr)',
+                    gap: '4px 12px',
+                    marginBottom: 12,
+                  }}>
+                    {patents.map((item, i) => renderDesktopItem(item, '盒', false, i))}
+                  </div>
                 )}
               </>
             )}
