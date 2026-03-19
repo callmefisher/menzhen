@@ -330,13 +330,15 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         if any(s != "running" for s in states):
                             docker_partial = True
 
-            # status: "running" | "partial" | "docker_stopped" | "not_installed"
+            # status: "running" | "partial" | "docker_stopped" | "no_containers" | "not_installed"
             if port_ok:
                 status = "running"
             elif docker_running:
                 status = "partial"
             elif docker_installed and not docker_daemon_ok:
                 status = "docker_stopped"
+            elif docker_installed and docker_daemon_ok:
+                status = "no_containers"
             else:
                 status = "not_installed"
             self._send_json({
@@ -1955,6 +1957,42 @@ async function renderStep2(el) {
       };
       es.onerror = () => { es.close(); btn.disabled = false; btn.textContent = '重试'; };
     };
+  } else if (data.status === 'no_containers') {
+    el.innerHTML = `
+      ${osMismatchHtml}
+      <h2>第二步：服务未启动</h2>
+      <p class="subtitle">Docker 正在运行，但系统服务未启动。可能是容器被清理或首次部署。</p>
+      <div class="hint-box yellow">
+        <strong>服务未运行。</strong><br>
+        如果之前已安装过，点击「启动服务」即可恢复。<br>
+        如果是全新安装，请点击「继续安装」。
+      </div>
+      <div class="actions">
+        <button class="btn btn-secondary" onclick="state.step=1;render();">&larr; 上一步</button>
+        <button class="btn btn-success" id="startServicesBtn">启动服务</button>
+        <button class="btn btn-primary" id="freshInstallBtn">继续安装 &rarr;</button>
+      </div>
+      <div id="startLog"></div>
+    `;
+    el.querySelector('#startServicesBtn').onclick = () => {
+      const btn = el.querySelector('#startServicesBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> 正在启动服务...';
+      const logDiv = el.querySelector('#startLog');
+      logDiv.innerHTML = '<div class="log-console" id="startConsole"></div>';
+      const cons = logDiv.querySelector('#startConsole');
+      const es = new EventSource('/api/start-docker');
+      es.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'log') { cons.textContent += msg.data + '\\n'; cons.scrollTop = cons.scrollHeight; }
+        else if (msg.type === 'done') {
+          es.close();
+          setTimeout(() => renderStep2(el), 3000);
+        }
+      };
+      es.onerror = () => { es.close(); btn.disabled = false; btn.textContent = '重试'; };
+    };
+    el.querySelector('#freshInstallBtn').onclick = () => { state.step = 3; render(); };
   } else {
     el.innerHTML = `
       ${osMismatchHtml}
