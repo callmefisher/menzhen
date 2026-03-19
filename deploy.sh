@@ -133,7 +133,7 @@ fi
 
 # 7. Update services (only recreates containers with changed images/config)
 echo ">> 更新服务..."
-docker compose up -d
+docker compose up -d --force-recreate
 
 # Restart nginx to refresh upstream DNS (api/web container IPs may have changed)
 echo ">> 刷新 nginx 上游连接..."
