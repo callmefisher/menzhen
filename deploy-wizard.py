@@ -898,7 +898,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "echo [2/3] 正在重新构建程序（约5-15分钟）... && "
                     "docker compose build && "
                     "echo [3/3] 正在重启服务... && "
-                    "docker compose up -d && "
+                    "docker compose up -d --force-recreate && "
                     "docker compose restart nginx && "
                     "echo 更新完成!"
                 ]
@@ -915,7 +915,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "echo '[2/3] 正在重新构建程序（约5-15分钟）...' && "
                     "docker compose build && "
                     "echo '[3/3] 正在重启服务...' && "
-                    "docker compose up -d && "
+                    "docker compose up -d --force-recreate && "
                     "docker compose restart nginx && "
                     "echo '更新完成!'"
                 ]
