@@ -10,7 +10,7 @@
 |----------|---------|----------|
 | **Windows 10/11** | `start-wizard.bat` | https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.bat |
 | **macOS** | `start-wizard.command` | https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command |
-| **Linux (桌面/Server)** | `start-wizard.sh` | https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.sh |
+| **Linux (桌面/Server)** | `start-wizard.command` | https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command |
 
 将下载的文件放到一个**空文件夹**中（例如 `D:\门诊系统\` 或 `~/menzhen/`）。
 
@@ -32,7 +32,7 @@
 1. 打开「终端」应用（在 启动台 → 其他 中，或按 `⌘+空格` 搜索"终端"）
 2. 粘贴以下命令并按回车：
    ```bash
-   mkdir -p ~/menzhen && cd ~/menzhen && curl -fsSLO https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command && bash start-wizard.command
+   mkdir -p ~/menzhen && cd ~/menzhen && [ -f start-wizard.command ] || curl -fsSLO https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command && bash start-wizard.command
    ```
 3. 如果提示安装开发者工具，点击「安装」等待完成后按回车
 4. 浏览器会自动打开安装向导页面
@@ -59,7 +59,7 @@
    ```
 3. 运行脚本：
    ```bash
-   bash start-wizard.sh
+   bash start-wizard.command
    ```
 4. 如果提示输入密码，输入你的登录密码（用于安装软件）
 5. 浏览器会自动打开安装向导页面
@@ -70,8 +70,8 @@
 2. 创建目录并下载脚本：
    ```bash
    mkdir -p ~/menzhen && cd ~/menzhen
-   curl -fsSLO https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.sh
-   bash start-wizard.sh
+   [ -f start-wizard.command ] || curl -fsSLO https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command
+   bash start-wizard.command
    ```
 3. 脚本启动后，在**本地电脑浏览器**中访问：
    ```

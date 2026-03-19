@@ -366,13 +366,32 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
         if self.path == "/api/get-existing-site-id":
             env_path = SCRIPT_DIR / ".env"
             site_id = ""
+            source = ""
+            # 1) Try local .env file
             if env_path.exists():
                 for line in env_path.read_text(encoding="utf-8").splitlines():
                     line = line.strip()
                     if line.startswith("SITE_ID=") and not line.startswith("#"):
                         site_id = line.split("=", 1)[1].strip()
+                        source = "env"
                         break
-            self._send_json({"site_id": site_id, "exists": bool(site_id)})
+            # 2) If not found locally, try reading from running Docker containers
+            if not site_id:
+                for container_name in ("menzhen-api-1", "menzhen-api"):
+                    rc, out, _ = run_command([
+                        "docker", "inspect", "--format",
+                        '{{range .Config.Env}}{{println .}}{{end}}',
+                        container_name,
+                    ])
+                    if rc == 0 and out.strip():
+                        for line in out.strip().splitlines():
+                            if line.startswith("SITE_ID="):
+                                site_id = line.split("=", 1)[1].strip()
+                                source = "container"
+                                break
+                    if site_id:
+                        break
+            self._send_json({"site_id": site_id, "exists": bool(site_id), "source": source})
             return
 
         if self.path == "/api/generate-site-id":
@@ -673,6 +692,9 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
 
         if self.path == "/api/clone-repo":
             # git clone fails on non-empty dir, so use init+pull instead
+            # Exclude wizard files from checkout to avoid overwriting the
+            # running script (shell reads by file offset; overwrite = garbled).
+            EXCLUDE = "':!deploy-wizard.py' ':!start-wizard.command' ':!start-wizard.bat'"
             os_key, _ = detect_os()
             script_dir = str(SCRIPT_DIR)
             if os_key == "windows":
@@ -682,7 +704,8 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "git init && "
                     f'git remote add origin "{REPO_URL}" 2>nul || git remote set-url origin "{REPO_URL}" && '
                     "git fetch origin && "
-                    "git checkout -f origin/main -- . && "
+                    f"git checkout -f origin/main -- . {EXCLUDE} && "
+                    "git reset origin/main && "
                     'echo 代码下载完成!'
                 ])
             else:
@@ -694,9 +717,80 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "git init && "
                     f"git remote add origin {q_url} 2>/dev/null || git remote set-url origin {q_url} && "
                     "git fetch origin && "
-                    "git checkout -f origin/main -- . && "
+                    f"git checkout -f origin/main -- . {EXCLUDE} && "
+                    "git reset origin/main && "
                     "echo '代码下载完成!'"
                 ])
+            return
+
+        if self.path == "/api/check-updates":
+            # Check if there are new commits on origin/main
+            # 1. git fetch
+            rc, _, err = run_command(["git", "fetch", "origin"])
+            if rc != 0:
+                self._send_json({"has_updates": None, "error": "fetch_failed",
+                                 "message": f"无法连接远程仓库: {err.strip()}"})
+                return
+            # 2. Check HEAD validity
+            rc_head, _, _ = run_command(["git", "rev-parse", "HEAD"])
+            if rc_head != 0:
+                self._send_json({"has_updates": None, "error": "no_head",
+                                 "message": "本地版本信息缺失，请先点击「同步代码」"})
+                return
+            # 3. Compare HEAD..origin/main
+            rc, out, _ = run_command(["git", "log", "HEAD..origin/main",
+                                      "--oneline", "--no-decorate", "-n", "50"])
+            if rc != 0:
+                self._send_json({"has_updates": None, "error": "compare_failed",
+                                 "message": "无法比较版本差异"})
+                return
+            commits = []
+            for line in out.strip().splitlines():
+                if line.strip():
+                    parts = line.strip().split(" ", 1)
+                    commits.append({"hash": parts[0], "message": parts[1] if len(parts) > 1 else ""})
+            self._send_json({
+                "has_updates": len(commits) > 0,
+                "behind_count": len(commits),
+                "commits": commits,
+            })
+            return
+
+        if self.path == "/api/pull-and-rebuild":
+            # Pull latest code, rebuild images, restart services — all streamed
+            EXCLUDE = "':!deploy-wizard.py' ':!start-wizard.command' ':!start-wizard.bat'"
+            os_key, _ = detect_os()
+            if os_key == "windows":
+                q_dir = str(SCRIPT_DIR)
+                cmd = [
+                    "cmd", "/c",
+                    f'cd /d "{q_dir}" && '
+                    "echo [1/3] 正在拉取最新代码... && "
+                    "git fetch origin && "
+                    f"git checkout -f origin/main -- . {EXCLUDE} && "
+                    "git reset origin/main && "
+                    "echo [2/3] 正在重新构建程序（约5-15分钟）... && "
+                    "docker compose build && "
+                    "echo [3/3] 正在重启服务... && "
+                    "docker compose up -d && "
+                    "echo 更新完成!"
+                ]
+            else:
+                q_dir = shlex.quote(str(SCRIPT_DIR))
+                cmd = [
+                    "bash", "-c",
+                    f"cd {q_dir} && "
+                    "echo '[1/3] 正在拉取最新代码...' && "
+                    "git fetch origin && "
+                    f"git checkout -f origin/main -- . {EXCLUDE} && "
+                    "git reset origin/main && "
+                    "echo '[2/3] 正在重新构建程序（约5-15分钟）...' && "
+                    "docker compose build && "
+                    "echo '[3/3] 正在重启服务...' && "
+                    "docker compose up -d && "
+                    "echo '更新完成!'"
+                ]
+            stream_command(self, cmd)
             return
 
         if self.path == "/api/get-env-config":
@@ -734,8 +828,8 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
         if self.path == "/api/save-site-id":
             body = self._read_body()
             site_id = body.get("site_id", "")
-            if not site_id or not re.fullmatch(r"[A-Za-z0-9]{1,20}", site_id):
-                self._send_json({"error": "站点编号格式不正确：只能包含英文字母和数字，长度不超过20位"}, 400)
+            if not site_id or not re.fullmatch(r"[A-Za-z0-9]{6,20}", site_id):
+                self._send_json({"error": "站点编号格式不正确：只能包含英文字母和数字，长度6-20位"}, 400)
                 return
             # Write SITE_ID to .env
             env_path = SCRIPT_DIR / ".env"
@@ -1395,9 +1489,18 @@ async function renderStep2(el) {
         ${lanExtra}
       </div>
       <div class="hint-box green" style="text-align:center;">
-        系统运行正常！您可以直接点击下方按钮打开系统。<br>
-        如果需要重新安装，请点击「重新安装」。
+        系统运行正常！您可以直接点击下方按钮打开系统。
       </div>
+
+      <div style="margin-top:20px; padding:20px; background:#f8fafc; border:1px solid var(--border); border-radius:8px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <h3 style="font-size:16px; margin:0;">版本更新</h3>
+          <button class="btn btn-secondary" id="checkUpdateBtn" style="padding:8px 18px; font-size:14px;">检查更新</button>
+        </div>
+        <div id="updateResult" style="margin-top:12px;"></div>
+        <div id="updateLog"></div>
+      </div>
+
       <div class="actions">
         <button class="btn btn-secondary" onclick="state.step=1;render();">&larr; 上一步</button>
         <div>
@@ -1406,6 +1509,78 @@ async function renderStep2(el) {
         </div>
       </div>
     `;
+    // 检查更新按钮
+    el.querySelector('#checkUpdateBtn').onclick = async () => {
+      const btn = el.querySelector('#checkUpdateBtn');
+      const resultDiv = el.querySelector('#updateResult');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> 检查中...';
+      resultDiv.innerHTML = '';
+      try {
+        const upd = await api('/api/check-updates');
+        if (upd.error) {
+          resultDiv.innerHTML = '<div class="hint-box yellow">' + esc(upd.message) + '</div>';
+          btn.disabled = false; btn.textContent = '重试';
+          return;
+        }
+        if (!upd.has_updates) {
+          resultDiv.innerHTML = '<div class="hint-box green" style="text-align:center;">已是最新版本，无需更新。</div>';
+          btn.disabled = false; btn.textContent = '检查更新';
+          return;
+        }
+        // 有更新
+        let commitList = upd.commits.map(c =>
+          '<li style="margin:4px 0;"><code style="background:#eff6ff;padding:2px 6px;border-radius:4px;font-size:13px;">' + esc(c.hash) + '</code> ' + esc(c.message) + '</li>'
+        ).join('');
+        resultDiv.innerHTML = `
+          <div style="margin-top:8px; padding:14px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px;">
+            <div style="font-size:15px; font-weight:700; color:#1e40af; margin-bottom:8px;">
+              发现 ${upd.behind_count} 个新版本更新
+            </div>
+            <ul style="list-style:none; padding:0; font-size:14px; max-height:160px; overflow-y:auto; line-height:1.6;">
+              ${commitList}
+            </ul>
+            <button class="btn btn-success" id="doUpdateBtn" style="margin-top:12px; width:100%; font-size:16px;">
+              一键更新（拉取代码 → 构建镜像 → 重启服务）
+            </button>
+            <div style="font-size:13px; color:var(--text-secondary); text-align:center; margin-top:6px;">
+              更新过程中系统会短暂不可用，构建约需 5-15 分钟
+            </div>
+          </div>
+        `;
+        btn.disabled = false; btn.textContent = '检查更新';
+        // 一键更新按钮
+        el.querySelector('#doUpdateBtn').onclick = () => {
+          const ubtn = el.querySelector('#doUpdateBtn');
+          ubtn.disabled = true;
+          ubtn.innerHTML = '<span class="spinner"></span> 正在更新，请勿关闭页面...';
+          const logDiv = el.querySelector('#updateLog');
+          logDiv.innerHTML = '<details open style="margin-top:12px;"><summary style="cursor:pointer;font-size:14px;color:var(--text-secondary);">更新日志</summary><div class="log-console" id="updateConsole"></div></details>';
+          const cons = logDiv.querySelector('#updateConsole');
+          const es = new EventSource('/api/pull-and-rebuild');
+          es.onmessage = (e) => {
+            const msg = JSON.parse(e.data);
+            if (msg.type === 'log') {
+              cons.textContent += msg.data + '\n';
+              cons.scrollTop = cons.scrollHeight;
+            } else if (msg.type === 'done') {
+              es.close();
+              if (msg.result === 'success') {
+                logDiv.innerHTML = '<div class="hint-box green" style="text-align:center; font-size:16px; margin-top:12px;">更新完成！系统已重新启动。</div>';
+                resultDiv.innerHTML = '';
+              } else {
+                logDiv.innerHTML += '<div class="hint-box red" style="text-align:center; margin-top:8px;">更新失败，请截图并联系技术支持。</div>';
+                ubtn.disabled = false; ubtn.textContent = '重试更新';
+              }
+            }
+          };
+          es.onerror = () => { es.close(); ubtn.disabled = false; ubtn.textContent = '重试更新'; };
+        };
+      } catch(e) {
+        resultDiv.innerHTML = '<div class="hint-box red">检查更新失败，请确认网络连接后重试。</div>';
+        btn.disabled = false; btn.textContent = '重试';
+      }
+    };
     el.querySelector('#redeployBtn').onclick = () => {
       showConfirm('重新安装会覆盖当前系统配置，确定要继续吗？', () => { state.step = 3; render(); });
     };
@@ -1525,15 +1700,18 @@ async function renderStep3(el) {
 
   // 检测系统中是否已有 SITE_ID
   let existingSiteId = '';
+  let existingSource = '';
   try {
     const existing = await api('/api/get-existing-site-id');
     if (existing.exists && existing.site_id) {
       existingSiteId = existing.site_id;
+      existingSource = existing.source || 'env';
       if (!state.siteId) state.siteId = existingSiteId;
     }
   } catch(e) { /* ignore */ }
 
   const hasExisting = !!existingSiteId;
+  const sourceHint = existingSource === 'container' ? '（从运行中的服务容器检测到）' : '（从本地配置文件检测到）';
 
   el.innerHTML = `
     <h2>第三步：设置站点编号</h2>
@@ -1547,7 +1725,7 @@ async function renderStep3(el) {
         &#128270; 检测到已有站点编号
       </div>
       <div style="font-size:15px; color:#1e3a5f; line-height:1.6;">
-        系统中已配置站点编号：<strong style="font-size:18px; color:#1d4ed8; letter-spacing:1px;">${esc(existingSiteId)}</strong><br>
+        系统中已配置站点编号${esc(sourceHint)}：<strong style="font-size:18px; color:#1d4ed8; letter-spacing:1px;">${esc(existingSiteId)}</strong><br>
         该编号已自动填入下方输入框。如需更改请直接修改。
       </div>
     </div>` : ''}
@@ -1556,7 +1734,7 @@ async function renderStep3(el) {
       <button class="btn btn-secondary" id="genBtn">自动生成</button>
     </div>
     <div id="siteIdHint" style="font-size:13px; color:var(--text-secondary); margin-bottom:8px;">
-      仅允许英文字母和数字，长度不超过20位
+      仅允许英文字母和数字，长度6-20位
     </div>
     <div id="siteIdGenerated" style="display:none; background:#dcfce7; padding:14px; border-radius:8px; font-size:16px; margin-bottom:12px;">
       已为您生成编号，请现在<strong>拍照或抄写保存</strong>！
@@ -1589,14 +1767,20 @@ async function renderStep3(el) {
       hintEl.style.color = 'var(--text-secondary)';
       return true; // 空值在提交时检查
     }
-    if (val.length > 20) {
-      errorEl.textContent = '编号长度不能超过20位';
+    if (!/^[A-Za-z0-9]+$/.test(val)) {
+      errorEl.textContent = '编号只能包含英文字母（A-Z、a-z）和数字（0-9）';
       errorEl.style.display = 'block';
       hintEl.style.color = 'var(--danger)';
       return false;
     }
-    if (!/^[A-Za-z0-9]+$/.test(val)) {
-      errorEl.textContent = '编号只能包含英文字母（A-Z、a-z）和数字（0-9）';
+    if (val.length < 6) {
+      errorEl.textContent = '编号长度至少需要6位';
+      errorEl.style.display = 'block';
+      hintEl.style.color = 'var(--danger)';
+      return false;
+    }
+    if (val.length > 20) {
+      errorEl.textContent = '编号长度不能超过20位';
       errorEl.style.display = 'block';
       hintEl.style.color = 'var(--danger)';
       return false;
@@ -2183,7 +2367,7 @@ wget 下载链接地址</pre>
     <h3>三、如何启动安装向导</h3>
     <p>SSH 连上服务器后，执行以下命令：</p>
     <pre>cd ~/menzhen
-bash start-wizard.sh</pre>
+bash start-wizard.command</pre>
     <p>屏幕会显示一个访问地址（例如 <code>http://192.168.1.100:9527</code>），在您自己电脑的浏览器中打开它，就能看到这个安装向导页面。</p>
   </div>
 

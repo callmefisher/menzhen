@@ -118,7 +118,7 @@ scp -r ~/Desktop/menzhen root@192.168.1.100:~/
 
 ```bash
 cd ~/menzhen
-bash start-wizard.sh
+bash start-wizard.command
 ```
 
 屏幕会显示类似这样的内容：
@@ -208,7 +208,7 @@ sudo firewall-cmd --reload
   │                                      │
   │  1. SSH 连接                          │
   │─────────────────────────────────────>│
-  │                                      │  2. bash start-wizard.sh
+  │                                      │  2. bash start-wizard.command
   │                                      │  3. 显示 http://IP:9527
   │                                      │
   │  4. 浏览器打开 http://IP:9527         │
