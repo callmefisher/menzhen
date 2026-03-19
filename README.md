@@ -102,8 +102,7 @@
 | 操作系统 | 安装方式 |
 |----------|-----------|
 | Windows | 下载 [`start-wizard.bat`](https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.bat) 并双击 |
-| macOS | 终端运行: `mkdir -p ~/menzhen && cd ~/menzhen && curl -fsSLO https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command && bash start-wizard.command` |
-| Linux 桌面 / Server | 终端运行: `mkdir -p ~/menzhen && cd ~/menzhen && curl -fsSLO https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.sh && bash start-wizard.sh` |
+| macOS / Linux | 终端运行: `mkdir -p ~/menzhen && cd ~/menzhen && [ -f start-wizard.command ] \|\| curl -fsSLO https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command && bash start-wizard.command` |
 
 > 详细步骤见 [裸机安装指南](docs/bare-metal-install-guide.md)
 
