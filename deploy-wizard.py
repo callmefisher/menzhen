@@ -658,6 +658,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
 
         if self.path == "/api/start-docker":
             os_key, _ = detect_os()
+            script_dir = str(SCRIPT_DIR)
             if os_key == "mac":
                 # Open Docker Desktop app, then wait for daemon (90 * 2s = 3min)
                 stream_command(self, [
@@ -673,6 +674,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "echo '--- docker version ---'; docker version 2>&1 || true; "
                     "echo '--- Docker Desktop 进程 ---'; ps aux | grep -i '[d]ocker' || true; "
                     "echo '请手动打开 Docker Desktop 应用，确认其正常运行后刷新页面。'; exit 1; }; "
+                    f"cd {shlex.quote(script_dir)} && "
                     "if [ -f docker-compose.yml ]; then "
                     "  STOPPED=$(docker compose ps -a --format '{{.State}}' 2>/dev/null | grep -v '^[[:space:]]*$' | grep -cv 'running' || echo 0); "
                     "  if [ \"${STOPPED:-0}\" -gt 0 ]; then "
@@ -710,6 +712,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "  Write-Output '--- Docker Desktop 进程 ---'; Get-Process *docker* -EA SilentlyContinue | Format-Table Name,Id,CPU -Auto; "
                     "  Write-Output '请手动打开 Docker Desktop 应用，确认其正常运行后刷新页面。'; exit 1; "
                     "}; "
+                    f"Set-Location '{script_dir}'; "
                     "if (Test-Path 'docker-compose.yml') { "
                     "  $stopped = @(& docker compose ps -a --format '{{.State}}' 2>$null | Where-Object { $_ -and $_ -ne 'running' }).Count; "
                     "  if ($stopped -gt 0) { "
@@ -737,6 +740,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "echo '--- docker info ---'; docker info 2>&1 || true; "
                     "echo '--- journalctl 最近日志 ---'; sudo journalctl -u docker --no-pager -n 20 2>&1 || true; "
                     "echo '请检查 Docker 服务状态后刷新页面。'; exit 1; }; "
+                    f"cd {shlex.quote(script_dir)} && "
                     "if [ -f docker-compose.yml ]; then "
                     "  STOPPED=$(docker compose ps -a --format '{{.State}}' 2>/dev/null | grep -v '^[[:space:]]*$' | grep -cv 'running' || echo 0); "
                     "  if [ \"${STOPPED:-0}\" -gt 0 ]; then "
@@ -1995,11 +1999,12 @@ async function renderStep2(el) {
       </div>
       <div id="startLog"></div>
     `;
-    // 并行检测 .env 和镜像
+    // 并行检测 .env、镜像和源码
     Promise.all([
       api('/api/ensure-env'),
       api('/api/check-images'),
-    ]).then(([envData, imgData]) => {
+      api('/api/check-repo'),
+    ]).then(([envData, imgData, repoData]) => {
       const envExists = envData.ok;
       const envRecovered = envData.source && envData.source.startsWith('container:');
       const allImagesExist = imgData.images.every(i => i.exists);
@@ -2008,7 +2013,34 @@ async function renderStep2(el) {
       if (!checkDiv) return;
       const recoveredHint = envRecovered ? '<div class="hint-box blue" style="margin-bottom:8px;">配置文件已从容器中自动恢复。</div>' : '';
 
-      if (!envExists) {
+      if (!repoData.docker_compose) {
+        // 源码文件缺失 → 需要下载
+        checkDiv.innerHTML = '<div class="hint-box yellow"><strong>系统程序文件缺失。</strong><br>未检测到 docker-compose.yml 等核心文件，需要先下载系统程序。</div><div class="actions" style="margin-top:12px;"><button class="btn btn-primary" id="cloneRepoBtn">下载系统程序</button></div><div id="cloneLog"></div>';
+        checkDiv.querySelector('#cloneRepoBtn').onclick = () => {
+          const btn = checkDiv.querySelector('#cloneRepoBtn');
+          btn.disabled = true;
+          btn.innerHTML = '<span class="spinner"></span> 正在下载，请勿关闭...';
+          const logDiv = checkDiv.querySelector('#cloneLog');
+          logDiv.innerHTML = '<details open><summary style="cursor:pointer;font-size:14px;color:var(--text-secondary);">下载日志</summary><div class="log-console" id="cloneConsole"></div></details>';
+          const cons = logDiv.querySelector('#cloneConsole');
+          const es = new EventSource('/api/clone-repo');
+          es.onmessage = (e) => {
+            const msg = JSON.parse(e.data);
+            if (msg.type === 'log') { cons.textContent += msg.data + '\\n'; cons.scrollTop = cons.scrollHeight; }
+            else if (msg.type === 'done') {
+              es.close();
+              if (msg.result === 'success') {
+                logDiv.innerHTML = '<div class="hint-box green" style="text-align:center;">下载完成！正在重新检查...</div>';
+                setTimeout(() => renderStep2(el), 2000);
+              } else {
+                logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">下载失败。请检查网络连接和 git 是否可用。</div>';
+                btn.disabled = false; btn.textContent = '重试';
+              }
+            }
+          };
+          es.onerror = () => { es.close(); btn.disabled = false; btn.textContent = '重试'; };
+        };
+      } else if (!envExists) {
         // .env 不存在 → 需要重新安装
         checkDiv.innerHTML = '<div class="hint-box yellow"><strong>配置文件缺失。</strong><br>未检测到 .env 配置文件，需要重新进行安装配置。</div><div class="actions" style="margin-top:12px;"><button class="btn btn-primary" id="freshInstallBtn">继续安装 &rarr;</button></div>';
         checkDiv.querySelector('#freshInstallBtn').onclick = () => { state.step = 3; render(); };
