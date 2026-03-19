@@ -331,7 +331,9 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                             docker_partial = True
 
             # status: "running" | "partial" | "docker_stopped" | "no_containers" | "not_installed"
-            if port_ok:
+            if docker_running and docker_partial:
+                status = "partial"
+            elif port_ok:
                 status = "running"
             elif docker_running:
                 status = "partial"
@@ -629,6 +631,29 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         "data": "请手动下载安装 Git: https://git-scm.com/downloads"})
                     self.wfile.write(f"data: {msg}\n\n".encode())
                     self.wfile.flush()
+            return
+
+        if self.path == "/api/start-services":
+            # Lightweight: just docker compose up -d (Docker already running)
+            os_key, _ = detect_os()
+            if os_key == "windows":
+                stream_command(self, [
+                    "cmd", "/c",
+                    f'cd /d "{SCRIPT_DIR}" && '
+                    "docker compose up -d 2>&1 && "
+                    "docker compose restart nginx 2>&1 && "
+                    "echo 服务启动完成!"
+                ])
+            else:
+                q_dir = shlex.quote(str(SCRIPT_DIR))
+                stream_command(self, [
+                    "bash", "-c",
+                    f"cd {q_dir} && "
+                    "echo '正在启动服务...' && "
+                    "docker compose up -d 2>&1 && "
+                    "docker compose restart nginx 2>&1 && "
+                    "echo '服务启动完成!'"
+                ])
             return
 
         if self.path == "/api/start-docker":
@@ -1979,15 +2004,21 @@ async function renderStep2(el) {
       btn.disabled = true;
       btn.innerHTML = '<span class="spinner"></span> 正在启动服务...';
       const logDiv = el.querySelector('#startLog');
-      logDiv.innerHTML = '<div class="log-console" id="startConsole"></div>';
+      logDiv.innerHTML = '<details open><summary style="cursor:pointer;font-size:14px;color:var(--text-secondary);">启动日志</summary><div class="log-console" id="startConsole"></div></details>';
       const cons = logDiv.querySelector('#startConsole');
-      const es = new EventSource('/api/start-docker');
+      const es = new EventSource('/api/start-services');
       es.onmessage = (e) => {
         const msg = JSON.parse(e.data);
         if (msg.type === 'log') { cons.textContent += msg.data + '\\n'; cons.scrollTop = cons.scrollHeight; }
         else if (msg.type === 'done') {
           es.close();
-          setTimeout(() => renderStep2(el), 3000);
+          if (msg.result === 'success') {
+            logDiv.innerHTML = '<div class="hint-box green" style="text-align:center;">服务已启动！正在重新检查...</div>';
+            setTimeout(() => renderStep2(el), 3000);
+          } else {
+            logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">启动失败。请检查日志或尝试全新安装。</div>';
+            btn.disabled = false; btn.textContent = '重试';
+          }
         }
       };
       es.onerror = () => { es.close(); btn.disabled = false; btn.textContent = '重试'; };
