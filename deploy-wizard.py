@@ -194,12 +194,12 @@ def _popen_kwargs():
     return {}
 
 
-def run_command(cmd, cwd=None):
+def run_command(cmd, cwd=None, timeout=600):
     """Run a command and return (returncode, stdout, stderr)."""
     try:
         result = subprocess.run(
             cmd, capture_output=True, text=True,
-            cwd=cwd or str(SCRIPT_DIR), timeout=600,
+            cwd=cwd or str(SCRIPT_DIR), timeout=timeout,
             **_popen_kwargs()
         )
         return result.returncode, result.stdout, result.stderr
@@ -724,47 +724,95 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             return
 
         if self.path == "/api/check-updates":
-            # Check if there are new commits on origin/main
-            # 0. Auto-init git repo if missing
-            if not (SCRIPT_DIR / ".git").exists():
-                rc, _, err = run_command(["git", "init"])
+            # SSE streaming check for new commits on origin/main
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self.end_headers()
+
+            def _sse(data):
+                self.wfile.write(f"data: {json.dumps(data, ensure_ascii=False)}\n\n".encode())
+                self.wfile.flush()
+
+            def _sse_done(result):
+                _sse({"type": "done", **result})
+
+            try:
+                # 0. Auto-init git repo if missing
+                if not (SCRIPT_DIR / ".git").exists():
+                    _sse({"type": "log", "data": "正在初始化代码仓库..."})
+                    rc, _, err = run_command(["git", "init"])
+                    if rc != 0:
+                        _sse_done({"error": "init_failed", "message": f"初始化代码仓库失败: {err.strip()}"})
+                        return
+                    run_command(["git", "remote", "add", "origin", REPO_URL])
+                # Ensure remote is set correctly
+                run_command(["git", "remote", "set-url", "origin", REPO_URL])
+                # 1. git fetch (most likely to be slow)
+                _sse({"type": "log", "data": "正在连接远程仓库..."})
+                rc, _, err = run_command(["git", "fetch", "origin"], timeout=120)
                 if rc != 0:
-                    self._send_json({"has_updates": None, "error": "init_failed",
-                                     "message": f"初始化代码仓库失败: {err.strip()}"})
+                    _sse_done({"error": "fetch_failed", "message": f"无法连接远程仓库: {err.strip()}"})
                     return
-                run_command(["git", "remote", "add", "origin", REPO_URL])
-            # Ensure remote is set correctly
-            run_command(["git", "remote", "set-url", "origin", REPO_URL])
-            # 1. git fetch
-            rc, _, err = run_command(["git", "fetch", "origin"])
-            if rc != 0:
-                self._send_json({"has_updates": None, "error": "fetch_failed",
-                                 "message": f"无法连接远程仓库: {err.strip()}"})
-                return
-            # 2. Check HEAD validity; if missing, set to origin/main
-            rc_head, _, _ = run_command(["git", "rev-parse", "HEAD"])
-            if rc_head != 0:
-                rc_reset, _, _ = run_command(["git", "reset", "origin/main"])
-                if rc_reset != 0:
-                    self._send_json({"has_updates": None, "error": "no_head",
-                                     "message": "无法获取远程版本信息"})
+                _sse({"type": "log", "data": "正在比较版本差异..."})
+                # 2. Check HEAD validity; if missing, set to origin/main
+                rc_head, _, _ = run_command(["git", "rev-parse", "HEAD"])
+                if rc_head != 0:
+                    rc_reset, _, _ = run_command(["git", "reset", "origin/main"])
+                    if rc_reset != 0:
+                        _sse_done({"error": "no_head", "message": "无法获取远程版本信息"})
+                        return
+                # 3. Compare HEAD..origin/main
+                rc, out, _ = run_command(["git", "log", "HEAD..origin/main",
+                                          "--oneline", "--no-decorate", "-n", "50"])
+                if rc != 0:
+                    _sse_done({"error": "compare_failed", "message": "无法比较版本差异"})
                     return
-            # 3. Compare HEAD..origin/main
-            rc, out, _ = run_command(["git", "log", "HEAD..origin/main",
-                                      "--oneline", "--no-decorate", "-n", "50"])
-            if rc != 0:
-                self._send_json({"has_updates": None, "error": "compare_failed",
-                                 "message": "无法比较版本差异"})
+                commits = []
+                for line in out.strip().splitlines():
+                    if line.strip():
+                        parts = line.strip().split(" ", 1)
+                        commits.append({"hash": parts[0], "message": parts[1] if len(parts) > 1 else ""})
+                _sse_done({
+                    "has_updates": len(commits) > 0,
+                    "behind_count": len(commits),
+                    "commits": commits,
+                })
+            except Exception as e:
+                try:
+                    _sse_done({"error": "exception", "message": str(e)})
+                except Exception:
+                    pass
+            return
+
+        if self.path == "/api/ensure-env":
+            # Check .env exists; if not, try to recover from container
+            env_path = SCRIPT_DIR / ".env"
+            if env_path.exists():
+                self._send_json({"ok": True, "source": "local"})
                 return
-            commits = []
-            for line in out.strip().splitlines():
-                if line.strip():
-                    parts = line.strip().split(" ", 1)
-                    commits.append({"hash": parts[0], "message": parts[1] if len(parts) > 1 else ""})
+
+            # Try to recover from existing container (docker cp works on stopped containers too)
+            for cname in ("menzhen-api-1", "menzhen-api"):
+                rc, _, _ = run_command(
+                    ["docker", "inspect", cname]
+                )
+                if rc != 0:
+                    continue
+                # Container exists — copy .env directly
+                rc2, _, _ = run_command(
+                    ["docker", "cp", f"{cname}:/app/.env", str(env_path)]
+                )
+                if rc2 == 0 and env_path.exists():
+                    self._send_json({"ok": True, "source": f"container:{cname}"})
+                    return
+
+            # Container doesn't exist — need user input
             self._send_json({
-                "has_updates": len(commits) > 0,
-                "behind_count": len(commits),
-                "commits": commits,
+                "ok": False,
+                "error": "no_env",
+                "message": "未找到配置文件(.env)，也无法从容器中恢复。请选择全新安装，或指定已有安装目录。",
             })
             return
 
@@ -849,6 +897,30 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
         self.send_error(404)
 
     def do_POST(self):
+        if self.path == "/api/copy-env-from-path":
+            body = self._read_body()
+            src_dir = body.get("path", "").strip()
+            if not src_dir:
+                self._send_json({"error": "请输入目录路径"}, 400)
+                return
+            # Resolve and validate path
+            src_path = Path(src_dir).resolve()
+            if not src_path.is_dir():
+                self._send_json({"error": "指定的目录不存在"}, 400)
+                return
+            src_env = src_path / ".env"
+            if not src_env.exists():
+                self._send_json({"error": "该目录下未找到 .env 文件"}, 400)
+                return
+            env_path = SCRIPT_DIR / ".env"
+            try:
+                shutil.copy2(str(src_env), str(env_path))
+            except OSError as e:
+                self._send_json({"error": f"复制失败：{e.strerror}"}, 500)
+                return
+            self._send_json({"ok": True})
+            return
+
         if self.path == "/api/save-site-id":
             body = self._read_body()
             site_id = body.get("site_id", "")
@@ -1569,49 +1641,77 @@ async function renderStep2(el) {
         </div>
       </div>
     `;
-    // 检查更新按钮
-    el.querySelector('#checkUpdateBtn').onclick = async () => {
+    // 检查更新按钮 — SSE 流式
+    el.querySelector('#checkUpdateBtn').onclick = () => {
       const btn = el.querySelector('#checkUpdateBtn');
       const resultDiv = el.querySelector('#updateResult');
       btn.disabled = true;
       btn.innerHTML = '<span class="spinner"></span> 检查中...';
-      resultDiv.innerHTML = '';
-      try {
-        const upd = await api('/api/check-updates');
-        if (upd.error) {
-          resultDiv.innerHTML = '<div class="hint-box yellow">' + esc(upd.message) + '</div>';
-          btn.disabled = false; btn.textContent = '重试';
-          return;
-        }
-        if (!upd.has_updates) {
-          resultDiv.innerHTML = '<div class="hint-box green" style="text-align:center;">已是最新版本，无需更新。</div>';
+      resultDiv.innerHTML = '<div style="font-size:13px; color:var(--text-secondary);" id="checkLog"></div>';
+      const logEl = resultDiv.querySelector('#checkLog');
+      const es = new EventSource('/api/check-updates');
+      let checkDone = false;
+      es.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'log') {
+          logEl.textContent = msg.data;
+        } else if (msg.type === 'done') {
+          checkDone = true;
+          es.close();
+          const upd = msg;
+          if (upd.error) {
+            resultDiv.innerHTML = '<div class="hint-box yellow">' + esc(upd.message) + '</div>';
+            btn.disabled = false; btn.textContent = '重试';
+            return;
+          }
+          if (!upd.has_updates) {
+            resultDiv.innerHTML = '<div class="hint-box green" style="text-align:center;">已是最新版本，无需更新。</div>';
+            btn.disabled = false; btn.textContent = '检查更新';
+            return;
+          }
+          // 有更新
+          let commitList = upd.commits.map(c =>
+            '<li style="margin:4px 0;"><code style="background:#eff6ff;padding:2px 6px;border-radius:4px;font-size:13px;">' + esc(c.hash) + '</code> ' + esc(c.message) + '</li>'
+          ).join('');
+          resultDiv.innerHTML = `
+            <div style="margin-top:8px; padding:14px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px;">
+              <div style="font-size:15px; font-weight:700; color:#1e40af; margin-bottom:8px;">
+                发现 ${upd.behind_count} 个新版本更新
+              </div>
+              <ul style="list-style:none; padding:0; font-size:14px; max-height:160px; overflow-y:auto; line-height:1.6;">
+                ${commitList}
+              </ul>
+              <button class="btn btn-success" id="doUpdateBtn" style="margin-top:12px; width:100%; font-size:16px;">
+                一键更新（拉取代码 → 构建镜像 → 重启服务）
+              </button>
+              <div style="font-size:13px; color:var(--text-secondary); text-align:center; margin-top:6px;">
+                更新过程中系统会短暂不可用，构建约需 5-15 分钟
+              </div>
+            </div>
+          `;
           btn.disabled = false; btn.textContent = '检查更新';
-          return;
+          // bind update button
+          bindUpdateBtn(el, resultDiv);
         }
-        // 有更新
-        let commitList = upd.commits.map(c =>
-          '<li style="margin:4px 0;"><code style="background:#eff6ff;padding:2px 6px;border-radius:4px;font-size:13px;">' + esc(c.hash) + '</code> ' + esc(c.message) + '</li>'
-        ).join('');
-        resultDiv.innerHTML = `
-          <div style="margin-top:8px; padding:14px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px;">
-            <div style="font-size:15px; font-weight:700; color:#1e40af; margin-bottom:8px;">
-              发现 ${upd.behind_count} 个新版本更新
-            </div>
-            <ul style="list-style:none; padding:0; font-size:14px; max-height:160px; overflow-y:auto; line-height:1.6;">
-              ${commitList}
-            </ul>
-            <button class="btn btn-success" id="doUpdateBtn" style="margin-top:12px; width:100%; font-size:16px;">
-              一键更新（拉取代码 → 构建镜像 → 重启服务）
-            </button>
-            <div style="font-size:13px; color:var(--text-secondary); text-align:center; margin-top:6px;">
-              更新过程中系统会短暂不可用，构建约需 5-15 分钟
-            </div>
-          </div>
-        `;
-        btn.disabled = false; btn.textContent = '检查更新';
-        // 一键更新按钮
-        el.querySelector('#doUpdateBtn').onclick = () => {
+      };
+      es.onerror = () => {
+        if (checkDone) return;
+        es.close();
+        resultDiv.innerHTML = '<div class="hint-box red">检查更新失败，请确认网络连接后重试。</div>';
+        btn.disabled = false; btn.textContent = '重试';
+      };
+    };
+    function bindUpdateBtn(el, resultDiv) {
+        function startPullAndRebuild() {
           const ubtn = el.querySelector('#doUpdateBtn');
+          if (!ubtn) {
+            const logDiv = el.querySelector('#updateLog');
+            if (logDiv) logDiv.innerHTML = '<div class="hint-box red">页面状态异常，请刷新后重试。</div>';
+            return;
+          }
+          // 更新进行中禁用检查更新按钮，防止重复 EventSource
+          const ckBtn = el.querySelector('#checkUpdateBtn');
+          if (ckBtn) ckBtn.disabled = true;
           ubtn.disabled = true;
           ubtn.innerHTML = '<span class="spinner"></span> 正在更新，请勿关闭页面...';
           const logDiv = el.querySelector('#updateLog');
@@ -1625,6 +1725,7 @@ async function renderStep2(el) {
               cons.scrollTop = cons.scrollHeight;
             } else if (msg.type === 'done') {
               es.close();
+              if (ckBtn) ckBtn.disabled = false;
               if (msg.result === 'success') {
                 logDiv.innerHTML = '<div class="hint-box green" style="text-align:center; font-size:16px; margin-top:12px;">更新完成！系统已重新启动。</div>';
                 resultDiv.innerHTML = '';
@@ -1634,13 +1735,78 @@ async function renderStep2(el) {
               }
             }
           };
-          es.onerror = () => { es.close(); ubtn.disabled = false; ubtn.textContent = '重试更新'; };
+          es.onerror = () => { es.close(); if (ckBtn) ckBtn.disabled = false; if (ubtn) { ubtn.disabled = false; ubtn.textContent = '重试更新'; } };
+        }
+        el.querySelector('#doUpdateBtn').onclick = async () => {
+          const ubtn = el.querySelector('#doUpdateBtn');
+          ubtn.disabled = true;
+          ubtn.innerHTML = '<span class="spinner"></span> 正在检查配置文件...';
+          let envOk = false;
+          let networkError = false;
+          try {
+            const envRes = await api('/api/ensure-env');
+            if (envRes.ok) envOk = true;
+          } catch(e) {
+            networkError = true;
+          }
+          if (envOk) {
+            startPullAndRebuild();
+            return;
+          }
+          ubtn.disabled = false; ubtn.textContent = '一键更新（拉取代码 → 构建镜像 → 重启服务）';
+          const logDiv = el.querySelector('#updateLog');
+          if (networkError) {
+            logDiv.innerHTML = '<div class="hint-box red" style="margin-top:12px;">网络请求失败，请检查网络连接后重试。</div>';
+            return;
+          }
+          logDiv.innerHTML = `
+            <div class="hint-box yellow" style="text-align:left; margin-top:12px;">
+              <div style="font-size:15px; font-weight:700; margin-bottom:8px;">未找到配置文件 (.env)</div>
+              <p style="margin:6px 0; font-size:14px;">未能从已有容器中恢复配置。请选择：</p>
+              <div style="margin-top:12px;">
+                <label style="font-size:14px;">输入已有安装目录的完整路径：</label>
+                <div style="display:flex; gap:8px; margin-top:6px;">
+                  <input type="text" id="envPathInput" placeholder="例如 /home/user/menzhen" style="flex:1; padding:8px 12px; border:1px solid var(--border); border-radius:6px; font-size:14px;" />
+                  <button class="btn btn-primary" id="copyEnvBtn">复制配置</button>
+                </div>
+                <div id="copyEnvMsg" style="margin-top:8px;"></div>
+                <div style="text-align:center; margin-top:14px;">
+                  <span style="color:var(--text-secondary); font-size:13px;">找不到之前的安装目录？</span>
+                  <button class="btn btn-secondary" id="freshInstallBtn" style="margin-left:8px; font-size:13px;">全新安装 &rarr;</button>
+                </div>
+              </div>
+            </div>
+          `;
+          el.querySelector('#copyEnvBtn').onclick = async () => {
+            const inp = el.querySelector('#envPathInput');
+            const msgDiv = el.querySelector('#copyEnvMsg');
+            const p = inp.value.trim();
+            if (!p) { inp.focus(); return; }
+            const cbtn = el.querySelector('#copyEnvBtn');
+            cbtn.disabled = true; cbtn.textContent = '复制中...';
+            try {
+              const r = await api('/api/copy-env-from-path', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: p })
+              });
+              if (r.ok) {
+                msgDiv.innerHTML = '<div class="hint-box green" style="text-align:center;">配置文件已恢复，正在开始更新...</div>';
+                setTimeout(() => startPullAndRebuild(), 500);
+              } else {
+                msgDiv.innerHTML = '<div class="hint-box red">' + esc(r.error || '复制失败') + '</div>';
+                cbtn.disabled = false; cbtn.textContent = '复制配置';
+              }
+            } catch(e) {
+              msgDiv.innerHTML = '<div class="hint-box red">请求失败，请检查网络连接</div>';
+              cbtn.disabled = false; cbtn.textContent = '复制配置';
+            }
+          };
+          el.querySelector('#freshInstallBtn').onclick = () => {
+            showConfirm('将进入全新安装流程，确定吗？', () => { state.step = 3; render(); });
+          };
         };
-      } catch(e) {
-        resultDiv.innerHTML = '<div class="hint-box red">检查更新失败，请确认网络连接后重试。</div>';
-        btn.disabled = false; btn.textContent = '重试';
-      }
-    };
+    }
     el.querySelector('#redeployBtn').onclick = () => {
       showConfirm('重新安装会覆盖当前系统配置，确定要继续吗？', () => { state.step = 3; render(); });
     };
