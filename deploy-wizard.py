@@ -1986,44 +1986,93 @@ async function renderStep2(el) {
     el.innerHTML = `
       ${osMismatchHtml}
       <h2>第二步：服务未启动</h2>
-      <p class="subtitle">Docker 正在运行，但系统服务未启动。可能是容器被清理或首次部署。</p>
-      <div class="hint-box yellow">
-        <strong>服务未运行。</strong><br>
-        如果之前已安装过，点击「启动服务」即可恢复。<br>
-        如果是全新安装，请点击「继续安装」。
+      <p class="subtitle">Docker 正在运行，但系统服务未启动。正在检测环境...</p>
+      <div id="noContainerCheck" style="text-align:center;padding:24px;">
+        <span class="spinner"></span> 正在检测配置文件和镜像...
       </div>
       <div class="actions">
         <button class="btn btn-secondary" onclick="state.step=1;render();">&larr; 上一步</button>
-        <button class="btn btn-success" id="startServicesBtn">启动服务</button>
-        <button class="btn btn-primary" id="freshInstallBtn">继续安装 &rarr;</button>
       </div>
       <div id="startLog"></div>
     `;
-    el.querySelector('#startServicesBtn').onclick = () => {
-      const btn = el.querySelector('#startServicesBtn');
-      btn.disabled = true;
-      btn.innerHTML = '<span class="spinner"></span> 正在启动服务...';
-      const logDiv = el.querySelector('#startLog');
-      logDiv.innerHTML = '<details open><summary style="cursor:pointer;font-size:14px;color:var(--text-secondary);">启动日志</summary><div class="log-console" id="startConsole"></div></details>';
-      const cons = logDiv.querySelector('#startConsole');
-      const es = new EventSource('/api/start-services');
-      es.onmessage = (e) => {
-        const msg = JSON.parse(e.data);
-        if (msg.type === 'log') { cons.textContent += msg.data + '\\n'; cons.scrollTop = cons.scrollHeight; }
-        else if (msg.type === 'done') {
-          es.close();
-          if (msg.result === 'success') {
-            logDiv.innerHTML = '<div class="hint-box green" style="text-align:center;">服务已启动！正在重新检查...</div>';
-            setTimeout(() => renderStep2(el), 3000);
-          } else {
-            logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">启动失败。请检查日志或尝试全新安装。</div>';
-            btn.disabled = false; btn.textContent = '重试';
-          }
-        }
-      };
-      es.onerror = () => { es.close(); btn.disabled = false; btn.textContent = '重试'; };
-    };
-    el.querySelector('#freshInstallBtn').onclick = () => { state.step = 3; render(); };
+    // 并行检测 .env 和镜像
+    Promise.all([
+      api('/api/ensure-env'),
+      api('/api/check-images'),
+    ]).then(([envData, imgData]) => {
+      const envExists = envData.ok;
+      const envRecovered = envData.source && envData.source.startsWith('container:');
+      const allImagesExist = imgData.images.every(i => i.exists);
+      const missingImages = imgData.images.filter(i => !i.exists).map(i => i.image);
+      const checkDiv = el.querySelector('#noContainerCheck');
+      if (!checkDiv) return;
+      const recoveredHint = envRecovered ? '<div class="hint-box blue" style="margin-bottom:8px;">配置文件已从容器中自动恢复。</div>' : '';
+
+      if (!envExists) {
+        // .env 不存在 → 需要重新安装
+        checkDiv.innerHTML = '<div class="hint-box yellow"><strong>配置文件缺失。</strong><br>未检测到 .env 配置文件，需要重新进行安装配置。</div><div class="actions" style="margin-top:12px;"><button class="btn btn-primary" id="freshInstallBtn">继续安装 &rarr;</button></div>';
+        checkDiv.querySelector('#freshInstallBtn').onclick = () => { state.step = 3; render(); };
+      } else if (!allImagesExist) {
+        // .env 存在但镜像缺失 → 需要重新构建
+        checkDiv.innerHTML = recoveredHint + '<div class="hint-box yellow"><strong>镜像缺失，需要重新构建。</strong><br>缺失镜像：' + missingImages.join('、') + '</div><div class="actions" style="margin-top:12px;"><button class="btn btn-primary" id="rebuildBtn">重新构建</button></div><div id="buildLog"></div>';
+        checkDiv.querySelector('#rebuildBtn').onclick = () => {
+          const btn = checkDiv.querySelector('#rebuildBtn');
+          btn.disabled = true;
+          btn.innerHTML = '<span class="spinner"></span> 正在构建，请勿关闭...';
+          const logDiv = checkDiv.querySelector('#buildLog');
+          logDiv.innerHTML = '<details open><summary style="cursor:pointer;font-size:14px;color:var(--text-secondary);">构建日志</summary><div class="log-console" id="buildConsole"></div></details>';
+          const cons = logDiv.querySelector('#buildConsole');
+          const es = new EventSource('/api/build-full');
+          es.onmessage = (e) => {
+            const msg = JSON.parse(e.data);
+            if (msg.type === 'log') { cons.textContent += msg.data + '\\n'; cons.scrollTop = cons.scrollHeight; }
+            else if (msg.type === 'done') {
+              es.close();
+              if (msg.result === 'success') {
+                logDiv.innerHTML = '<div class="hint-box green" style="text-align:center;">构建完成！正在重新检查...</div>';
+                setTimeout(() => renderStep2(el), 3000);
+              } else {
+                logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">构建失败。请检查日志。</div>';
+                btn.disabled = false; btn.textContent = '重试';
+              }
+            }
+          };
+          es.onerror = () => { es.close(); btn.disabled = false; btn.textContent = '重试'; };
+        };
+      } else {
+        // .env 存在且镜像齐全 → 可以直接启动
+        checkDiv.innerHTML = recoveredHint + '<div class="hint-box green"><strong>环境就绪。</strong><br>配置文件和镜像均已就绪，可以直接启动服务。</div><div class="actions" style="margin-top:12px;"><button class="btn btn-success" id="startServicesBtn">启动服务</button></div>';
+        checkDiv.querySelector('#startServicesBtn').onclick = () => {
+          const btn = checkDiv.querySelector('#startServicesBtn');
+          btn.disabled = true;
+          btn.innerHTML = '<span class="spinner"></span> 正在启动服务...';
+          const logDiv = el.querySelector('#startLog');
+          logDiv.innerHTML = '<details open><summary style="cursor:pointer;font-size:14px;color:var(--text-secondary);">启动日志</summary><div class="log-console" id="startConsole"></div></details>';
+          const cons = logDiv.querySelector('#startConsole');
+          const es = new EventSource('/api/start-services');
+          es.onmessage = (e) => {
+            const msg = JSON.parse(e.data);
+            if (msg.type === 'log') { cons.textContent += msg.data + '\\n'; cons.scrollTop = cons.scrollHeight; }
+            else if (msg.type === 'done') {
+              es.close();
+              if (msg.result === 'success') {
+                logDiv.innerHTML = '<div class="hint-box green" style="text-align:center;">服务已启动！正在重新检查...</div>';
+                setTimeout(() => renderStep2(el), 3000);
+              } else {
+                logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">启动失败。请检查日志或尝试全新安装。</div>';
+                btn.disabled = false; btn.textContent = '重试';
+              }
+            }
+          };
+          es.onerror = () => { es.close(); btn.disabled = false; btn.textContent = '重试'; };
+        };
+      }
+    }).catch(() => {
+      const checkDiv = el.querySelector('#noContainerCheck');
+      if (checkDiv) {
+        checkDiv.innerHTML = '<div class="hint-box red"><strong>检测失败。</strong><br>无法检测环境状态，请刷新页面重试。</div>';
+      }
+    });
   } else {
     el.innerHTML = `
       ${osMismatchHtml}
