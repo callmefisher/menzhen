@@ -97,12 +97,18 @@
 
 ### 零基础一键安装（推荐）
 
-下载一个文件，双击即可，脚本自动安装所有依赖（macOS 推荐终端方式）：
+下载一个文件，双击即可，脚本自动安装所有依赖：
 
 | 操作系统 | 安装方式 |
 |----------|-----------|
 | Windows | 下载 [`start-wizard.bat`](https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.bat) 并双击 |
-| macOS / Linux | 终端运行: `mkdir -p ~/menzhen && cd ~/menzhen && { [ -f start-wizard.command ] \|\| curl -fLO https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command; } && bash start-wizard.command` |
+| macOS / Linux | 终端运行下方命令 |
+
+**macOS / Linux 一键安装命令：**
+
+```bash
+mkdir -p ~/menzhen && cd ~/menzhen && { [ -f start-wizard.command ] || curl -fLO https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command; } && bash start-wizard.command
+```
 
 > 详细步骤见 [裸机安装指南](docs/bare-metal-install-guide.md)
 
