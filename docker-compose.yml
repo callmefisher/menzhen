@@ -15,20 +15,22 @@ services:
     image: menzhen-web:latest
     build: ./web
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:80"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:80/ || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 10
+      start_period: 10s
 
   api:
     image: menzhen-api:latest
     build: ./server
     env_file: .env
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/v1/solar-terms"]
+      test: ["CMD-SHELL", "wget -S -O /dev/null http://127.0.0.1:8080/ 2>&1 | grep -q 'HTTP/'"]
       interval: 5s
       timeout: 3s
       retries: 10
+      start_period: 15s
     volumes:
       - ./.env:/app/.env
       - /var/run/docker.sock:/var/run/docker.sock
