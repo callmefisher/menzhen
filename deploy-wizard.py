@@ -330,13 +330,17 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         if any(s != "running" for s in states):
                             docker_partial = True
 
-            # status: "running" | "partial" | "docker_stopped" | "not_installed"
-            if port_ok:
+            # status: "running" | "partial" | "docker_stopped" | "no_containers" | "not_installed"
+            if docker_running and docker_partial:
+                status = "partial"
+            elif port_ok:
                 status = "running"
             elif docker_running:
                 status = "partial"
             elif docker_installed and not docker_daemon_ok:
                 status = "docker_stopped"
+            elif docker_installed and docker_daemon_ok:
+                status = "no_containers"
             else:
                 status = "not_installed"
             self._send_json({
@@ -627,6 +631,29 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         "data": "请手动下载安装 Git: https://git-scm.com/downloads"})
                     self.wfile.write(f"data: {msg}\n\n".encode())
                     self.wfile.flush()
+            return
+
+        if self.path == "/api/start-services":
+            # Lightweight: just docker compose up -d (Docker already running)
+            os_key, _ = detect_os()
+            if os_key == "windows":
+                stream_command(self, [
+                    "cmd", "/c",
+                    f'cd /d "{SCRIPT_DIR}" && '
+                    "docker compose up -d 2>&1 && "
+                    "docker compose restart nginx 2>&1 && "
+                    "echo 服务启动完成!"
+                ])
+            else:
+                q_dir = shlex.quote(str(SCRIPT_DIR))
+                stream_command(self, [
+                    "bash", "-c",
+                    f"cd {q_dir} && "
+                    "echo '正在启动服务...' && "
+                    "docker compose up -d 2>&1 && "
+                    "docker compose restart nginx 2>&1 && "
+                    "echo '服务启动完成!'"
+                ])
             return
 
         if self.path == "/api/start-docker":
@@ -1955,6 +1982,48 @@ async function renderStep2(el) {
       };
       es.onerror = () => { es.close(); btn.disabled = false; btn.textContent = '重试'; };
     };
+  } else if (data.status === 'no_containers') {
+    el.innerHTML = `
+      ${osMismatchHtml}
+      <h2>第二步：服务未启动</h2>
+      <p class="subtitle">Docker 正在运行，但系统服务未启动。可能是容器被清理或首次部署。</p>
+      <div class="hint-box yellow">
+        <strong>服务未运行。</strong><br>
+        如果之前已安装过，点击「启动服务」即可恢复。<br>
+        如果是全新安装，请点击「继续安装」。
+      </div>
+      <div class="actions">
+        <button class="btn btn-secondary" onclick="state.step=1;render();">&larr; 上一步</button>
+        <button class="btn btn-success" id="startServicesBtn">启动服务</button>
+        <button class="btn btn-primary" id="freshInstallBtn">继续安装 &rarr;</button>
+      </div>
+      <div id="startLog"></div>
+    `;
+    el.querySelector('#startServicesBtn').onclick = () => {
+      const btn = el.querySelector('#startServicesBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> 正在启动服务...';
+      const logDiv = el.querySelector('#startLog');
+      logDiv.innerHTML = '<details open><summary style="cursor:pointer;font-size:14px;color:var(--text-secondary);">启动日志</summary><div class="log-console" id="startConsole"></div></details>';
+      const cons = logDiv.querySelector('#startConsole');
+      const es = new EventSource('/api/start-services');
+      es.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'log') { cons.textContent += msg.data + '\\n'; cons.scrollTop = cons.scrollHeight; }
+        else if (msg.type === 'done') {
+          es.close();
+          if (msg.result === 'success') {
+            logDiv.innerHTML = '<div class="hint-box green" style="text-align:center;">服务已启动！正在重新检查...</div>';
+            setTimeout(() => renderStep2(el), 3000);
+          } else {
+            logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">启动失败。请检查日志或尝试全新安装。</div>';
+            btn.disabled = false; btn.textContent = '重试';
+          }
+        }
+      };
+      es.onerror = () => { es.close(); btn.disabled = false; btn.textContent = '重试'; };
+    };
+    el.querySelector('#freshInstallBtn').onclick = () => { state.step = 3; render(); };
   } else {
     el.innerHTML = `
       ${osMismatchHtml}
