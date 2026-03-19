@@ -11,6 +11,9 @@
 # Backups (local only)
 backups/
 
+# Node modules
+node_modules/
+
 # Build artifacts
 server/menzhen-api
 
