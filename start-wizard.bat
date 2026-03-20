@@ -185,7 +185,7 @@ set "_TARGET=%~1"
 
 :: Try URL1: raw.githubusercontent.com
 echo     尝试下载源 1/3 ...
-powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; try { Invoke-WebRequest -Uri '%URL1%' -OutFile '%_TARGET%' -UseBasicParsing -TimeoutSec 15 } catch {}" 2>nul
+powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; try { Invoke-WebRequest -Uri '%URL1%' -OutFile '%_TARGET%' -UseBasicParsing -TimeoutSec 30 } catch {}" 2>nul
 if exist "%_TARGET%" (
     powershell -Command "if ((Get-Content '%_TARGET%' -TotalCount 1) -match '^#!/.*python') { exit 0 } else { exit 1 }" 2>nul
     if !ERRORLEVEL! equ 0 goto :DOWNLOAD_DONE
@@ -194,7 +194,7 @@ if exist "%_TARGET%" (
 
 :: Try URL2: jsDelivr CDN (China-friendly)
 echo     尝试下载源 2/3 ...
-powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; try { Invoke-WebRequest -Uri '%URL2%' -OutFile '%_TARGET%' -UseBasicParsing -TimeoutSec 15 } catch {}" 2>nul
+powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; try { Invoke-WebRequest -Uri '%URL2%' -OutFile '%_TARGET%' -UseBasicParsing -TimeoutSec 30 } catch {}" 2>nul
 if exist "%_TARGET%" (
     powershell -Command "if ((Get-Content '%_TARGET%' -TotalCount 1) -match '^#!/.*python') { exit 0 } else { exit 1 }" 2>nul
     if !ERRORLEVEL! equ 0 goto :DOWNLOAD_DONE
@@ -203,7 +203,7 @@ if exist "%_TARGET%" (
 
 :: Try URL3: ghfast.top proxy
 echo     尝试下载源 3/3 ...
-powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; try { Invoke-WebRequest -Uri '%URL3%' -OutFile '%_TARGET%' -UseBasicParsing -TimeoutSec 15 } catch {}" 2>nul
+powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; try { Invoke-WebRequest -Uri '%URL3%' -OutFile '%_TARGET%' -UseBasicParsing -TimeoutSec 30 } catch {}" 2>nul
 if exist "%_TARGET%" (
     powershell -Command "if ((Get-Content '%_TARGET%' -TotalCount 1) -match '^#!/.*python') { exit 0 } else { exit 1 }" 2>nul
     if !ERRORLEVEL! equ 0 goto :DOWNLOAD_DONE

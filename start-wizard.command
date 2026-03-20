@@ -193,9 +193,9 @@ download_wizard() {
         echo "    尝试下载源 $i/$total ..."
         rm -f "$target" 2>/dev/null
         if command -v curl &>/dev/null; then
-            curl --connect-timeout 10 --max-time 30 -fSL "$url" -o "$target" 2>/dev/null
+            curl --connect-timeout 15 --max-time 60 -fSL "$url" -o "$target" 2>/dev/null
         elif command -v wget &>/dev/null; then
-            wget --timeout=30 -q "$url" -O "$target" 2>/dev/null
+            wget --timeout=60 --tries=1 -q "$url" -O "$target" 2>/dev/null
         fi
         # Validate: must start with python shebang
         if [[ -f "$target" ]] && head -1 "$target" | grep -qE "^#!.*python"; then

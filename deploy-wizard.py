@@ -233,7 +233,7 @@ def get_repo_url():
     for url in REPO_MIRROR_URLS:
         rc, _, _ = run_command(
             ["git", "ls-remote", "--exit-code", "-q", url, "HEAD"],
-            timeout=10,
+            timeout=20,
         )
         if rc == 0:
             _best_repo_url = url
@@ -244,6 +244,122 @@ def get_repo_url():
     # All failed, fallback to primary (will fail at git fetch with proper error)
     _best_repo_url = REPO_URL
     return REPO_URL
+
+
+# ---------------------------------------------------------------------------
+# Docker mirror configuration (for China mainland)
+# ---------------------------------------------------------------------------
+
+DOCKER_MIRRORS = [
+    "https://docker.m.daocloud.io",
+    "https://mirror.ccs.tencentyun.com",
+]
+
+
+def _get_daemon_json_path():
+    """Return the path to Docker daemon.json based on OS."""
+    os_key, _ = detect_os()
+    if os_key == "linux":
+        return Path("/etc/docker/daemon.json")
+    else:  # mac, windows — Docker Desktop uses ~/.docker/daemon.json
+        return Path.home() / ".docker" / "daemon.json"
+
+
+def _docker_hub_reachable():
+    """Quick test: can we reach Docker Hub? Returns True if reachable."""
+    try:
+        req = urllib.request.Request(
+            "https://registry-1.docker.io/v2/",
+            method="HEAD",
+            headers={"User-Agent": "deploy-wizard"},
+        )
+        urllib.request.urlopen(req, timeout=3)
+        return True
+    except urllib.error.HTTPError:
+        # 401 Unauthorized = Hub is reachable, just needs auth
+        return True
+    except Exception:
+        return False
+
+
+def ensure_docker_mirrors():
+    """Configure Docker registry mirrors if Docker Hub is unreachable.
+
+    Returns (configured, message):
+      - (False, "") if Hub is reachable (no action needed)
+      - (True, msg) if mirrors were configured (or already configured)
+      - (None, msg) if configuration failed
+    """
+    if _docker_hub_reachable():
+        return False, ""
+
+    daemon_path = _get_daemon_json_path()
+    os_key, _ = detect_os()
+
+    # Read existing config
+    config = {}
+    if daemon_path.exists():
+        try:
+            config = json.loads(daemon_path.read_text(encoding="utf-8"))
+        except Exception:
+            config = {}
+
+    # Already configured?
+    if config.get("registry-mirrors"):
+        return True, "Docker 镜像加速已配置"
+
+    # Write mirrors
+    config["registry-mirrors"] = DOCKER_MIRRORS
+    content = json.dumps(config, indent=2, ensure_ascii=False) + "\n"
+
+    try:
+        daemon_path.parent.mkdir(parents=True, exist_ok=True)
+        daemon_path.write_text(content, encoding="utf-8")
+    except PermissionError:
+        if os_key == "linux":
+            # Linux: use sudo to write
+            import subprocess
+            try:
+                subprocess.run(
+                    ["sudo", "mkdir", "-p", str(daemon_path.parent)],
+                    timeout=10, capture_output=True, **_popen_kwargs(),
+                )
+                proc = subprocess.run(
+                    ["sudo", "tee", str(daemon_path)],
+                    input=content.encode(), capture_output=True,
+                    timeout=10, **_popen_kwargs(),
+                )
+                if proc.returncode != 0:
+                    return None, "需要 sudo 权限配置 Docker 镜像加速"
+            except Exception as e:
+                return None, f"配置失败: {e}"
+        else:
+            return None, f"无写入权限: {daemon_path}"
+    except Exception as e:
+        return None, f"配置失败: {e}"
+
+    # Restart Docker daemon to apply
+    if os_key == "linux":
+        run_command(["sudo", "systemctl", "restart", "docker"], timeout=30)
+        for _ in range(15):
+            rc, _, _ = run_command(["docker", "info"], timeout=5)
+            if rc == 0:
+                return True, "已配置 Docker 镜像加速并重启 Docker"
+            time.sleep(2)
+        return None, "已配置镜像加速，但 Docker 重启超时，请手动执行: sudo systemctl restart docker"
+    elif os_key == "mac":
+        run_command(["osascript", "-e", 'quit app "Docker"'], timeout=10)
+        time.sleep(2)
+        run_command(["open", "-a", "Docker"], timeout=10)
+        for _ in range(30):
+            rc, _, _ = run_command(["docker", "info"], timeout=5)
+            if rc == 0:
+                return True, "已配置 Docker 镜像加速并重启 Docker Desktop"
+            time.sleep(2)
+        return True, "已配置镜像加速，请等待 Docker Desktop 重启完成后重试"
+    else:
+        # Windows — can't easily auto-restart Docker Desktop
+        return True, "已配置镜像加速，请手动重启 Docker Desktop 后重试"
 
 
 # ---------------------------------------------------------------------------
@@ -498,6 +614,31 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 "disk_enough": disk_gb >= 5,
                 "network": network_ok,
             })
+            return
+
+        if self.path == "/api/check-docker-hub":
+            reachable = _docker_hub_reachable()
+            mirror_configured = False
+            daemon_path = _get_daemon_json_path()
+            if daemon_path.exists():
+                try:
+                    cfg = json.loads(daemon_path.read_text(encoding="utf-8"))
+                    mirror_configured = bool(cfg.get("registry-mirrors"))
+                except Exception:
+                    pass
+            self._send_json({
+                "reachable": reachable,
+                "mirror_configured": mirror_configured,
+                "need_mirror": not reachable and not mirror_configured,
+            })
+            return
+
+        if self.path == "/api/configure-docker-mirror":
+            configured, message = ensure_docker_mirrors()
+            if configured is None:
+                self._send_json({"ok": False, "message": message})
+            else:
+                self._send_json({"ok": True, "configured": configured, "message": message})
             return
 
         if self.path == "/api/check-images":
@@ -2603,9 +2744,32 @@ async function renderStep2(el) {
       } else if (!allImagesExist) {
         // .env 存在但镜像缺失 → 需要重新构建
         checkDiv.innerHTML = recoveredHint + '<div class="hint-box yellow"><strong>镜像缺失，需要重新构建。</strong><br>缺失镜像：' + missingImages.join('、') + '</div><div class="actions" style="margin-top:12px;"><button class="btn btn-primary" id="rebuildBtn">重新构建</button></div><div id="buildLog"></div>';
-        checkDiv.querySelector('#rebuildBtn').onclick = () => {
+        checkDiv.querySelector('#rebuildBtn').onclick = async () => {
           const btn = checkDiv.querySelector('#rebuildBtn');
           btn.disabled = true;
+          btn.innerHTML = '<span class="spinner"></span> 正在检查网络环境...';
+          const logDiv = checkDiv.querySelector('#buildLog');
+
+          // Pre-build: check Docker Hub, configure mirrors if needed
+          try {
+            const hubCheck = await api('/api/check-docker-hub');
+            if (hubCheck.need_mirror) {
+              logDiv.innerHTML = '<div class="hint-box yellow" style="text-align:center;">Docker Hub 国内无法直接访问，正在自动配置镜像加速...</div>';
+              const mirrorRes = await api('/api/configure-docker-mirror');
+              if (mirrorRes.ok && mirrorRes.message) {
+                logDiv.innerHTML = '<div class="hint-box blue" style="text-align:center;">' + esc(mirrorRes.message) + '</div>';
+                if (mirrorRes.message.includes('重启')) {
+                  btn.innerHTML = '<span class="spinner"></span> 等待 Docker 重启...';
+                  await new Promise(r => setTimeout(r, 5000));
+                }
+              } else if (!mirrorRes.ok) {
+                logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">镜像加速配置失败：' + esc(mirrorRes.message || '') + '</div>';
+                btn.disabled = false; btn.textContent = '重试';
+                return;
+              }
+            }
+          } catch(e) {}
+
           btn.innerHTML = '<span class="spinner"></span> 正在构建，请勿关闭...';
           const logDiv = checkDiv.querySelector('#buildLog');
           logDiv.innerHTML = '<details open><summary style="cursor:pointer;font-size:14px;color:var(--text-secondary);">构建日志</summary><div class="log-console" id="buildConsole"></div></details>';
@@ -3180,11 +3344,36 @@ async function renderStep5(el) {
   }
 
   if (el.querySelector('#buildBtn')) {
-    el.querySelector('#buildBtn').onclick = () => {
+    el.querySelector('#buildBtn').onclick = async () => {
       const btn = el.querySelector('#buildBtn');
       btn.disabled = true;
-      btn.innerHTML = '<span class="spinner"></span> 正在构建，请勿关闭...';
+      btn.innerHTML = '<span class="spinner"></span> 正在检查网络环境...';
       const logDiv = el.querySelector('#buildLog');
+
+      // Pre-build: check Docker Hub connectivity, configure mirrors if needed
+      try {
+        const hubCheck = await api('/api/check-docker-hub');
+        if (hubCheck.need_mirror) {
+          logDiv.innerHTML = '<div class="hint-box yellow" style="text-align:center;">Docker Hub 国内无法直接访问，正在自动配置镜像加速...</div>';
+          const mirrorRes = await api('/api/configure-docker-mirror');
+          if (mirrorRes.ok && mirrorRes.message) {
+            logDiv.innerHTML = '<div class="hint-box blue" style="text-align:center;">' + esc(mirrorRes.message) + '</div>';
+            // Wait a moment for Docker to restart
+            if (mirrorRes.message.includes('重启')) {
+              btn.innerHTML = '<span class="spinner"></span> 等待 Docker 重启...';
+              await new Promise(r => setTimeout(r, 5000));
+            }
+          } else if (!mirrorRes.ok) {
+            logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">镜像加速配置失败：' + esc(mirrorRes.message || '未知错误') + '<br>请手动配置 Docker 镜像加速后重试。</div>';
+            btn.disabled = false; btn.textContent = '重试';
+            return;
+          }
+        }
+      } catch(e) {
+        // Network check failed, continue anyway
+      }
+
+      btn.innerHTML = '<span class="spinner"></span> 正在构建，请勿关闭...';
       logDiv.innerHTML = '<div style="font-size:17px;text-align:center;padding:16px;color:var(--primary);"><span class="spinner"></span> 正在构建程序（约5-15分钟）...</div><details style="margin-top:8px;"><summary style="cursor:pointer;color:var(--text-secondary);font-size:14px;">查看详细日志</summary><div class="log-console" id="buildConsole"></div></details>';
       const cons = logDiv.querySelector('#buildConsole');
       const es = new EventSource('/api/build-full');
@@ -3502,7 +3691,7 @@ def self_update():
                     "User-Agent": "deploy-wizard",
                     "Cache-Control": "no-cache",
                 })
-                resp = urllib.request.urlopen(req, timeout=10)
+                resp = urllib.request.urlopen(req, timeout=30)
                 content = resp.read().decode("utf-8")
                 if content.startswith("#!/usr/bin/env python") and len(content) > 10000:
                     remote_content = content

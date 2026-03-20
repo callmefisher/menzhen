@@ -101,14 +101,24 @@
 
 | 操作系统 | 安装方式 |
 |----------|-----------|
-| Windows | 下载 [`start-wizard.bat`](https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.bat)，**右键 → 以管理员身份运行** |
+| Windows | 下载 [`start-wizard.bat`](https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.bat)，**右键 → 以管理员身份运行**（[镜像下载](https://cdn.jsdelivr.net/gh/callmefisher/menzhen@main/start-wizard.bat)） |
 | macOS / Linux | 终端运行下方命令 |
 
 **macOS / Linux 一键安装命令：**
 
 ```bash
-mkdir -p ~/menzhen && cd ~/menzhen && (curl -fLO "https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command" || true) && bash start-wizard.command
+mkdir -p ~/menzhen && cd ~/menzhen && curl -fLO "https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command" && bash start-wizard.command
 ```
+
+> 如果下载失败（国内网络），使用镜像源：
+>
+> ```bash
+> # 镜像源 1：jsDelivr CDN
+> mkdir -p ~/menzhen && cd ~/menzhen && curl -fLO "https://cdn.jsdelivr.net/gh/callmefisher/menzhen@main/start-wizard.command" && bash start-wizard.command
+>
+> # 镜像源 2：ghfast 代理
+> mkdir -p ~/menzhen && cd ~/menzhen && curl -fLO "https://ghfast.top/https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command" && bash start-wizard.command
+> ```
 
 > 详细步骤见 [裸机安装指南](docs/bare-metal-install-guide.md)
 
