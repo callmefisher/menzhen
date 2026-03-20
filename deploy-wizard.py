@@ -522,6 +522,8 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 "done; "
                 "docker info >/dev/null 2>&1 && echo 'Docker 已启动！安装完成！' && exit 0; "
                 "echo '=== Docker 安装成功但启动超时 ==='; "
+                "echo '--- docker info ---'; docker info 2>&1 || true; "
+                "echo '--- Docker Desktop 进程 ---'; ps aux | grep -i '[d]ocker' || true; "
                 "echo '请手动打开 Docker Desktop 应用，待其启动完成后点击重新检查。'; "
                 "exit 1"
             )
@@ -573,7 +575,8 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "  if [ $i -eq 30 ] || [ $i -eq 60 ]; then "
                     "    echo '重新尝试启动 Docker 服务...'; "
                     "    if command -v systemctl >/dev/null 2>&1; then sudo systemctl restart docker 2>&1; "
-                    "    elif command -v service >/dev/null 2>&1; then sudo service docker restart 2>&1; fi; "
+                    "    elif command -v service >/dev/null 2>&1; then sudo service docker restart 2>&1; "
+                    "    else sudo pkill dockerd 2>/dev/null || true; sudo dockerd &>/dev/null & sleep 2; fi; "
                     "  fi; "
                     '  echo "等待 Docker 启动中... ($i/90)"; sleep 2; '
                     "done; "
@@ -898,7 +901,8 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "  if [ $i -eq 30 ] || [ $i -eq 60 ]; then "
                     "    echo '重新尝试启动 Docker 服务...'; "
                     "    if command -v systemctl >/dev/null 2>&1; then sudo systemctl restart docker 2>&1; "
-                    "    elif command -v service >/dev/null 2>&1; then sudo service docker restart 2>&1; fi; "
+                    "    elif command -v service >/dev/null 2>&1; then sudo service docker restart 2>&1; "
+                    "    else sudo pkill dockerd 2>/dev/null || true; sudo dockerd &>/dev/null & sleep 2; fi; "
                     "  fi; "
                     "  echo \"等待中... ($i/90)\"; sleep 2; "
                     "done; "
