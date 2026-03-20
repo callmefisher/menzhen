@@ -186,9 +186,9 @@ if [[ -f "deploy-wizard.py" ]]; then
     TEMP_FILE="deploy-wizard.py.download"
     DOWNLOAD_OK=false
     if command -v curl &>/dev/null; then
-        curl -fSL "$WIZARD_URL" -o "$TEMP_FILE" && DOWNLOAD_OK=true
+        curl --connect-timeout 10 --max-time 30 -fSL "$WIZARD_URL" -o "$TEMP_FILE" && DOWNLOAD_OK=true
     elif command -v wget &>/dev/null; then
-        wget "$WIZARD_URL" -O "$TEMP_FILE" && DOWNLOAD_OK=true
+        wget --timeout=30 "$WIZARD_URL" -O "$TEMP_FILE" && DOWNLOAD_OK=true
     fi
 
     if $DOWNLOAD_OK && [[ -f "$TEMP_FILE" ]]; then
