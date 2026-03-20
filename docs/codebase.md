@@ -961,10 +961,10 @@ menzhen/
 
 | 服务 | 镜像/构建 | 端口 | 说明 |
 |------|-----------|------|------|
-| `nginx` | `nginx:alpine` | `80:80` | 反向代理前后端 |
+| `nginx` | `./nginx` 构建 (`menzhen-nginx:latest`) | `80:80` | 反向代理前后端 |
 | `web` | `./web` 构建 | - | React 前端 |
 | `api` | `./server` 构建 | - | Go 后端（依赖 mysql + minio） |
-| `mysql` | `mysql:8.0` | - | 数据库（health check） |
+| `mysql` | `./mysql` 构建 (`menzhen-mysql:latest`) | - | 数据库（health check） |
 | `minio` | `minio/minio` | - | 对象存储（console 端口 9001） |
 | `backup` | `./scripts` 构建 | - | 定时备份（挂载 .env 热加载配置，unless-stopped） |
 

@@ -2990,7 +2990,9 @@ async function renderStep5(el) {
     'menzhen-web:latest': '门诊界面程序',
     'menzhen-backup:latest': '自动备份程序',
     'nginx:alpine': '网络服务程序',
+    'menzhen-nginx:latest': '网络服务程序',
     'mysql:8.0': '数据库程序',
+    'menzhen-mysql:latest': '数据库程序',
     'minio/minio:latest': '文件存储程序',
   };
 
