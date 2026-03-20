@@ -30,7 +30,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.03.20.202403"
+WIZARD_VERSION = "2026.03.21.075003"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -731,6 +731,9 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             # Post-install: start Docker and wait for daemon with 90-retry loop
             # (same pattern as /api/start-docker for consistency)
             MAC_POST_INSTALL = (
+                "echo ''; printf '%s\\n' \"$(printf '═%.0s' $(seq 1 40))\"; "
+                "echo '  [2/2] 启动 Docker Desktop（约1-3分钟）'; "
+                "printf '%s\\n' \"$(printf '═%.0s' $(seq 1 40))\"; "
                 'echo "正在启动 Docker Desktop..." && '
                 "open -a Docker 2>&1 || echo '警告：无法自动启动 Docker Desktop，请手动打开 /Applications/Docker.app'; "
                 "for i in $(seq 1 90); do "
@@ -738,7 +741,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 "  if [ $i -eq 30 ] || [ $i -eq 60 ]; then "
                 "    echo '重新尝试启动 Docker Desktop...'; open -a Docker 2>&1 || true; "
                 "  fi; "
-                '  echo "等待 Docker 启动中... ($i/90)"; sleep 2; '
+                '  if [ $((i % 5)) -eq 0 ]; then pct=$((i * 100 / 90)); echo "等待 Docker 启动中... ${pct}% ($i/90)"; fi; sleep 2; '
                 "done; "
                 "docker info >/dev/null 2>&1 && echo 'Docker 已启动！安装完成！' && exit 0; "
                 "echo '=== Docker 安装成功但启动超时 ==='; "
@@ -747,16 +750,22 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 "echo '请手动打开 Docker Desktop 应用，待其启动完成后点击重新检查。'; "
                 "exit 1"
             )
+            MAC_STAGE_1 = (
+                "echo ''; printf '%s\\n' \"$(printf '═%.0s' $(seq 1 40))\"; "
+                "echo '  [1/2] 安装 Docker Desktop（约2-5分钟）'; "
+                "printf '%s\\n' \"$(printf '═%.0s' $(seq 1 40))\"; "
+            )
             if os_key == "mac":
                 if check_command("brew"):
                     stream_command(self, [
                         "bash", "-c",
-                        "brew install --cask docker && " + MAC_POST_INSTALL
+                        MAC_STAGE_1 + "brew install --cask docker && " + MAC_POST_INSTALL
                     ])
                 else:
                     # Install Homebrew (Chinese mirror) first, then Docker Desktop
                     stream_command(self, [
                         "bash", "-c",
+                        MAC_STAGE_1 +
                         'echo "正在安装 Homebrew（使用国内镜像，安装脚本仍需访问 GitHub）..." && '
                         'export HOMEBREW_BREW_GIT_REMOTE="https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/brew.git" && '
                         'export HOMEBREW_CORE_GIT_REMOTE="https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/homebrew-core.git" && '
@@ -777,8 +786,19 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "echo '  echo \"$(whoami) ALL=(ALL) NOPASSWD:ALL\" | sudo tee /etc/sudoers.d/$(whoami)'; "
                     "echo '配置完成后刷新页面重试。'; exit 1; }; "
                 )
+                # Stage separator helper for Linux
+                LINUX_SEP = "printf '%s\\n' \"$(printf '═%.0s' $(seq 1 40))\""
+                # Stage 1 header (prepended to install command)
+                LINUX_STAGE_1 = (
+                    "echo ''; " + LINUX_SEP + "; "
+                    "echo '  [1/3] 安装 Docker（约2-5分钟）'; "
+                    + LINUX_SEP + "; "
+                )
                 # Post-install: configure mirrors, enable+start, then verify with retry loop
                 DOCKER_POST_INSTALL = (
+                    "echo ''; " + LINUX_SEP + "; "
+                    "echo '  [2/3] 配置镜像加速 + 启动服务'; "
+                    + LINUX_SEP + "; "
                     "if command -v systemctl >/dev/null 2>&1; then "
                     "  sudo systemctl enable docker 2>&1 || echo '警告：无法设置 Docker 开机自启，不影响当前使用'; "
                     "  sudo systemctl start docker; "
@@ -792,10 +812,13 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "sudo mkdir -p /etc/docker && "
                     "echo '{\"registry-mirrors\":[\"https://docker.m.daocloud.io\"]}' "
                     "| sudo tee /etc/docker/daemon.json > /dev/null && "
+                    "echo '  镜像加速已配置' && "
                     "if command -v systemctl >/dev/null 2>&1; then sudo systemctl restart docker; "
                     "elif command -v service >/dev/null 2>&1; then sudo service docker restart; fi; "
                     "fi; "
-                    "echo '正在等待 Docker 服务就绪...' && "
+                    "echo ''; " + LINUX_SEP + "; "
+                    "echo '  [3/3] 等待 Docker 启动（约30秒-2分钟）'; "
+                    + LINUX_SEP + "; "
                     "for i in $(seq 1 90); do "
                     "  docker info >/dev/null 2>&1 && echo 'Docker 已启动！安装完成（已配置国内镜像加速）!' && exit 0; "
                     "  if [ $i -eq 30 ] || [ $i -eq 60 ]; then "
@@ -804,7 +827,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "    elif command -v service >/dev/null 2>&1; then sudo service docker restart 2>&1; "
                     "    else sudo pkill dockerd 2>/dev/null || true; sudo dockerd &>/dev/null & sleep 2; fi; "
                     "  fi; "
-                    '  echo "等待 Docker 启动中... ($i/90)"; sleep 2; '
+                    '  if [ $((i % 5)) -eq 0 ]; then pct=$((i * 100 / 90)); echo "等待 Docker 启动中... ${pct}% ($i/90)"; fi; sleep 2; '
                     "done; "
                     "docker info >/dev/null 2>&1 && echo 'Docker 已启动！安装完成!' && exit 0; "
                     "echo '=== Docker 安装成功但启动超时 ==='; "
@@ -818,18 +841,18 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 if check_command("curl"):
                     stream_command(self, [
                         "bash", "-c",
-                        SUDO_GUARD + "curl -fsSL https://get.docker.com | sh -s -- --mirror Aliyun && " + DOCKER_POST_INSTALL
+                        SUDO_GUARD + LINUX_STAGE_1 + "curl -fsSL https://get.docker.com | sh -s -- --mirror Aliyun && " + DOCKER_POST_INSTALL
                     ])
                 elif check_command("wget"):
                     stream_command(self, [
                         "bash", "-c",
-                        SUDO_GUARD + "wget -qO- https://get.docker.com | sh -s -- --mirror Aliyun && " + DOCKER_POST_INSTALL
+                        SUDO_GUARD + LINUX_STAGE_1 + "wget -qO- https://get.docker.com | sh -s -- --mirror Aliyun && " + DOCKER_POST_INSTALL
                     ])
                 else:
                     # Try installing curl first, then Docker
                     stream_command(self, [
                         "bash", "-c",
-                        SUDO_GUARD +
+                        SUDO_GUARD + LINUX_STAGE_1 +
                         "("
                         "  command -v apt-get >/dev/null && sudo apt-get update -qq && sudo apt-get install -y curl || "
                         "  command -v yum >/dev/null && sudo yum install -y curl || "
@@ -857,19 +880,39 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         "    Write-Output '=========================================='; \n"
                         "    exit 1;\n"
                         "  }\n"
-                        "  # Step 1: Enable WSL feature via DISM (fast, no download)\n"
-                        "  Write-Output '正在启用 WSL 功能（步骤 1/4）...';\n"
-                        "  dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart 2>&1 | ForEach-Object { Write-Output $_ };\n"
+                        "  # Step 1/5: Enable WSL feature via DISM\n"
+                        "  Write-Output '';\n"
+                        "  Write-Output ([char]0x2550 * 40);\n"
+                        "  Write-Output '  [1/5] 启用 WSL 功能（约1-2分钟）';\n"
+                        "  Write-Output ([char]0x2550 * 40);\n"
+                        "  dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart /quiet 2>&1 | Where-Object { $_ -match '(成功|失败|错误|error|success|100)' } | ForEach-Object { Write-Output $_ };\n"
                         "  if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 3010) { Write-Output \"启用 WSL 功能失败（错误码: $LASTEXITCODE）\"; exit 1 };\n"
-                        "  # Step 2: Enable Virtual Machine Platform via DISM\n"
-                        "  Write-Output '正在启用虚拟机平台（步骤 2/4）...';\n"
-                        "  dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart 2>&1 | ForEach-Object { Write-Output $_ };\n"
+                        "  Write-Output '  WSL 功能已启用';\n"
+                        "  # Step 2/5: Enable Virtual Machine Platform via DISM\n"
+                        "  Write-Output '';\n"
+                        "  Write-Output ([char]0x2550 * 40);\n"
+                        "  Write-Output '  [2/5] 启用虚拟机平台（约1-2分钟）';\n"
+                        "  Write-Output ([char]0x2550 * 40);\n"
+                        "  dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart /quiet 2>&1 | Where-Object { $_ -match '(成功|失败|错误|error|success|100)' } | ForEach-Object { Write-Output $_ };\n"
                         "  if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 3010) { Write-Output \"启用虚拟机平台失败（错误码: $LASTEXITCODE）\"; exit 1 };\n"
-                        "  # Step 3: Update WSL kernel (must be before set-default-version)\n"
-                        "  Write-Output '正在更新 WSL 内核（步骤 3/4）...';\n"
-                        "  wsl --update 2>&1 | ForEach-Object { Write-Output $_ };\n"
-                        "  # Step 4: Set WSL default version to 2\n"
-                        "  Write-Output '设置 WSL 默认版本为 2（步骤 4/4）...';\n"
+                        "  Write-Output '  虚拟机平台已启用';\n"
+                        "  # Step 3/5: Update WSL kernel with timeout protection\n"
+                        "  Write-Output '';\n"
+                        "  Write-Output ([char]0x2550 * 40);\n"
+                        "  Write-Output '  [3/5] 更新 WSL 内核（约1-3分钟，需下载）';\n"
+                        "  Write-Output ([char]0x2550 * 40);\n"
+                        "  $wslJob = Start-Job { wsl --update 2>&1 };\n"
+                        "  $wslDone = $wslJob | Wait-Job -Timeout 180;\n"
+                        "  if ($wslDone) {\n"
+                        "    Receive-Job $wslJob | ForEach-Object { Write-Output $_ };\n"
+                        "    Remove-Job $wslJob -Force;\n"
+                        "    Write-Output '  WSL 内核更新完成';\n"
+                        "  } else {\n"
+                        "    Stop-Job $wslJob; Remove-Job $wslJob -Force;\n"
+                        "    Write-Output '  WSL 内核更新超时（3分钟），跳过。';\n"
+                        "    Write-Output '  如后续遇到问题，请手动运行: wsl --update';\n"
+                        "  }\n"
+                        "  # Set WSL default version to 2\n"
                         "  wsl --set-default-version 2 2>&1 | ForEach-Object { Write-Output $_ };\n"
                         "  Start-Sleep -Seconds 2;\n"
                         "  $wslReady = $false;\n"
@@ -884,8 +927,11 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         "  }\n"
                         "  Write-Output 'WSL 2 安装完成';\n"
                         "}\n"
-                        "# Install Docker Desktop\n"
-                        "Write-Output '正在安装 Docker Desktop...';\n"
+                        "# Step 4/5: Install Docker Desktop\n"
+                        "Write-Output '';\n"
+                        "Write-Output ([char]0x2550 * 40);\n"
+                        "Write-Output '  [4/5] 安装 Docker Desktop（约2-5分钟）';\n"
+                        "Write-Output ([char]0x2550 * 40);\n"
                         "winget install Docker.DockerDesktop --accept-package-agreements --accept-source-agreements;\n"
                         "# Refresh PATH\n"
                         "$env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + "
@@ -910,8 +956,11 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         "    \"$env:ProgramFiles\\Docker\\Docker\\Docker Desktop.exe\"\n"
                         "  )) { if (Test-Path $dp) { $p = $dp; break } };\n"
                         "}\n"
-                        "# Start Docker Desktop\n"
-                        "Write-Output '正在启动 Docker Desktop...';\n"
+                        "# Step 5/5: Start Docker Desktop and wait\n"
+                        "Write-Output '';\n"
+                        "Write-Output ([char]0x2550 * 40);\n"
+                        "Write-Output '  [5/5] 启动 Docker Desktop（约1-3分钟）';\n"
+                        "Write-Output ([char]0x2550 * 40);\n"
                         "if ($p -and (Test-Path $p)) {\n"
                         "  Write-Output \"找到: $p\";\n"
                         "  Start-Process -FilePath $p;\n"
@@ -930,7 +979,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         "    if ($p -and (Test-Path $p)) { Start-Process -FilePath $p }\n"
                         "    else { try { Start-Process 'C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Docker Desktop.lnk' -EA Stop } catch {} };\n"
                         "  };\n"
-                        "  Write-Output \"等待 Docker 启动中... ($i/90)\";\n"
+                        "  if ($i % 5 -eq 0) { $pct = [math]::Round($i * 100 / 90); Write-Output \"等待 Docker 启动中... $pct% ($i/90)\" };\n"
                         "  Start-Sleep -Seconds 2;\n"
                         "};\n"
                         "# Final check\n"
@@ -2112,11 +2161,156 @@ header p {
 .hint-box.yellow { background: #fef9c3; }
 .hint-box.red { background: #fef2f2; }
 
-/* Responsive */
-@media (max-width: 600px) {
-  .os-options { flex-direction: column; }
+/* Env form rows */
+.env-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.env-label {
+  min-width: 140px;
+  font-size: 15px;
+  text-align: right;
+  flex-shrink: 0;
+}
+.env-input {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 15px;
+  min-width: 0;
+}
+
+/* Responsive URL display */
+.url-display {
+  font-weight: 700;
+  color: var(--primary);
+  word-break: break-all;
+}
+.url-display.large { font-size: 24px; }
+.url-display.medium { font-size: 22px; }
+.url-display.warning { color: var(--warning); }
+.site-id-display { font-size: 28px; font-weight: 700; color: #1d4ed8; letter-spacing: 2px; margin: 12px 0; word-break: break-all; }
+
+/* Responsive — multi-breakpoint */
+
+/* Tablet landscape / small laptop (<=900px) */
+@media (max-width: 900px) {
+  .container { max-width: 100%; padding: 32px 20px; }
+}
+
+/* Tablet portrait (<=768px) */
+@media (max-width: 768px) {
+  body { font-size: 15px; }
   .container { padding: 24px 16px; }
+  header h1 { font-size: 26px; }
+  header p { font-size: 15px; }
+  .card { padding: 24px 20px; }
+  .card h2 { font-size: 20px; }
+  .card .subtitle { font-size: 14px; }
+  .step-labels { font-size: 13px; gap: 4px; }
+  .progress-bar { margin-bottom: 24px; }
+  .os-option { padding: 18px 10px 16px; }
+  .os-option .icon { font-size: 34px; }
+  .os-option .name { font-size: 14px; }
+  .btn { padding: 12px 20px; font-size: 15px; }
+  .actions { margin-top: 20px; }
+  .log-console { max-height: 240px; font-size: 13px; padding: 12px; }
+  .success-box .big-icon { font-size: 52px; }
+  .success-box h2 { font-size: 21px; }
+  .success-box .url { font-size: 19px; }
+  .modal-content { margin: 24px 12px; padding: 24px 20px; }
+  .help-btn { padding: 8px 14px; font-size: 14px; }
+  .env-label { min-width: 120px; font-size: 14px; }
+  .env-input { font-size: 14px; padding: 8px 10px; }
+  .url-display.large { font-size: 20px; }
+  .url-display.medium { font-size: 18px; }
+  .site-id-display { font-size: 24px; }
+}
+
+/* Large phone (<=600px) */
+@media (max-width: 600px) {
+  .container { padding: 20px 12px; }
+  header { margin-bottom: 20px; }
+  header h1 { font-size: 22px; }
   .step-labels { display: none; }
+  .progress-bar { margin-bottom: 20px; gap: 6px; }
+  .card { padding: 20px 16px; }
+  .card h2 { font-size: 18px; margin-bottom: 8px; }
+  .card .subtitle { margin-bottom: 16px; }
+  .os-options { flex-direction: column; gap: 10px; }
+  .os-option { padding: 16px 14px; display: flex; align-items: center; gap: 12px; text-align: left; }
+  .os-option .icon { font-size: 30px; margin-bottom: 0; }
+  .os-option.selected::after { top: 50%; right: 10px; transform: translateY(-50%); }
+  .os-detect-tag { margin-top: 0; margin-left: 8px; }
+  .input-group { flex-direction: column; gap: 8px; }
+  .actions { flex-direction: column-reverse; gap: 10px; }
+  .actions .btn { width: 100%; text-align: center; }
+  .actions > span:empty { display: none; }
+  .actions > div { display: flex; flex-direction: column; gap: 8px; }
+  .actions > div .btn { width: 100%; margin-left: 0 !important; }
+  .status-item { padding: 10px 0; font-size: 14px; }
+  .badge { padding: 4px 10px; font-size: 13px; }
+  .hint-box { padding: 12px; font-size: 14px; }
+  .log-console { max-height: 200px; font-size: 12px; }
+  .success-box { padding: 16px; }
+  .success-box .big-icon { font-size: 44px; margin-bottom: 10px; }
+  .success-box h2 { font-size: 20px; }
+  .success-box .url { font-size: 17px; }
+  .modal-content { margin: 12px 8px; padding: 20px 16px; max-width: 100%; }
+  .modal-close { width: 36px; height: 36px; font-size: 18px; top: 12px; right: 12px; }
+  .guide-section pre { font-size: 12px; padding: 10px; }
+  .help-btn { padding: 6px 12px; font-size: 13px; top: 2px; }
+  .env-row { flex-direction: column; align-items: stretch; gap: 4px; }
+  .env-label { min-width: unset; text-align: left; font-size: 14px; }
+  .env-input { font-size: 14px; }
+  .url-display.large { font-size: 18px; }
+  .url-display.medium { font-size: 16px; }
+  .site-id-display { font-size: 20px; letter-spacing: 1px; }
+}
+
+/* Small phone (<=400px) */
+@media (max-width: 400px) {
+  .container { padding: 16px 10px; }
+  header h1 { font-size: 20px; }
+  header p { font-size: 13px; }
+  .card { padding: 16px 12px; }
+  .card h2 { font-size: 17px; }
+  .btn { padding: 10px 16px; font-size: 14px; }
+  .os-option .icon { font-size: 26px; }
+  .success-box .url { font-size: 15px; }
+}
+
+/* Short viewport (landscape phone / low-res laptop) */
+@media (max-height: 700px) {
+  .container { padding-top: 16px; padding-bottom: 16px; }
+  header { margin-bottom: 16px; }
+  header h1 { font-size: 24px; margin-bottom: 4px; }
+  .progress-bar { margin-bottom: 16px; }
+  .step-labels { margin-bottom: 12px; }
+  .card { padding: 20px; }
+  .card .subtitle { margin-bottom: 16px; }
+  .actions { margin-top: 16px; }
+  .log-console { max-height: 180px; }
+  .success-box { padding: 16px; }
+  .success-box .big-icon { font-size: 40px; margin-bottom: 8px; }
+}
+
+/* Very short viewport */
+@media (max-height: 500px) {
+  .container { padding-top: 8px; padding-bottom: 8px; }
+  header { margin-bottom: 8px; }
+  header h1 { font-size: 20px; }
+  header p { display: none; }
+  .progress-bar { margin-bottom: 8px; }
+  .step-labels { display: none; }
+  .card { padding: 14px; }
+  .card h2 { font-size: 17px; margin-bottom: 6px; }
+  .card .subtitle { margin-bottom: 10px; font-size: 13px; }
+  .actions { margin-top: 12px; }
+  .log-console { max-height: 120px; }
 }
 
 /* Help modal */
@@ -2427,7 +2621,7 @@ async function renderStep2(el) {
       <p class="subtitle">检测到系统已经安装好了，可以直接使用。</p>
       <div class="status-item" style="flex-direction:column; align-items:flex-start; gap:8px;">
         <span>访问地址</span>
-        <a href="${esc(sysUrl)}" target="_blank" style="font-size:24px; font-weight:700; color:var(--primary); text-decoration:underline;">${esc(sysUrl)}</a>
+        <a href="${esc(sysUrl)}" target="_blank" class="url-display large" style="text-decoration:underline;">${esc(sysUrl)}</a>
         ${lanExtra}
       </div>
       <div class="hint-box green" style="text-align:center;">
@@ -2650,7 +2844,7 @@ async function renderStep2(el) {
 
       if (missingImages.length > 0) {
         // 镜像丢失 → 先构建再启动
-        pc.innerHTML = '<div class="status-item" style="flex-direction:column; align-items:flex-start; gap:8px;"><span>访问地址（当前不可用）</span><span style="font-size:22px; font-weight:700; color:var(--warning);">' + esc(sysUrl) + '</span></div><div class="hint-box yellow"><strong>部分镜像丢失，需要重新构建。</strong><br>缺失镜像：' + missingImages.join('、') + '<br>构建完成后将自动启动服务。</div><div style="margin-top:12px;"><button class="btn btn-success" id="rebuildPartialBtn">重新构建并启动</button><button class="btn btn-primary" id="reinstallPartialBtn" style="margin-left:8px;">全新安装 &rarr;</button></div><div id="repairLog"></div>';
+        pc.innerHTML = '<div class="status-item" style="flex-direction:column; align-items:flex-start; gap:8px;"><span>访问地址（当前不可用）</span><span class="url-display medium warning">' + esc(sysUrl) + '</span></div><div class="hint-box yellow"><strong>部分镜像丢失，需要重新构建。</strong><br>缺失镜像：' + missingImages.join('、') + '<br>构建完成后将自动启动服务。</div><div style="margin-top:12px;"><button class="btn btn-success" id="rebuildPartialBtn">重新构建并启动</button><button class="btn btn-primary" id="reinstallPartialBtn" style="margin-left:8px;">全新安装 &rarr;</button></div><div id="repairLog"></div>';
         pc.querySelector('#rebuildPartialBtn').onclick = () => {
           const btn = pc.querySelector('#rebuildPartialBtn');
           btn.disabled = true;
@@ -2696,7 +2890,7 @@ async function renderStep2(el) {
         };
       } else {
         // 镜像齐全 → 直接重启
-        pc.innerHTML = '<div class="status-item" style="flex-direction:column; align-items:flex-start; gap:8px;"><span>访问地址（当前不可用）</span><span style="font-size:22px; font-weight:700; color:var(--warning);">' + esc(sysUrl) + '</span></div><div class="hint-box yellow"><strong>系统已安装但服务异常。</strong><br>您可以点击「重启服务」尝试恢复，或点击「全新安装」重新安装。</div><div id="repairLog"></div><div style="margin-top:12px;"><button class="btn btn-success" id="repairBtn">重启服务</button><button class="btn btn-primary" id="reinstallBtn" style="margin-left:8px;">全新安装 &rarr;</button></div>';
+        pc.innerHTML = '<div class="status-item" style="flex-direction:column; align-items:flex-start; gap:8px;"><span>访问地址（当前不可用）</span><span class="url-display medium warning">' + esc(sysUrl) + '</span></div><div class="hint-box yellow"><strong>系统已安装但服务异常。</strong><br>您可以点击「重启服务」尝试恢复，或点击「全新安装」重新安装。</div><div id="repairLog"></div><div style="margin-top:12px;"><button class="btn btn-success" id="repairBtn">重启服务</button><button class="btn btn-primary" id="reinstallBtn" style="margin-left:8px;">全新安装 &rarr;</button></div>';
         pc.querySelector('#repairBtn').onclick = () => {
           const btn = pc.querySelector('#repairBtn');
           btn.disabled = true;
@@ -2784,32 +2978,91 @@ async function renderStep2(el) {
       if (!checkDiv) return;
 
       if (!repoData.essentials_ready) {
-        // docker-compose.yml 缺失 → 需要下载
-        checkDiv.innerHTML = '<div class="hint-box yellow"><strong>docker-compose.yml 缺失。</strong><br>启动服务需要此文件，请先下载。</div><div class="actions" style="margin-top:12px;"><button class="btn btn-primary" id="downloadComposeBtn">下载 docker-compose.yml</button></div><div id="composeLog"></div>';
-        checkDiv.querySelector('#downloadComposeBtn').onclick = () => {
-          const btn = checkDiv.querySelector('#downloadComposeBtn');
-          btn.disabled = true;
-          btn.innerHTML = '<span class="spinner"></span> 正在下载...';
-          const logDiv = checkDiv.querySelector('#composeLog');
-          logDiv.innerHTML = '<details open><summary style="cursor:pointer;font-size:14px;color:var(--text-secondary);">下载日志</summary><div class="log-console" id="composeConsole"></div></details>';
-          const cons = logDiv.querySelector('#composeConsole');
+        // docker-compose.yml 缺失
+
+        // 通用的下载 compose 逻辑
+        function startComposeDownload() {
+          const checkDiv = el.querySelector('#noContainerCheck');
+          if (!checkDiv) return;
+          checkDiv.innerHTML = '<div class="hint-box yellow"><strong>docker-compose.yml 缺失。</strong><br>启动服务需要此文件，正在下载...</div><div id="composeLog"><details open><summary style="cursor:pointer;font-size:14px;color:var(--text-secondary);">下载日志</summary><div class="log-console" id="composeConsole"></div></details></div>';
+          const cons = checkDiv.querySelector('#composeConsole');
           const es = new EventSource('/api/download-compose');
           es.onmessage = (e) => {
             const msg = JSON.parse(e.data);
             if (msg.type === 'log') { cons.textContent += msg.data + '\\n'; cons.scrollTop = cons.scrollHeight; }
             else if (msg.type === 'done') {
               es.close();
+              const logDiv = checkDiv.querySelector('#composeLog');
               if (msg.result === 'success') {
                 logDiv.innerHTML = '<div class="hint-box green" style="text-align:center;">下载完成！正在重新检测...</div>';
                 setTimeout(() => renderStep2(el), 2000);
               } else {
-                logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">下载失败。请检查网络连接和 git 是否可用。</div>';
-                btn.disabled = false; btn.textContent = '重试';
+                logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">下载失败。请检查网络连接。</div><div class="actions" style="margin-top:8px;"><button class="btn btn-primary" id="retryComposeBtn">重试</button></div>';
+                const retryBtn = logDiv.querySelector('#retryComposeBtn');
+                if (retryBtn) retryBtn.onclick = () => startComposeDownload();
               }
             }
           };
-          es.onerror = () => { es.close(); btn.disabled = false; btn.textContent = '重试'; };
-        };
+          es.onerror = () => {
+            es.close();
+            const logDiv = checkDiv.querySelector('#composeLog');
+            if (logDiv) {
+              logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">下载连接中断。请检查网络连接。</div><div class="actions" style="margin-top:8px;"><button class="btn btn-primary" id="retryComposeBtn">重试</button></div>';
+              const retryBtn = logDiv.querySelector('#retryComposeBtn');
+              if (retryBtn) retryBtn.onclick = () => startComposeDownload();
+            }
+          };
+        }
+
+        if (!repoData.git_available) {
+          // Git 不可用 → 先装 Git，再下载 compose
+          checkDiv.innerHTML = '<div class="hint-box yellow"><strong>docker-compose.yml 缺失，且未检测到 Git。</strong><br>需要先安装 Git 才能下载项目文件。</div><div class="actions" style="margin-top:12px;"><button class="btn btn-primary" id="installGitBtn">安装 Git</button></div><div id="composeLog"></div>';
+          checkDiv.querySelector('#installGitBtn').onclick = () => {
+            const btn = checkDiv.querySelector('#installGitBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> 正在安装 Git...';
+            const logDiv = checkDiv.querySelector('#composeLog');
+            logDiv.innerHTML = '<details open><summary style="cursor:pointer;font-size:14px;color:var(--text-secondary);">安装日志</summary><div class="log-console" id="gitInstallConsole"></div></details>';
+            const cons = logDiv.querySelector('#gitInstallConsole');
+            const es = new EventSource('/api/install-git');
+            es.onmessage = (e) => {
+              const msg = JSON.parse(e.data);
+              if (msg.type === 'log') { cons.textContent += msg.data + '\\n'; cons.scrollTop = cons.scrollHeight; }
+              else if (msg.type === 'done') {
+                es.close();
+                if (msg.result === 'success') {
+                  // 验证 git 是否真正可用（Mac xcode-select 会弹窗后立即返回）
+                  btn.innerHTML = '<span class="spinner"></span> 正在验证...';
+                  api('/api/check-repo').catch(() => ({})).then(r => {
+                    if (r.git_available) {
+                      cons.innerHTML += '<span class="log-success">Git 安装完成！正在下载项目文件...</span>\\n';
+                      setTimeout(() => startComposeDownload(), 1500);
+                    } else {
+                      // Mac xcode-select 场景：弹窗已打开但安装未完成
+                      cons.innerHTML += '<span class="log-success">安装窗口已打开，请在弹出窗口中完成安装。</span>\\n';
+                      btn.disabled = false;
+                      btn.textContent = '安装完成后点此重新检测';
+                      btn.onclick = () => renderStep2(el);
+                    }
+                  });
+                } else {
+                  cons.innerHTML += '<span class="log-error">Git 安装失败，请联系技术支持人员。</span>\\n';
+                  btn.disabled = false; btn.textContent = '重试';
+                }
+              }
+            };
+            es.onerror = () => { es.close(); btn.disabled = false; btn.textContent = '重试'; };
+          };
+        } else {
+          // Git 可用 → 直接下载 compose
+          checkDiv.innerHTML = '<div class="hint-box yellow"><strong>docker-compose.yml 缺失。</strong><br>启动服务需要此文件，请先下载。</div><div class="actions" style="margin-top:12px;"><button class="btn btn-primary" id="downloadComposeBtn">下载 docker-compose.yml</button></div><div id="composeLog"></div>';
+          checkDiv.querySelector('#downloadComposeBtn').onclick = () => {
+            const btn = checkDiv.querySelector('#downloadComposeBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> 正在下载...';
+            startComposeDownload();
+          };
+        }
         return;
       }
 
@@ -2952,7 +3205,7 @@ async function renderStep2(el) {
       <p class="subtitle">在这台电脑上还没有安装系统，请继续下一步进行安装。</p>
       <div class="status-item" style="flex-direction:column; align-items:flex-start; gap:8px;">
         <span>安装后的访问地址</span>
-        <span style="font-size:22px; font-weight:700; color:var(--primary);">${esc(pickUrl(data.ip, false))}</span>
+        <span class="url-display medium">${esc(pickUrl(data.ip, false))}</span>
       </div>
       <div class="hint-box yellow">
         系统还没有安装，点击下方按钮继续安装。
@@ -2995,7 +3248,7 @@ async function renderStep3(el) {
         <div style="font-size:16px; font-weight:700; color:#1e40af; margin-bottom:8px;">
           检测到已有站点编号${esc(sourceHint)}
         </div>
-        <div style="font-size:28px; font-weight:700; color:#1d4ed8; letter-spacing:2px; margin:12px 0;">
+        <div class="site-id-display">
           ${esc(existingSiteId)}
         </div>
         <div style="font-size:14px; color:#1e3a5f;">
@@ -3355,9 +3608,9 @@ async function renderStep5(el) {
       formRows += '<h4 style="font-size:15px; margin:16px 0 8px; color:var(--text-secondary);">' + gLabel + '</h4>';
       for (const item of groups[gk]) {
         const placeholder = item.auto_gen ? '留空将自动生成随机值' : esc(item.hint);
-        formRows += '<div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">' +
-          '<label style="min-width:140px; font-size:15px; text-align:right;">' + esc(item.label) + '</label>' +
-          '<input type="text" class="env-input" data-key="' + esc(item.key) + '" value="' + esc(item.value || '') + '" placeholder="' + placeholder + '" style="flex:1; padding:10px 12px; border:1px solid var(--border); border-radius:6px; font-size:15px;" />' +
+        formRows += '<div class="env-row">' +
+          '<label class="env-label">' + esc(item.label) + '</label>' +
+          '<input type="text" class="env-input" data-key="' + esc(item.key) + '" value="' + esc(item.value || '') + '" placeholder="' + placeholder + '" />' +
           '</div>';
       }
     }
