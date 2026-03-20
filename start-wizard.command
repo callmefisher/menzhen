@@ -177,36 +177,50 @@ fi
 # ------------------------------------------------------------------
 # 6. 检查向导脚本，自动下载或更新到最新版本
 # ------------------------------------------------------------------
-WIZARD_URL="https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py"
+WIZARD_URLS=(
+    "https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py"
+    "https://cdn.jsdelivr.net/gh/callmefisher/menzhen@main/deploy-wizard.py"
+    "https://ghfast.top/https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py"
+)
+
+# Helper: download with multi-source fallback, validate shebang
+# Usage: download_wizard <target_file>
+download_wizard() {
+    local target="$1"
+    local i=1
+    local total=${#WIZARD_URLS[@]}
+    for url in "${WIZARD_URLS[@]}"; do
+        echo "    尝试下载源 $i/$total ..."
+        rm -f "$target" 2>/dev/null
+        if command -v curl &>/dev/null; then
+            curl --connect-timeout 10 --max-time 30 -fSL "$url" -o "$target" 2>/dev/null
+        elif command -v wget &>/dev/null; then
+            wget --timeout=30 -q "$url" -O "$target" 2>/dev/null
+        fi
+        # Validate: must start with python shebang
+        if [[ -f "$target" ]] && head -1 "$target" | grep -qE "^#!.*python"; then
+            return 0
+        fi
+        rm -f "$target" 2>/dev/null
+        i=$((i + 1))
+    done
+    return 1
+}
 
 if [[ -f "deploy-wizard.py" ]]; then
     echo ""
     echo "[*] 检测到已有向导程序，正在检查更新..."
-    # Download to temp file for comparison
     TEMP_FILE="deploy-wizard.py.download"
-    DOWNLOAD_OK=false
-    if command -v curl &>/dev/null; then
-        curl --connect-timeout 10 --max-time 30 -fSL "$WIZARD_URL" -o "$TEMP_FILE" && DOWNLOAD_OK=true
-    elif command -v wget &>/dev/null; then
-        wget --timeout=30 "$WIZARD_URL" -O "$TEMP_FILE" && DOWNLOAD_OK=true
-    fi
-
-    if $DOWNLOAD_OK && [[ -f "$TEMP_FILE" ]]; then
-        # Validate: must be a Python script with shebang and version string
-        if head -1 "$TEMP_FILE" | grep -qE "^#!.*python"; then
-            if ! grep -q 'WIZARD_VERSION' "$TEMP_FILE"; then
-                echo "[!] 下载的文件缺少版本号，继续使用当前版本"
-                rm -f "$TEMP_FILE"
-            elif ! diff -q deploy-wizard.py "$TEMP_FILE" >/dev/null 2>&1; then
-                cp deploy-wizard.py deploy-wizard.py.bak
-                mv "$TEMP_FILE" deploy-wizard.py
-                echo "[*] 向导程序已更新到最新版本！（旧版本备份为 deploy-wizard.py.bak）"
-            else
-                echo "[*] 向导程序已是最新版本"
-                rm -f "$TEMP_FILE"
-            fi
+    if download_wizard "$TEMP_FILE"; then
+        if ! grep -q 'WIZARD_VERSION' "$TEMP_FILE"; then
+            echo "[!] 下载的文件缺少版本号，继续使用当前版本"
+            rm -f "$TEMP_FILE"
+        elif ! diff -q deploy-wizard.py "$TEMP_FILE" >/dev/null 2>&1; then
+            cp deploy-wizard.py deploy-wizard.py.bak
+            mv "$TEMP_FILE" deploy-wizard.py
+            echo "[*] 向导程序已更新到最新版本！（旧版本备份为 deploy-wizard.py.bak）"
         else
-            echo "[!] 下载的文件无效，继续使用当前版本"
+            echo "[*] 向导程序已是最新版本"
             rm -f "$TEMP_FILE"
         fi
     else
@@ -216,33 +230,17 @@ if [[ -f "deploy-wizard.py" ]]; then
 else
     echo ""
     echo "[*] 未找到向导程序，正在自动下载..."
-    echo "    下载地址: $WIZARD_URL"
     echo ""
-    if command -v curl &>/dev/null; then
-        curl -fL --progress-bar "$WIZARD_URL" -o deploy-wizard.py
-    elif command -v wget &>/dev/null; then
-        wget --show-progress "$WIZARD_URL" -O deploy-wizard.py
-    else
-        echo "[!] 无法下载：curl 和 wget 均不可用"
-        echo "    请手动下载 deploy-wizard.py 放到本脚本同一目录"
-        echo "    下载地址: $WIZARD_URL"
+    if download_wizard "deploy-wizard.py"; then
+        echo "[*] 向导程序下载完成!"
+    elif [[ -f "deploy-wizard.py" ]]; then
+        echo "[!] 下载的文件无效（可能是网络错误页面）"
+        rm -f deploy-wizard.py
+        echo "    请检查网络连接后重试"
         read -p "按回车退出..."
         exit 1
-    fi
-
-    if [[ -f "deploy-wizard.py" ]]; then
-        # Validate: should be a Python script, not an HTML error page
-        if head -1 deploy-wizard.py | grep -qE "^#!.*python"; then
-            echo "[*] 向导程序下载完成!"
-        else
-            echo "[!] 下载的文件无效（可能是网络错误页面）"
-            rm -f deploy-wizard.py
-            echo "    请检查网络连接后重试"
-            read -p "按回车退出..."
-            exit 1
-        fi
     else
-        echo "[!] 下载失败，请检查网络连接"
+        echo "[!] 所有下载源均失败"
         read -p "按回车退出..."
         exit 1
     fi
