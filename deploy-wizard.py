@@ -1148,10 +1148,11 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 # Method 2: reconstruct .env from container runtime env vars
                 # docker-compose env_file injects ALL .env keys into Config.Env
                 if not recovered:
-                    # System env vars to exclude (not from .env)
+                    # System/Dockerfile env vars to exclude (not from .env)
                     sys_env_keys = {
                         "PATH", "HOME", "HOSTNAME", "LANG", "LC_ALL", "TERM",
                         "SHLVL", "PWD", "GOPATH", "GOROOT", "NODE_ENV",
+                        "GOPROXY", "TZ", "GOLANG_VERSION",
                     }
                     for cname in container_names:
                         rc, out, _ = run_command([
