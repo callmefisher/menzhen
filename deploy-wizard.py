@@ -1116,7 +1116,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             return
 
         if self.path == "/api/ensure-env":
-            # Check .env exists as a FILE; if not (or if Docker created it as a dir), recover from container
+            # Check .env exists as a FILE; if not, recover from container/image
             env_path = SCRIPT_DIR / ".env"
             source = "local"
 
@@ -1125,24 +1125,89 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 if env_path.is_dir():
                     import shutil, stat
                     shutil.rmtree(str(env_path), onerror=lambda f, p, _: (os.chmod(p, stat.S_IWRITE), f(p)))
-                # Try to recover from existing container (docker cp works on stopped containers too)
+
                 recovered = False
-                for cname in ("menzhen-api-1", "menzhen-api"):
+                container_names = ("menzhen-api-1", "menzhen-api")
+
+                # Method 1: docker cp from container filesystem
+                # NOTE: only works for files IN the container layer, NOT for bind-mounted
+                # files (like .env via volumes: ./.env:/app/.env) on stopped containers.
+                # Bind mounts are only active while running; stopped = overlay2 layers only.
+                for cname in container_names:
                     rc, _, _ = run_command(["docker", "inspect", cname])
                     if rc != 0:
                         continue
                     rc2, _, _ = run_command(
                         ["docker", "cp", f"{cname}:/app/.env", str(env_path)]
                     )
-                    if rc2 == 0 and env_path.is_file():
+                    if rc2 == 0 and env_path.is_file() and env_path.stat().st_size > 0:
                         source = f"container:{cname}"
                         recovered = True
                         break
+
+                # Method 2: reconstruct .env from container runtime env vars
+                # docker-compose env_file injects ALL .env keys into Config.Env
+                if not recovered:
+                    # System env vars to exclude (not from .env)
+                    sys_env_keys = {
+                        "PATH", "HOME", "HOSTNAME", "LANG", "LC_ALL", "TERM",
+                        "SHLVL", "PWD", "GOPATH", "GOROOT", "NODE_ENV",
+                    }
+                    for cname in container_names:
+                        rc, out, _ = run_command([
+                            "docker", "inspect", "--format",
+                            '{{range .Config.Env}}{{println .}}{{end}}',
+                            cname,
+                        ])
+                        if rc != 0 or not out.strip():
+                            continue
+                        # Extract all non-system env vars
+                        lines = []
+                        for line in out.strip().splitlines():
+                            if "=" not in line:
+                                continue
+                            key = line.split("=", 1)[0]
+                            if key not in sys_env_keys:
+                                lines.append(line)
+                        if lines:
+                            env_path.write_text(
+                                "# Recovered from container env vars\n" +
+                                "\n".join(lines) + "\n",
+                                encoding="utf-8",
+                            )
+                            source = f"container-env:{cname}"
+                            recovered = True
+                            break
+
+                # Method 3: create temp container from image and extract .env
+                # NOTE: for this project, .env is NOT baked into the image (Dockerfile
+                # doesn't COPY .env), so this is unlikely to succeed but kept as a
+                # generic fallback for projects where .env IS in the image.
+                if not recovered:
+                    for img in ("menzhen-api:latest",):
+                        # Check image exists
+                        rc, _, _ = run_command(["docker", "image", "inspect", img])
+                        if rc != 0:
+                            continue
+                        tmp_name = "menzhen-env-recovery-tmp"
+                        run_command(["docker", "rm", "-f", tmp_name])
+                        rc, _, _ = run_command(["docker", "create", "--name", tmp_name, img])
+                        if rc != 0:
+                            continue
+                        rc2, _, _ = run_command(
+                            ["docker", "cp", f"{tmp_name}:/app/.env", str(env_path)]
+                        )
+                        run_command(["docker", "rm", "-f", tmp_name])
+                        if rc2 == 0 and env_path.is_file() and env_path.stat().st_size > 0:
+                            source = f"image:{img}"
+                            recovered = True
+                            break
+
                 if not recovered:
                     self._send_json({
                         "ok": False,
                         "error": "no_env",
-                        "message": "未找到配置文件(.env)，也无法从容器中恢复。请选择全新安装，或指定已有安装目录。",
+                        "message": "未找到配置文件(.env)，容器和镜像中均无法恢复。请选择全新安装，或指定已有安装目录。",
                     })
                     return
 
