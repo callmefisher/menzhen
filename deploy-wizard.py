@@ -548,11 +548,17 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         'brew install --cask docker && ' + MAC_POST_INSTALL
                     ])
             elif os_key == "linux":
+                # Guard: check sudo NOPASSWD BEFORE any install command
+                # (get.docker.com script uses sudo internally)
+                SUDO_GUARD = (
+                    "sudo -n true 2>/dev/null || "
+                    "{ echo '错误：需要免密 sudo 权限（NOPASSWD）。'; "
+                    "echo '请先在服务器终端执行以下命令配置免密 sudo：'; "
+                    "echo '  echo \"$(whoami) ALL=(ALL) NOPASSWD:ALL\" | sudo tee /etc/sudoers.d/$(whoami)'; "
+                    "echo '配置完成后刷新页面重试。'; exit 1; }; "
+                )
                 # Post-install: configure mirrors, enable+start, then verify with retry loop
                 DOCKER_POST_INSTALL = (
-                    # Guard: check sudo and systemctl availability
-                    "sudo -n true 2>/dev/null || "
-                    "{ echo '错误：需要免密 sudo 权限（NOPASSWD）。请配置 sudoers 后重试。'; exit 1; }; "
                     "if command -v systemctl >/dev/null 2>&1; then "
                     "  sudo systemctl enable docker 2>&1 || echo '警告：无法设置 Docker 开机自启，不影响当前使用'; "
                     "  sudo systemctl start docker; "
@@ -592,17 +598,18 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 if check_command("curl"):
                     stream_command(self, [
                         "bash", "-c",
-                        "curl -fsSL https://get.docker.com | sh -s -- --mirror Aliyun && " + DOCKER_POST_INSTALL
+                        SUDO_GUARD + "curl -fsSL https://get.docker.com | sh -s -- --mirror Aliyun && " + DOCKER_POST_INSTALL
                     ])
                 elif check_command("wget"):
                     stream_command(self, [
                         "bash", "-c",
-                        "wget -qO- https://get.docker.com | sh -s -- --mirror Aliyun && " + DOCKER_POST_INSTALL
+                        SUDO_GUARD + "wget -qO- https://get.docker.com | sh -s -- --mirror Aliyun && " + DOCKER_POST_INSTALL
                     ])
                 else:
                     # Try installing curl first, then Docker
                     stream_command(self, [
                         "bash", "-c",
+                        SUDO_GUARD +
                         "("
                         "  command -v apt-get >/dev/null && sudo apt-get update -qq && sudo apt-get install -y curl || "
                         "  command -v yum >/dev/null && sudo yum install -y curl || "
@@ -615,10 +622,21 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     # Check/install WSL 2 first, then Docker Desktop, then verify daemon
                     stream_command(self, [
                         "powershell", "-Command",
+                        "# Check if running as admin (needed for WSL install)\n"
+                        "$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator);\n"
                         "# Check WSL status\n"
                         "$wslOk = $false;\n"
                         "try { $out = wsl --status 2>&1; if ($LASTEXITCODE -eq 0) { $wslOk = $true } } catch {}\n"
                         "if (-not $wslOk) {\n"
+                        "  if (-not $isAdmin) {\n"
+                        "    Write-Output '';\n"
+                        "    Write-Output '=========================================='; \n"
+                        "    Write-Output '安装 WSL 2 需要管理员权限。';\n"
+                        "    Write-Output '请右键点击 start-wizard.bat，';\n"
+                        "    Write-Output '选择「以管理员身份运行」后重试。';\n"
+                        "    Write-Output '=========================================='; \n"
+                        "    exit 1;\n"
+                        "  }\n"
                         "  Write-Output '正在安装 WSL 2（Docker 运行所需）...';\n"
                         "  wsl --install --no-distribution;\n"
                         "  # WSL may need reboot - check if kernel is now available\n"
@@ -718,12 +736,25 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         "xcode-select --install 2>/dev/null; "
                         'echo "请在弹出的窗口中点击「安装」，安装完成后重新检测即可。"'])
             elif os_key == "linux":
+                # Guard: sudo -n check before any sudo command
                 if check_command("apt-get"):
-                    stream_command(self, ["sudo", "apt-get", "install", "-y", "git"])
+                    stream_command(self, [
+                        "bash", "-c",
+                        "sudo -n true 2>/dev/null || { echo '错误：需要免密 sudo 权限。请配置 sudoers 后重试。'; exit 1; }; "
+                        "sudo apt-get update -qq && sudo apt-get install -y git && git --version && echo 'Git 安装完成!'"
+                    ])
                 elif check_command("yum"):
-                    stream_command(self, ["sudo", "yum", "install", "-y", "git"])
+                    stream_command(self, [
+                        "bash", "-c",
+                        "sudo -n true 2>/dev/null || { echo '错误：需要免密 sudo 权限。请配置 sudoers 后重试。'; exit 1; }; "
+                        "sudo yum install -y git && git --version && echo 'Git 安装完成!'"
+                    ])
                 elif check_command("dnf"):
-                    stream_command(self, ["sudo", "dnf", "install", "-y", "git"])
+                    stream_command(self, [
+                        "bash", "-c",
+                        "sudo -n true 2>/dev/null || { echo '错误：需要免密 sudo 权限。请配置 sudoers 后重试。'; exit 1; }; "
+                        "sudo dnf install -y git && git --version && echo 'Git 安装完成!'"
+                    ])
                 else:
                     self.send_response(200)
                     self.send_header("Content-Type", "text/event-stream")
