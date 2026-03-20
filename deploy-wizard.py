@@ -315,8 +315,9 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             # Check docker compose services
             docker_running = False
             docker_partial = False
+            services = []
             if docker_daemon_ok:
-                rc, out, _ = run_command(["docker", "compose", "ps", "--format", "json"])
+                rc, out, _ = run_command(["docker", "compose", "ps", "-a", "--format", "json"])
                 if rc == 0 and out.strip():
                     services = []
                     for line in out.strip().split("\n"):
@@ -330,10 +331,17 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         if any(s != "running" for s in states):
                             docker_partial = True
 
+            # Build per-service status map
+            service_states = {}
+            if docker_daemon_ok:
+                for s in services:
+                    name = s.get("Service") or s.get("Name", "")
+                    service_states[name] = s.get("State", "unknown")
+
             # status: "running" | "partial" | "docker_stopped" | "no_containers" | "not_installed"
             if docker_running and docker_partial:
                 status = "partial"
-            elif port_ok:
+            elif docker_running and port_ok:
                 status = "running"
             elif docker_running:
                 status = "partial"
@@ -350,6 +358,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 "docker_daemon_ok": docker_daemon_ok,
                 "docker_running": docker_running,
                 "docker_partial": docker_partial,
+                "services": service_states,
             })
             return
 
