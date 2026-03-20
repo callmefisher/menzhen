@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/callmefisher/menzhen/server/middleware"
 	"github.com/callmefisher/menzhen/server/model"
@@ -15,8 +16,8 @@ import (
 
 // LoginRequest is the JSON body for POST /api/v1/auth/login.
 type LoginRequest struct {
-	Username string `json:"username" binding:"required"`
-	Password string `json:"password" binding:"required"`
+	Username string `json:"username" binding:"required,max=50"`
+	Password string `json:"password" binding:"required,max=50"`
 }
 
 // LoginResponse is returned on successful login.
@@ -28,11 +29,11 @@ type LoginResponse struct {
 
 // RegisterRequest is the JSON body for POST /api/v1/auth/register.
 type RegisterRequest struct {
-	TenantCode string `json:"tenant_code" binding:"required"`
-	Username   string `json:"username" binding:"required"`
-	Password   string `json:"password" binding:"required,min=6"`
-	RealName   string `json:"real_name" binding:"required"`
-	Phone      string `json:"phone"`
+	TenantCode string `json:"tenant_code" binding:"required,max=50"`
+	Username   string `json:"username" binding:"required,max=50"`
+	Password   string `json:"password" binding:"required,min=6,max=50"`
+	RealName   string `json:"real_name" binding:"required,max=50"`
+	Phone      string `json:"phone" binding:"max=50"`
 }
 
 // UserBriefDTO is a compact user representation.
@@ -52,8 +53,8 @@ type MeResponse struct {
 
 // ChangePasswordRequest is the JSON body for POST /api/v1/auth/change-password.
 type ChangePasswordRequest struct {
-	OldPassword string `json:"old_password" binding:"required"`
-	NewPassword string `json:"new_password" binding:"required,min=6"`
+	OldPassword string `json:"old_password" binding:"required,max=50"`
+	NewPassword string `json:"new_password" binding:"required,min=6,max=50"`
 }
 
 // ---------- Handler ----------
@@ -80,10 +81,11 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "invalid request: " + err.Error(),
+			"message": "参数校验失败",
 		})
 		return
 	}
+	req.Username = strings.TrimSpace(req.Username)
 
 	user, err := h.authService.Login(req.Username, req.Password)
 	if err != nil {
@@ -94,13 +96,16 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			})
 			return
 		}
-		status := http.StatusUnauthorized
 		if errors.Is(err, service.ErrUserDisabled) {
-			status = http.StatusForbidden
+			c.JSON(http.StatusForbidden, gin.H{
+				"code":    403,
+				"message": "该账号已被禁用",
+			})
+			return
 		}
-		c.JSON(status, gin.H{
-			"code":    status,
-			"message": err.Error(),
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": "用户名或密码错误",
 		})
 		return
 	}
@@ -150,10 +155,14 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "invalid request: " + err.Error(),
+			"message": "参数校验失败",
 		})
 		return
 	}
+	req.TenantCode = strings.TrimSpace(req.TenantCode)
+	req.Username = strings.TrimSpace(req.Username)
+	req.RealName = strings.TrimSpace(req.RealName)
+	req.Phone = strings.TrimSpace(req.Phone)
 
 	// Look up tenant by code.
 	var tenant model.Tenant
@@ -177,13 +186,13 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		if errors.Is(err, service.ErrUsernameExists) {
 			c.JSON(http.StatusConflict, gin.H{
 				"code":    409,
-				"message": err.Error(),
+				"message": "该用户名已被注册",
 			})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
-			"message": "failed to register user",
+			"message": "注册失败，请稍后重试",
 		})
 		return
 	}
@@ -274,7 +283,7 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "invalid request: " + err.Error(),
+			"message": "参数校验失败",
 		})
 		return
 	}

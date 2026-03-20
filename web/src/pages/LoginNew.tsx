@@ -17,7 +17,7 @@ export default function LoginNew() {
     e.preventDefault();
     setLoading(true);
     try {
-      await login(username, password, remember);
+      await login(username.trim(), password, remember);
       message.success('登录成功');
       navigate('/patients', { replace: true });
     } catch {
@@ -43,6 +43,7 @@ export default function LoginNew() {
               placeholder="请输入用户名"
               autoComplete="off"
               required
+              maxLength={50}
               value={username}
               onChange={e => setUsername(e.target.value)}
             />
@@ -62,6 +63,7 @@ export default function LoginNew() {
               style={{ paddingRight: 46 }}
               placeholder="请输入密码"
               required
+              maxLength={50}
               value={password}
               onChange={e => setPassword(e.target.value)}
             />

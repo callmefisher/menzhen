@@ -79,7 +79,7 @@ func seedPermissions(db *gorm.DB) {
 // seedDefaultTenant creates the default tenant if it does not already exist.
 func seedDefaultTenant(db *gorm.DB) model.Tenant {
 	var tenant model.Tenant
-	result := db.Where("code = ?", "default").First(&tenant)
+	result := db.Where("code = ?", "1000").First(&tenant)
 	if result.Error == nil {
 		log.Println("Default tenant already exists, skipping")
 		return tenant
@@ -87,7 +87,7 @@ func seedDefaultTenant(db *gorm.DB) model.Tenant {
 
 	tenant = model.Tenant{
 		Name:   "默认诊所",
-		Code:   "default",
+		Code:   "1000",
 		Status: 1,
 	}
 	if err := db.Create(&tenant).Error; err != nil {
