@@ -1926,18 +1926,29 @@ async function renderStep2(el) {
     el.innerHTML = `
       ${osMismatchHtml}
       <h2>第二步：系统已安装，但部分服务异常</h2>
-      <p class="subtitle">检测到系统已安装过，正在检测镜像状态...</p>
+      <p class="subtitle">检测到系统已安装过，正在检测环境...</p>
       <div id="partialCheck" style="text-align:center;padding:16px;">
-        <span class="spinner"></span> 正在检测镜像...
+        <span class="spinner"></span> 正在检测配置文件和镜像...
       </div>
       <div class="actions">
         <button class="btn btn-secondary" onclick="state.step=1;render();">&larr; 上一步</button>
       </div>
     `;
-    api('/api/check-images').catch(() => ({ images: [] })).then(imgData => {
+    Promise.all([
+      api('/api/ensure-env').catch(() => ({ ok: false })),
+      api('/api/check-images').catch(() => ({ images: [] })),
+    ]).then(([envData, imgData]) => {
       const pc = el.querySelector('#partialCheck');
       if (!pc) return;
+      const envExists = envData.ok;
       const missingImages = imgData.images.filter(i => !i.exists).map(i => i.image);
+
+      if (!envExists) {
+        // .env 缺失 → 需要全新安装
+        pc.innerHTML = '<div class="hint-box yellow"><strong>配置文件缺失。</strong><br>检测到容器存在，但当前目录缺少 .env 配置文件，需要重新进行安装配置。</div><div style="margin-top:12px;"><button class="btn btn-primary" id="freshInstallPartialBtn">继续安装 &rarr;</button></div>';
+        pc.querySelector('#freshInstallPartialBtn').onclick = () => { state.step = 3; render(); };
+        return;
+      }
 
       if (missingImages.length > 0) {
         // 镜像丢失 → 先构建再启动
