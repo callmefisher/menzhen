@@ -80,7 +80,7 @@ esac
 # 5. Check if base images exist locally (first deploy needs --full)
 check_base_images() {
     local missing=false
-    for img in "menzhen-api-base:latest" "menzhen-backup-base:latest" "nginx:alpine" "mysql:8.0" "minio/minio:latest"; do
+    for img in "menzhen-api-base:latest" "menzhen-backup-base:latest" "menzhen-nginx:latest" "menzhen-mysql:latest" "minio/minio:latest"; do
         if ! docker image inspect "$img" &>/dev/null; then
             echo "  缺少本地镜像: $img"
             missing=true

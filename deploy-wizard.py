@@ -468,8 +468,8 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 "menzhen-api:latest",
                 "menzhen-web:latest",
                 "menzhen-backup:latest",
-                "nginx:alpine",
-                "mysql:8.0",
+                "menzhen-nginx:latest",
+                "menzhen-mysql:latest",
                 "minio/minio:latest",
             ]
             results = []
@@ -971,7 +971,48 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             return
 
         if self.path == "/api/build-full":
-            stream_command(self, ["docker", "compose", "build"])
+            # Before building, ensure source code exists (server/, web/, scripts/, nginx/, mysql/)
+            # If missing, auto-clone from git — same logic as /api/clone-repo
+            needs_clone = not all([
+                (SCRIPT_DIR / "server").is_dir(),
+                (SCRIPT_DIR / "web").is_dir(),
+                (SCRIPT_DIR / "scripts").is_dir(),
+                (SCRIPT_DIR / "nginx" / "Dockerfile").exists(),
+                (SCRIPT_DIR / "mysql" / "Dockerfile").exists(),
+            ])
+            os_key, _ = detect_os()
+            q_dir = shlex.quote(str(SCRIPT_DIR)) if os_key != "windows" else str(SCRIPT_DIR)
+            q_url = shlex.quote(REPO_URL) if os_key != "windows" else f'"{REPO_URL}"'
+            EXCLUDE = "':!deploy-wizard.py' ':!start-wizard.command' ':!start-wizard.bat' ':!start-wizard.sh'"
+            if needs_clone:
+                if os_key == "windows":
+                    clone_and_build = (
+                        f'cd /d "{q_dir}" && '
+                        "echo 正在下载源码... && "
+                        "git init && "
+                        f'git remote add origin {q_url} 2>nul || git remote set-url origin {q_url} && '
+                        "git fetch origin && "
+                        f"git checkout -f origin/main -- . {EXCLUDE} && "
+                        "git reset origin/main && "
+                        "echo 源码下载完成，开始构建... && "
+                        "docker compose build"
+                    )
+                    stream_command(self, ["cmd", "/c", clone_and_build])
+                else:
+                    clone_and_build = (
+                        f"cd {q_dir} && "
+                        "echo '正在下载源码...' && "
+                        "git init && "
+                        f"git remote add origin {q_url} 2>/dev/null || git remote set-url origin {q_url} && "
+                        "git fetch origin && "
+                        f"git checkout -f origin/main -- . {EXCLUDE} && "
+                        "git reset origin/main && "
+                        "echo '源码下载完成，开始构建...' && "
+                        "docker compose build"
+                    )
+                    stream_command(self, ["bash", "-c", clone_and_build])
+            else:
+                stream_command(self, ["docker", "compose", "build"])
             return
 
         if self.path == "/api/check-repo":
@@ -1212,26 +1253,91 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     })
                     return
 
-            # Also recover nginx.conf and my.cnf from containers if missing
+            # Also recover nginx.conf, my.cnf, docker-compose.yml if missing
+            # nginx.conf and my.cnf are now COPY'd into custom images
+            # (menzhen-nginx:latest, menzhen-mysql:latest), so docker cp works
+            # on both running AND stopped containers (file is in image layer).
+            # Recovery chain:
+            #   1. Local file exists → skip
+            #   2. docker cp from container (works running or stopped — in image layer)
+            #   3. docker create temp container from image + docker cp
+            #   4. Download from git repo (final fallback)
             config_files = [
-                ("nginx/nginx.conf", "menzhen-nginx-1", "/etc/nginx/conf.d/default.conf"),
-                ("mysql/my.cnf",     "menzhen-mysql-1", "/etc/mysql/conf.d/custom.cnf"),
+                # (local_rel, container_name, container_path, image, image_path, repo_path)
+                ("nginx/nginx.conf", "menzhen-nginx-1",
+                 "/etc/nginx/conf.d/default.conf",
+                 "menzhen-nginx:latest", "/etc/nginx/conf.d/default.conf",
+                 "nginx/nginx.conf"),
+                ("mysql/my.cnf", "menzhen-mysql-1",
+                 "/etc/mysql/conf.d/custom.cnf",
+                 "menzhen-mysql:latest", "/etc/mysql/conf.d/custom.cnf",
+                 "mysql/my.cnf"),
+                ("docker-compose.yml", None, None, None, None,
+                 "docker-compose.yml"),
             ]
             recovered_configs = []
-            for local_rel, container, container_path in config_files:
+            raw_base = REPO_URL.replace(".git", "").replace(
+                "github.com", "raw.githubusercontent.com") + "/main/"
+            for local_rel, container, container_path, image, image_path, repo_path in config_files:
                 local_path = SCRIPT_DIR / local_rel
-                if local_path.is_file():
+
+                # Step 0: already exists as a valid file → skip
+                if local_path.is_file() and local_path.stat().st_size > 0:
                     continue
-                # Clean up Docker-created directory if present
+
+                # Clean up: Docker bind mount creates empty dirs; also clean 0-byte files
                 if local_path.is_dir():
                     import shutil, stat
                     shutil.rmtree(str(local_path), onerror=lambda f, p, _: (os.chmod(p, stat.S_IWRITE), f(p)))
+                elif local_path.is_file():
+                    local_path.unlink()
                 local_path.parent.mkdir(parents=True, exist_ok=True)
-                rc, _, _ = run_command(
-                    ["docker", "cp", f"{container}:{container_path}", str(local_path)]
-                )
-                if rc == 0 and local_path.is_file():
-                    recovered_configs.append(local_rel)
+
+                # Step 1: docker cp from container (now works on stopped containers
+                # because config is COPY'd into image layer, not bind-mounted)
+                if container and container_path:
+                    rc, _, _ = run_command(
+                        ["docker", "cp", f"{container}:{container_path}", str(local_path)]
+                    )
+                    if local_path.is_file() and local_path.stat().st_size > 0:
+                        recovered_configs.append(local_rel)
+                        continue
+                    # Clean up failed attempt
+                    if local_path.is_dir():
+                        import shutil, stat
+                        shutil.rmtree(str(local_path), onerror=lambda f, p, _: (os.chmod(p, stat.S_IWRITE), f(p)))
+                    elif local_path.exists():
+                        local_path.unlink()
+
+                # Step 2: create temp container from image + docker cp
+                if image and image_path:
+                    rc_img, _, _ = run_command(["docker", "image", "inspect", image])
+                    if rc_img == 0:
+                        tmp_name = "menzhen-cfg-tmp"
+                        run_command(["docker", "rm", "-f", tmp_name])
+                        rc_c, _, _ = run_command(["docker", "create", "--name", tmp_name, image])
+                        if rc_c == 0:
+                            run_command(
+                                ["docker", "cp", f"{tmp_name}:{image_path}", str(local_path)]
+                            )
+                            run_command(["docker", "rm", "-f", tmp_name])
+                            if local_path.is_file() and local_path.stat().st_size > 0:
+                                recovered_configs.append(local_rel)
+                                continue
+                        else:
+                            run_command(["docker", "rm", "-f", tmp_name])
+
+                # Step 3: download from git repo (final fallback)
+                try:
+                    raw_url = raw_base + repo_path
+                    req = urllib.request.Request(raw_url, method="GET")
+                    resp = urllib.request.urlopen(req, timeout=15)
+                    content = resp.read()
+                    if content and len(content) > 10:
+                        local_path.write_bytes(content)
+                        recovered_configs.append(local_rel)
+                except Exception:
+                    pass
 
             self._send_json({
                 "ok": True,
@@ -2884,7 +2990,9 @@ async function renderStep5(el) {
     'menzhen-web:latest': '门诊界面程序',
     'menzhen-backup:latest': '自动备份程序',
     'nginx:alpine': '网络服务程序',
+    'menzhen-nginx:latest': '网络服务程序',
     'mysql:8.0': '数据库程序',
+    'menzhen-mysql:latest': '数据库程序',
     'minio/minio:latest': '文件存储程序',
   };
 
