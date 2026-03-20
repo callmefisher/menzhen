@@ -936,11 +936,15 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             return
 
         if self.path == "/api/ensure-env":
-            # Check .env exists; if not, try to recover from container
+            # Check .env exists as a FILE; if not (or if Docker created it as a dir), recover from container
             env_path = SCRIPT_DIR / ".env"
             source = "local"
 
-            if not env_path.exists():
+            if not env_path.is_file():
+                # Docker bind mount creates missing targets as directories — clean up first
+                if env_path.is_dir():
+                    import shutil, stat
+                    shutil.rmtree(str(env_path), onerror=lambda f, p, _: (os.chmod(p, stat.S_IWRITE), f(p)))
                 # Try to recover from existing container (docker cp works on stopped containers too)
                 recovered = False
                 for cname in ("menzhen-api-1", "menzhen-api"):
@@ -950,7 +954,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     rc2, _, _ = run_command(
                         ["docker", "cp", f"{cname}:/app/.env", str(env_path)]
                     )
-                    if rc2 == 0 and env_path.exists():
+                    if rc2 == 0 and env_path.is_file():
                         source = f"container:{cname}"
                         recovered = True
                         break
@@ -970,13 +974,17 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             recovered_configs = []
             for local_rel, container, container_path in config_files:
                 local_path = SCRIPT_DIR / local_rel
-                if local_path.exists():
+                if local_path.is_file():
                     continue
+                # Clean up Docker-created directory if present
+                if local_path.is_dir():
+                    import shutil, stat
+                    shutil.rmtree(str(local_path), onerror=lambda f, p, _: (os.chmod(p, stat.S_IWRITE), f(p)))
                 local_path.parent.mkdir(parents=True, exist_ok=True)
                 rc, _, _ = run_command(
                     ["docker", "cp", f"{container}:{container_path}", str(local_path)]
                 )
-                if rc == 0 and local_path.exists():
+                if rc == 0 and local_path.is_file():
                     recovered_configs.append(local_rel)
 
             self._send_json({
