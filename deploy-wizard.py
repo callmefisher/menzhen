@@ -641,6 +641,13 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"ok": True, "configured": configured, "message": message})
             return
 
+        if self.path == "/api/ensure-docker-running":
+            # Quick check: is Docker daemon up?
+            # If not, frontend should call /api/start-docker (SSE) to start it.
+            rc, _, _ = run_command(["docker", "info"], timeout=5)
+            self._send_json({"running": rc == 0})
+            return
+
         if self.path == "/api/check-images":
             images = [
                 "menzhen-api:latest",
@@ -2747,10 +2754,39 @@ async function renderStep2(el) {
         checkDiv.querySelector('#rebuildBtn').onclick = async () => {
           const btn = checkDiv.querySelector('#rebuildBtn');
           btn.disabled = true;
-          btn.innerHTML = '<span class="spinner"></span> 正在检查网络环境...';
           const logDiv = checkDiv.querySelector('#buildLog');
 
-          // Pre-build: check Docker Hub, configure mirrors if needed
+          // Step 0: Ensure Docker daemon is running
+          btn.innerHTML = '<span class="spinner"></span> 正在检查 Docker 状态...';
+          try {
+            const dockerRes = await api('/api/ensure-docker-running');
+            if (!dockerRes.running) {
+              btn.innerHTML = '<span class="spinner"></span> 正在启动 Docker...';
+              logDiv.innerHTML = '<div class="hint-box yellow" style="text-align:center;">Docker 未运行，正在自动启动...</div>';
+              const started = await new Promise((resolve) => {
+                const es2 = new EventSource('/api/start-docker');
+                es2.onmessage = (ev) => {
+                  const m = JSON.parse(ev.data);
+                  if (m.type === 'done') { es2.close(); resolve(m.result === 'success'); }
+                };
+                es2.onerror = () => { es2.close(); resolve(false); };
+              });
+              if (!started) {
+                logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">Docker 启动失败，请手动启动后重试。</div>';
+                btn.disabled = false; btn.textContent = '重试';
+                return;
+              }
+              logDiv.innerHTML = '<div class="hint-box blue" style="text-align:center;">Docker 已启动</div>';
+              await new Promise(r => setTimeout(r, 3000));
+            }
+          } catch(e) {
+            logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">无法连接 Docker，请确认 Docker Desktop 已启动。</div>';
+            btn.disabled = false; btn.textContent = '重试';
+            return;
+          }
+
+          // Step 1: check Docker Hub, configure mirrors if needed
+          btn.innerHTML = '<span class="spinner"></span> 正在检查网络环境...';
           try {
             const hubCheck = await api('/api/check-docker-hub');
             if (hubCheck.need_mirror) {
@@ -2769,6 +2805,8 @@ async function renderStep2(el) {
               }
             }
           } catch(e) {}
+
+          // Step 2: Build
 
           btn.innerHTML = '<span class="spinner"></span> 正在构建，请勿关闭...';
           logDiv.innerHTML = '<details open><summary style="cursor:pointer;font-size:14px;color:var(--text-secondary);">构建日志</summary><div class="log-console" id="buildConsole"></div></details>';
@@ -3346,10 +3384,39 @@ async function renderStep5(el) {
     el.querySelector('#buildBtn').onclick = async () => {
       const btn = el.querySelector('#buildBtn');
       btn.disabled = true;
-      btn.innerHTML = '<span class="spinner"></span> 正在检查网络环境...';
       const logDiv = el.querySelector('#buildLog');
 
-      // Pre-build: check Docker Hub connectivity, configure mirrors if needed
+      // Step 0: Ensure Docker daemon is running
+      btn.innerHTML = '<span class="spinner"></span> 正在检查 Docker 状态...';
+      try {
+        const dockerRes = await api('/api/ensure-docker-running');
+        if (!dockerRes.running) {
+          btn.innerHTML = '<span class="spinner"></span> 正在启动 Docker...';
+          logDiv.innerHTML = '<div class="hint-box yellow" style="text-align:center;">Docker 未运行，正在自动启动...</div>';
+          const started = await new Promise((resolve) => {
+            const es2 = new EventSource('/api/start-docker');
+            es2.onmessage = (ev) => {
+              const m = JSON.parse(ev.data);
+              if (m.type === 'done') { es2.close(); resolve(m.result === 'success'); }
+            };
+            es2.onerror = () => { es2.close(); resolve(false); };
+          });
+          if (!started) {
+            logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">Docker 启动失败，请手动启动后重试。</div>';
+            btn.disabled = false; btn.textContent = '重试';
+            return;
+          }
+          logDiv.innerHTML = '<div class="hint-box blue" style="text-align:center;">Docker 已启动</div>';
+          await new Promise(r => setTimeout(r, 3000));
+        }
+      } catch(e) {
+        logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">无法连接 Docker，请确认 Docker Desktop 已启动。</div>';
+        btn.disabled = false; btn.textContent = '重试';
+        return;
+      }
+
+      // Step 1: Check Docker Hub connectivity, configure mirrors if needed
+      btn.innerHTML = '<span class="spinner"></span> 正在检查网络环境...';
       try {
         const hubCheck = await api('/api/check-docker-hub');
         if (hubCheck.need_mirror) {
@@ -3357,7 +3424,6 @@ async function renderStep5(el) {
           const mirrorRes = await api('/api/configure-docker-mirror');
           if (mirrorRes.ok && mirrorRes.message) {
             logDiv.innerHTML = '<div class="hint-box blue" style="text-align:center;">' + esc(mirrorRes.message) + '</div>';
-            // Wait a moment for Docker to restart
             if (mirrorRes.message.includes('重启')) {
               btn.innerHTML = '<span class="spinner"></span> 等待 Docker 重启...';
               await new Promise(r => setTimeout(r, 5000));
@@ -3368,10 +3434,9 @@ async function renderStep5(el) {
             return;
           }
         }
-      } catch(e) {
-        // Network check failed, continue anyway
-      }
+      } catch(e) {}
 
+      // Step 2: Build
       btn.innerHTML = '<span class="spinner"></span> 正在构建，请勿关闭...';
       logDiv.innerHTML = '<div style="font-size:17px;text-align:center;padding:16px;color:var(--primary);"><span class="spinner"></span> 正在构建程序（约5-15分钟）...</div><details style="margin-top:8px;"><summary style="cursor:pointer;color:var(--text-secondary);font-size:14px;">查看详细日志</summary><div class="log-console" id="buildConsole"></div></details>';
       const cons = logDiv.querySelector('#buildConsole');
