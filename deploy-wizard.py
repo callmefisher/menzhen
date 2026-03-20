@@ -1212,13 +1212,18 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     })
                     return
 
-            # Also recover nginx.conf and my.cnf from containers if missing
+            # Also recover nginx.conf and my.cnf if missing
+            # These are project-specific configs (not default from base images).
+            # Bind-mounted files can't be docker cp'd from stopped containers.
+            # Recovery chain: docker cp → download from git repo
             config_files = [
-                ("nginx/nginx.conf", "menzhen-nginx-1", "/etc/nginx/conf.d/default.conf"),
-                ("mysql/my.cnf",     "menzhen-mysql-1", "/etc/mysql/conf.d/custom.cnf"),
+                ("nginx/nginx.conf", "menzhen-nginx-1", "/etc/nginx/conf.d/default.conf",
+                 "nginx/nginx.conf"),
+                ("mysql/my.cnf",     "menzhen-mysql-1", "/etc/mysql/conf.d/custom.cnf",
+                 "mysql/my.cnf"),
             ]
             recovered_configs = []
-            for local_rel, container, container_path in config_files:
+            for local_rel, container, container_path, repo_path in config_files:
                 local_path = SCRIPT_DIR / local_rel
                 if local_path.is_file():
                     continue
@@ -1227,11 +1232,24 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     import shutil, stat
                     shutil.rmtree(str(local_path), onerror=lambda f, p, _: (os.chmod(p, stat.S_IWRITE), f(p)))
                 local_path.parent.mkdir(parents=True, exist_ok=True)
+                # Try 1: docker cp from container (only works if running)
                 rc, _, _ = run_command(
                     ["docker", "cp", f"{container}:{container_path}", str(local_path)]
                 )
-                if rc == 0 and local_path.is_file():
+                if rc == 0 and local_path.is_file() and local_path.stat().st_size > 0:
                     recovered_configs.append(local_rel)
+                    continue
+                # Try 2: download from git repo (project-specific config, can't use base image)
+                raw_url = REPO_URL.replace(".git", "").replace("github.com", "raw.githubusercontent.com") + f"/main/{repo_path}"
+                try:
+                    req = urllib.request.Request(raw_url, method="GET")
+                    resp = urllib.request.urlopen(req, timeout=15)
+                    content = resp.read()
+                    if content and len(content) > 10:
+                        local_path.write_bytes(content)
+                        recovered_configs.append(local_rel)
+                except Exception:
+                    pass
 
             self._send_json({
                 "ok": True,
