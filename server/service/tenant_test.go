@@ -107,6 +107,44 @@ func TestUpdateTenant_Success(t *testing.T) {
 	assert.Equal(t, "upd-new", updated.Code)
 }
 
+func TestCreateTenant_DuplicateName(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	svc := service.NewTenantService(db)
+
+	_, err := svc.CreateTenant(&service.CreateTenantRequest{Name: "同名诊所", Code: "name-a"})
+	assert.NoError(t, err)
+
+	_, err = svc.CreateTenant(&service.CreateTenantRequest{Name: "同名诊所", Code: "name-b"})
+	assert.ErrorIs(t, err, service.ErrTenantNameExist)
+}
+
+func TestUpdateTenant_DuplicateName(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	svc := service.NewTenantService(db)
+
+	_, err := svc.CreateTenant(&service.CreateTenantRequest{Name: "诊所X", Code: "namex"})
+	assert.NoError(t, err)
+	b, err := svc.CreateTenant(&service.CreateTenantRequest{Name: "诊所Y", Code: "namey"})
+	assert.NoError(t, err)
+
+	dupName := "诊所X"
+	_, err = svc.UpdateTenant(b.ID, &service.UpdateTenantRequest{Name: &dupName})
+	assert.ErrorIs(t, err, service.ErrTenantNameExist)
+}
+
+func TestUpdateTenant_SameName(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	svc := service.NewTenantService(db)
+
+	created, err := svc.CreateTenant(&service.CreateTenantRequest{Name: "自身诊所", Code: "self-name"})
+	assert.NoError(t, err)
+
+	sameName := "自身诊所"
+	updated, err := svc.UpdateTenant(created.ID, &service.UpdateTenantRequest{Name: &sameName})
+	assert.NoError(t, err)
+	assert.Equal(t, "自身诊所", updated.Name)
+}
+
 func TestUpdateTenant_DuplicateCode(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	svc := service.NewTenantService(db)

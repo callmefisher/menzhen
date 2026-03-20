@@ -74,6 +74,13 @@ func (h *TenantHandler) Create(c *gin.Context) {
 			})
 			return
 		}
+		if errors.Is(err, service.ErrTenantNameExist) {
+			c.JSON(http.StatusConflict, gin.H{
+				"code":    409,
+				"message": "tenant name already exists",
+			})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
 			"message": "failed to create tenant",
@@ -122,6 +129,13 @@ func (h *TenantHandler) Update(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{
 				"code":    409,
 				"message": "tenant code already exists",
+			})
+			return
+		}
+		if errors.Is(err, service.ErrTenantNameExist) {
+			c.JSON(http.StatusConflict, gin.H{
+				"code":    409,
+				"message": "tenant name already exists",
 			})
 			return
 		}
