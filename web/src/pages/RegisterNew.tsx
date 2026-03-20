@@ -5,7 +5,7 @@ import { register } from '../api/auth';
 import LoginBackground from './LoginBackground';
 
 export default function RegisterNew() {
-  const [tenantCode, setTenantCode] = useState('default');
+  const [tenantCode, setTenantCode] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -17,6 +17,18 @@ export default function RegisterNew() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!tenantCode.trim()) {
+      setConfirmErr('请输入诊所编码');
+      return;
+    }
+    if (!username.trim()) {
+      setConfirmErr('请输入用户名');
+      return;
+    }
+    if (!realName.trim()) {
+      setConfirmErr('请输入真实姓名');
+      return;
+    }
     if (password !== confirm) {
       setConfirmErr('两次输入的密码不一致');
       return;
@@ -29,11 +41,11 @@ export default function RegisterNew() {
     setLoading(true);
     try {
       await register({
-        tenant_code: tenantCode,
-        username,
+        tenant_code: tenantCode.trim(),
+        username: username.trim(),
         password,
-        real_name: realName,
-        phone: phone || '',
+        real_name: realName.trim(),
+        phone: phone.trim(),
       });
       message.success('注册成功，请登录');
       navigate('/login', { replace: true });
@@ -58,8 +70,9 @@ export default function RegisterNew() {
             <input
               type="text"
               className="lp-fi"
-              placeholder="诊所编码（默认：default）"
+              placeholder="请输入诊所编码"
               required
+              maxLength={50}
               value={tenantCode}
               onChange={e => setTenantCode(e.target.value)}
             />
@@ -80,6 +93,7 @@ export default function RegisterNew() {
               placeholder="请输入用户名"
               autoComplete="off"
               required
+              maxLength={50}
               value={username}
               onChange={e => setUsername(e.target.value)}
             />
@@ -100,6 +114,7 @@ export default function RegisterNew() {
               placeholder="密码（至少 6 位）"
               required
               minLength={6}
+              maxLength={50}
               value={password}
               onChange={e => setPassword(e.target.value)}
             />
@@ -119,6 +134,7 @@ export default function RegisterNew() {
               className="lp-fi"
               placeholder="再次输入密码"
               required
+              maxLength={50}
               value={confirm}
               onChange={e => { setConfirm(e.target.value); setConfirmErr(''); }}
               style={confirmErr ? { borderColor: '#E84057' } : undefined}
@@ -139,6 +155,7 @@ export default function RegisterNew() {
               className="lp-fi"
               placeholder="请输入真实姓名"
               required
+              maxLength={50}
               value={realName}
               onChange={e => setRealName(e.target.value)}
             />
@@ -159,6 +176,7 @@ export default function RegisterNew() {
               type="tel"
               className="lp-fi"
               placeholder="手机号（选填）"
+              maxLength={50}
               value={phone}
               onChange={e => setPhone(e.target.value)}
             />

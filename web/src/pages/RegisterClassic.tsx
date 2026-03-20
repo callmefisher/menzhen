@@ -29,11 +29,11 @@ export default function Register() {
     setLoading(true);
     try {
       await register({
-        tenant_code: values.tenant_code,
-        username: values.username,
+        tenant_code: values.tenant_code.trim(),
+        username: values.username.trim(),
         password: values.password,
-        real_name: values.real_name,
-        phone: values.phone || '',
+        real_name: values.real_name.trim(),
+        phone: (values.phone || '').trim(),
       });
       message.success('注册成功，请登录');
       navigate('/login', { replace: true });
@@ -81,20 +81,26 @@ export default function Register() {
           onFinish={handleSubmit}
           autoComplete="off"
           size="large"
-          initialValues={{ tenant_code: 'default' }}
+          initialValues={{ tenant_code: '' }}
         >
           <Form.Item
             name="tenant_code"
-            rules={[{ required: true, message: '请输入诊所编码' }]}
+            rules={[
+              { required: true, message: '请输入诊所编码' },
+              { max: 50, message: '诊所编码不能超过50个字符' },
+            ]}
           >
-            <Input prefix={<BankOutlined />} placeholder="诊所编码（默认：default）" />
+            <Input prefix={<BankOutlined />} placeholder="请输入诊所编码" maxLength={50} />
           </Form.Item>
 
           <Form.Item
             name="username"
-            rules={[{ required: true, message: '请输入用户名' }]}
+            rules={[
+              { required: true, message: '请输入用户名' },
+              { max: 50, message: '用户名不能超过50个字符' },
+            ]}
           >
-            <Input prefix={<UserOutlined />} placeholder="用户名" />
+            <Input prefix={<UserOutlined />} placeholder="用户名" maxLength={50} />
           </Form.Item>
 
           <Form.Item
@@ -102,9 +108,10 @@ export default function Register() {
             rules={[
               { required: true, message: '请输入密码' },
               { min: 6, message: '密码至少 6 个字符' },
+              { max: 50, message: '密码不能超过50个字符' },
             ]}
           >
-            <Input.Password prefix={<LockOutlined />} placeholder="密码" />
+            <Input.Password prefix={<LockOutlined />} placeholder="密码" maxLength={50} />
           </Form.Item>
 
           <Form.Item
@@ -122,18 +129,21 @@ export default function Register() {
               }),
             ]}
           >
-            <Input.Password prefix={<LockOutlined />} placeholder="确认密码" />
+            <Input.Password prefix={<LockOutlined />} placeholder="确认密码" maxLength={50} />
           </Form.Item>
 
           <Form.Item
             name="real_name"
-            rules={[{ required: true, message: '请输入真实姓名' }]}
+            rules={[
+              { required: true, message: '请输入真实姓名' },
+              { max: 50, message: '真实姓名不能超过50个字符' },
+            ]}
           >
-            <Input prefix={<IdcardOutlined />} placeholder="真实姓名" />
+            <Input prefix={<IdcardOutlined />} placeholder="真实姓名" maxLength={50} />
           </Form.Item>
 
           <Form.Item name="phone">
-            <Input prefix={<PhoneOutlined />} placeholder="手机号（选填）" />
+            <Input prefix={<PhoneOutlined />} placeholder="手机号（选填）" maxLength={50} />
           </Form.Item>
 
           <Form.Item>

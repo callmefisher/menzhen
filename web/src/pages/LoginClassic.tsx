@@ -24,7 +24,7 @@ export default function Login() {
   const handleSubmit = async (values: LoginFormValues) => {
     setLoading(true);
     try {
-      await login(values.username, values.password, values.remember);
+      await login(values.username.trim(), values.password, values.remember);
       message.success('登录成功');
       navigate('/patients', { replace: true });
     } catch {
@@ -77,16 +77,22 @@ export default function Login() {
         >
           <Form.Item
             name="username"
-            rules={[{ required: true, message: '请输入用户名' }]}
+            rules={[
+              { required: true, message: '请输入用户名' },
+              { max: 50, message: '用户名不能超过50个字符' },
+            ]}
           >
-            <Input prefix={<UserOutlined />} placeholder="用户名" />
+            <Input prefix={<UserOutlined />} placeholder="用户名" maxLength={50} />
           </Form.Item>
 
           <Form.Item
             name="password"
-            rules={[{ required: true, message: '请输入密码' }]}
+            rules={[
+              { required: true, message: '请输入密码' },
+              { max: 50, message: '密码不能超过50个字符' },
+            ]}
           >
-            <Input.Password prefix={<LockOutlined />} placeholder="密码" />
+            <Input.Password prefix={<LockOutlined />} placeholder="密码" maxLength={50} />
           </Form.Item>
 
           <Form.Item name="remember" valuePropName="checked">

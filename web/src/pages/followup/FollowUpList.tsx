@@ -505,7 +505,7 @@ export default function FollowUpList() {
       ) : '—',
     },
     {
-      title: '操作', key: 'action', width: 100,
+      title: '操作', key: 'action', width: 110, fixed: 'right',
       render: (_, record) => (
         <Space size="small">
           {hasPermission('followup:update') && (
@@ -889,6 +889,7 @@ export default function FollowUpList() {
           dataSource={data}
           rowKey="id"
           loading={loading}
+          scroll={{ x: 850 }}
           rowClassName={(record) => {
             const cls: string[] = [];
             if (record.status === 'overdue') cls.push('follow-up-overdue-row');
@@ -924,6 +925,8 @@ export default function FollowUpList() {
         .follow-up-overdue-row.followup-saved-highlight > td.ant-table-cell {
           background: #f6ffed !important;
         }
+        .follow-up-overdue-row > td.ant-table-cell-fix-right { background: #ffe8e6 !important; }
+        .followup-saved-highlight > td.ant-table-cell-fix-right { background: #f6ffed !important; }
         .record-expand-tag { transition: all 0.2s; }
         .record-expand-tag:hover { opacity: 0.85; }
         .record-expand-panel {
