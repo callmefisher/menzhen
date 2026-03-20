@@ -760,7 +760,24 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             return
 
         if self.path == "/api/deploy":
-            stream_command(self, ["docker", "compose", "up", "-d"])
+            os_key, _ = detect_os()
+            if os_key == "windows":
+                stream_command(self, [
+                    "cmd", "/c",
+                    f'cd /d "{SCRIPT_DIR}" && '
+                    "docker compose up -d 2>&1 && "
+                    "docker compose restart nginx 2>&1 && "
+                    "echo 服务启动完成!"
+                ])
+            else:
+                q_dir = shlex.quote(str(SCRIPT_DIR))
+                stream_command(self, [
+                    "bash", "-c",
+                    f"cd {q_dir} && "
+                    "docker compose up -d 2>&1 && "
+                    "docker compose restart nginx 2>&1 && "
+                    "echo '服务启动完成!'"
+                ])
             return
 
         if self.path == "/api/build-full":
