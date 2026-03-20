@@ -1212,36 +1212,82 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     })
                     return
 
-            # Also recover nginx.conf and my.cnf if missing
-            # These are project-specific configs (not default from base images).
-            # Bind-mounted files can't be docker cp'd from stopped containers.
-            # Recovery chain: docker cp → download from git repo
+            # Also recover nginx.conf, my.cnf, docker-compose.yml if missing
+            # These are project-specific configs bind-mounted into containers.
+            # Bind-mounted files can't be docker cp'd from stopped containers,
+            # and containers created from a new directory mount back to the same
+            # (empty) path, so docker cp may also produce empty/directory results.
+            #
+            # Recovery chain:
+            #   1. Check local file exists → skip
+            #   2. docker cp from container → only useful if container is running
+            #      with valid bind mount from OLD directory
+            #   3. Download from git repo → reliable final fallback
             config_files = [
+                # (local_rel, container_name, container_path, repo_path)
                 ("nginx/nginx.conf", "menzhen-nginx-1", "/etc/nginx/conf.d/default.conf",
                  "nginx/nginx.conf"),
                 ("mysql/my.cnf",     "menzhen-mysql-1", "/etc/mysql/conf.d/custom.cnf",
                  "mysql/my.cnf"),
+                ("docker-compose.yml", None, None, "docker-compose.yml"),
             ]
             recovered_configs = []
-            for local_rel, container, container_path, repo_path in config_files:
+            raw_base = REPO_URL.replace(".git", "").replace(
+                "github.com", "raw.githubusercontent.com") + "/main/"
+            for entry in config_files:
+                local_rel, container, container_path, repo_path = entry
                 local_path = SCRIPT_DIR / local_rel
-                if local_path.is_file():
+
+                # Step 0: already exists as a valid file → skip
+                if local_path.is_file() and local_path.stat().st_size > 0:
                     continue
-                # Clean up Docker-created directory if present
+
+                # Clean up: Docker bind mount creates missing targets as empty
+                # directories; also clean up zero-byte files from failed attempts
                 if local_path.is_dir():
                     import shutil, stat
                     shutil.rmtree(str(local_path), onerror=lambda f, p, _: (os.chmod(p, stat.S_IWRITE), f(p)))
+                elif local_path.is_file():
+                    local_path.unlink()
                 local_path.parent.mkdir(parents=True, exist_ok=True)
-                # Try 1: docker cp from container (only works if running)
-                rc, _, _ = run_command(
-                    ["docker", "cp", f"{container}:{container_path}", str(local_path)]
-                )
-                if rc == 0 and local_path.is_file() and local_path.stat().st_size > 0:
-                    recovered_configs.append(local_rel)
-                    continue
-                # Try 2: download from git repo (project-specific config, can't use base image)
-                raw_url = REPO_URL.replace(".git", "").replace("github.com", "raw.githubusercontent.com") + f"/main/{repo_path}"
+
+                # Step 1: docker cp from container (works if running with valid mount)
+                # NOTE: on stopped containers, docker cp reads from image layers
+                # (not bind mounts), which may return a generic default config
+                # instead of the project's custom config. We validate content.
+                if container and container_path:
+                    rc, _, _ = run_command(
+                        ["docker", "cp", f"{container}:{container_path}", str(local_path)]
+                    )
+                    # Validate: must be a file (not dir) with project-specific content
+                    if local_path.is_file() and local_path.stat().st_size > 0:
+                        try:
+                            text = local_path.read_text(encoding="utf-8", errors="ignore")
+                        except Exception:
+                            text = ""
+                        # Project nginx.conf must contain proxy_pass (reverse proxy);
+                        # project my.cnf must contain innodb or utf8mb4 (custom tuning).
+                        # Generic defaults from base images won't have these.
+                        is_project_config = (
+                            ("proxy_pass" in text) or
+                            ("innodb" in text) or
+                            ("utf8mb4" in text)
+                        )
+                        if is_project_config:
+                            recovered_configs.append(local_rel)
+                            continue
+                        # Got a generic default from image layer — discard it
+                        local_path.unlink()
+                    # docker cp may produce a directory or empty file — clean up
+                    if local_path.is_dir():
+                        import shutil, stat
+                        shutil.rmtree(str(local_path), onerror=lambda f, p, _: (os.chmod(p, stat.S_IWRITE), f(p)))
+                    elif local_path.exists():
+                        local_path.unlink()
+
+                # Step 2: download from git repo (always works if network available)
                 try:
+                    raw_url = raw_base + repo_path
                     req = urllib.request.Request(raw_url, method="GET")
                     resp = urllib.request.urlopen(req, timeout=15)
                     content = resp.read()
