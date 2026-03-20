@@ -33,7 +33,18 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
 REPO_URL = "https://github.com/callmefisher/menzhen.git"
+REPO_MIRROR_URLS = [
+    REPO_URL,
+    "https://ghfast.top/https://github.com/callmefisher/menzhen.git",
+]
+# Cached best git URL after connectivity test (None = not tested yet)
+_best_repo_url = None
 WIZARD_RAW_URL = "https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py"
+WIZARD_RAW_URLS = [
+    WIZARD_RAW_URL,
+    "https://cdn.jsdelivr.net/gh/callmefisher/menzhen@main/deploy-wizard.py",
+    "https://ghfast.top/https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py",
+]
 
 # Global update status: "updated", "up_to_date", "failed", "skipped"
 _update_status = "skipped"
@@ -207,6 +218,32 @@ def run_command(cmd, cwd=None, timeout=600):
         return -1, "", "命令执行超时"
     except Exception as e:
         return -1, "", str(e)
+
+
+def get_repo_url():
+    """Return the best reachable git repo URL, with caching.
+
+    Tests each mirror with `git ls-remote` (10s timeout). Once a working URL
+    is found, it is cached for the rest of the process lifetime.
+    """
+    global _best_repo_url
+    if _best_repo_url is not None:
+        return _best_repo_url
+
+    for url in REPO_MIRROR_URLS:
+        rc, _, _ = run_command(
+            ["git", "ls-remote", "--exit-code", "-q", url, "HEAD"],
+            timeout=10,
+        )
+        if rc == 0:
+            _best_repo_url = url
+            if url != REPO_URL:
+                print(f"  [*] 使用镜像源: {url}")
+            return url
+
+    # All failed, fallback to primary (will fail at git fetch with proper error)
+    _best_repo_url = REPO_URL
+    return REPO_URL
 
 
 # ---------------------------------------------------------------------------
@@ -982,7 +1019,8 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             ])
             os_key, _ = detect_os()
             q_dir = shlex.quote(str(SCRIPT_DIR)) if os_key != "windows" else str(SCRIPT_DIR)
-            q_url = shlex.quote(REPO_URL) if os_key != "windows" else f'"{REPO_URL}"'
+            _repo = get_repo_url()
+            q_url = shlex.quote(_repo) if os_key != "windows" else f'"{_repo}"'
             EXCLUDE = "':!deploy-wizard.py' ':!start-wizard.command' ':!start-wizard.bat' ':!start-wizard.sh'"
             if needs_clone:
                 if os_key == "windows":
@@ -1036,19 +1074,20 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             # Download only docker-compose.yml from git (lightweight)
             os_key, _ = detect_os()
             script_dir = str(SCRIPT_DIR)
+            _repo = get_repo_url()
             if os_key == "windows":
                 stream_command(self, [
                     "cmd", "/c",
                     f'cd /d "{script_dir}" && '
                     "git init && "
-                    f'git remote add origin "{REPO_URL}" 2>nul || git remote set-url origin "{REPO_URL}" && '
+                    f'git remote add origin "{_repo}" 2>nul || git remote set-url origin "{_repo}" && '
                     "git fetch origin && "
                     "git checkout -f origin/main -- docker-compose.yml && "
                     'echo docker-compose.yml 下载完成!'
                 ])
             else:
                 q_dir = shlex.quote(script_dir)
-                q_url = shlex.quote(REPO_URL)
+                q_url = shlex.quote(_repo)
                 stream_command(self, [
                     "bash", "-c",
                     f"cd {q_dir} && "
@@ -1067,12 +1106,13 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             EXCLUDE = "':!deploy-wizard.py' ':!start-wizard.command' ':!start-wizard.bat' ':!start-wizard.sh'"
             os_key, _ = detect_os()
             script_dir = str(SCRIPT_DIR)
+            _repo = get_repo_url()
             if os_key == "windows":
                 stream_command(self, [
                     "cmd", "/c",
                     f'cd /d "{script_dir}" && '
                     "git init && "
-                    f'git remote add origin "{REPO_URL}" 2>nul || git remote set-url origin "{REPO_URL}" && '
+                    f'git remote add origin "{_repo}" 2>nul || git remote set-url origin "{_repo}" && '
                     "git fetch origin && "
                     f"git checkout -f origin/main -- . {EXCLUDE} && "
                     "git reset origin/main && "
@@ -1080,7 +1120,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 ])
             else:
                 q_dir = shlex.quote(script_dir)
-                q_url = shlex.quote(REPO_URL)
+                q_url = shlex.quote(_repo)
                 stream_command(self, [
                     "bash", "-c",
                     f"cd {q_dir} && "
@@ -1109,6 +1149,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 _sse({"type": "done", **result})
 
             try:
+                _repo = get_repo_url()
                 # 0. Auto-init git repo if missing
                 if not (SCRIPT_DIR / ".git").exists():
                     _sse({"type": "log", "data": "正在初始化代码仓库..."})
@@ -1116,9 +1157,9 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     if rc != 0:
                         _sse_done({"error": "init_failed", "message": f"初始化代码仓库失败: {err.strip()}"})
                         return
-                    run_command(["git", "remote", "add", "origin", REPO_URL])
+                    run_command(["git", "remote", "add", "origin", _repo])
                 # Ensure remote is set correctly
-                run_command(["git", "remote", "set-url", "origin", REPO_URL])
+                run_command(["git", "remote", "set-url", "origin", _repo])
                 # 1. git fetch (most likely to be slow)
                 _sse({"type": "log", "data": "正在连接远程仓库..."})
                 rc, _, err = run_command(["git", "fetch", "origin"], timeout=120)
@@ -1276,8 +1317,12 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                  "docker-compose.yml"),
             ]
             recovered_configs = []
-            raw_base = REPO_URL.replace(".git", "").replace(
-                "github.com", "raw.githubusercontent.com") + "/main/"
+            raw_bases = [
+                REPO_URL.replace(".git", "").replace(
+                    "github.com", "raw.githubusercontent.com") + "/main/",
+                "https://cdn.jsdelivr.net/gh/callmefisher/menzhen@main/",
+                "https://ghfast.top/https://raw.githubusercontent.com/callmefisher/menzhen/main/",
+            ]
             for local_rel, container, container_path, image, image_path, repo_path in config_files:
                 local_path = SCRIPT_DIR / local_rel
 
@@ -1327,17 +1372,19 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         else:
                             run_command(["docker", "rm", "-f", tmp_name])
 
-                # Step 3: download from git repo (final fallback)
-                try:
-                    raw_url = raw_base + repo_path
-                    req = urllib.request.Request(raw_url, method="GET")
-                    resp = urllib.request.urlopen(req, timeout=15)
-                    content = resp.read()
-                    if content and len(content) > 10:
-                        local_path.write_bytes(content)
-                        recovered_configs.append(local_rel)
-                except Exception:
-                    pass
+                # Step 3: download from git repo (final fallback, try multiple sources)
+                for raw_base in raw_bases:
+                    try:
+                        raw_url = raw_base + repo_path
+                        req = urllib.request.Request(raw_url, method="GET")
+                        resp = urllib.request.urlopen(req, timeout=15)
+                        content = resp.read()
+                        if content and len(content) > 10:
+                            local_path.write_bytes(content)
+                            recovered_configs.append(local_rel)
+                            break
+                    except Exception:
+                        continue
 
             self._send_json({
                 "ok": True,
@@ -1349,7 +1396,8 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
         if self.path == "/api/pull-and-rebuild":
             # Pull latest code, rebuild images, restart services — all streamed
             EXCLUDE = "':!deploy-wizard.py' ':!start-wizard.command' ':!start-wizard.bat' ':!start-wizard.sh'"
-            q_url = shlex.quote(REPO_URL)
+            _repo = get_repo_url()
+            q_url = shlex.quote(_repo)
             # Ensure git repo is initialized (idempotent)
             GIT_INIT = (
                 "git rev-parse --git-dir >/dev/null 2>&1 || git init && "
@@ -1360,7 +1408,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 q_dir = str(SCRIPT_DIR)
                 GIT_INIT_WIN = (
                     "git rev-parse --git-dir >nul 2>&1 || git init && "
-                    f'git remote set-url origin "{REPO_URL}" 2>nul || git remote add origin "{REPO_URL}" && '
+                    f'git remote set-url origin "{_repo}" 2>nul || git remote add origin "{_repo}" && '
                 )
                 cmd = [
                     "cmd", "/c",
@@ -3447,18 +3495,25 @@ def self_update():
     global _update_status, _update_message
     try:
         print("  [*] 正在检查向导程序更新...")
-        req = urllib.request.Request(WIZARD_RAW_URL, headers={
-            "User-Agent": "deploy-wizard",
-            "Cache-Control": "no-cache",
-        })
-        resp = urllib.request.urlopen(req, timeout=10)
-        remote_content = resp.read().decode("utf-8")
+        remote_content = None
+        for url in WIZARD_RAW_URLS:
+            try:
+                req = urllib.request.Request(url, headers={
+                    "User-Agent": "deploy-wizard",
+                    "Cache-Control": "no-cache",
+                })
+                resp = urllib.request.urlopen(req, timeout=10)
+                content = resp.read().decode("utf-8")
+                if content.startswith("#!/usr/bin/env python") and len(content) > 10000:
+                    remote_content = content
+                    break
+            except Exception:
+                continue
 
-        # Validate it's a real Python script (shebang + minimum size)
-        if not remote_content.startswith("#!/usr/bin/env python") or len(remote_content) < 10000:
+        if not remote_content:
             _update_status = "failed"
-            _update_message = "下载的文件无效或不完整"
-            print("  [!] 下载的文件无效或不完整，跳过更新")
+            _update_message = "所有下载源均失败或文件无效"
+            print("  [!] 所有下载源均失败，跳过更新")
             return False
 
         remote_version = _extract_version(remote_content)
