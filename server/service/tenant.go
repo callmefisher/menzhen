@@ -10,6 +10,7 @@ import (
 var (
 	ErrTenantNotFound  = errors.New("tenant not found")
 	ErrTenantCodeExist = errors.New("tenant code already exists")
+	ErrTenantNameExist = errors.New("tenant name already exists")
 )
 
 // CreateTenantRequest is the input for creating a new tenant.
@@ -64,6 +65,11 @@ func (s *TenantService) CreateTenant(req *CreateTenantRequest) (*model.Tenant, e
 		return nil, ErrTenantCodeExist
 	}
 
+	// Check for duplicate name.
+	if err := s.DB.Where("name = ?", req.Name).First(&existing).Error; err == nil {
+		return nil, ErrTenantNameExist
+	}
+
 	tenant := model.Tenant{
 		Name:   req.Name,
 		Code:   req.Code,
@@ -101,6 +107,11 @@ func (s *TenantService) UpdateTenant(id uint64, req *UpdateTenantRequest) (*mode
 
 	updates := make(map[string]interface{})
 	if req.Name != nil {
+		// Check duplicate name if changing.
+		var existing model.Tenant
+		if err := s.DB.Where("name = ? AND id != ?", *req.Name, id).First(&existing).Error; err == nil {
+			return nil, ErrTenantNameExist
+		}
 		updates["name"] = *req.Name
 	}
 	if req.Code != nil {
