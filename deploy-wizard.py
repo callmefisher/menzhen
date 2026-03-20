@@ -508,9 +508,31 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
         # SSE endpoints
         if self.path == "/api/install-docker":
             os_key, _ = detect_os()
+            # Post-install: start Docker and wait for daemon with 90-retry loop
+            # (same pattern as /api/start-docker for consistency)
+            MAC_POST_INSTALL = (
+                'echo "正在启动 Docker Desktop..." && '
+                "open -a Docker 2>&1 || echo '警告：无法自动启动 Docker Desktop，请手动打开 /Applications/Docker.app'; "
+                "for i in $(seq 1 90); do "
+                "  docker info >/dev/null 2>&1 && echo 'Docker 已启动！安装完成！' && exit 0; "
+                "  if [ $i -eq 30 ] || [ $i -eq 60 ]; then "
+                "    echo '重新尝试启动 Docker Desktop...'; open -a Docker 2>&1 || true; "
+                "  fi; "
+                '  echo "等待 Docker 启动中... ($i/90)"; sleep 2; '
+                "done; "
+                "docker info >/dev/null 2>&1 && echo 'Docker 已启动！安装完成！' && exit 0; "
+                "echo '=== Docker 安装成功但启动超时 ==='; "
+                "echo '--- docker info ---'; docker info 2>&1 || true; "
+                "echo '--- Docker Desktop 进程 ---'; ps aux | grep -i '[d]ocker' || true; "
+                "echo '请手动打开 Docker Desktop 应用，待其启动完成后点击重新检查。'; "
+                "exit 1"
+            )
             if os_key == "mac":
                 if check_command("brew"):
-                    stream_command(self, ["brew", "install", "--cask", "docker"])
+                    stream_command(self, [
+                        "bash", "-c",
+                        "brew install --cask docker && " + MAC_POST_INSTALL
+                    ])
                 else:
                     # Install Homebrew (Chinese mirror) first, then Docker Desktop
                     stream_command(self, [
@@ -523,21 +545,49 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" && '
                         'for p in /opt/homebrew/bin/brew /usr/local/bin/brew; do [ -f "$p" ] && eval "$($p shellenv)" && break; done && '
                         'command -v brew >/dev/null || { echo "Homebrew 安装后仍无法找到 brew，请重试"; exit 1; } && '
-                        'brew install --cask docker && '
-                        'echo "Docker Desktop 安装完成！请在启动台中打开 Docker 应用。"'
+                        'brew install --cask docker && ' + MAC_POST_INSTALL
                     ])
             elif os_key == "linux":
-                # Post-install: configure Docker Hub mirrors (China acceleration)
-                # Only writes if daemon.json doesn't exist yet (fresh install)
+                # Post-install: configure mirrors, enable+start, then verify with retry loop
                 DOCKER_POST_INSTALL = (
-                    "sudo systemctl enable docker && "
-                    "sudo systemctl start docker && "
+                    # Guard: check sudo and systemctl availability
+                    "sudo -n true 2>/dev/null || "
+                    "{ echo '错误：需要免密 sudo 权限（NOPASSWD）。请配置 sudoers 后重试。'; exit 1; }; "
+                    "if command -v systemctl >/dev/null 2>&1; then "
+                    "  sudo systemctl enable docker 2>&1 || echo '警告：无法设置 Docker 开机自启，不影响当前使用'; "
+                    "  sudo systemctl start docker; "
+                    "elif command -v service >/dev/null 2>&1; then "
+                    "  sudo service docker start; "
+                    "else "
+                    "  echo '警告：未检测到 systemctl 或 service，尝试直接启动 dockerd...'; "
+                    "  sudo dockerd &>/dev/null & sleep 2; "
+                    "fi; "
                     "if [ ! -f /etc/docker/daemon.json ]; then "
                     "sudo mkdir -p /etc/docker && "
                     "echo '{\"registry-mirrors\":[\"https://docker.m.daocloud.io\"]}' "
                     "| sudo tee /etc/docker/daemon.json > /dev/null && "
-                    "sudo systemctl restart docker; fi && "
-                    "echo 'Docker 安装完成（已配置国内镜像加速）!'"
+                    "if command -v systemctl >/dev/null 2>&1; then sudo systemctl restart docker; "
+                    "elif command -v service >/dev/null 2>&1; then sudo service docker restart; fi; "
+                    "fi; "
+                    "echo '正在等待 Docker 服务就绪...' && "
+                    "for i in $(seq 1 90); do "
+                    "  docker info >/dev/null 2>&1 && echo 'Docker 已启动！安装完成（已配置国内镜像加速）!' && exit 0; "
+                    "  if [ $i -eq 30 ] || [ $i -eq 60 ]; then "
+                    "    echo '重新尝试启动 Docker 服务...'; "
+                    "    if command -v systemctl >/dev/null 2>&1; then sudo systemctl restart docker 2>&1; "
+                    "    elif command -v service >/dev/null 2>&1; then sudo service docker restart 2>&1; "
+                    "    else sudo pkill dockerd 2>/dev/null || true; sudo dockerd &>/dev/null & sleep 2; fi; "
+                    "  fi; "
+                    '  echo "等待 Docker 启动中... ($i/90)"; sleep 2; '
+                    "done; "
+                    "docker info >/dev/null 2>&1 && echo 'Docker 已启动！安装完成!' && exit 0; "
+                    "echo '=== Docker 安装成功但启动超时 ==='; "
+                    "if command -v systemctl >/dev/null 2>&1; then "
+                    "echo '--- systemctl status docker ---'; sudo systemctl status docker 2>&1 || true; "
+                    "echo '--- journalctl 最近日志 ---'; sudo journalctl -u docker --no-pager -n 20 2>&1 || true; "
+                    "fi; "
+                    "echo '请检查以上日志排查问题后刷新页面重试。'; "
+                    "exit 1"
                 )
                 if check_command("curl"):
                     stream_command(self, [
@@ -562,7 +612,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     ])
             elif os_key == "windows":
                 if check_command("winget"):
-                    # Check/install WSL 2 first, then Docker Desktop
+                    # Check/install WSL 2 first, then Docker Desktop, then verify daemon
                     stream_command(self, [
                         "powershell", "-Command",
                         "# Check WSL status\n"
@@ -571,6 +621,18 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         "if (-not $wslOk) {\n"
                         "  Write-Output '正在安装 WSL 2（Docker 运行所需）...';\n"
                         "  wsl --install --no-distribution;\n"
+                        "  # WSL may need reboot - check if kernel is now available\n"
+                        "  Start-Sleep -Seconds 3;\n"
+                        "  $wslReady = $false;\n"
+                        "  try { $null = wsl --status 2>&1; if ($LASTEXITCODE -eq 0) { $wslReady = $true } } catch {}\n"
+                        "  if (-not $wslReady) {\n"
+                        "    Write-Output '';\n"
+                        "    Write-Output '=========================================='; \n"
+                        "    Write-Output 'WSL 2 已安装，但需要重启电脑才能生效。';\n"
+                        "    Write-Output '请重启电脑后重新运行安装向导。';\n"
+                        "    Write-Output '=========================================='; \n"
+                        "    exit 1;\n"
+                        "  }\n"
                         "  Write-Output 'WSL 2 安装完成';\n"
                         "}\n"
                         "# Install Docker Desktop\n"
@@ -579,7 +641,58 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         "# Refresh PATH\n"
                         "$env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + "
                         "[System.Environment]::GetEnvironmentVariable('Path','User');\n"
-                        "Write-Output '安装完成！可能需要重启电脑后才能使用 Docker。';"
+                        "# Find Docker Desktop executable (check multiple registry paths + defaults)\n"
+                        "$p = $null;\n"
+                        "foreach ($rp in @(\n"
+                        "  'HKLM:\\SOFTWARE\\Docker Inc.\\Docker\\Install',\n"
+                        "  'HKLM:\\SOFTWARE\\Docker Inc.\\Docker Desktop',\n"
+                        "  'HKCU:\\SOFTWARE\\Docker Inc.\\Docker Desktop'\n"
+                        ")) {\n"
+                        "  $reg = Get-ItemProperty $rp -EA SilentlyContinue;\n"
+                        "  if ($reg.AppPath -and (Test-Path $reg.AppPath)) { $p = $reg.AppPath; break };\n"
+                        "  if ($reg.InstallPath) {\n"
+                        "    $candidate = Join-Path $reg.InstallPath 'Docker Desktop.exe';\n"
+                        "    if (Test-Path $candidate) { $p = $candidate; break };\n"
+                        "  };\n"
+                        "}\n"
+                        "if (-not $p) {\n"
+                        "  foreach ($dp in @(\n"
+                        "    'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe',\n"
+                        "    \"$env:ProgramFiles\\Docker\\Docker\\Docker Desktop.exe\"\n"
+                        "  )) { if (Test-Path $dp) { $p = $dp; break } };\n"
+                        "}\n"
+                        "# Start Docker Desktop\n"
+                        "Write-Output '正在启动 Docker Desktop...';\n"
+                        "if ($p -and (Test-Path $p)) {\n"
+                        "  Write-Output \"找到: $p\";\n"
+                        "  Start-Process -FilePath $p;\n"
+                        "} else {\n"
+                        "  Write-Output '未找到 Docker Desktop 可执行文件，尝试通过开始菜单启动...';\n"
+                        "  try { Start-Process 'C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Docker Desktop.lnk' -EA Stop } catch {\n"
+                        "    Write-Output '无法自动启动 Docker Desktop，请手动打开后刷新页面。';\n"
+                        "  };\n"
+                        "}\n"
+                        "Write-Output '等待 Docker 启动...';\n"
+                        "for ($i=1; $i -le 90; $i++) {\n"
+                        "  try { $null = & docker info 2>&1; $ok = ($LASTEXITCODE -eq 0) } catch { $ok = $false };\n"
+                        "  if ($ok) { Write-Output 'Docker 已启动！安装完成！'; exit 0 };\n"
+                        "  if ($i -eq 30 -or $i -eq 60) {\n"
+                        "    Write-Output '重新尝试启动 Docker Desktop...';\n"
+                        "    if ($p -and (Test-Path $p)) { Start-Process -FilePath $p }\n"
+                        "    else { try { Start-Process 'C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Docker Desktop.lnk' -EA Stop } catch {} };\n"
+                        "  };\n"
+                        "  Write-Output \"等待 Docker 启动中... ($i/90)\";\n"
+                        "  Start-Sleep -Seconds 2;\n"
+                        "};\n"
+                        "# Final check\n"
+                        "try { $null = & docker info 2>&1; $ok = ($LASTEXITCODE -eq 0) } catch { $ok = $false };\n"
+                        "if ($ok) { Write-Output 'Docker 已启动！安装完成！'; exit 0 };\n"
+                        "Write-Output '=== Docker 安装成功但启动超时 ===';\n"
+                        "Write-Output '--- docker info ---'; & docker info 2>&1;\n"
+                        "Write-Output '--- Docker Desktop 进程 ---'; "
+                        "Get-Process *docker* -EA SilentlyContinue | Format-Table Name,Id,CPU -Auto;\n"
+                        "Write-Output '可能需要重启电脑后才能使用 Docker。请重启后刷新页面重试。';\n"
+                        "exit 1;"
                     ])
                 else:
                     self.send_response(200)
@@ -667,15 +780,41 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
 
         if self.path == "/api/start-docker":
             os_key, _ = detect_os()
+            # Shared: check compose services after daemon is up
+            COMPOSE_CHECK_BASH = (
+                "if [ -f docker-compose.yml ]; then "
+                "  STOPPED=$(docker compose ps -a --format '{{.State}}' 2>/dev/null | grep -v '^[[:space:]]*$' | grep -cv 'running' || echo 0); "
+                "  if [ \"${STOPPED:-0}\" -gt 0 ]; then "
+                "    echo \"检测到 $STOPPED 个服务未运行，正在启动...\"; "
+                "    docker compose up -d 2>&1; "
+                "    echo '服务启动完成!'; "
+                "  else "
+                "    echo '所有服务已在运行，无需重启。'; "
+                "  fi; "
+                "fi; exit 0"
+            )
+            COMPOSE_CHECK_PS = (
+                "if (Test-Path 'docker-compose.yml') { "
+                "  $stopped = @(& docker compose ps -a --format '{{.State}}' 2>$null | Where-Object { $_ -and $_ -ne 'running' }).Count; "
+                "  if ($stopped -gt 0) { "
+                "    Write-Output \"检测到 $stopped 个服务未运行，正在启动...\"; "
+                "    & docker compose up -d 2>&1; "
+                "    Write-Output '服务启动完成!'; "
+                "  } else { "
+                "    Write-Output '所有服务已在运行，无需重启。'; "
+                "  }; "
+                "}; exit 0"
+            )
             if os_key == "mac":
                 # Open Docker Desktop app, then wait for daemon (90 * 2s = 3min)
                 stream_command(self, [
                     "bash", "-c",
-                    "open -a Docker && echo '正在启动 Docker Desktop...' && "
+                    "open -a Docker 2>&1 || echo '警告：无法自动启动 Docker Desktop，请手动打开 /Applications/Docker.app'; "
+                    "echo '正在启动 Docker Desktop...'; "
                     "for i in $(seq 1 90); do "
                     "  docker info >/dev/null 2>&1 && echo 'Docker 已启动!' && break; "
                     "  if [ $i -eq 30 ] || [ $i -eq 60 ]; then "
-                    "    echo '重新尝试启动 Docker Desktop...'; open -a Docker; "
+                    "    echo '重新尝试启动 Docker Desktop...'; open -a Docker 2>&1 || true; "
                     "  fi; "
                     "  echo \"等待中... ($i/90)\"; sleep 2; "
                     "done; "
@@ -684,88 +823,98 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "echo '--- docker info ---'; docker info 2>&1 || true; "
                     "echo '--- docker version ---'; docker version 2>&1 || true; "
                     "echo '--- Docker Desktop 进程 ---'; ps aux | grep -i '[d]ocker' || true; "
-                    "echo '请手动打开 Docker Desktop 应用，确认其正常运行后刷新页面。'; exit 1; }; "
-                    "if [ -f docker-compose.yml ]; then "
-                    "  STOPPED=$(docker compose ps -a --format '{{.State}}' 2>/dev/null | grep -v '^[[:space:]]*$' | grep -cv 'running' || echo 0); "
-                    "  if [ \"${STOPPED:-0}\" -gt 0 ]; then "
-                    "    echo \"检测到 $STOPPED 个服务未运行，正在启动...\"; "
-                    "    docker compose up -d 2>&1; "
-                    "    echo '服务启动完成!'; "
-                    "  else "
-                    "    echo '所有服务已在运行，无需重启。'; "
-                    "  fi; "
-                    "fi; exit 0"
+                    "echo '请手动打开 Docker Desktop 应用，确认其正常运行后刷新页面。'; exit 1; }; " +
+                    COMPOSE_CHECK_BASH
                 ])
             elif os_key == "windows":
                 stream_command(self, [
                     "powershell", "-Command",
-                    "Write-Output '正在查找 Docker Desktop...'; "
-                    "$p = (Get-ItemProperty 'HKLM:\\SOFTWARE\\Docker Inc.\\Docker\\Install' -EA SilentlyContinue).AppPath; "
-                    "if (-not $p) { $p = 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe' }; "
-                    "if (Test-Path $p) { "
-                    "  Write-Output \"找到: $p\"; Start-Process -FilePath $p; "
-                    "} else { "
-                    "  Write-Output '尝试直接启动...'; Start-Process 'Docker Desktop' -EA SilentlyContinue; "
-                    "}; "
-                    "Write-Output '等待 Docker 启动...'; "
-                    "for ($i=1; $i -le 90; $i++) { "
-                    "  $null = & docker info 2>&1; "
-                    "  if ($LASTEXITCODE -eq 0) { Write-Output 'Docker 已启动!'; break }; "
-                    "  if ($i -eq 30 -or $i -eq 60) { "
-                    "    Write-Output '重新尝试启动 Docker Desktop...'; "
-                    "    if (Test-Path $p) { Start-Process -FilePath $p } else { Start-Process 'Docker Desktop' -EA SilentlyContinue }; "
-                    "  }; "
-                    "  Write-Output \"等待中... ($i/90)\"; "
-                    "  Start-Sleep -Seconds 2; "
-                    "}; "
-                    "$null = & docker info 2>&1; "
-                    "if ($LASTEXITCODE -ne 0) { "
-                    "  Write-Output '=== Docker 启动超时，以下为诊断信息 ==='; "
-                    "  Write-Output '--- docker info ---'; & docker info 2>&1; "
-                    "  Write-Output '--- docker version ---'; & docker version 2>&1; "
-                    "  Write-Output '--- Docker Desktop 进程 ---'; Get-Process *docker* -EA SilentlyContinue | Format-Table Name,Id,CPU -Auto; "
-                    "  Write-Output '请手动打开 Docker Desktop 应用，确认其正常运行后刷新页面。'; exit 1; "
-                    "}; "
-                    "if (Test-Path 'docker-compose.yml') { "
-                    "  $stopped = @(& docker compose ps -a --format '{{.State}}' 2>$null | Where-Object { $_ -and $_ -ne 'running' }).Count; "
-                    "  if ($stopped -gt 0) { "
-                    "    Write-Output \"检测到 $stopped 个服务未运行，正在启动...\"; "
-                    "    & docker compose up -d 2>&1; "
-                    "    Write-Output '服务启动完成!'; "
-                    "  } else { "
-                    "    Write-Output '所有服务已在运行，无需重启。'; "
-                    "  }; "
-                    "}; exit 0"
+                    "Write-Output '正在查找 Docker Desktop...';\n"
+                    "# Find Docker Desktop executable (check multiple registry paths + defaults)\n"
+                    "$p = $null;\n"
+                    "foreach ($rp in @(\n"
+                    "  'HKLM:\\SOFTWARE\\Docker Inc.\\Docker\\Install',\n"
+                    "  'HKLM:\\SOFTWARE\\Docker Inc.\\Docker Desktop',\n"
+                    "  'HKCU:\\SOFTWARE\\Docker Inc.\\Docker Desktop'\n"
+                    ")) {\n"
+                    "  $reg = Get-ItemProperty $rp -EA SilentlyContinue;\n"
+                    "  if ($reg.AppPath -and (Test-Path $reg.AppPath)) { $p = $reg.AppPath; break };\n"
+                    "  if ($reg.InstallPath) {\n"
+                    "    $candidate = Join-Path $reg.InstallPath 'Docker Desktop.exe';\n"
+                    "    if (Test-Path $candidate) { $p = $candidate; break };\n"
+                    "  };\n"
+                    "}\n"
+                    "if (-not $p) {\n"
+                    "  foreach ($dp in @(\n"
+                    "    'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe',\n"
+                    "    \"$env:ProgramFiles\\Docker\\Docker\\Docker Desktop.exe\"\n"
+                    "  )) { if (Test-Path $dp) { $p = $dp; break } };\n"
+                    "}\n"
+                    "if ($p -and (Test-Path $p)) {\n"
+                    "  Write-Output \"找到: $p\"; Start-Process -FilePath $p;\n"
+                    "} else {\n"
+                    "  Write-Output '未找到 Docker Desktop 可执行文件，尝试通过开始菜单启动...';\n"
+                    "  try { Start-Process 'C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Docker Desktop.lnk' -EA Stop } catch {\n"
+                    "    Write-Output '无法自动启动 Docker Desktop，请手动打开后刷新页面。';\n"
+                    "  };\n"
+                    "}\n"
+                    "Write-Output '等待 Docker 启动...';\n"
+                    "for ($i=1; $i -le 90; $i++) {\n"
+                    "  try { $null = & docker info 2>&1; $ok = ($LASTEXITCODE -eq 0) } catch { $ok = $false };\n"
+                    "  if ($ok) { Write-Output 'Docker 已启动!'; break };\n"
+                    "  if ($i -eq 30 -or $i -eq 60) {\n"
+                    "    Write-Output '重新尝试启动 Docker Desktop...';\n"
+                    "    if ($p -and (Test-Path $p)) { Start-Process -FilePath $p }\n"
+                    "    else { try { Start-Process 'C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Docker Desktop.lnk' -EA Stop } catch {} };\n"
+                    "  };\n"
+                    "  Write-Output \"等待中... ($i/90)\";\n"
+                    "  Start-Sleep -Seconds 2;\n"
+                    "};\n"
+                    "try { $null = & docker info 2>&1; $ok = ($LASTEXITCODE -eq 0) } catch { $ok = $false };\n"
+                    "if (-not $ok) {\n"
+                    "  Write-Output '=== Docker 启动超时，以下为诊断信息 ===';\n"
+                    "  Write-Output '--- docker info ---'; & docker info 2>&1;\n"
+                    "  Write-Output '--- docker version ---'; & docker version 2>&1;\n"
+                    "  Write-Output '--- Docker Desktop 进程 ---'; Get-Process *docker* -EA SilentlyContinue | Format-Table Name,Id,CPU -Auto;\n"
+                    "  Write-Output '请手动打开 Docker Desktop 应用，确认其正常运行后刷新页面。'; exit 1;\n"
+                    "};\n" +
+                    COMPOSE_CHECK_PS
                 ])
             else:
-                # Linux: systemctl start + wait for daemon (90 * 2s = 3min)
+                # Linux: start Docker daemon + wait with retry (90 * 2s = 3min)
+                # Supports systemctl, service (init.d), and direct dockerd fallback
                 stream_command(self, [
                     "bash", "-c",
                     "echo '正在启动 Docker 服务...' && "
-                    "sudo systemctl start docker 2>&1; "
+                    "sudo -n true 2>/dev/null || "
+                    "{ echo '错误：需要免密 sudo 权限（NOPASSWD）。请配置 sudoers 后重试。'; exit 1; }; "
+                    "if command -v systemctl >/dev/null 2>&1; then "
+                    "  sudo systemctl start docker 2>&1; "
+                    "elif command -v service >/dev/null 2>&1; then "
+                    "  sudo service docker start 2>&1; "
+                    "else "
+                    "  echo '警告：未检测到 systemctl 或 service，尝试直接启动 dockerd...'; "
+                    "  sudo dockerd &>/dev/null & sleep 2; "
+                    "fi; "
                     "for i in $(seq 1 90); do "
                     "  docker info >/dev/null 2>&1 && echo 'Docker 已启动!' && break; "
                     "  if [ $i -eq 30 ] || [ $i -eq 60 ]; then "
-                    "    echo '重新尝试启动 Docker 服务...'; sudo systemctl start docker 2>&1; "
+                    "    echo '重新尝试启动 Docker 服务...'; "
+                    "    if command -v systemctl >/dev/null 2>&1; then sudo systemctl restart docker 2>&1; "
+                    "    elif command -v service >/dev/null 2>&1; then sudo service docker restart 2>&1; "
+                    "    else sudo pkill dockerd 2>/dev/null || true; sudo dockerd &>/dev/null & sleep 2; fi; "
                     "  fi; "
                     "  echo \"等待中... ($i/90)\"; sleep 2; "
                     "done; "
                     "docker info >/dev/null 2>&1 || { "
                     "echo '=== Docker 启动超时，以下为诊断信息 ==='; "
+                    "if command -v systemctl >/dev/null 2>&1; then "
                     "echo '--- systemctl status docker ---'; sudo systemctl status docker 2>&1 || true; "
-                    "echo '--- docker info ---'; docker info 2>&1 || true; "
                     "echo '--- journalctl 最近日志 ---'; sudo journalctl -u docker --no-pager -n 20 2>&1 || true; "
-                    "echo '请检查 Docker 服务状态后刷新页面。'; exit 1; }; "
-                    "if [ -f docker-compose.yml ]; then "
-                    "  STOPPED=$(docker compose ps -a --format '{{.State}}' 2>/dev/null | grep -v '^[[:space:]]*$' | grep -cv 'running' || echo 0); "
-                    "  if [ \"${STOPPED:-0}\" -gt 0 ]; then "
-                    "    echo \"检测到 $STOPPED 个服务未运行，正在启动...\"; "
-                    "    docker compose up -d 2>&1; "
-                    "    echo '服务启动完成!'; "
-                    "  else "
-                    "    echo '所有服务已在运行，无需重启。'; "
-                    "  fi; "
-                    "fi; exit 0"
+                    "fi; "
+                    "echo '--- docker info ---'; docker info 2>&1 || true; "
+                    "echo '请检查 Docker 服务状态后刷新页面。'; exit 1; }; " +
+                    COMPOSE_CHECK_BASH
                 ])
             return
 
