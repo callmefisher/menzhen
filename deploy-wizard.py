@@ -2771,7 +2771,6 @@ async function renderStep2(el) {
           } catch(e) {}
 
           btn.innerHTML = '<span class="spinner"></span> 正在构建，请勿关闭...';
-          const logDiv = checkDiv.querySelector('#buildLog');
           logDiv.innerHTML = '<details open><summary style="cursor:pointer;font-size:14px;color:var(--text-secondary);">构建日志</summary><div class="log-console" id="buildConsole"></div></details>';
           const cons = logDiv.querySelector('#buildConsole');
           const es = new EventSource('/api/build-full');
