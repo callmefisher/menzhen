@@ -32,7 +32,7 @@
 1. 打开「终端」应用（在 启动台 → 其他 中，或按 `⌘+空格` 搜索"终端"）
 2. 粘贴以下命令并按回车：
    ```bash
-   mkdir -p ~/menzhen && cd ~/menzhen && curl -fLO "https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command" && bash start-wizard.command
+   mkdir -p ~/menzhen && cd ~/menzhen; curl -fLO "https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command"; bash start-wizard.command
 
 1. 下载 `start-wizard.command` 到一个空文件夹
 2. 打开「终端」，运行以下命令修复权限（将路径替换为实际下载位置）：
@@ -50,11 +50,11 @@
 1. 打开「终端」应用
 2. 粘贴以下命令并按回车：
    ```bash
-   mkdir -p ~/menzhen && cd ~/menzhen && curl -fLO "https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command" && bash start-wizard.command
+   mkdir -p ~/menzhen && cd ~/menzhen; curl -fLO "https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command"; bash start-wizard.command
    ```
    如果没有 curl，用 wget 替代：
    ```bash
-   mkdir -p ~/menzhen && cd ~/menzhen && wget -q "https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command" && bash start-wizard.command
+   mkdir -p ~/menzhen && cd ~/menzhen; wget -q "https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command"; bash start-wizard.command
    ```
 4. 如果提示输入密码，输入你的登录密码（用于安装软件）
 5. 浏览器会自动打开安装向导页面
