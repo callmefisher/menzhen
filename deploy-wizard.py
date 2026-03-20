@@ -762,12 +762,15 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             # Check if essential project files exist
             checks = {
                 "docker_compose": (SCRIPT_DIR / "docker-compose.yml").exists(),
+                "nginx_conf": (SCRIPT_DIR / "nginx" / "nginx.conf").exists(),
+                "mysql_cnf": (SCRIPT_DIR / "mysql" / "my.cnf").exists(),
                 "server": (SCRIPT_DIR / "server").is_dir(),
                 "web": (SCRIPT_DIR / "web").is_dir(),
                 "deploy_sh": (SCRIPT_DIR / "deploy.sh").exists(),
                 "env_example": (SCRIPT_DIR / ".env.example").exists(),
             }
-            checks["ready"] = all(checks.values())
+            checks["essentials_ready"] = checks["docker_compose"]
+            checks["ready"] = all(v for k, v in checks.items() if k not in ("essentials_ready", "git_available", "nginx_conf", "mysql_cnf"))
             checks["git_available"] = check_command("git")
             self._send_json(checks)
             return
@@ -899,30 +902,51 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
         if self.path == "/api/ensure-env":
             # Check .env exists; if not, try to recover from container
             env_path = SCRIPT_DIR / ".env"
-            if env_path.exists():
-                self._send_json({"ok": True, "source": "local"})
-                return
+            source = "local"
 
-            # Try to recover from existing container (docker cp works on stopped containers too)
-            for cname in ("menzhen-api-1", "menzhen-api"):
-                rc, _, _ = run_command(
-                    ["docker", "inspect", cname]
-                )
-                if rc != 0:
-                    continue
-                # Container exists — copy .env directly
-                rc2, _, _ = run_command(
-                    ["docker", "cp", f"{cname}:/app/.env", str(env_path)]
-                )
-                if rc2 == 0 and env_path.exists():
-                    self._send_json({"ok": True, "source": f"container:{cname}"})
+            if not env_path.exists():
+                # Try to recover from existing container (docker cp works on stopped containers too)
+                recovered = False
+                for cname in ("menzhen-api-1", "menzhen-api"):
+                    rc, _, _ = run_command(["docker", "inspect", cname])
+                    if rc != 0:
+                        continue
+                    rc2, _, _ = run_command(
+                        ["docker", "cp", f"{cname}:/app/.env", str(env_path)]
+                    )
+                    if rc2 == 0 and env_path.exists():
+                        source = f"container:{cname}"
+                        recovered = True
+                        break
+                if not recovered:
+                    self._send_json({
+                        "ok": False,
+                        "error": "no_env",
+                        "message": "未找到配置文件(.env)，也无法从容器中恢复。请选择全新安装，或指定已有安装目录。",
+                    })
                     return
 
-            # Container doesn't exist — need user input
+            # Also recover nginx.conf and my.cnf from containers if missing
+            config_files = [
+                ("nginx/nginx.conf", "menzhen-nginx-1", "/etc/nginx/conf.d/default.conf"),
+                ("mysql/my.cnf",     "menzhen-mysql-1", "/etc/mysql/conf.d/custom.cnf"),
+            ]
+            recovered_configs = []
+            for local_rel, container, container_path in config_files:
+                local_path = SCRIPT_DIR / local_rel
+                if local_path.exists():
+                    continue
+                local_path.parent.mkdir(parents=True, exist_ok=True)
+                rc, _, _ = run_command(
+                    ["docker", "cp", f"{container}:{container_path}", str(local_path)]
+                )
+                if rc == 0 and local_path.exists():
+                    recovered_configs.append(local_rel)
+
             self._send_json({
-                "ok": False,
-                "error": "no_env",
-                "message": "未找到配置文件(.env)，也无法从容器中恢复。请选择全新安装，或指定已有安装目录。",
+                "ok": True,
+                "source": source,
+                "recovered_configs": recovered_configs,
             })
             return
 
@@ -2081,11 +2105,11 @@ async function renderStep2(el) {
       <div id="startLog"></div>
     `;
     // 串行前置：先检测 docker-compose.yml
-    api('/api/check-repo').catch(() => ({ docker_compose: true })).then(repoData => {
+    api('/api/check-repo').catch(() => ({ essentials_ready: true })).then(repoData => {
       const checkDiv = el.querySelector('#noContainerCheck');
       if (!checkDiv) return;
 
-      if (!repoData.docker_compose) {
+      if (!repoData.essentials_ready) {
         // docker-compose.yml 缺失 → 需要下载
         checkDiv.innerHTML = '<div class="hint-box yellow"><strong>docker-compose.yml 缺失。</strong><br>启动服务需要此文件，请先下载。</div><div class="actions" style="margin-top:12px;"><button class="btn btn-primary" id="downloadComposeBtn">下载 docker-compose.yml</button></div><div id="composeLog"></div>';
         checkDiv.querySelector('#downloadComposeBtn').onclick = () => {
@@ -2117,8 +2141,8 @@ async function renderStep2(el) {
 
       // docker-compose.yml 存在 → 并行检测 .env 和镜像
       Promise.all([
-        api('/api/ensure-env'),
-        api('/api/check-images'),
+        api('/api/ensure-env').catch(() => ({ ok: false })),
+        api('/api/check-images').catch(() => ({ images: [] })),
       ]).then(([envData, imgData]) => {
       const envExists = envData.ok;
       const envRecovered = envData.source && envData.source.startsWith('container:');
