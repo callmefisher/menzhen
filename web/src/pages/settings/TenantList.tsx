@@ -118,7 +118,7 @@ export default function TenantList() {
       form.resetFields();
       fetchData(params);
     } catch {
-      // Validation or request error
+      // 409 errors handled by request interceptor with Chinese message mapping
     } finally {
       setSubmitLoading(false);
     }
