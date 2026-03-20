@@ -20,9 +20,10 @@
 
 ### Windows
 
-1. 双击 `start-wizard.bat`
+1. **右键** `start-wizard.bat`，选择「**以管理员身份运行**」
+   > 首次安装需要管理员权限（安装 WSL 和 Docker）。如果双击运行，安装向导会在需要时提示你改用管理员方式重新运行。
 2. 如果弹出"Windows 保护了你的电脑"提示，点击「更多信息」→「仍要运行」
-3. 如果提示安装 Python，等待自动安装完成后**关闭窗口，再次双击**
+3. 如果提示安装 Python，等待自动安装完成后**关闭窗口，再次右键以管理员运行**
 4. 浏览器会自动打开安装向导页面
 
 ### macOS
@@ -62,14 +63,19 @@
 ### Ubuntu Server（无桌面环境）
 
 1. SSH 登录服务器
-2. 创建目录并下载脚本：
+2. **确保当前用户有免密 sudo 权限**（安装向导通过 Web 页面触发安装，无法输入密码）：
+   ```bash
+   # 如果 sudo 需要密码，先执行此命令配置免密（需要输入一次密码）：
+   echo "$(whoami) ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/$(whoami)
+   ```
+3. 创建目录并下载脚本：
    ```bash
    mkdir -p ~/menzhen && cd ~/menzhen
    curl -fLO "https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command"
    # 如果没有 curl，用: wget -q "https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.command"
    bash start-wizard.command
    ```
-3. 脚本启动后，在**本地电脑浏览器**中访问：
+4. 脚本启动后，在**本地电脑浏览器**中访问：
    ```
    http://服务器IP:9527
    ```
@@ -103,6 +109,16 @@
 ---
 
 ## 常见问题
+
+### Windows 安装 Docker 时提示"需要管理员权限"
+首次安装需要管理员权限来安装 WSL 2（Docker 的运行基础）。请关闭当前窗口，**右键** `start-wizard.bat` → 选择「以管理员身份运行」。如果已经装过 Docker，普通双击即可。
+
+### Linux 安装 Docker 时提示"需要免密 sudo 权限"
+安装向导通过 Web 页面触发安装操作，过程中无法弹出密码输入框。请在终端执行：
+```bash
+echo "$(whoami) ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/$(whoami)
+```
+配置完成后刷新安装向导页面重试。
 
 ### Windows 提示"winget 不可用"
 Windows 10 较旧版本可能没有 winget。请手动从 https://www.python.org/downloads/ 下载安装 Python 3，安装时**勾选"Add Python to PATH"**。

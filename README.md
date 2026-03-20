@@ -101,7 +101,7 @@
 
 | 操作系统 | 安装方式 |
 |----------|-----------|
-| Windows | 下载 [`start-wizard.bat`](https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.bat) 并双击 |
+| Windows | 下载 [`start-wizard.bat`](https://raw.githubusercontent.com/callmefisher/menzhen/main/start-wizard.bat)，**右键 → 以管理员身份运行** |
 | macOS / Linux | 终端运行下方命令 |
 
 **macOS / Linux 一键安装命令：**
