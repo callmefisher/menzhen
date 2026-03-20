@@ -28,7 +28,7 @@ from datetime import datetime
 from pathlib import Path
 
 WIZARD_PORT = 9527
-WIZARD_VERSION = "2026.03.19"
+WIZARD_VERSION = "2026.03.20"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -366,6 +366,16 @@ def ensure_docker_mirrors():
 # SSE streaming helper
 # ---------------------------------------------------------------------------
 
+def _decode_bytes(raw):
+    """Decode raw bytes trying UTF-8 first, then GBK, then UTF-8 with replacement."""
+    for enc in ('utf-8', 'gbk'):
+        try:
+            return raw.decode(enc)
+        except (UnicodeDecodeError, ValueError):
+            continue
+    return raw.decode('utf-8', errors='replace')
+
+
 def stream_command(handler, cmd, cwd=None):
     """Run a command and stream output via SSE. Only accepts hardcoded commands."""
     handler.send_response(200)
@@ -374,17 +384,40 @@ def stream_command(handler, cmd, cwd=None):
     handler.send_header("Connection", "keep-alive")
     handler.end_headers()
 
+    def _send_line(raw_buf):
+        """Decode and send a line buffer as SSE event."""
+        if not raw_buf:
+            return
+        line = _decode_bytes(bytes(raw_buf)).strip()
+        if line:
+            msg = json.dumps({"type": "log", "data": line})
+            handler.wfile.write(f"data: {msg}\n\n".encode())
+            handler.wfile.flush()
+
     try:
         proc = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            cwd=cwd or str(SCRIPT_DIR), text=True, bufsize=1,
+            cwd=cwd or str(SCRIPT_DIR),
             **_popen_kwargs()
         )
-        for line in proc.stdout:
-            data = json.dumps({"type": "log", "data": line.rstrip()})
-            handler.wfile.write(f"data: {data}\n\n".encode())
-            handler.wfile.flush()
-        proc.wait()
+        # Read byte-by-byte to handle both \r (progress) and \n (newline),
+        # and auto-detect encoding (UTF-8 from winget vs GBK from dism/system).
+        buf = bytearray()
+        while True:
+            b = proc.stdout.read(1)
+            if not b:
+                break
+            if b in (b'\n', b'\r'):
+                _send_line(buf)
+                buf.clear()
+            else:
+                buf.extend(b)
+        _send_line(buf)  # flush remaining
+        try:
+            proc.wait(timeout=600)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
         result = "success" if proc.returncode == 0 else "error"
         data = json.dumps({
             "type": "done", "result": result,
@@ -822,16 +855,27 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         "    Write-Output '=========================================='; \n"
                         "    exit 1;\n"
                         "  }\n"
-                        "  Write-Output '正在安装 WSL 2（Docker 运行所需）...';\n"
-                        "  wsl --install --no-distribution;\n"
-                        "  # WSL may need reboot - check if kernel is now available\n"
-                        "  Start-Sleep -Seconds 3;\n"
+                        "  # Step 1: Enable WSL feature via DISM (fast, no download)\n"
+                        "  Write-Output '正在启用 WSL 功能（步骤 1/4）...';\n"
+                        "  dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart 2>&1 | ForEach-Object { Write-Output $_ };\n"
+                        "  if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 3010) { Write-Output \"启用 WSL 功能失败（错误码: $LASTEXITCODE）\"; exit 1 };\n"
+                        "  # Step 2: Enable Virtual Machine Platform via DISM\n"
+                        "  Write-Output '正在启用虚拟机平台（步骤 2/4）...';\n"
+                        "  dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart 2>&1 | ForEach-Object { Write-Output $_ };\n"
+                        "  if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 3010) { Write-Output \"启用虚拟机平台失败（错误码: $LASTEXITCODE）\"; exit 1 };\n"
+                        "  # Step 3: Update WSL kernel (must be before set-default-version)\n"
+                        "  Write-Output '正在更新 WSL 内核（步骤 3/4）...';\n"
+                        "  wsl --update 2>&1 | ForEach-Object { Write-Output $_ };\n"
+                        "  # Step 4: Set WSL default version to 2\n"
+                        "  Write-Output '设置 WSL 默认版本为 2（步骤 4/4）...';\n"
+                        "  wsl --set-default-version 2 2>&1 | ForEach-Object { Write-Output $_ };\n"
+                        "  Start-Sleep -Seconds 2;\n"
                         "  $wslReady = $false;\n"
                         "  try { $null = wsl --status 2>&1; if ($LASTEXITCODE -eq 0) { $wslReady = $true } } catch {}\n"
                         "  if (-not $wslReady) {\n"
                         "    Write-Output '';\n"
                         "    Write-Output '=========================================='; \n"
-                        "    Write-Output 'WSL 2 已安装，但需要重启电脑才能生效。';\n"
+                        "    Write-Output 'WSL 2 功能已启用，但需要重启电脑才能生效。';\n"
                         "    Write-Output '请重启电脑后重新运行安装向导。';\n"
                         "    Write-Output '=========================================='; \n"
                         "    exit 1;\n"
@@ -953,6 +997,8 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 if check_command("winget"):
                     stream_command(self, [
                         "powershell", "-Command",
+                        "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8;\n"
+                        "$OutputEncoding = [System.Text.Encoding]::UTF8;\n"
                         "winget install Git.Git --accept-package-agreements --accept-source-agreements;\n"
                         "# Refresh PATH so git is immediately available\n"
                         "$env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + "
@@ -1883,25 +1929,57 @@ header p {
 /* OS selector */
 .os-options {
   display: flex;
-  gap: 12px;
+  gap: 16px;
   margin-bottom: 24px;
 }
 .os-option {
   flex: 1;
   border: 2px solid var(--border);
   border-radius: var(--radius);
-  padding: 20px 12px;
+  padding: 24px 12px 20px;
   text-align: center;
   cursor: pointer;
   transition: all 0.2s;
+  position: relative;
 }
-.os-option:hover { border-color: var(--primary); }
+.os-option:hover { border-color: var(--primary); background: #f8faff; }
 .os-option.selected {
   border-color: var(--primary);
-  background: #eff6ff;
+  border-width: 3px;
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.15), 0 4px 12px rgba(37,99,235,0.10);
+  transform: translateY(-2px);
 }
-.os-option .icon { font-size: 36px; margin-bottom: 8px; }
+.os-option.selected::after {
+  content: '\2713';
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  width: 22px;
+  height: 22px;
+  background: var(--primary);
+  color: #fff;
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 22px;
+  text-align: center;
+}
+.os-option .icon { font-size: 40px; margin-bottom: 10px; transition: transform 0.2s; }
+.os-option.selected .icon { transform: scale(1.15); }
 .os-option .name { font-weight: 600; font-size: 15px; }
+.os-option.selected .name { color: var(--primary); font-size: 16px; }
+.os-detect-tag {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 2px 10px;
+  background: var(--primary);
+  color: #fff;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
 
 /* Status badges */
 .status-item {
@@ -2261,15 +2339,17 @@ async function renderStep1(el) {
       <div class="os-option ${state.os === 'mac' ? 'selected' : ''}" data-os="mac">
         <div class="icon">&#x1F34E;</div>
         <div class="name">苹果电脑</div>
+        ${state.os === 'mac' ? '<div class="os-detect-tag">自动检测</div>' : ''}
       </div>
       <div class="os-option ${state.os === 'windows' ? 'selected' : ''}" data-os="windows">
         <div class="icon">&#x1FA9F;</div>
         <div class="name">Windows 电脑</div>
+        ${state.os === 'windows' ? '<div class="os-detect-tag">自动检测</div>' : ''}
       </div>
       <div class="os-option ${state.os === 'linux' ? 'selected' : ''}" data-os="linux">
         <div class="icon">&#x1F427;</div>
         <div class="name">Linux 服务器</div>
-        <div style="font-size:14px;color:var(--text-secondary);margin-top:4px;">Ubuntu / CentOS 等</div>
+        ${state.os === 'linux' ? '<div class="os-detect-tag">自动检测</div>' : '<div style="font-size:13px;color:var(--text-secondary);margin-top:4px;">Ubuntu / CentOS 等</div>'}
       </div>
     </div>
     <div id="linuxHint" style="display:none; margin-bottom:16px; padding:14px 16px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; font-size:14px; line-height:1.7; color:#1e40af;">

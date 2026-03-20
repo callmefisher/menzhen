@@ -179,37 +179,79 @@ exit /b 0
 :: ------------------------------------------------------------------
 :: Helper: try multiple URLs to download deploy-wizard.py
 :: Usage: call :DOWNLOAD_FILE "target_path"
+:: Tries curl.exe first (Win10+ built-in), then PowerShell fallback
 :: ------------------------------------------------------------------
 :DOWNLOAD_FILE
 set "_TARGET=%~1"
 
-:: Try URL1: raw.githubusercontent.com
+:: Detect if curl.exe is available (built-in on Win10 1803+)
+set "_HAS_CURL=0"
+where curl.exe >nul 2>&1
+if !ERRORLEVEL! equ 0 set "_HAS_CURL=1"
+
+:: --- Source 1/3: raw.githubusercontent.com ---
 echo     尝试下载源 1/3 ...
+if "!_HAS_CURL!"=="1" (
+    curl.exe -fsSL --connect-timeout 15 --max-time 60 -o "%_TARGET%" "%URL1%" >nul 2>&1
+    if exist "%_TARGET%" (
+        findstr /m "WIZARD_VERSION" "%_TARGET%" >nul 2>&1
+        if !ERRORLEVEL! equ 0 goto :DOWNLOAD_DONE
+        del /f "%_TARGET%" >nul 2>&1
+    )
+)
 powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; try { Invoke-WebRequest -Uri '%URL1%' -OutFile '%_TARGET%' -UseBasicParsing -TimeoutSec 30 } catch {}" 2>nul
 if exist "%_TARGET%" (
-    powershell -Command "if ((Get-Content '%_TARGET%' -TotalCount 1) -match '^#!/.*python') { exit 0 } else { exit 1 }" 2>nul
+    findstr /m "WIZARD_VERSION" "%_TARGET%" >nul 2>&1
     if !ERRORLEVEL! equ 0 goto :DOWNLOAD_DONE
     del /f "%_TARGET%" >nul 2>&1
 )
 
-:: Try URL2: jsDelivr CDN (China-friendly)
+:: --- Source 2/3: jsDelivr CDN (China-friendly) ---
 echo     尝试下载源 2/3 ...
+if "!_HAS_CURL!"=="1" (
+    curl.exe -fsSL --connect-timeout 15 --max-time 60 -o "%_TARGET%" "%URL2%" >nul 2>&1
+    if exist "%_TARGET%" (
+        findstr /m "WIZARD_VERSION" "%_TARGET%" >nul 2>&1
+        if !ERRORLEVEL! equ 0 goto :DOWNLOAD_DONE
+        del /f "%_TARGET%" >nul 2>&1
+    )
+)
 powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; try { Invoke-WebRequest -Uri '%URL2%' -OutFile '%_TARGET%' -UseBasicParsing -TimeoutSec 30 } catch {}" 2>nul
 if exist "%_TARGET%" (
-    powershell -Command "if ((Get-Content '%_TARGET%' -TotalCount 1) -match '^#!/.*python') { exit 0 } else { exit 1 }" 2>nul
+    findstr /m "WIZARD_VERSION" "%_TARGET%" >nul 2>&1
     if !ERRORLEVEL! equ 0 goto :DOWNLOAD_DONE
     del /f "%_TARGET%" >nul 2>&1
 )
 
-:: Try URL3: ghfast.top proxy
+:: --- Source 3/3: ghfast.top proxy ---
 echo     尝试下载源 3/3 ...
+if "!_HAS_CURL!"=="1" (
+    curl.exe -fsSL --connect-timeout 15 --max-time 60 -o "%_TARGET%" "%URL3%" >nul 2>&1
+    if exist "%_TARGET%" (
+        findstr /m "WIZARD_VERSION" "%_TARGET%" >nul 2>&1
+        if !ERRORLEVEL! equ 0 goto :DOWNLOAD_DONE
+        del /f "%_TARGET%" >nul 2>&1
+    )
+)
 powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; try { Invoke-WebRequest -Uri '%URL3%' -OutFile '%_TARGET%' -UseBasicParsing -TimeoutSec 30 } catch {}" 2>nul
 if exist "%_TARGET%" (
-    powershell -Command "if ((Get-Content '%_TARGET%' -TotalCount 1) -match '^#!/.*python') { exit 0 } else { exit 1 }" 2>nul
+    findstr /m "WIZARD_VERSION" "%_TARGET%" >nul 2>&1
     if !ERRORLEVEL! equ 0 goto :DOWNLOAD_DONE
     del /f "%_TARGET%" >nul 2>&1
 )
 
+echo.
 echo     [x] 所有下载源均失败
+echo.
+echo     诊断建议:
+if "!_HAS_CURL!"=="1" (
+    echo       - curl.exe 可用但下载失败，可能是代理/防火墙问题
+    echo       - 请尝试: curl.exe -v %URL1%
+) else (
+    echo       - 未检测到 curl.exe，仅使用了 PowerShell 下载
+)
+echo       - 请在浏览器中访问以下地址测试:
+echo         %URL1%
+echo       - 如能访问，请手动下载 deploy-wizard.py 放到本脚本同目录
 :DOWNLOAD_DONE
 goto :eof
