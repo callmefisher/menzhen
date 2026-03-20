@@ -12,17 +12,20 @@ echo.
 :: ------------------------------------------------------------------
 :: 1. 检测 Python3
 :: ------------------------------------------------------------------
-:: 先试 python3 命令（有些 Windows 版本用这个名字）
-python3 --version >nul 2>&1
-if "!ERRORLEVEL!"=="0" (
+:: Windows 10 的 python3.exe 可能是 Microsoft Store 别名（返回 9009）
+:: 必须用 "实际运行" 来测试，不能只靠 --version 返回码
+
+:: 先试 python3
+python3 -c "import sys; print(sys.version)" >nul 2>&1
+if !ERRORLEVEL! equ 0 (
     for /f "tokens=*" %%i in ('python3 --version 2^>^&1') do echo [*] 已安装: %%i
     set "PYTHON_CMD=python3"
     goto :CHECK_FILE
 )
 
-:: 再试 python 命令
-python --version >nul 2>&1
-if "!ERRORLEVEL!"=="0" (
+:: 再试 python
+python -c "import sys; print(sys.version)" >nul 2>&1
+if !ERRORLEVEL! equ 0 (
     :: 确认是 Python 3 不是 2
     for /f "tokens=2 delims= " %%v in ('python --version 2^>^&1') do set "PY_FULL_VER=%%v"
     for /f "tokens=1 delims=." %%m in ("!PY_FULL_VER!") do set "PY_MAJOR=%%m"
@@ -32,6 +35,14 @@ if "!ERRORLEVEL!"=="0" (
         goto :CHECK_FILE
     )
     echo [x] 检测到 Python 2，需要 Python 3
+)
+
+:: 最后试 py 启动器（Windows 专有）
+py -3 --version >nul 2>&1
+if !ERRORLEVEL! equ 0 (
+    for /f "tokens=*" %%i in ('py -3 --version 2^>^&1') do echo [*] 已安装: %%i
+    set "PYTHON_CMD=py -3"
+    goto :CHECK_FILE
 )
 
 echo [x] 未检测到 Python3，需要安装
@@ -45,12 +56,12 @@ echo.
 
 :: 方法1: 尝试 winget 自动安装
 winget --version >nul 2>&1
-if "!ERRORLEVEL!"=="0" (
+if !ERRORLEVEL! equ 0 (
     echo [*] 正在自动安装运行环境，请稍候...
     echo     安装过程可能需要几分钟，请耐心等待...
     echo.
     winget install Python.Python.3.12 --accept-package-agreements --accept-source-agreements
-    if "!ERRORLEVEL!"=="0" (
+    if !ERRORLEVEL! equ 0 (
         echo.
         echo =============================================
         echo   恭喜！必需的软件已安装好。
@@ -95,17 +106,17 @@ if exist "%~dp0deploy-wizard.py" (
     echo.
     echo [*] 检测到已有向导程序，正在检查更新...
     echo     下载地址: %WIZARD_URL%
-    powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%WIZARD_URL%' -OutFile '%~dp0deploy-wizard.py.download' -UseBasicParsing } catch { Write-Output \"[!] 检查更新失败: $_\"; if (Test-Path '%~dp0deploy-wizard.py.download') { Remove-Item '%~dp0deploy-wizard.py.download' -Force } }"
+    powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%WIZARD_URL%' -OutFile '%~dp0deploy-wizard.py.download' -UseBasicParsing } catch { Write-Output '[!] 检查更新失败'; if (Test-Path '%~dp0deploy-wizard.py.download') { Remove-Item '%~dp0deploy-wizard.py.download' -Force } }"
     if exist "%~dp0deploy-wizard.py.download" (
         :: 校验第一行是否包含 python shebang
         powershell -Command "if ((Get-Content '%~dp0deploy-wizard.py.download' -TotalCount 1) -match '^#!/.*python') { exit 0 } else { exit 1 }"
-        if "!ERRORLEVEL!"=="0" (
+        if !ERRORLEVEL! equ 0 (
             :: 校验是否包含版本号
             findstr /m "WIZARD_VERSION" "%~dp0deploy-wizard.py.download" >nul 2>&1
-            if "!ERRORLEVEL!"=="0" (
+            if !ERRORLEVEL! equ 0 (
                 :: 比较文件是否相同
                 fc /b "%~dp0deploy-wizard.py" "%~dp0deploy-wizard.py.download" >nul 2>&1
-                if not "!ERRORLEVEL!"=="0" (
+                if not !ERRORLEVEL! equ 0 (
                     copy /y "%~dp0deploy-wizard.py" "%~dp0deploy-wizard.py.bak" >nul 2>&1
                     move /y "%~dp0deploy-wizard.py.download" "%~dp0deploy-wizard.py" >nul 2>&1
                     echo [*] 向导程序已更新到最新版本！
@@ -129,7 +140,7 @@ if exist "%~dp0deploy-wizard.py" (
     echo [*] 未找到向导程序，正在自动下载...
     echo     下载地址: %WIZARD_URL%
     echo.
-    powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $ProgressPreference='Continue'; Invoke-WebRequest -Uri '%WIZARD_URL%' -OutFile '%~dp0deploy-wizard.py' } catch { Write-Output \"[x] 下载失败: $_\"; Write-Output '    请检查网络连接后重试'; exit 1 }"
+    powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $ProgressPreference='Continue'; Invoke-WebRequest -Uri '%WIZARD_URL%' -OutFile '%~dp0deploy-wizard.py' -UseBasicParsing } catch { Write-Output '[x] 下载失败'; exit 1 }"
     if not exist "%~dp0deploy-wizard.py" (
         echo.
         echo [x] 下载失败，请手动下载 deploy-wizard.py
@@ -141,7 +152,7 @@ if exist "%~dp0deploy-wizard.py" (
     )
     :: 校验第一行是否包含 python shebang（排除 HTML 错误页）
     powershell -Command "if ((Get-Content '%~dp0deploy-wizard.py' -TotalCount 1) -match '^#!/.*python') { exit 0 } else { exit 1 }"
-    if not "!ERRORLEVEL!"=="0" (
+    if not !ERRORLEVEL! equ 0 (
         echo.
         echo [x] 下载的文件无效（可能是网络错误页面）
         del /f "%~dp0deploy-wizard.py" >nul 2>&1
