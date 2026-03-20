@@ -28,7 +28,9 @@ from datetime import datetime
 from pathlib import Path
 
 WIZARD_PORT = 9527
-WIZARD_VERSION = "2026.03.20"
+# Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
+# Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
+WIZARD_VERSION = "2026.03.20.202403"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -3850,13 +3852,16 @@ def self_update():
             return False
 
         remote_version = _extract_version(remote_content)
-        if not remote_version or not re.fullmatch(r"\d{4}\.\d{2}\.\d{2}(\.\d+)?", remote_version):
+        if not remote_version or not re.fullmatch(r"\d{4}\.\d{2}\.\d{2}(\.\d{6})?", remote_version):
             _update_status = "failed"
             _update_message = "无法识别远程版本"
             print("  [!] 无法识别远程版本，跳过更新")
             return False
 
-        # Compare versions (date-based string comparison: "2026.03.19" > "2026.03.18")
+        # Compare versions (string comparison works for zero-padded format:
+        #   "2026.03.20.153000" > "2026.03.20" — suffix makes it newer
+        #   "2026.03.20.160000" > "2026.03.20.153000" — same-day, later time wins
+        #   "2026.03.21.010000" > "2026.03.20.235959" — next-day always wins)
         if remote_version <= WIZARD_VERSION:
             _update_status = "up_to_date"
             _update_message = f"当前版本 {WIZARD_VERSION} 已是最新"
