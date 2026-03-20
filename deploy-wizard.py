@@ -642,41 +642,10 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             return
 
         if self.path == "/api/ensure-docker-running":
-            # Quick check: is Docker daemon up? If not, try to start it.
+            # Quick check: is Docker daemon up?
+            # If not, frontend should call /api/start-docker (SSE) to start it.
             rc, _, _ = run_command(["docker", "info"], timeout=5)
-            if rc == 0:
-                self._send_json({"ok": True, "was_stopped": False})
-                return
-
-            # Docker not running — attempt to start
-            os_key, _ = detect_os()
-            if os_key == "mac":
-                run_command(["open", "-a", "Docker"], timeout=10)
-            elif os_key == "windows":
-                # Try starting Docker Desktop via common paths
-                for p in [
-                    r"C:\Program Files\Docker\Docker\Docker Desktop.exe",
-                    r"C:\Program Files (x86)\Docker\Docker\Docker Desktop.exe",
-                ]:
-                    if os.path.exists(p):
-                        run_command(["cmd", "/c", "start", "", p], timeout=10)
-                        break
-            else:
-                # Linux: systemctl or service
-                run_command(["sudo", "systemctl", "start", "docker"], timeout=15)
-
-            # Wait for Docker daemon with retry loop (up to 90 * 2s = 3 min)
-            for i in range(90):
-                rc, _, _ = run_command(["docker", "info"], timeout=5)
-                if rc == 0:
-                    self._send_json({"ok": True, "was_stopped": True, "wait_seconds": i * 2})
-                    return
-                time.sleep(2)
-
-            self._send_json({
-                "ok": False,
-                "message": "Docker 启动超时，请手动启动 Docker Desktop 后重试",
-            })
+            self._send_json({"running": rc == 0})
             return
 
         if self.path == "/api/check-images":
@@ -2791,13 +2760,24 @@ async function renderStep2(el) {
           btn.innerHTML = '<span class="spinner"></span> 正在检查 Docker 状态...';
           try {
             const dockerRes = await api('/api/ensure-docker-running');
-            if (!dockerRes.ok) {
-              logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">' + esc(dockerRes.message || 'Docker 未运行') + '</div>';
-              btn.disabled = false; btn.textContent = '重试';
-              return;
-            }
-            if (dockerRes.was_stopped) {
-              logDiv.innerHTML = '<div class="hint-box blue" style="text-align:center;">Docker 已自动启动</div>';
+            if (!dockerRes.running) {
+              btn.innerHTML = '<span class="spinner"></span> 正在启动 Docker...';
+              logDiv.innerHTML = '<div class="hint-box yellow" style="text-align:center;">Docker 未运行，正在自动启动...</div>';
+              const started = await new Promise((resolve) => {
+                const es2 = new EventSource('/api/start-docker');
+                es2.onmessage = (ev) => {
+                  const m = JSON.parse(ev.data);
+                  if (m.type === 'done') { es2.close(); resolve(m.result === 'success'); }
+                };
+                es2.onerror = () => { es2.close(); resolve(false); };
+              });
+              if (!started) {
+                logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">Docker 启动失败，请手动启动后重试。</div>';
+                btn.disabled = false; btn.textContent = '重试';
+                return;
+              }
+              logDiv.innerHTML = '<div class="hint-box blue" style="text-align:center;">Docker 已启动</div>';
+              await new Promise(r => setTimeout(r, 3000));
             }
           } catch(e) {
             logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">无法连接 Docker，请确认 Docker Desktop 已启动。</div>';
@@ -3410,13 +3390,24 @@ async function renderStep5(el) {
       btn.innerHTML = '<span class="spinner"></span> 正在检查 Docker 状态...';
       try {
         const dockerRes = await api('/api/ensure-docker-running');
-        if (!dockerRes.ok) {
-          logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">' + esc(dockerRes.message || 'Docker 未运行') + '</div>';
-          btn.disabled = false; btn.textContent = '重试';
-          return;
-        }
-        if (dockerRes.was_stopped) {
-          logDiv.innerHTML = '<div class="hint-box blue" style="text-align:center;">Docker 已自动启动</div>';
+        if (!dockerRes.running) {
+          btn.innerHTML = '<span class="spinner"></span> 正在启动 Docker...';
+          logDiv.innerHTML = '<div class="hint-box yellow" style="text-align:center;">Docker 未运行，正在自动启动...</div>';
+          const started = await new Promise((resolve) => {
+            const es2 = new EventSource('/api/start-docker');
+            es2.onmessage = (ev) => {
+              const m = JSON.parse(ev.data);
+              if (m.type === 'done') { es2.close(); resolve(m.result === 'success'); }
+            };
+            es2.onerror = () => { es2.close(); resolve(false); };
+          });
+          if (!started) {
+            logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">Docker 启动失败，请手动启动后重试。</div>';
+            btn.disabled = false; btn.textContent = '重试';
+            return;
+          }
+          logDiv.innerHTML = '<div class="hint-box blue" style="text-align:center;">Docker 已启动</div>';
+          await new Promise(r => setTimeout(r, 3000));
         }
       } catch(e) {
         logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">无法连接 Docker，请确认 Docker Desktop 已启动。</div>';
