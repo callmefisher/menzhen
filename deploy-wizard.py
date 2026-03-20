@@ -658,7 +658,6 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
 
         if self.path == "/api/start-docker":
             os_key, _ = detect_os()
-            script_dir = str(SCRIPT_DIR)
             if os_key == "mac":
                 # Open Docker Desktop app, then wait for daemon (90 * 2s = 3min)
                 stream_command(self, [
@@ -674,7 +673,6 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "echo '--- docker version ---'; docker version 2>&1 || true; "
                     "echo '--- Docker Desktop 进程 ---'; ps aux | grep -i '[d]ocker' || true; "
                     "echo '请手动打开 Docker Desktop 应用，确认其正常运行后刷新页面。'; exit 1; }; "
-                    f"cd {shlex.quote(script_dir)} && "
                     "if [ -f docker-compose.yml ]; then "
                     "  STOPPED=$(docker compose ps -a --format '{{.State}}' 2>/dev/null | grep -v '^[[:space:]]*$' | grep -cv 'running' || echo 0); "
                     "  if [ \"${STOPPED:-0}\" -gt 0 ]; then "
@@ -712,7 +710,6 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "  Write-Output '--- Docker Desktop 进程 ---'; Get-Process *docker* -EA SilentlyContinue | Format-Table Name,Id,CPU -Auto; "
                     "  Write-Output '请手动打开 Docker Desktop 应用，确认其正常运行后刷新页面。'; exit 1; "
                     "}; "
-                    f"Set-Location '{script_dir}'; "
                     "if (Test-Path 'docker-compose.yml') { "
                     "  $stopped = @(& docker compose ps -a --format '{{.State}}' 2>$null | Where-Object { $_ -and $_ -ne 'running' }).Count; "
                     "  if ($stopped -gt 0) { "
@@ -740,7 +737,6 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "echo '--- docker info ---'; docker info 2>&1 || true; "
                     "echo '--- journalctl 最近日志 ---'; sudo journalctl -u docker --no-pager -n 20 2>&1 || true; "
                     "echo '请检查 Docker 服务状态后刷新页面。'; exit 1; }; "
-                    f"cd {shlex.quote(script_dir)} && "
                     "if [ -f docker-compose.yml ]; then "
                     "  STOPPED=$(docker compose ps -a --format '{{.State}}' 2>/dev/null | grep -v '^[[:space:]]*$' | grep -cv 'running' || echo 0); "
                     "  if [ \"${STOPPED:-0}\" -gt 0 ]; then "
@@ -774,6 +770,34 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             checks["ready"] = all(checks.values())
             checks["git_available"] = check_command("git")
             self._send_json(checks)
+            return
+
+        if self.path == "/api/download-compose":
+            # Download only docker-compose.yml from git (lightweight)
+            os_key, _ = detect_os()
+            script_dir = str(SCRIPT_DIR)
+            if os_key == "windows":
+                stream_command(self, [
+                    "cmd", "/c",
+                    f'cd /d "{script_dir}" && '
+                    "git init && "
+                    f'git remote add origin "{REPO_URL}" 2>nul || git remote set-url origin "{REPO_URL}" && '
+                    "git fetch origin && "
+                    "git checkout -f origin/main -- docker-compose.yml && "
+                    'echo docker-compose.yml 下载完成!'
+                ])
+            else:
+                q_dir = shlex.quote(script_dir)
+                q_url = shlex.quote(REPO_URL)
+                stream_command(self, [
+                    "bash", "-c",
+                    f"cd {q_dir} && "
+                    "git init && "
+                    f"git remote add origin {q_url} 2>/dev/null || git remote set-url origin {q_url} && "
+                    "git fetch origin && "
+                    "git checkout -f origin/main -- docker-compose.yml && "
+                    "echo 'docker-compose.yml 下载完成!'"
+                ])
             return
 
         if self.path == "/api/clone-repo":
@@ -1902,51 +1926,97 @@ async function renderStep2(el) {
     el.innerHTML = `
       ${osMismatchHtml}
       <h2>第二步：系统已安装，但部分服务异常</h2>
-      <p class="subtitle">检测到系统已安装过，但部分服务未正常运行，可能需要修复。</p>
-      <div class="status-item" style="flex-direction:column; align-items:flex-start; gap:8px;">
-        <span>访问地址（当前不可用）</span>
-        <span style="font-size:22px; font-weight:700; color:var(--warning);">${esc(sysUrl)}</span>
+      <p class="subtitle">检测到系统已安装过，正在检测镜像状态...</p>
+      <div id="partialCheck" style="text-align:center;padding:16px;">
+        <span class="spinner"></span> 正在检测镜像...
       </div>
-      <div class="hint-box yellow">
-        <strong>系统已安装但服务异常。</strong><br>
-        您可以点击「重启服务」尝试恢复，或点击「全新安装」重新安装。
-      </div>
-      <div id="repairLog"></div>
       <div class="actions">
         <button class="btn btn-secondary" onclick="state.step=1;render();">&larr; 上一步</button>
-        <div>
-          <button class="btn btn-success" id="repairBtn">重启服务</button>
-          <button class="btn btn-primary" id="reinstallBtn" style="margin-left:8px;">全新安装 &rarr;</button>
-        </div>
       </div>
     `;
-    el.querySelector('#repairBtn').onclick = () => {
-      const btn = el.querySelector('#repairBtn');
-      btn.disabled = true;
-      btn.innerHTML = '<span class="spinner"></span> 正在重启服务...';
-      const logDiv = el.querySelector('#repairLog');
-      logDiv.innerHTML = '<details open><summary style="cursor:pointer;font-size:14px;color:var(--text-secondary);">运行日志</summary><div class="log-console" id="repairConsole"></div></details>';
-      const cons = logDiv.querySelector('#repairConsole');
-      const es = new EventSource('/api/deploy');
-      es.onmessage = (e) => {
-        const msg = JSON.parse(e.data);
-        if (msg.type === 'log') { cons.textContent += msg.data + '\n'; cons.scrollTop = cons.scrollHeight; }
-        else if (msg.type === 'done') {
-          es.close();
-          if (msg.result === 'success') {
-            logDiv.innerHTML = '<div class="hint-box green" style="text-align:center;">重启完成！正在重新检查...</div>';
-            setTimeout(() => renderStep2(el), 3000);
-          } else {
-            logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">重启失败，请截图并联系技术支持。</div>';
-            btn.disabled = false; btn.textContent = '重试';
-          }
-        }
-      };
-      es.onerror = () => { es.close(); btn.disabled = false; btn.textContent = '重试'; };
-    };
-    el.querySelector('#reinstallBtn').onclick = () => {
-      showConfirm('全新安装会覆盖当前所有配置和数据，确定要继续吗？', () => { state.step = 3; render(); });
-    };
+    api('/api/check-images').catch(() => ({ images: [] })).then(imgData => {
+      const pc = el.querySelector('#partialCheck');
+      if (!pc) return;
+      const missingImages = imgData.images.filter(i => !i.exists).map(i => i.image);
+
+      if (missingImages.length > 0) {
+        // 镜像丢失 → 先构建再启动
+        pc.innerHTML = '<div class="status-item" style="flex-direction:column; align-items:flex-start; gap:8px;"><span>访问地址（当前不可用）</span><span style="font-size:22px; font-weight:700; color:var(--warning);">' + esc(sysUrl) + '</span></div><div class="hint-box yellow"><strong>部分镜像丢失，需要重新构建。</strong><br>缺失镜像：' + missingImages.join('、') + '<br>构建完成后将自动启动服务。</div><div style="margin-top:12px;"><button class="btn btn-success" id="rebuildPartialBtn">重新构建并启动</button><button class="btn btn-primary" id="reinstallPartialBtn" style="margin-left:8px;">全新安装 &rarr;</button></div><div id="repairLog"></div>';
+        pc.querySelector('#rebuildPartialBtn').onclick = () => {
+          const btn = pc.querySelector('#rebuildPartialBtn');
+          btn.disabled = true;
+          btn.innerHTML = '<span class="spinner"></span> 正在构建，请勿关闭...';
+          const logDiv = pc.querySelector('#repairLog');
+          logDiv.innerHTML = '<details open><summary style="cursor:pointer;font-size:14px;color:var(--text-secondary);">构建日志</summary><div class="log-console" id="buildConsole"></div></details>';
+          const cons = logDiv.querySelector('#buildConsole');
+          const es = new EventSource('/api/build-full');
+          es.onmessage = (e) => {
+            const msg = JSON.parse(e.data);
+            if (msg.type === 'log') { cons.textContent += msg.data + '\\n'; cons.scrollTop = cons.scrollHeight; }
+            else if (msg.type === 'done') {
+              es.close();
+              if (msg.result === 'success') {
+                logDiv.innerHTML = '<div class="hint-box green" style="text-align:center;">构建完成！正在启动服务...</div>';
+                // 构建成功后自动启动
+                setTimeout(() => {
+                  const es2 = new EventSource('/api/deploy');
+                  es2.onmessage = (e2) => {
+                    const msg2 = JSON.parse(e2.data);
+                    if (msg2.type === 'done') {
+                      es2.close();
+                      if (msg2.result === 'success') {
+                        setTimeout(() => renderStep2(el), 3000);
+                      } else {
+                        logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">镜像构建完成，但启动服务失败。请检查日志或联系技术支持。</div>';
+                        btn.disabled = false; btn.textContent = '重试';
+                      }
+                    }
+                  };
+                  es2.onerror = () => { es2.close(); logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">启动服务时连接中断，请刷新页面重试。</div>'; btn.disabled = false; btn.textContent = '重试'; };
+                }, 1000);
+              } else {
+                logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">构建失败。请检查日志。</div>';
+                btn.disabled = false; btn.textContent = '重试';
+              }
+            }
+          };
+          es.onerror = () => { es.close(); btn.disabled = false; btn.textContent = '重试'; };
+        };
+        pc.querySelector('#reinstallPartialBtn').onclick = () => {
+          showConfirm('全新安装会覆盖当前所有配置和数据，确定要继续吗？', () => { state.step = 3; render(); });
+        };
+      } else {
+        // 镜像齐全 → 直接重启
+        pc.innerHTML = '<div class="status-item" style="flex-direction:column; align-items:flex-start; gap:8px;"><span>访问地址（当前不可用）</span><span style="font-size:22px; font-weight:700; color:var(--warning);">' + esc(sysUrl) + '</span></div><div class="hint-box yellow"><strong>系统已安装但服务异常。</strong><br>您可以点击「重启服务」尝试恢复，或点击「全新安装」重新安装。</div><div id="repairLog"></div><div style="margin-top:12px;"><button class="btn btn-success" id="repairBtn">重启服务</button><button class="btn btn-primary" id="reinstallBtn" style="margin-left:8px;">全新安装 &rarr;</button></div>';
+        pc.querySelector('#repairBtn').onclick = () => {
+          const btn = pc.querySelector('#repairBtn');
+          btn.disabled = true;
+          btn.innerHTML = '<span class="spinner"></span> 正在重启服务...';
+          const logDiv = pc.querySelector('#repairLog');
+          logDiv.innerHTML = '<details open><summary style="cursor:pointer;font-size:14px;color:var(--text-secondary);">运行日志</summary><div class="log-console" id="repairConsole"></div></details>';
+          const cons = logDiv.querySelector('#repairConsole');
+          const es = new EventSource('/api/deploy');
+          es.onmessage = (e) => {
+            const msg = JSON.parse(e.data);
+            if (msg.type === 'log') { cons.textContent += msg.data + '\\n'; cons.scrollTop = cons.scrollHeight; }
+            else if (msg.type === 'done') {
+              es.close();
+              if (msg.result === 'success') {
+                logDiv.innerHTML = '<div class="hint-box green" style="text-align:center;">重启完成！正在重新检查...</div>';
+                setTimeout(() => renderStep2(el), 3000);
+              } else {
+                logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">重启失败，请截图并联系技术支持。</div>';
+                btn.disabled = false; btn.textContent = '重试';
+              }
+            }
+          };
+          es.onerror = () => { es.close(); btn.disabled = false; btn.textContent = '重试'; };
+        };
+        pc.querySelector('#reinstallBtn').onclick = () => {
+          showConfirm('全新安装会覆盖当前所有配置和数据，确定要继续吗？', () => { state.step = 3; render(); });
+        };
+      }
+    });
   } else if (data.status === 'docker_stopped') {
     el.innerHTML = `
       ${osMismatchHtml}
@@ -1999,38 +2069,29 @@ async function renderStep2(el) {
       </div>
       <div id="startLog"></div>
     `;
-    // 并行检测 .env、镜像和源码
-    Promise.all([
-      api('/api/ensure-env'),
-      api('/api/check-images'),
-      api('/api/check-repo'),
-    ]).then(([envData, imgData, repoData]) => {
-      const envExists = envData.ok;
-      const envRecovered = envData.source && envData.source.startsWith('container:');
-      const allImagesExist = imgData.images.every(i => i.exists);
-      const missingImages = imgData.images.filter(i => !i.exists).map(i => i.image);
+    // 串行前置：先检测 docker-compose.yml
+    api('/api/check-repo').catch(() => ({ docker_compose: true })).then(repoData => {
       const checkDiv = el.querySelector('#noContainerCheck');
       if (!checkDiv) return;
-      const recoveredHint = envRecovered ? '<div class="hint-box blue" style="margin-bottom:8px;">配置文件已从容器中自动恢复。</div>' : '';
 
       if (!repoData.docker_compose) {
-        // 源码文件缺失 → 需要下载
-        checkDiv.innerHTML = '<div class="hint-box yellow"><strong>系统程序文件缺失。</strong><br>未检测到 docker-compose.yml 等核心文件，需要先下载系统程序。</div><div class="actions" style="margin-top:12px;"><button class="btn btn-primary" id="cloneRepoBtn">下载系统程序</button></div><div id="cloneLog"></div>';
-        checkDiv.querySelector('#cloneRepoBtn').onclick = () => {
-          const btn = checkDiv.querySelector('#cloneRepoBtn');
+        // docker-compose.yml 缺失 → 需要下载
+        checkDiv.innerHTML = '<div class="hint-box yellow"><strong>docker-compose.yml 缺失。</strong><br>启动服务需要此文件，请先下载。</div><div class="actions" style="margin-top:12px;"><button class="btn btn-primary" id="downloadComposeBtn">下载 docker-compose.yml</button></div><div id="composeLog"></div>';
+        checkDiv.querySelector('#downloadComposeBtn').onclick = () => {
+          const btn = checkDiv.querySelector('#downloadComposeBtn');
           btn.disabled = true;
-          btn.innerHTML = '<span class="spinner"></span> 正在下载，请勿关闭...';
-          const logDiv = checkDiv.querySelector('#cloneLog');
-          logDiv.innerHTML = '<details open><summary style="cursor:pointer;font-size:14px;color:var(--text-secondary);">下载日志</summary><div class="log-console" id="cloneConsole"></div></details>';
-          const cons = logDiv.querySelector('#cloneConsole');
-          const es = new EventSource('/api/clone-repo');
+          btn.innerHTML = '<span class="spinner"></span> 正在下载...';
+          const logDiv = checkDiv.querySelector('#composeLog');
+          logDiv.innerHTML = '<details open><summary style="cursor:pointer;font-size:14px;color:var(--text-secondary);">下载日志</summary><div class="log-console" id="composeConsole"></div></details>';
+          const cons = logDiv.querySelector('#composeConsole');
+          const es = new EventSource('/api/download-compose');
           es.onmessage = (e) => {
             const msg = JSON.parse(e.data);
             if (msg.type === 'log') { cons.textContent += msg.data + '\\n'; cons.scrollTop = cons.scrollHeight; }
             else if (msg.type === 'done') {
               es.close();
               if (msg.result === 'success') {
-                logDiv.innerHTML = '<div class="hint-box green" style="text-align:center;">下载完成！正在重新检查...</div>';
+                logDiv.innerHTML = '<div class="hint-box green" style="text-align:center;">下载完成！正在重新检测...</div>';
                 setTimeout(() => renderStep2(el), 2000);
               } else {
                 logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">下载失败。请检查网络连接和 git 是否可用。</div>';
@@ -2040,7 +2101,23 @@ async function renderStep2(el) {
           };
           es.onerror = () => { es.close(); btn.disabled = false; btn.textContent = '重试'; };
         };
-      } else if (!envExists) {
+        return;
+      }
+
+      // docker-compose.yml 存在 → 并行检测 .env 和镜像
+      Promise.all([
+        api('/api/ensure-env'),
+        api('/api/check-images'),
+      ]).then(([envData, imgData]) => {
+      const envExists = envData.ok;
+      const envRecovered = envData.source && envData.source.startsWith('container:');
+      const allImagesExist = imgData.images.every(i => i.exists);
+      const missingImages = imgData.images.filter(i => !i.exists).map(i => i.image);
+      const checkDiv = el.querySelector('#noContainerCheck');
+      if (!checkDiv) return;
+      const recoveredHint = envRecovered ? '<div class="hint-box blue" style="margin-bottom:8px;">配置文件已从容器中自动恢复。</div>' : '';
+
+      if (!envExists) {
         // .env 不存在 → 需要重新安装
         checkDiv.innerHTML = '<div class="hint-box yellow"><strong>配置文件缺失。</strong><br>未检测到 .env 配置文件，需要重新进行安装配置。</div><div class="actions" style="margin-top:12px;"><button class="btn btn-primary" id="freshInstallBtn">继续安装 &rarr;</button></div>';
         checkDiv.querySelector('#freshInstallBtn').onclick = () => { state.step = 3; render(); };
@@ -2105,6 +2182,7 @@ async function renderStep2(el) {
         checkDiv.innerHTML = '<div class="hint-box red"><strong>检测失败。</strong><br>无法检测环境状态，请刷新页面重试。</div>';
       }
     });
+    }); // end check-repo .then
   } else {
     el.innerHTML = `
       ${osMismatchHtml}
