@@ -75,8 +75,13 @@ request.interceptors.response.use(
       return Promise.reject(error);
     }
 
+    const ERROR_MESSAGE_MAP: Record<string, string> = {
+      'tenant name already exists': '诊所名称已存在',
+      'tenant code already exists': '诊所编码已存在',
+    };
+
     const data = error.response?.data;
-    let msg = data?.message || '请求失败';
+    let msg = ERROR_MESSAGE_MAP[data?.message] || data?.message || '请求失败';
 
     // 403 tenant_disabled: clear token and redirect to login
     if (error.response?.status === 403 && data?.message === 'tenant_disabled') {

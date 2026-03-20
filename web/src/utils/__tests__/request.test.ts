@@ -147,4 +147,32 @@ describe('request utility', () => {
       '没有操作权限，需要以下权限：查看患者、创建诊疗记录'
     );
   });
+
+  // 9. 409 tenant name already exists → Chinese message
+  it('response interceptor maps tenant name duplicate to Chinese', async () => {
+    const error = {
+      response: {
+        status: 409,
+        data: { code: 409, message: 'tenant name already exists' },
+      },
+    };
+
+    await expect(errorFn(error)).rejects.toBe(error);
+
+    expect(mockMessageError).toHaveBeenCalledWith('诊所名称已存在');
+  });
+
+  // 10. 409 tenant code already exists → Chinese message
+  it('response interceptor maps tenant code duplicate to Chinese', async () => {
+    const error = {
+      response: {
+        status: 409,
+        data: { code: 409, message: 'tenant code already exists' },
+      },
+    };
+
+    await expect(errorFn(error)).rejects.toBe(error);
+
+    expect(mockMessageError).toHaveBeenCalledWith('诊所编码已存在');
+  });
 });

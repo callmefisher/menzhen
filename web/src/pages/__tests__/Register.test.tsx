@@ -34,7 +34,7 @@ describe('Register', () => {
     const { container } = renderRegister();
 
     expect(screen.getByText('创建账号')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('诊所编码（默认：default）')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('请输入诊所编码')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('请输入用户名')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('密码（至少 6 位）')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('再次输入密码')).toBeInTheDocument();
