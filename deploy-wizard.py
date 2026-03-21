@@ -30,7 +30,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.03.21.120403"
+WIZARD_VERSION = "2026.03.21.132603"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -1326,7 +1326,12 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             q_dir = shlex.quote(str(SCRIPT_DIR)) if os_key != "windows" else str(SCRIPT_DIR)
             _repo = get_repo_url()
             q_url = shlex.quote(_repo) if os_key != "windows" else f'"{_repo}"'
-            EXCLUDE = "':!deploy-wizard.py' ':!start-wizard.command' ':!start-wizard.bat' ':!start-wizard.sh'"
+            # Windows cmd.exe does NOT strip single quotes — use unquoted pathspec;
+            # bash (macOS/Linux) needs single quotes to protect ':!' from history expansion.
+            if os_key == "windows":
+                EXCLUDE = ":!deploy-wizard.py :!start-wizard.command :!start-wizard.bat :!start-wizard.sh"
+            else:
+                EXCLUDE = "':!deploy-wizard.py' ':!start-wizard.command' ':!start-wizard.bat' ':!start-wizard.sh'"
             if needs_clone:
                 if os_key == "windows":
                     clone_and_build = (
@@ -1410,8 +1415,12 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             # git clone fails on non-empty dir, so use init+pull instead
             # Exclude wizard files from checkout to avoid overwriting the
             # running script (shell reads by file offset; overwrite = garbled).
-            EXCLUDE = "':!deploy-wizard.py' ':!start-wizard.command' ':!start-wizard.bat' ':!start-wizard.sh'"
             os_key, _ = detect_os()
+            # Windows cmd.exe does NOT strip single quotes — use unquoted pathspec
+            if os_key == "windows":
+                EXCLUDE = ":!deploy-wizard.py :!start-wizard.command :!start-wizard.bat :!start-wizard.sh"
+            else:
+                EXCLUDE = "':!deploy-wizard.py' ':!start-wizard.command' ':!start-wizard.bat' ':!start-wizard.sh'"
             script_dir = str(SCRIPT_DIR)
             _repo = get_repo_url()
             if os_key == "windows":
@@ -1702,7 +1711,6 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
 
         if self.path == "/api/pull-and-rebuild":
             # Pull latest code, rebuild images, restart services — all streamed
-            EXCLUDE = "':!deploy-wizard.py' ':!start-wizard.command' ':!start-wizard.bat' ':!start-wizard.sh'"
             _repo = get_repo_url()
             q_url = shlex.quote(_repo)
             # Ensure git repo is initialized (idempotent)
@@ -1711,6 +1719,11 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 f"git remote set-url origin {q_url} 2>/dev/null || git remote add origin {q_url} && "
             )
             os_key, _ = detect_os()
+            # Windows cmd.exe does NOT strip single quotes — use unquoted pathspec
+            if os_key == "windows":
+                EXCLUDE = ":!deploy-wizard.py :!start-wizard.command :!start-wizard.bat :!start-wizard.sh"
+            else:
+                EXCLUDE = "':!deploy-wizard.py' ':!start-wizard.command' ':!start-wizard.bat' ':!start-wizard.sh'"
             if os_key == "windows":
                 q_dir = str(SCRIPT_DIR)
                 GIT_INIT_WIN = (
@@ -2932,7 +2945,9 @@ async function renderStep2(el) {
                       if (msg2.result === 'success') {
                         setTimeout(() => renderStep2(el), 3000);
                       } else {
-                        logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">镜像构建完成，但启动服务失败。请检查日志或联系技术支持。</div>';
+                        logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">镜像构建完成，但启动服务失败。请检查日志或联系技术支持。</div><div class="actions" style="margin-top:8px;text-align:center;"><button class="btn btn-secondary" id="freshDeployAfterBuildBtn">全新部署 &rarr;</button></div>';
+                        const fdBtn = logDiv.querySelector('#freshDeployAfterBuildBtn');
+                        if (fdBtn) fdBtn.onclick = () => { showConfirm('全新部署会覆盖当前所有配置和数据，确定要继续吗？', () => { state.step = 3; render(); }); };
                         btn.disabled = false; btn.textContent = '重试';
                       }
                     }
@@ -2940,7 +2955,9 @@ async function renderStep2(el) {
                   es2.onerror = () => { es2.close(); logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">启动服务时连接中断，请刷新页面重试。</div>'; btn.disabled = false; btn.textContent = '重试'; };
                 }, 1000);
               } else {
-                logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">构建失败。请检查日志。</div>';
+                logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">构建失败。请检查日志。</div><div class="actions" style="margin-top:8px;text-align:center;"><button class="btn btn-secondary" id="freshDeployPartialBtn">全新部署 &rarr;</button></div>';
+                const fdBtn = logDiv.querySelector('#freshDeployPartialBtn');
+                if (fdBtn) fdBtn.onclick = () => { showConfirm('全新部署会覆盖当前所有配置和数据，确定要继续吗？', () => { state.step = 3; render(); }); };
                 btn.disabled = false; btn.textContent = '重试';
               }
             }
@@ -3147,7 +3164,10 @@ async function renderStep2(el) {
         checkDiv.querySelector('#freshInstallBtn').onclick = () => { state.step = 3; render(); };
       } else if (!allImagesExist) {
         // .env 存在但镜像缺失 → 需要重新构建
-        checkDiv.innerHTML = recoveredHint + '<div class="hint-box yellow"><strong>镜像缺失，需要重新构建。</strong><br>缺失镜像：' + missingImages.join('、') + '</div><div class="actions" style="margin-top:12px;"><button class="btn btn-primary" id="rebuildBtn">重新构建</button></div><div id="buildLog"></div>';
+        checkDiv.innerHTML = recoveredHint + '<div class="hint-box yellow"><strong>镜像缺失，需要重新构建。</strong><br>缺失镜像：' + missingImages.join('、') + '</div><div class="actions" style="margin-top:12px;"><button class="btn btn-primary" id="rebuildBtn">重新构建</button><button class="btn btn-secondary" id="freshDeployBtn" style="margin-left:8px;">全新部署 &rarr;</button></div><div id="buildLog"></div>';
+        checkDiv.querySelector('#freshDeployBtn').onclick = () => {
+          showConfirm('全新部署会覆盖当前所有配置和数据，确定要继续吗？', () => { state.step = 3; render(); });
+        };
         checkDiv.querySelector('#rebuildBtn').onclick = async () => {
           const btn = checkDiv.querySelector('#rebuildBtn');
           btn.disabled = true;
@@ -3218,7 +3238,9 @@ async function renderStep2(el) {
                 logDiv.innerHTML = '<div class="hint-box green" style="text-align:center;">构建完成！正在重新检查...</div>';
                 setTimeout(() => renderStep2(el), 3000);
               } else {
-                logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">构建失败。请检查日志。</div>';
+                logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">构建失败。请检查日志。</div><div class="actions" style="margin-top:8px;text-align:center;"><button class="btn btn-secondary" id="freshDeployNoContBtn">全新部署 &rarr;</button></div>';
+                const fdBtn = logDiv.querySelector('#freshDeployNoContBtn');
+                if (fdBtn) fdBtn.onclick = () => { showConfirm('全新部署会覆盖当前所有配置和数据，确定要继续吗？', () => { state.step = 3; render(); }); };
                 btn.disabled = false; btn.textContent = '重试';
               }
             }
@@ -3245,7 +3267,9 @@ async function renderStep2(el) {
                 logDiv.innerHTML = '<div class="hint-box green" style="text-align:center;">服务已启动！正在重新检查...</div>';
                 setTimeout(() => renderStep2(el), 3000);
               } else {
-                logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">启动失败。请检查日志或尝试全新安装。</div>';
+                logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">启动失败。请检查日志或尝试全新部署。</div><div class="actions" style="margin-top:8px;text-align:center;"><button class="btn btn-secondary" id="freshDeployStartBtn">全新部署 &rarr;</button></div>';
+                const fdBtn = logDiv.querySelector('#freshDeployStartBtn');
+                if (fdBtn) fdBtn.onclick = () => { showConfirm('全新部署会覆盖当前所有配置和数据，确定要继续吗？', () => { state.step = 3; render(); }); };
                 btn.disabled = false; btn.textContent = '重试';
               }
             }
