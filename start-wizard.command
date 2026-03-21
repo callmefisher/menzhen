@@ -207,20 +207,27 @@ download_wizard() {
     return 1
 }
 
+# Helper: extract WIZARD_VERSION value from a Python file
+get_wizard_version() {
+    grep -o 'WIZARD_VERSION *= *"[^"]*"' "$1" 2>/dev/null | head -1 | sed 's/.*"\([^"]*\)".*/\1/'
+}
+
 if [[ -f "deploy-wizard.py" ]]; then
     echo ""
     echo "[*] 检测到已有向导程序，正在检查更新..."
     TEMP_FILE="deploy-wizard.py.download"
     if download_wizard "$TEMP_FILE"; then
-        if ! grep -q 'WIZARD_VERSION' "$TEMP_FILE"; then
+        REMOTE_VER=$(get_wizard_version "$TEMP_FILE")
+        LOCAL_VER=$(get_wizard_version "deploy-wizard.py")
+        if [[ -z "$REMOTE_VER" ]]; then
             echo "[!] 下载的文件缺少版本号，继续使用当前版本"
             rm -f "$TEMP_FILE"
-        elif ! diff -q deploy-wizard.py "$TEMP_FILE" >/dev/null 2>&1; then
+        elif [[ "$REMOTE_VER" > "$LOCAL_VER" ]]; then
             cp deploy-wizard.py deploy-wizard.py.bak
             mv "$TEMP_FILE" deploy-wizard.py
-            echo "[*] 向导程序已更新到最新版本！（旧版本备份为 deploy-wizard.py.bak）"
+            echo "[*] 向导程序已更新: $LOCAL_VER → $REMOTE_VER（旧版本备份为 deploy-wizard.py.bak）"
         else
-            echo "[*] 向导程序已是最新版本"
+            echo "[*] 向导程序已是最新版本 ($LOCAL_VER)"
             rm -f "$TEMP_FILE"
         fi
     else
