@@ -30,7 +30,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.03.21.132603"
+WIZARD_VERSION = "2026.03.21.205403"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -249,6 +249,46 @@ def _popen_kwargs():
     if sys.platform == "win32":
         return {"creationflags": subprocess.CREATE_NO_WINDOW}
     return {}
+
+
+# Services that need building (order: simple first, complex last)
+BUILD_SERVICES = ["mysql", "nginx", "backup", "api", "web"]
+
+
+def _per_service_build_cmd(os_key, standalone=True):
+    """Generate shell command to build each Docker service individually.
+
+    Building per-service avoids BuildKit's atomic image export: if one
+    service fails, successfully built images are still loaded into Docker.
+
+    Args:
+        os_key: "windows" or other (macOS/Linux).
+        standalone: If True (default), bash variant exits with the tracked
+            error code.  Set False when embedding in a larger command chain
+            (e.g. pull-and-rebuild) so the chain can continue.
+    """
+    n = len(BUILD_SERVICES)
+    if os_key == "windows":
+        # cmd.exe: use & to run all regardless of failures.
+        # Exit code comes from last command; wizard verifies via check-images.
+        steps = [
+            f"echo === [{i}/{n}] 构建 {svc} === & docker compose build {svc}"
+            for i, svc in enumerate(BUILD_SERVICES, 1)
+        ]
+        return " & ".join(steps)
+    else:
+        # bash: track failures with _f variable, exit non-zero if any failed.
+        # Wrapped in (...) subshell so the ';' separators don't break an
+        # outer && chain (e.g. git fetch && ... && BUILD_CMD).
+        steps = [
+            f"echo '=== [{i}/{n}] 构建 {svc} ==='; docker compose build {svc} || _f=1"
+            for i, svc in enumerate(BUILD_SERVICES, 1)
+        ]
+        inner = "_f=0; " + "; ".join(steps)
+        if standalone:
+            return "(" + inner + "; exit $_f)"
+        else:
+            return "(" + inner + ")"
 
 
 def run_command(cmd, cwd=None, timeout=600):
@@ -1333,6 +1373,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             else:
                 EXCLUDE = "':!deploy-wizard.py' ':!start-wizard.command' ':!start-wizard.bat' ':!start-wizard.sh'"
             if needs_clone:
+                build_cmd = _per_service_build_cmd(os_key)
                 if os_key == "windows":
                     clone_and_build = (
                         f'cd /d "{q_dir}" && '
@@ -1342,8 +1383,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         "git fetch origin && "
                         f"git checkout -f origin/main -- . {EXCLUDE} && "
                         "git reset origin/main && "
-                        "echo 源码下载完成，开始构建... && "
-                        "docker compose build"
+                        f"echo 源码下载完成，开始构建... & {build_cmd}"
                     )
                     stream_command(self, ["cmd", "/c", clone_and_build])
                 else:
@@ -1355,12 +1395,17 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         "git fetch origin && "
                         f"git checkout -f origin/main -- . {EXCLUDE} && "
                         "git reset origin/main && "
-                        "echo '源码下载完成，开始构建...' && "
-                        "docker compose build"
+                        f"echo '源码下载完成，开始构建...' && {build_cmd}"
                     )
                     stream_command(self, ["bash", "-c", clone_and_build])
             else:
-                stream_command(self, ["docker", "compose", "build"])
+                build_cmd = _per_service_build_cmd(os_key)
+                if os_key == "windows":
+                    stream_command(self, ["cmd", "/c",
+                                          f'cd /d "{q_dir}" && {build_cmd}'])
+                else:
+                    stream_command(self, ["bash", "-c",
+                                          f"cd {q_dir} && {build_cmd}"])
             return
 
         if self.path == "/api/check-repo":
@@ -1724,6 +1769,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 EXCLUDE = ":!deploy-wizard.py :!start-wizard.command :!start-wizard.bat :!start-wizard.sh"
             else:
                 EXCLUDE = "':!deploy-wizard.py' ':!start-wizard.command' ':!start-wizard.bat' ':!start-wizard.sh'"
+            build_cmd = _per_service_build_cmd(os_key, standalone=False)
             if os_key == "windows":
                 q_dir = str(SCRIPT_DIR)
                 GIT_INIT_WIN = (
@@ -1738,11 +1784,11 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "git fetch origin && "
                     f"git checkout -f origin/main -- . {EXCLUDE} && "
                     "git reset origin/main && "
-                    "echo [2/3] 正在重新构建程序（约5-15分钟）... && "
-                    "docker compose build && "
-                    "echo [3/3] 正在重启服务... && "
-                    "docker compose up -d --force-recreate && "
-                    "docker compose restart nginx && "
+                    f"echo [2/3] 正在重新构建程序（约5-15分钟）... & "
+                    f"{build_cmd} & "
+                    "echo [3/3] 正在重启服务... & "
+                    "docker compose up -d --force-recreate & "
+                    "docker compose restart nginx & "
                     "echo 更新完成!"
                 ]
             else:
@@ -1755,8 +1801,8 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "git fetch origin && "
                     f"git checkout -f origin/main -- . {EXCLUDE} && "
                     "git reset origin/main && "
-                    "echo '[2/3] 正在重新构建程序（约5-15分钟）...' && "
-                    "docker compose build && "
+                    f"echo '[2/3] 正在重新构建程序（约5-15分钟）...' && "
+                    f"{build_cmd} && "
                     "echo '[3/3] 正在重启服务...' && "
                     "docker compose up -d --force-recreate && "
                     "docker compose restart nginx && "
