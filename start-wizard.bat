@@ -116,12 +116,12 @@ if exist "%~dp0deploy-wizard.py" (
             for /f "tokens=3" %%V in ('findstr /r "^WIZARD_VERSION" "%~dp0deploy-wizard.py"') do set "LOCAL_VER=%%~V"
             for /f "tokens=3" %%V in ('findstr /r "^WIZARD_VERSION" "%~dp0deploy-wizard.py.download"') do set "REMOTE_VER=%%~V"
             if "!REMOTE_VER!" GTR "!LOCAL_VER!" (
-                copy /y "%~dp0deploy-wizard.py" "%~dp0deploy-wizard.py.bak" >/dev/null 2>&1
-                move /y "%~dp0deploy-wizard.py.download" "%~dp0deploy-wizard.py" >/dev/null 2>&1
+                copy /y "%~dp0deploy-wizard.py" "%~dp0deploy-wizard.py.bak" >nul 2>&1
+                move /y "%~dp0deploy-wizard.py.download" "%~dp0deploy-wizard.py" >nul 2>&1
                 echo [*] 向导程序已更新到最新版本
             ) else (
                 echo [*] 向导程序已是最新版本
-                del /f "%~dp0deploy-wizard.py.download" >/dev/null 2>&1
+                del /f "%~dp0deploy-wizard.py.download" >nul 2>&1
             )
         ) else (
             echo [x] 下载的文件无效，继续使用当前版本
