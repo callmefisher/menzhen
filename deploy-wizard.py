@@ -441,8 +441,21 @@ def stream_command(handler, cmd, cwd=None):
             handler.wfile.flush()
 
     try:
+        # On Windows, ["cmd", "/c", "..."] goes through list2cmdline() which
+        # escapes inner double-quotes with \" — but cmd.exe doesn't recognise
+        # \" (it uses ^" or "").  The mangled quotes corrupt paths and URLs.
+        # Fix: keep "cmd /c" as-is and append the command string verbatim so
+        # the user-written quotes reach cmd.exe unescaped.
+        _cmd = cmd
+        if (platform.system() == "Windows"
+                and isinstance(cmd, list) and len(cmd) >= 3
+                and cmd[0].lower() in ("cmd", "cmd.exe")
+                and cmd[1].lower() in ("/c", "/k")):
+            # Pass cmd[2] verbatim — on Windows, Popen with a string goes
+            # straight to CreateProcess without list2cmdline quoting.
+            _cmd = subprocess.list2cmdline(cmd[:2]) + " " + cmd[2]
         proc = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            _cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             cwd=cwd or str(SCRIPT_DIR),
             **_popen_kwargs()
         )
@@ -1299,6 +1312,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             return
 
         if self.path == "/api/build-full":
+            _refresh_windows_path()
             # Before building, ensure source code exists (server/, web/, scripts/, nginx/, mysql/)
             # If missing, auto-clone from git — same logic as /api/clone-repo
             needs_clone = not all([
