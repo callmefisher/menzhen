@@ -1,0 +1,9 @@
+# Dependencies and build output (rebuilt inside container)
+node_modules/
+dist/
+
+# Test files not needed in production image
+*.test.ts
+*.test.tsx
+__tests__/
+src/test/

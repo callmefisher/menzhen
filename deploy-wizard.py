@@ -30,7 +30,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.03.21.213303"
+WIZARD_VERSION = "2026.03.22.072903"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -463,13 +463,19 @@ def _decode_bytes(raw):
     return raw.decode('utf-8', errors='replace')
 
 
-def stream_command(handler, cmd, cwd=None):
-    """Run a command and stream output via SSE. Only accepts hardcoded commands."""
-    handler.send_response(200)
-    handler.send_header("Content-Type", "text/event-stream")
-    handler.send_header("Cache-Control", "no-cache")
-    handler.send_header("Connection", "keep-alive")
-    handler.end_headers()
+def stream_command(handler, cmd, cwd=None, headers_sent=False):
+    """Run a command and stream output via SSE. Only accepts hardcoded commands.
+
+    Args:
+        headers_sent: If True, skip sending SSE headers (caller already sent
+            them, e.g. after _wait_docker_sse).
+    """
+    if not headers_sent:
+        handler.send_response(200)
+        handler.send_header("Content-Type", "text/event-stream")
+        handler.send_header("Cache-Control", "no-cache")
+        handler.send_header("Connection", "keep-alive")
+        handler.end_headers()
 
     def _send_line(raw_buf):
         """Decode and send a line buffer as SSE event."""
@@ -532,6 +538,32 @@ def stream_command(handler, cmd, cwd=None):
 
 
 # ---------------------------------------------------------------------------
+# Docker daemon readiness wait (reusable SSE helper)
+# ---------------------------------------------------------------------------
+
+def _wait_docker_sse(handler, max_retries=30, interval=2):
+    """Wait for Docker daemon to be ready, streaming SSE progress.
+
+    Must be called AFTER SSE headers are sent (handler._start_sse).
+    Returns True if Docker becomes ready, False on timeout or disconnect.
+    Reusable by any endpoint that needs Docker before proceeding.
+    """
+    try:
+        handler._sse_log("正在检查 Docker 状态...")
+        for i in range(1, max_retries + 1):
+            rc, _, _ = run_command(["docker", "info"], timeout=5)
+            if rc == 0:
+                handler._sse_log("Docker 已就绪")
+                return True
+            handler._sse_log(f"等待 Docker 就绪... ({i}/{max_retries})")
+            time.sleep(interval)
+        handler._sse_log("Docker 未就绪，请检查 Docker Desktop 是否正在运行。")
+    except (BrokenPipeError, ConnectionResetError, OSError):
+        pass  # client disconnected
+    return False
+
+
+# ---------------------------------------------------------------------------
 # HTTP Handler
 # ---------------------------------------------------------------------------
 
@@ -542,6 +574,32 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
         pass
 
     MAX_BODY_SIZE = 64 * 1024  # 64 KB
+
+    def _start_sse(self):
+        """Send SSE response headers."""
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.end_headers()
+
+    def _sse_log(self, text):
+        """Send a single SSE log event."""
+        try:
+            msg = json.dumps({"type": "log", "data": text})
+            self.wfile.write(f"data: {msg}\n\n".encode())
+            self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+
+    def _sse_done(self, result, code=0):
+        """Send SSE done event."""
+        try:
+            data = json.dumps({"type": "done", "result": result, "code": code})
+            self.wfile.write(f"data: {data}\n\n".encode())
+            self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
 
     def _send_json(self, data, status=200):
         self.send_response(status)
@@ -1332,7 +1390,14 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             return
 
         if self.path == "/api/deploy":
+            _refresh_windows_path()
             os_key, _ = detect_os()
+            # Wait for Docker daemon before deploying (reusable module)
+            self._start_sse()
+            if not _wait_docker_sse(self, max_retries=15):
+                self._sse_done("error", code=1)
+                return
+            self._sse_log("正在启动服务...")
             if os_key == "windows":
                 stream_command(self, [
                     "cmd", "/c",
@@ -1340,7 +1405,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "docker compose up -d 2>&1 && "
                     "docker compose restart nginx 2>&1 && "
                     "echo 服务启动完成!"
-                ])
+                ], headers_sent=True)
             else:
                 q_dir = shlex.quote(str(SCRIPT_DIR))
                 stream_command(self, [
@@ -1349,7 +1414,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "docker compose up -d 2>&1 && "
                     "docker compose restart nginx 2>&1 && "
                     "echo '服务启动完成!'"
-                ])
+                ], headers_sent=True)
             return
 
         if self.path == "/api/build-full":
