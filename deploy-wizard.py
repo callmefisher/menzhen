@@ -172,6 +172,50 @@ def generate_site_id():
     return prefix + suffix
 
 
+_path_refresh_lock = threading.Lock()
+
+
+def _refresh_windows_path():
+    """Re-read PATH from Windows registry and merge into current PATH.
+
+    When Docker Desktop is installed while the wizard is already running,
+    the process's inherited PATH is stale and ``where docker`` fails.
+    Registry values are merged (appended) — existing entries are preserved.
+    """
+    if platform.system() != "Windows":
+        return
+    with _path_refresh_lock:
+        try:
+            import winreg
+            # Collect existing PATH entries (preserve Python interpreter path etc.)
+            # Use case-insensitive dedup since Windows paths are case-insensitive
+            existing = set(e.lower() for e in os.environ.get("PATH", "").split(";") if e)
+            new_entries = []
+            for hive, subkey in [
+                (winreg.HKEY_LOCAL_MACHINE,
+                 r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"),
+                (winreg.HKEY_CURRENT_USER, r"Environment"),
+            ]:
+                try:
+                    with winreg.OpenKey(hive, subkey) as key:
+                        # Registry key names are case-insensitive on Windows
+                        val, _ = winreg.QueryValueEx(key, "Path")
+                        # Expand %SystemRoot% and similar placeholders
+                        expanded = os.path.expandvars(val)
+                        for entry in expanded.split(";"):
+                            if entry and entry.lower() not in existing:
+                                new_entries.append(entry)
+                                existing.add(entry.lower())
+                except (FileNotFoundError, PermissionError):
+                    pass
+            if new_entries:
+                current = os.environ.get("PATH", "")
+                sep = ";" if current else ""
+                os.environ["PATH"] = current + sep + ";".join(new_entries)
+        except Exception:
+            pass
+
+
 def check_command(cmd):
     """Check if a command is available."""
     try:
@@ -489,6 +533,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             return
 
         if self.path == "/api/check-service":
+            _refresh_windows_path()
             ip = get_local_ip()
             port_ok = check_service(ip)
             real_os, real_os_name = detect_os()
@@ -601,6 +646,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             return
 
         if self.path == "/api/check-deps":
+            _refresh_windows_path()
             docker_ok = check_command("docker")
             compose_ok = check_docker_compose()
             git_ok = check_command("git")
@@ -1299,6 +1345,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             return
 
         if self.path == "/api/check-repo":
+            _refresh_windows_path()
             # Check if essential project files exist
             checks = {
                 "docker_compose": (SCRIPT_DIR / "docker-compose.yml").exists(),
@@ -1316,6 +1363,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             return
 
         if self.path == "/api/download-compose":
+            _refresh_windows_path()
             # Download only docker-compose.yml from git (lightweight)
             os_key, _ = detect_os()
             script_dir = str(SCRIPT_DIR)
@@ -3437,7 +3485,7 @@ async function renderStep3(el) {
 // ---- 第四步：环境检查 ----
 async function renderStep4(el) {
   el.innerHTML = `
-    <h2>第四步：检查运行环境</h2>
+    <h2>第四步：检查必要软件</h2>
     <p class="subtitle"><span class="spinner"></span> 正在检查电脑上是否已安装必需的软件...</p>
   `;
 
@@ -3445,15 +3493,15 @@ async function renderStep4(el) {
 
   let items = '';
   items += `<div class="status-item">
-    <div><strong>运行环境</strong><br><small>${esc(data.docker_version || '未安装')}</small></div>
+    <div><strong>Docker</strong><br><small>${esc(data.docker_version || '未安装')}</small></div>
     <span class="badge ${data.docker ? 'ok' : 'fail'}">${data.docker ? '已安装' : '未安装'}</span>
   </div>`;
   items += `<div class="status-item">
-    <div><strong>服务管理工具</strong><br><small>${esc(data.compose_version || '未安装')}</small></div>
+    <div><strong>Docker Compose</strong><br><small>${esc(data.compose_version || '未安装')}</small></div>
     <span class="badge ${data.compose ? 'ok' : 'fail'}">${data.compose ? '已安装' : '未安装'}</span>
   </div>`;
   items += `<div class="status-item">
-    <div><strong>代码管理工具</strong><br><small>${esc(data.git_version || '未安装')}</small></div>
+    <div><strong>Git</strong><br><small>${esc(data.git_version || '未安装')}</small></div>
     <span class="badge ${data.git ? 'ok' : 'fail'}">${data.git ? '已安装' : '未安装'}</span>
   </div>`;
 
@@ -3472,15 +3520,15 @@ async function renderStep4(el) {
         如果安装失败，请联系技术支持人员协助。
       </div>
       <div style="display:flex; gap:12px; margin-top:12px;">
-        ${missingDocker ? '<button class="btn btn-primary" id="installDockerBtn">安装运行环境</button>' : ''}
-        ${missingGit ? '<button class="btn btn-primary" id="installGitBtn">安装代码管理工具</button>' : ''}
+        ${missingDocker ? '<button class="btn btn-primary" id="installDockerBtn">安装 Docker</button>' : ''}
+        ${missingGit ? '<button class="btn btn-primary" id="installGitBtn">安装 Git</button>' : ''}
       </div>
       <div id="installLog"></div>
     `;
   }
 
   el.innerHTML = `
-    <h2>第四步：检查运行环境</h2>
+    <h2>第四步：检查必要软件</h2>
     <p class="subtitle">以下是您电脑（${esc(state.osName)}）上的软件情况：</p>
     ${items}
     ${installSection}
