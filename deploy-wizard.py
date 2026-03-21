@@ -30,7 +30,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.03.21.205403"
+WIZARD_VERSION = "2026.03.21.213303"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -266,6 +266,7 @@ def _per_service_build_cmd(os_key, standalone=True):
         standalone: If True (default), bash variant exits with the tracked
             error code.  Set False when embedding in a larger command chain
             (e.g. pull-and-rebuild) so the chain can continue.
+            Only affects bash; Windows always uses & (unconditional).
     """
     n = len(BUILD_SERVICES)
     if os_key == "windows":
@@ -1383,7 +1384,8 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         "git fetch origin && "
                         f"git checkout -f origin/main -- . {EXCLUDE} && "
                         "git reset origin/main && "
-                        f"echo 源码下载完成，开始构建... & {build_cmd}"
+                        "echo 源码下载完成，开始构建... & "
+                        f"docker compose pull & {build_cmd}"
                     )
                     stream_command(self, ["cmd", "/c", clone_and_build])
                 else:
@@ -1395,17 +1397,20 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         "git fetch origin && "
                         f"git checkout -f origin/main -- . {EXCLUDE} && "
                         "git reset origin/main && "
-                        f"echo '源码下载完成，开始构建...' && {build_cmd}"
+                        "echo '源码下载完成，开始构建...' && "
+                        f"docker compose pull; {build_cmd}"
                     )
                     stream_command(self, ["bash", "-c", clone_and_build])
             else:
                 build_cmd = _per_service_build_cmd(os_key)
                 if os_key == "windows":
                     stream_command(self, ["cmd", "/c",
-                                          f'cd /d "{q_dir}" && {build_cmd}'])
+                                          f'cd /d "{q_dir}" && '
+                                          f"docker compose pull & {build_cmd}"])
                 else:
                     stream_command(self, ["bash", "-c",
-                                          f"cd {q_dir} && {build_cmd}"])
+                                          f"cd {q_dir} && "
+                                          f"docker compose pull; {build_cmd}"])
             return
 
         if self.path == "/api/check-repo":
@@ -1785,7 +1790,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     f"git checkout -f origin/main -- . {EXCLUDE} && "
                     "git reset origin/main && "
                     f"echo [2/3] 正在重新构建程序（约5-15分钟）... & "
-                    f"{build_cmd} & "
+                    f"docker compose pull & {build_cmd} & "
                     "echo [3/3] 正在重启服务... & "
                     "docker compose up -d --force-recreate & "
                     "docker compose restart nginx & "
@@ -1802,7 +1807,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     f"git checkout -f origin/main -- . {EXCLUDE} && "
                     "git reset origin/main && "
                     f"echo '[2/3] 正在重新构建程序（约5-15分钟）...' && "
-                    f"{build_cmd} && "
+                    f"docker compose pull; {build_cmd} && "
                     "echo '[3/3] 正在重启服务...' && "
                     "docker compose up -d --force-recreate && "
                     "docker compose restart nginx && "
