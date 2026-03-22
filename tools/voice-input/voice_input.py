@@ -8,6 +8,7 @@
 
 import argparse
 import os
+import signal
 import ssl
 import subprocess
 import sys
@@ -474,6 +475,8 @@ def main():
                         help="静音多少秒后自动停止录音（默认: 2.0）")
     parser.add_argument("--silence-threshold", type=float, default=-30.0,
                         help="静音判定阈值 dB（默认: -30.0）")
+    parser.add_argument("--signal-mode", action="store_true",
+                        help="信号模式：由 Swift 父进程通过 SIGUSR1 触发录音（无需 CGEventTap）")
     args = parser.parse_args()
 
     # 设置全局静音检测配置
@@ -505,22 +508,37 @@ def main():
             else:
                 stop_and_dispatch(model, args.language)
 
+    mode_label = "信号模式 (SIGUSR1)" if args.signal_mode else "CGEventTap"
     print("", flush=True)
     print("=" * 50, flush=True)
     print("  语音输入工具已启动", flush=True)
     print(f"  热键: {args.hotkey.upper()}", flush=True)
     print(f"  模型: {args.model} | 语言: {args.language}", flush=True)
     print("  录音: AVFoundation (原生)", flush=True)
+    print(f"  热键监听: {mode_label}", flush=True)
     print(f"  静音自动停止: {SILENCE_TIMEOUT}s / {SILENCE_THRESHOLD}dB", flush=True)
     print("  按热键开始录音，说完自动停止", flush=True)
     print("  Ctrl+C 退出", flush=True)
     print("=" * 50, flush=True)
     print("", flush=True)
 
-    try:
-        run_event_loop(modifier_mask, keycode, on_hotkey)
-    except KeyboardInterrupt:
-        print("\n[👋] 已退出", flush=True)
+    if args.signal_mode:
+        # 信号模式：由 Swift 父进程通过 SIGUSR1 触发
+        def _sigusr1_handler(signum, frame):
+            threading.Thread(target=on_hotkey, daemon=True).start()
+        signal.signal(signal.SIGUSR1, _sigusr1_handler)
+        print("[✅] 信号模式就绪，等待 SIGUSR1...", flush=True)
+        try:
+            while True:
+                time.sleep(3600)
+        except KeyboardInterrupt:
+            print("\n[👋] 已退出", flush=True)
+    else:
+        # 传统模式：Python 自建 CGEventTap（需要辅助功能权限）
+        try:
+            run_event_loop(modifier_mask, keycode, on_hotkey)
+        except KeyboardInterrupt:
+            print("\n[👋] 已退出", flush=True)
 
 
 if __name__ == "__main__":

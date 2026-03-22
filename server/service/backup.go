@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -44,24 +45,88 @@ type BackupFileList struct {
 
 // BackupService 备份恢复服务
 type BackupService struct {
-	tasks      map[string]*TaskStatus
-	mu         sync.RWMutex
-	httpClient *http.Client
+	tasks          map[string]*TaskStatus
+	mu             sync.RWMutex
+	httpClient     *http.Client
+	dockerAPIVer    atomic.Value // stores string, e.g. "v1.47" — thread-safe
+	apiVerFetchedAt atomic.Int64 // unix seconds — thread-safe
 }
+
+// defaultDockerAPIVer is the fallback when version negotiation fails.
+// Docker Engine 25+ requires >= 1.44; older engines support 1.41+.
+const defaultDockerAPIVer = "v1.44"
+
+// apiVersionTTL is how long we cache the negotiated API version before re-negotiating.
+const apiVersionTTL = 5 * 60 // 5 minutes
 
 // NewBackupService 创建备份服务实例
 func NewBackupService() *BackupService {
-	return &BackupService{
-		tasks: make(map[string]*TaskStatus),
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-					return net.Dial("unix", "/var/run/docker.sock")
-				},
-			},
-			Timeout: 10 * time.Minute,
+	transport := &http.Transport{
+		DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+			// NOTE: hard-coded to Unix socket (Linux/macOS).
+			// The api container always runs on Linux, so this is correct
+			// even when Docker Desktop is on Windows/macOS.
+			return net.Dial("unix", "/var/run/docker.sock")
 		},
 	}
+	svc := &BackupService{
+		tasks: make(map[string]*TaskStatus),
+		httpClient: &http.Client{
+			Transport: transport,
+			Timeout:   10 * time.Minute,
+		},
+	}
+	svc.dockerAPIVer.Store(defaultDockerAPIVer)
+	// Negotiate API version from the running Docker daemon.
+	svc.negotiateAPIVersion()
+	return svc
+}
+
+// negotiateAPIVersion queries the Docker daemon for its API version
+// and stores the result. Falls back to defaultDockerAPIVer on failure.
+func (s *BackupService) negotiateAPIVersion() {
+	client := &http.Client{
+		Transport: s.httpClient.Transport,
+		Timeout:   3 * time.Second,
+	}
+	resp, err := client.Get("http://localhost/version")
+	if err != nil {
+		log.Printf("[backup] Docker version negotiation failed: %v, using %s", err, defaultDockerAPIVer)
+		s.dockerAPIVer.Store(defaultDockerAPIVer)
+		s.apiVerFetchedAt.Store(time.Now().Unix())
+		return
+	}
+	defer resp.Body.Close()
+	var info struct {
+		APIVersion string `json:"ApiVersion"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil || info.APIVersion == "" {
+		log.Printf("[backup] Docker version parse failed, using %s", defaultDockerAPIVer)
+		s.dockerAPIVer.Store(defaultDockerAPIVer)
+		s.apiVerFetchedAt.Store(time.Now().Unix())
+		return
+	}
+	ver := "v" + info.APIVersion
+	s.dockerAPIVer.Store(ver)
+	s.apiVerFetchedAt.Store(time.Now().Unix())
+	log.Printf("[backup] Docker API version negotiated: %s", ver)
+}
+
+// getDockerAPIVer returns the cached API version, re-negotiating if stale.
+func (s *BackupService) getDockerAPIVer() string {
+	if time.Now().Unix()-s.apiVerFetchedAt.Load() > int64(apiVersionTTL) {
+		s.negotiateAPIVersion()
+	}
+	v, _ := s.dockerAPIVer.Load().(string)
+	if v == "" {
+		return defaultDockerAPIVer
+	}
+	return v
+}
+
+// dockerURL builds a Docker API URL with the negotiated version.
+func (s *BackupService) dockerURL(path string) string {
+	return fmt.Sprintf("http://localhost/%s%s", s.getDockerAPIVer(), path)
 }
 
 // CheckDockerAvailable 检测 Docker socket 是否可用
@@ -70,7 +135,7 @@ func (s *BackupService) CheckDockerAvailable() bool {
 		Transport: s.httpClient.Transport,
 		Timeout:   3 * time.Second,
 	}
-	resp, err := pingClient.Get("http://localhost/v1.41/_ping")
+	resp, err := pingClient.Get(s.dockerURL("/_ping"))
 	if err != nil {
 		return false
 	}
@@ -373,7 +438,7 @@ func (s *BackupService) dockerExecStreaming(taskID string, cmd ...string) (strin
 	})
 
 	createReq, err := http.NewRequest("POST",
-		fmt.Sprintf("http://localhost/v1.41/containers/%s/exec", container),
+		s.dockerURL(fmt.Sprintf("/containers/%s/exec", container)),
 		bytes.NewReader(createBody))
 	if err != nil {
 		return "", fmt.Errorf("create exec request failed: %v", err)
@@ -403,7 +468,7 @@ func (s *BackupService) dockerExecStreaming(taskID string, cmd ...string) (strin
 		"Tty":    false,
 	})
 	startReq, err := http.NewRequest("POST",
-		fmt.Sprintf("http://localhost/v1.41/exec/%s/start", execCreate.ID),
+		s.dockerURL(fmt.Sprintf("/exec/%s/start", execCreate.ID)),
 		bytes.NewReader(startBody))
 	if err != nil {
 		return "", fmt.Errorf("start exec request failed: %v", err)
@@ -427,7 +492,7 @@ func (s *BackupService) dockerExecStreaming(taskID string, cmd ...string) (strin
 
 	// Inspect exit code
 	inspectReq, _ := http.NewRequest("GET",
-		fmt.Sprintf("http://localhost/v1.41/exec/%s/json", execCreate.ID), nil)
+		s.dockerURL(fmt.Sprintf("/exec/%s/json", execCreate.ID)), nil)
 	inspectResp, err := s.httpClient.Do(inspectReq)
 	if err != nil {
 		return output, fmt.Errorf("无法获取执行结果")
@@ -457,7 +522,7 @@ func (s *BackupService) dockerExecStreamingWithPrefix(taskID, prefix string, cmd
 		"Cmd":          cmd,
 	})
 	createReq, err := http.NewRequest("POST",
-		fmt.Sprintf("http://localhost/v1.41/containers/%s/exec", container),
+		s.dockerURL(fmt.Sprintf("/containers/%s/exec", container)),
 		bytes.NewReader(createBody))
 	if err != nil {
 		return "", fmt.Errorf("create exec request failed: %v", err)
@@ -483,7 +548,7 @@ func (s *BackupService) dockerExecStreamingWithPrefix(taskID, prefix string, cmd
 
 	startBody, _ := json.Marshal(map[string]interface{}{"Detach": false, "Tty": false})
 	startReq, err := http.NewRequest("POST",
-		fmt.Sprintf("http://localhost/v1.41/exec/%s/start", execCreate.ID),
+		s.dockerURL(fmt.Sprintf("/exec/%s/start", execCreate.ID)),
 		bytes.NewReader(startBody))
 	if err != nil {
 		return "", fmt.Errorf("start exec request failed: %v", err)
@@ -505,7 +570,7 @@ func (s *BackupService) dockerExecStreamingWithPrefix(taskID, prefix string, cmd
 	})
 
 	inspectReq, _ := http.NewRequest("GET",
-		fmt.Sprintf("http://localhost/v1.41/exec/%s/json", execCreate.ID), nil)
+		s.dockerURL(fmt.Sprintf("/exec/%s/json", execCreate.ID)), nil)
 	inspectResp, err := s.httpClient.Do(inspectReq)
 	if err != nil {
 		return output, fmt.Errorf("无法获取执行结果")
@@ -557,7 +622,7 @@ func apiContainerName() string {
 func (s *BackupService) RestartAPIContainer() error {
 	container := apiContainerName()
 	req, err := http.NewRequest("POST",
-		fmt.Sprintf("http://localhost/v1.41/containers/%s/restart?t=3", container), nil)
+		s.dockerURL(fmt.Sprintf("/containers/%s/restart?t=3", container)), nil)
 	if err != nil {
 		return fmt.Errorf("create restart request failed: %v", err)
 	}
@@ -586,7 +651,7 @@ func (s *BackupService) dockerExec(cmd ...string) (string, error) {
 	})
 
 	createReq, err := http.NewRequest("POST",
-		fmt.Sprintf("http://localhost/v1.41/containers/%s/exec", container),
+		s.dockerURL(fmt.Sprintf("/containers/%s/exec", container)),
 		bytes.NewReader(createBody))
 	if err != nil {
 		return "", fmt.Errorf("create exec request failed: %v", err)
@@ -618,7 +683,7 @@ func (s *BackupService) dockerExec(cmd ...string) (string, error) {
 	})
 
 	startReq, err := http.NewRequest("POST",
-		fmt.Sprintf("http://localhost/v1.41/exec/%s/start", execCreate.ID),
+		s.dockerURL(fmt.Sprintf("/exec/%s/start", execCreate.ID)),
 		bytes.NewReader(startBody))
 	if err != nil {
 		return "", fmt.Errorf("start exec request failed: %v", err)
@@ -636,7 +701,7 @@ func (s *BackupService) dockerExec(cmd ...string) (string, error) {
 
 	// Step 3: Inspect exec to get exit code
 	inspectReq, err := http.NewRequest("GET",
-		fmt.Sprintf("http://localhost/v1.41/exec/%s/json", execCreate.ID),
+		s.dockerURL(fmt.Sprintf("/exec/%s/json", execCreate.ID)),
 		nil)
 	if err != nil {
 		log.Printf("[backup] exec inspect request create failed: %v", err)

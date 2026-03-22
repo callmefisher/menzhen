@@ -31,7 +31,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.03.22.175400"
+WIZARD_VERSION = "2026.03.22.191100"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -673,6 +673,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
     def _send_json(self, data, status=200):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-cache, no-store")
         self.end_headers()
         self.wfile.write(json.dumps(data, ensure_ascii=False).encode())
 
@@ -1996,6 +1997,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
         if self.path == "/api/get-env-config":
             # Return env schema + current values from .env or .env.example
             env_path = SCRIPT_DIR / ".env"
+            _rmdir_safe(env_path)  # Docker bind-mount may create .env as directory
             example_path = SCRIPT_DIR / ".env.example"
             current = {}
             src = env_path if env_path.is_file() else example_path
@@ -3889,6 +3891,9 @@ async function renderStep5(el) {
     <p class="subtitle"><span class="spinner"></span> 正在检查...</p>
   `;
 
+  // Ensure .env is a file (clean up Docker bind-mount directory if needed)
+  await api('/api/ensure-env').catch(() => {});
+
   // 并行获取状态
   const [repoData, imgData, envData] = await Promise.all([
     api('/api/check-repo'),
@@ -3980,6 +3985,8 @@ async function renderStep5(el) {
         </div>
         <button class="btn btn-success" id="buildBtn" style="margin-top:12px; font-size:16px; padding:12px 28px;">开始构建程序</button>
       `;
+    } else if (!envConfigured) {
+      buildSection = '<div class="hint-box yellow" style="margin-top:12px; text-align:center;">程序已就绪，请先保存上方配置后继续。</div>';
     } else {
       buildSection = '<div class="hint-box green" style="margin-top:12px; text-align:center;">所有程序已就绪，可以继续下一步！</div>';
     }
