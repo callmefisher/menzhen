@@ -30,7 +30,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.03.22.094603"
+WIZARD_VERSION = "2026.03.22.125602"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -4170,6 +4170,12 @@ async function showDeployResult(el) {
     </div>
   `;
 
+  // Auto-scroll to "点击打开系统" button so user can click immediately
+  const openBtn = result.querySelector('.btn-success');
+  if (openBtn) {
+    setTimeout(() => openBtn.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300);
+  }
+
   el.querySelector('.actions').innerHTML = '';
 }
 
@@ -4472,6 +4478,23 @@ def main():
     if desktop:
         def open_browser():
             time.sleep(1)
+            # Minimize terminal so the browser window appears in front
+            if sys.platform == "win32":
+                try:
+                    import ctypes
+                    hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+                    if hwnd:
+                        ctypes.windll.user32.ShowWindow(hwnd, 6)  # SW_MINIMIZE
+                except Exception:
+                    pass
+            elif sys.platform == "darwin":
+                try:
+                    subprocess.run(
+                        ["osascript", "-e",
+                         'tell application "Terminal" to set miniaturized of front window to true'],
+                        capture_output=True, timeout=3)
+                except Exception:
+                    pass
             webbrowser.open(f"http://localhost:{port}")
 
         threading.Thread(target=open_browser, daemon=True).start()
