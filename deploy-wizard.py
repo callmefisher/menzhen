@@ -31,7 +31,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.03.22.191100"
+WIZARD_VERSION = "2026.03.23.073000"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -317,6 +317,9 @@ def run_command(cmd, cwd=None, timeout=600):
 
 # Lock for .env read-modify-write sequences (server is multi-threaded)
 _env_lock = threading.Lock()
+
+# Flag: set True when save-env-config detects first install, consumed by build-full
+_fresh_install_pending = False
 
 
 def _rmdir_safe(path):
@@ -1489,6 +1492,11 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
 
         if self.path == "/api/build-full":
             _refresh_windows_path()
+            global _fresh_install_pending
+            with _env_lock:
+                fresh_install = _fresh_install_pending
+                _fresh_install_pending = False
+
             # Before building, ensure source code exists (server/, web/, scripts/, nginx/, mysql/)
             # If missing, auto-clone from git — same logic as /api/clone-repo
             needs_clone = not all([
@@ -1508,11 +1516,31 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 EXCLUDE = ":!deploy-wizard.py :!start-wizard.command :!start-wizard.bat :!start-wizard.sh"
             else:
                 EXCLUDE = "':!deploy-wizard.py' ':!start-wizard.command' ':!start-wizard.bat' ':!start-wizard.sh'"
+            # Fresh install: force remove all containers & volumes to avoid
+            # stale credentials (e.g. MySQL password from a previous install).
+            if fresh_install:
+                if os_key == "windows":
+                    # Parentheses isolate cleanup so & doesn't break the outer && chain
+                    vol_cleanup = (
+                        "(echo 全新安装：正在清理旧数据... "
+                        "& docker compose down -v 2>nul "
+                        "& echo 清理完成) && "
+                    )
+                else:
+                    vol_cleanup = (
+                        "echo '全新安装：正在清理旧数据...' && "
+                        "docker compose down -v 2>/dev/null; "
+                        "echo '清理完成' && "
+                    )
+            else:
+                vol_cleanup = ""
+
             if needs_clone:
                 build_cmd = _per_service_build_cmd(os_key)
                 if os_key == "windows":
                     clone_and_build = (
                         f'cd /d "{q_dir}" && '
+                        f"{vol_cleanup}"
                         "echo 正在下载源码... && "
                         "git init && git config core.autocrlf false && "
                         f'git remote add origin {q_url} 2>nul || git remote set-url origin {q_url} && '
@@ -1526,6 +1554,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 else:
                     clone_and_build = (
                         f"cd {q_dir} && "
+                        f"{vol_cleanup}"
                         "echo '正在下载源码...' && "
                         "git init && git config core.autocrlf false && "
                         f"git remote add origin {q_url} 2>/dev/null || git remote set-url origin {q_url} && "
@@ -1541,10 +1570,12 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 if os_key == "windows":
                     stream_command(self, ["cmd", "/c",
                                           f'cd /d "{q_dir}" && '
+                                          f"{vol_cleanup}"
                                           f"docker compose pull & {build_cmd}"])
                 else:
                     stream_command(self, ["bash", "-c",
                                           f"cd {q_dir} && "
+                                          f"{vol_cleanup}"
                                           f"docker compose pull; {build_cmd}"])
             return
 
@@ -2138,6 +2169,11 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             if not values:
                 self._send_json({"error": "未提供配置内容"}, 400)
                 return
+            # MinIO 密码至少 8 位
+            minio_secret = values.get("MINIO_SECRET_KEY", "")
+            if minio_secret and len(minio_secret) < 8:
+                self._send_json({"error": "MinIO 文件存储密码至少需要 8 位字符"}, 400)
+                return
             env_path = SCRIPT_DIR / ".env"
             example_path = SCRIPT_DIR / ".env.example"
             with _env_lock:
@@ -2186,6 +2222,9 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     elif val:
                         content += f"\n{key}={val}\n"
                 _safe_write_file(env_path, content)
+                if first_install:
+                    global _fresh_install_pending
+                    _fresh_install_pending = True
             self._send_json({"ok": True, "first_install": first_install})
             return
 
@@ -4038,6 +4077,12 @@ async function renderStep5(el) {
       const values = {};
       el.querySelectorAll('.env-input').forEach(inp => { values[inp.dataset.key] = inp.value.trim(); });
       const msgDiv = el.querySelector('#envSaveMsg');
+      // MinIO 密码至少 8 位
+      const minioKey = values['MINIO_SECRET_KEY'] || '';
+      if (minioKey && minioKey.length < 8) {
+        msgDiv.innerHTML = '<span style="color:var(--danger);font-size:15px;">MinIO 文件存储密码至少需要 8 位字符。</span>';
+        return;
+      }
       try {
         const resp = await api('/api/save-env-config', {
           method: 'POST',
@@ -4048,7 +4093,12 @@ async function renderStep5(el) {
           msgDiv.innerHTML = '<span style="color:var(--success);font-size:15px;">配置已保存！正在刷新...</span>';
           setTimeout(() => renderStep5(el), 1000);
         } else {
-          msgDiv.innerHTML = '<span style="color:var(--danger);font-size:15px;">保存失败，请重试。</span>';
+          const errMsg = resp.error || '保存失败，请重试。';
+          msgDiv.innerHTML = '';
+          const errSpan = document.createElement('span');
+          errSpan.style.cssText = 'color:var(--danger);font-size:15px;';
+          errSpan.textContent = errMsg;
+          msgDiv.appendChild(errSpan);
         }
       } catch(e) {
         msgDiv.innerHTML = '<span style="color:var(--danger);font-size:15px;">保存失败，请重试。</span>';
