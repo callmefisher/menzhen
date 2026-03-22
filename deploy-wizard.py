@@ -30,7 +30,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.03.22.092903"
+WIZARD_VERSION = "2026.03.22.094603"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -1824,35 +1824,44 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     except Exception:
                         continue
 
-            # --- .env completeness check: auto-fill missing required fields ---
+            # --- .env completeness check: fill ALL missing fields from .env.example ---
             # save-site-id may create .env with only SITE_ID, or recovery may
-            # produce incomplete .env.  Auto-generate any missing auto_gen secrets
-            # and ensure all ENV_SCHEMA keys exist (empty for optional fields).
+            # produce incomplete .env.  Read .env.example as the canonical source
+            # of all required fields and their defaults, then fill any gaps.
+            # Existing values are NEVER overwritten.
             if env_path.is_file():
                 content = env_path.read_text(encoding="utf-8")
+                example_path = SCRIPT_DIR / ".env.example"
                 patched = False
+                # Step 1: fill from .env.example (the single source of truth)
+                if example_path.is_file():
+                    for line in example_path.read_text(encoding="utf-8").splitlines():
+                        line = line.strip()
+                        if not line or line.startswith("#") or "=" not in line:
+                            continue
+                        key = line.split("=", 1)[0].strip()
+                        default_val = line.split("=", 1)[1].strip()
+                        has_key = re.search(rf"^{re.escape(key)}=", content, re.MULTILINE)
+                        if has_key:
+                            continue  # already exists — never overwrite
+                        content += f"\n{key}={default_val}"
+                        patched = True
+                # Step 2: auto-generate secrets for auto_gen fields (override placeholders)
                 for key, _, _, auto_gen, _ in ENV_SCHEMA:
-                    has_key = re.search(rf"^{re.escape(key)}=", content, re.MULTILINE)
-                    if has_key:
-                        continue  # already exists — never overwrite
-                    if auto_gen:
-                        val = secrets.token_urlsafe(16)[:16]
-                    else:
-                        val = ""  # optional field, add empty placeholder
-                    content += f"\n{key}={val}"
-                    patched = True
-                # Ensure DB_NAME, DB_USER, MINIO_ACCESS_KEY have defaults
-                for key, default in [("DB_NAME", "menzhen"), ("DB_USER", "menzhen"),
-                                      ("MINIO_ACCESS_KEY", "minioadmin")]:
+                    if not auto_gen:
+                        continue
                     existing = re.search(rf"^{re.escape(key)}=(.*)$", content, re.MULTILINE)
-                    if not existing:
-                        content += f"\n{key}={default}"
-                        patched = True
-                    elif not existing.group(1).strip():
+                    if existing and existing.group(1).strip() and \
+                       existing.group(1).strip() not in ("change-me-in-production", "menzhen123", "minioadmin"):
+                        continue  # has a real value — keep it
+                    val = secrets.token_urlsafe(16)[:16]
+                    if existing:
                         content = re.sub(
-                            rf"^{re.escape(key)}=.*$", f"{key}={default}",
+                            rf"^{re.escape(key)}=.*$", f"{key}={val}",
                             content, flags=re.MULTILINE)
-                        patched = True
+                    else:
+                        content += f"\n{key}={val}"
+                    patched = True
                 if patched:
                     env_path.write_text(content, encoding="utf-8", newline="\n")
 
@@ -2073,21 +2082,30 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 else:
                     content = ""
             else:
-                # Already exists: read current .env, only patch changed fields
+                # Already exists: read current .env, patch changed fields
                 content = env_path.read_text(encoding="utf-8")
+                # Merge ALL defaults from .env.example for any missing keys
+                if example_path.exists():
+                    for line in example_path.read_text(encoding="utf-8").splitlines():
+                        line = line.strip()
+                        if not line or line.startswith("#") or "=" not in line:
+                            continue
+                        key = line.split("=", 1)[0].strip()
+                        default_val = line.split("=", 1)[1].strip()
+                        if not re.search(rf"^{re.escape(key)}=", content, re.MULTILINE):
+                            content += f"\n{key}={default_val}"
 
             # Auto-generate secrets for auto_gen fields if value is empty
-            # AND not already set in .env (works regardless of first_install,
-            # because save-site-id may have already created .env with only SITE_ID)
             for key, _, _, auto_gen, _ in ENV_SCHEMA:
                 val = values.get(key, "")
                 if auto_gen and not val:
                     existing = re.search(rf"^{re.escape(key)}=(.+)$", content, re.MULTILINE)
-                    if not existing or not existing.group(1).strip():
+                    if not existing or not existing.group(1).strip() or \
+                       existing.group(1).strip() in ("change-me-in-production", "menzhen123", "minioadmin"):
                         val = secrets.token_urlsafe(16)[:16]
                         values[key] = val
 
-            # Update existing keys or add missing ones
+            # Update existing keys or add user-provided values
             for key, val in values.items():
                 if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
                     continue
@@ -2098,7 +2116,6 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         content, flags=re.MULTILINE
                     )
                 elif val:
-                    # Always add missing keys with non-empty values
                     content += f"\n{key}={val}\n"
             env_path.write_text(content, encoding="utf-8", newline="\n")
             self._send_json({"ok": True, "first_install": first_install})
