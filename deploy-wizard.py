@@ -30,7 +30,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.03.22.072903"
+WIZARD_VERSION = "2026.03.22.092903"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -293,14 +293,21 @@ def _per_service_build_cmd(os_key, standalone=True):
 
 
 def run_command(cmd, cwd=None, timeout=600):
-    """Run a command and return (returncode, stdout, stderr)."""
+    """Run a command and return (returncode, stdout, stderr).
+
+    Uses _decode_bytes (UTF-8 → GBK → fallback) instead of text=True,
+    which would crash on Chinese Windows where the default codec is GBK
+    but Docker outputs UTF-8.
+    """
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True,
+            cmd, capture_output=True,
             cwd=cwd or str(SCRIPT_DIR), timeout=timeout,
             **_popen_kwargs()
         )
-        return result.returncode, result.stdout, result.stderr
+        stdout = _decode_bytes(result.stdout) if result.stdout else ""
+        stderr = _decode_bytes(result.stderr) if result.stderr else ""
+        return result.returncode, stdout, stderr
     except subprocess.TimeoutExpired:
         return -1, "", "命令执行超时"
     except Exception as e:
@@ -663,9 +670,9 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             services = []
             if docker_daemon_ok:
                 rc, out, _ = run_command(["docker", "compose", "ps", "-a", "--format", "json"])
-                if rc == 0 and out.strip():
+                if rc == 0 and (out or "").strip():
                     services = []
-                    for line in out.strip().split("\n"):
+                    for line in (out or "").strip().split("\n"):
                         try:
                             services.append(json.loads(line))
                         except json.JSONDecodeError:
@@ -741,8 +748,8 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         '{{range .Config.Env}}{{println .}}{{end}}',
                         container_name,
                     ])
-                    if rc == 0 and out.strip():
-                        for line in out.strip().splitlines():
+                    if rc == 0 and (out or "").strip():
+                        for line in (out or "").strip().splitlines():
                             if line.startswith("SITE_ID="):
                                 site_id = line.split("=", 1)[1].strip()
                                 source = "container"
@@ -768,15 +775,15 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             if docker_ok:
                 rc, out, _ = run_command(["docker", "--version"])
                 if rc == 0:
-                    docker_ver = out.strip()
+                    docker_ver = (out or "").strip()
             if compose_ok:
                 rc, out, _ = run_command(["docker", "compose", "version"])
                 if rc == 0:
-                    compose_ver = out.strip()
+                    compose_ver = (out or "").strip()
             if git_ok:
                 rc, out, _ = run_command(["git", "--version"])
                 if rc == 0:
-                    git_ver = out.strip()
+                    git_ver = (out or "").strip()
             # Pre-checks: architecture, disk space, network
             arch = platform.machine()  # e.g. x86_64, arm64, AMD64
             disk_gb = 0
@@ -869,8 +876,8 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
         if self.path == "/api/service-status":
             rc, out, _ = run_command(["docker", "compose", "ps", "--format", "json"])
             services = []
-            if rc == 0 and out.strip():
-                for line in out.strip().split("\n"):
+            if rc == 0 and (out or "").strip():
+                for line in (out or "").strip().split("\n"):
                     try:
                         svc = json.loads(line)
                         services.append({
@@ -1612,7 +1619,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     _sse_done({"error": "compare_failed", "message": "无法比较版本差异"})
                     return
                 commits = []
-                for line in out.strip().splitlines():
+                for line in (out or "").strip().splitlines():
                     if line.strip():
                         parts = line.strip().split(" ", 1)
                         commits.append({"hash": parts[0], "message": parts[1] if len(parts) > 1 else ""})
@@ -1673,11 +1680,11 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                             '{{range .Config.Env}}{{println .}}{{end}}',
                             cname,
                         ])
-                        if rc != 0 or not out.strip():
+                        if rc != 0 or not (out or "").strip():
                             continue
                         # Extract all non-system env vars
                         lines = []
-                        for line in out.strip().splitlines():
+                        for line in (out or "").strip().splitlines():
                             if "=" not in line:
                                 continue
                             key = line.split("=", 1)[0]
@@ -1687,7 +1694,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                             env_path.write_text(
                                 "# Recovered from container env vars\n" +
                                 "\n".join(lines) + "\n",
-                                encoding="utf-8",
+                                encoding="utf-8", newline="\n",
                             )
                             source = f"container-env:{cname}"
                             recovered = True
@@ -1816,6 +1823,38 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                             break
                     except Exception:
                         continue
+
+            # --- .env completeness check: auto-fill missing required fields ---
+            # save-site-id may create .env with only SITE_ID, or recovery may
+            # produce incomplete .env.  Auto-generate any missing auto_gen secrets
+            # and ensure all ENV_SCHEMA keys exist (empty for optional fields).
+            if env_path.is_file():
+                content = env_path.read_text(encoding="utf-8")
+                patched = False
+                for key, _, _, auto_gen, _ in ENV_SCHEMA:
+                    has_key = re.search(rf"^{re.escape(key)}=", content, re.MULTILINE)
+                    if has_key:
+                        continue  # already exists — never overwrite
+                    if auto_gen:
+                        val = secrets.token_urlsafe(16)[:16]
+                    else:
+                        val = ""  # optional field, add empty placeholder
+                    content += f"\n{key}={val}"
+                    patched = True
+                # Ensure DB_NAME, DB_USER, MINIO_ACCESS_KEY have defaults
+                for key, default in [("DB_NAME", "menzhen"), ("DB_USER", "menzhen"),
+                                      ("MINIO_ACCESS_KEY", "minioadmin")]:
+                    existing = re.search(rf"^{re.escape(key)}=(.*)$", content, re.MULTILINE)
+                    if not existing:
+                        content += f"\n{key}={default}"
+                        patched = True
+                    elif not existing.group(1).strip():
+                        content = re.sub(
+                            rf"^{re.escape(key)}=.*$", f"{key}={default}",
+                            content, flags=re.MULTILINE)
+                        patched = True
+                if patched:
+                    env_path.write_text(content, encoding="utf-8", newline="\n")
 
             self._send_json({
                 "ok": True,
@@ -1962,8 +2001,8 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         '{{range .Config.Env}}{{println .}}{{end}}',
                         cname,
                     ])
-                    if rc == 0 and out.strip():
-                        for line in out.strip().splitlines():
+                    if rc == 0 and (out or "").strip():
+                        for line in (out or "").strip().splitlines():
                             if line.startswith("SITE_ID="):
                                 existing_id = line.split("=", 1)[1].strip()
                                 break
@@ -2037,15 +2076,18 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 # Already exists: read current .env, only patch changed fields
                 content = env_path.read_text(encoding="utf-8")
 
-            # Auto-generate secrets for auto_gen fields if empty (first install only)
-            if first_install:
-                for key, _, _, auto_gen, _ in ENV_SCHEMA:
-                    val = values.get(key, "")
-                    if auto_gen and not val:
+            # Auto-generate secrets for auto_gen fields if value is empty
+            # AND not already set in .env (works regardless of first_install,
+            # because save-site-id may have already created .env with only SITE_ID)
+            for key, _, _, auto_gen, _ in ENV_SCHEMA:
+                val = values.get(key, "")
+                if auto_gen and not val:
+                    existing = re.search(rf"^{re.escape(key)}=(.+)$", content, re.MULTILINE)
+                    if not existing or not existing.group(1).strip():
                         val = secrets.token_urlsafe(16)[:16]
                         values[key] = val
 
-            # Only update fields the user actually changed
+            # Update existing keys or add missing ones
             for key, val in values.items():
                 if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
                     continue
@@ -2055,7 +2097,8 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         rf"^{re.escape(key)}=.*$", f"{key}={val}",
                         content, flags=re.MULTILINE
                     )
-                elif first_install:
+                elif val:
+                    # Always add missing keys with non-empty values
                     content += f"\n{key}={val}\n"
             env_path.write_text(content, encoding="utf-8", newline="\n")
             self._send_json({"ok": True, "first_install": first_install})
@@ -3365,7 +3408,10 @@ async function renderStep2(el) {
         };
       } else {
         // .env 存在且镜像齐全 → 可以直接启动
-        checkDiv.innerHTML = recoveredHint + '<div class="hint-box green"><strong>环境就绪。</strong><br>配置文件和镜像均已就绪，可以直接启动服务。</div><div class="actions" style="margin-top:12px;"><button class="btn btn-success" id="startServicesBtn">启动服务</button></div>';
+        checkDiv.innerHTML = recoveredHint + '<div class="hint-box green"><strong>环境就绪。</strong><br>配置文件和镜像均已就绪，可以直接启动服务。</div><div class="actions" style="margin-top:12px;"><button class="btn btn-success" id="startServicesBtn">启动服务</button><button class="btn btn-secondary" id="freshInstallReadyBtn" style="margin-left:8px; font-size:13px;">全新安装 &rarr;</button></div>';
+        checkDiv.querySelector('#freshInstallReadyBtn').onclick = () => {
+          showConfirm('全新安装会覆盖当前所有配置和数据，确定要继续吗？', () => { state.step = 3; render(); });
+        };
         checkDiv.querySelector('#startServicesBtn').onclick = () => {
           const btn = checkDiv.querySelector('#startServicesBtn');
           btn.disabled = true;
