@@ -10,3 +10,4 @@ FROM nginx:alpine
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+RUN sed -i 's/\r$//' /etc/nginx/conf.d/default.conf
