@@ -1,6 +1,6 @@
-# Dependencies and build output (rebuilt inside container)
+# Dependencies (rebuilt inside container)
 node_modules/
-dist/
+# NOTE: dist/ is NOT excluded here — Dockerfile.local copies pre-built dist into nginx
 
 # Test files not needed in production image
 *.test.ts
