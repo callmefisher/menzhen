@@ -14,6 +14,7 @@ import re
 import secrets
 import shlex
 import shutil
+import stat
 import socket
 import socketserver
 import string
@@ -30,7 +31,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.03.22.153002"
+WIZARD_VERSION = "2026.03.22.170200"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -312,6 +313,67 @@ def run_command(cmd, cwd=None, timeout=600):
         return -1, "", "命令执行超时"
     except Exception as e:
         return -1, "", str(e)
+
+
+# Lock for .env read-modify-write sequences (server is multi-threaded)
+_env_lock = threading.Lock()
+
+
+def _rmdir_safe(path):
+    """Remove *path* if it is a directory, with Windows read-only file handling.
+
+    Docker bind mounts create missing host targets as directories. This helper
+    safely removes them. The onerror handler avoids infinite recursion by
+    catching OSError on the retry.
+    """
+    if path.is_dir():
+        def _on_error(func, fpath, _exc_info):
+            try:
+                os.chmod(fpath, stat.S_IWRITE)
+                func(fpath)
+            except OSError:
+                pass  # give up silently; caller's retry loop handles this
+        shutil.rmtree(str(path), onerror=_on_error)
+
+
+def _safe_write_file(path, content, encoding="utf-8", newline="\n", mode="text"):
+    """Write to *path*, handling Docker bind-mount directory race on Windows.
+
+    Docker bind mounts create missing host targets as directories.
+    On Windows, write_text() on a directory gives PermissionError (not
+    IsADirectoryError). This helper removes the directory first, writes,
+    and retries once on failure (covers the race where Docker recreates
+    the directory between rmtree and write).
+    """
+    _rmdir_safe(path)
+    for attempt in range(2):
+        try:
+            if mode == "text":
+                path.write_text(content, encoding=encoding, newline=newline)
+            else:
+                path.write_bytes(content)
+            return
+        except (PermissionError, IsADirectoryError):
+            if attempt == 0:
+                _rmdir_safe(path)
+                time.sleep(0.3)  # Windows fs release delay
+            else:
+                raise
+
+
+def _safe_copy_file(src, dst):
+    """Copy *src* to *dst*, handling Docker bind-mount directory race."""
+    _rmdir_safe(dst)
+    for attempt in range(2):
+        try:
+            shutil.copy2(str(src), str(dst))
+            return
+        except (PermissionError, IsADirectoryError):
+            if attempt == 0:
+                _rmdir_safe(dst)
+                time.sleep(0.3)
+            else:
+                raise
 
 
 def get_repo_url():
@@ -1642,9 +1704,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
 
             if not env_path.is_file():
                 # Docker bind mount creates missing targets as directories — clean up first
-                if env_path.is_dir():
-                    import shutil, stat
-                    shutil.rmtree(str(env_path), onerror=lambda f, p, _: (os.chmod(p, stat.S_IWRITE), f(p)))
+                _rmdir_safe(env_path)
 
                 recovered = False
                 container_names = ("menzhen-api-1", "menzhen-api")
@@ -1664,6 +1724,8 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         source = f"container:{cname}"
                         recovered = True
                         break
+                    # docker cp may create a dir on Windows — clean up
+                    _rmdir_safe(env_path)
 
                 # Method 2: reconstruct .env from container runtime env vars
                 # docker-compose env_file injects ALL .env keys into Config.Env
@@ -1691,10 +1753,10 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                             if key not in sys_env_keys:
                                 lines.append(line)
                         if lines:
-                            env_path.write_text(
+                            _safe_write_file(
+                                env_path,
                                 "# Recovered from container env vars\n" +
                                 "\n".join(lines) + "\n",
-                                encoding="utf-8", newline="\n",
                             )
                             source = f"container-env:{cname}"
                             recovered = True
@@ -1723,6 +1785,8 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                             source = f"image:{img}"
                             recovered = True
                             break
+                        # docker cp may create a dir on Windows — clean up
+                        _rmdir_safe(env_path)
 
                 if not recovered:
                     self._send_json({
@@ -1769,10 +1833,8 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     continue
 
                 # Clean up: Docker bind mount creates empty dirs; also clean 0-byte files
-                if local_path.is_dir():
-                    import shutil, stat
-                    shutil.rmtree(str(local_path), onerror=lambda f, p, _: (os.chmod(p, stat.S_IWRITE), f(p)))
-                elif local_path.is_file():
+                _rmdir_safe(local_path)
+                if local_path.is_file():
                     local_path.unlink()
                 local_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -1786,10 +1848,8 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         recovered_configs.append(local_rel)
                         continue
                     # Clean up failed attempt
-                    if local_path.is_dir():
-                        import shutil, stat
-                        shutil.rmtree(str(local_path), onerror=lambda f, p, _: (os.chmod(p, stat.S_IWRITE), f(p)))
-                    elif local_path.exists():
+                    _rmdir_safe(local_path)
+                    if local_path.is_file():
                         local_path.unlink()
 
                 # Step 2: create temp container from image + docker cp
@@ -1818,7 +1878,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         resp = urllib.request.urlopen(req, timeout=15)
                         content = resp.read()
                         if content and len(content) > 10:
-                            local_path.write_bytes(content)
+                            _safe_write_file(local_path, content, mode="bytes")
                             recovered_configs.append(local_rel)
                             break
                     except Exception:
@@ -1830,40 +1890,41 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             # of all required fields and their defaults, then fill any gaps.
             # Existing values are NEVER overwritten.
             if env_path.is_file():
-                content = env_path.read_text(encoding="utf-8")
-                example_path = SCRIPT_DIR / ".env.example"
-                patched = False
-                # Step 1: fill from .env.example (the single source of truth)
-                if example_path.is_file():
-                    for line in example_path.read_text(encoding="utf-8").splitlines():
-                        line = line.strip()
-                        if not line or line.startswith("#") or "=" not in line:
+                with _env_lock:
+                    content = env_path.read_text(encoding="utf-8")
+                    example_path = SCRIPT_DIR / ".env.example"
+                    patched = False
+                    # Step 1: fill from .env.example (the single source of truth)
+                    if example_path.is_file():
+                        for line in example_path.read_text(encoding="utf-8").splitlines():
+                            line = line.strip()
+                            if not line or line.startswith("#") or "=" not in line:
+                                continue
+                            key = line.split("=", 1)[0].strip()
+                            default_val = line.split("=", 1)[1].strip()
+                            has_key = re.search(rf"^{re.escape(key)}=", content, re.MULTILINE)
+                            if has_key:
+                                continue  # already exists — never overwrite
+                            content += f"\n{key}={default_val}"
+                            patched = True
+                    # Step 2: auto-generate secrets for auto_gen fields (override placeholders)
+                    for key, _, _, auto_gen, _ in ENV_SCHEMA:
+                        if not auto_gen:
                             continue
-                        key = line.split("=", 1)[0].strip()
-                        default_val = line.split("=", 1)[1].strip()
-                        has_key = re.search(rf"^{re.escape(key)}=", content, re.MULTILINE)
-                        if has_key:
-                            continue  # already exists — never overwrite
-                        content += f"\n{key}={default_val}"
+                        existing = re.search(rf"^{re.escape(key)}=(.*)$", content, re.MULTILINE)
+                        if existing and existing.group(1).strip() and \
+                           existing.group(1).strip() not in ("change-me-in-production", "menzhen123", "minioadmin"):
+                            continue  # has a real value — keep it
+                        val = secrets.token_urlsafe(16)[:16]
+                        if existing:
+                            content = re.sub(
+                                rf"^{re.escape(key)}=.*$", f"{key}={val}",
+                                content, flags=re.MULTILINE)
+                        else:
+                            content += f"\n{key}={val}"
                         patched = True
-                # Step 2: auto-generate secrets for auto_gen fields (override placeholders)
-                for key, _, _, auto_gen, _ in ENV_SCHEMA:
-                    if not auto_gen:
-                        continue
-                    existing = re.search(rf"^{re.escape(key)}=(.*)$", content, re.MULTILINE)
-                    if existing and existing.group(1).strip() and \
-                       existing.group(1).strip() not in ("change-me-in-production", "menzhen123", "minioadmin"):
-                        continue  # has a real value — keep it
-                    val = secrets.token_urlsafe(16)[:16]
-                    if existing:
-                        content = re.sub(
-                            rf"^{re.escape(key)}=.*$", f"{key}={val}",
-                            content, flags=re.MULTILINE)
-                    else:
-                        content += f"\n{key}={val}"
-                    patched = True
-                if patched:
-                    env_path.write_text(content, encoding="utf-8", newline="\n")
+                    if patched:
+                        _safe_write_file(env_path, content)
 
             self._send_json({
                 "ok": True,
@@ -1891,7 +1952,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             if os_key == "windows":
                 q_dir = str(SCRIPT_DIR)
                 GIT_INIT_WIN = (
-                    "git rev-parse --git-dir >nul 2>&1 || git init && git config core.autocrlf false && "
+                    "git rev-parse --git-dir >nul 2>&1 || (git init && git config core.autocrlf false) && "
                     f'git remote set-url origin "{_repo}" 2>nul || git remote add origin "{_repo}" && '
                 )
                 cmd = [
@@ -1978,7 +2039,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 return
             env_path = SCRIPT_DIR / ".env"
             try:
-                shutil.copy2(str(src_env), str(env_path))
+                _safe_copy_file(src_env, env_path)
             except OSError as e:
                 self._send_json({"ok": False, "error": f"复制失败：{e.strerror}"})
                 return
@@ -2029,23 +2090,19 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 }, 409)
                 return
             # Write SITE_ID to .env
-            # Docker bind mount creates .env as a DIRECTORY when the file is
-            # missing — clean it up before writing (same as ensure-env logic).
-            if env_path.is_dir():
-                import shutil, stat
-                shutil.rmtree(str(env_path), onerror=lambda f, p, _: (os.chmod(p, stat.S_IWRITE), f(p)))
-            if env_path.is_file():
-                content = env_path.read_text(encoding="utf-8")
-                if re.search(r"^SITE_ID=", content, re.MULTILINE):
-                    content = re.sub(
-                        r"^SITE_ID=.*$", f"SITE_ID={site_id}",
-                        content, flags=re.MULTILINE
-                    )
+            with _env_lock:
+                if env_path.is_file():
+                    content = env_path.read_text(encoding="utf-8")
+                    if re.search(r"^SITE_ID=", content, re.MULTILINE):
+                        content = re.sub(
+                            r"^SITE_ID=.*$", f"SITE_ID={site_id}",
+                            content, flags=re.MULTILINE
+                        )
+                    else:
+                        content += f"\nSITE_ID={site_id}\n"
+                    _safe_write_file(env_path, content)
                 else:
-                    content += f"\nSITE_ID={site_id}\n"
-                env_path.write_text(content, encoding="utf-8", newline="\n")
-            else:
-                env_path.write_text(f"SITE_ID={site_id}\n", encoding="utf-8", newline="\n")
+                    _safe_write_file(env_path, f"SITE_ID={site_id}\n")
             self._send_json({"ok": True, "site_id": site_id})
             return
 
@@ -2053,10 +2110,6 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             # Generate .env from .env.example if it doesn't exist
             env_path = SCRIPT_DIR / ".env"
             example_path = SCRIPT_DIR / ".env.example"
-            # Docker bind mount creates .env as a DIRECTORY — clean up
-            if env_path.is_dir():
-                import shutil, stat
-                shutil.rmtree(str(env_path), onerror=lambda f, p, _: (os.chmod(p, stat.S_IWRITE), f(p)))
             if env_path.is_file():
                 self._send_json({"ok": True, "message": "配置文件已存在，无需重新生成"})
                 return
@@ -2070,7 +2123,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             content = re.sub(r"^DB_PASSWORD=.*$", f"DB_PASSWORD={db_pass}", content, flags=re.MULTILINE)
             content = re.sub(r"^JWT_SECRET=.*$", f"JWT_SECRET={jwt_secret}", content, flags=re.MULTILINE)
             content = re.sub(r"^MINIO_SECRET_KEY=.*$", f"MINIO_SECRET_KEY={minio_secret}", content, flags=re.MULTILINE)
-            env_path.write_text(content, encoding="utf-8", newline="\n")
+            _safe_write_file(env_path, content)
             self._send_json({"ok": True, "message": "配置文件已自动生成"})
             return
 
@@ -2082,55 +2135,52 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 return
             env_path = SCRIPT_DIR / ".env"
             example_path = SCRIPT_DIR / ".env.example"
-            # Docker bind mount creates .env as a DIRECTORY when file is missing
-            if env_path.is_dir():
-                import shutil, stat
-                shutil.rmtree(str(env_path), onerror=lambda f, p, _: (os.chmod(p, stat.S_IWRITE), f(p)))
-            first_install = not env_path.is_file()
+            with _env_lock:
+                first_install = not env_path.is_file()
 
-            if first_install:
-                # First install: use .env.example as base
-                if example_path.exists():
-                    content = example_path.read_text(encoding="utf-8")
+                if first_install:
+                    # First install: use .env.example as base
+                    if example_path.exists():
+                        content = example_path.read_text(encoding="utf-8")
+                    else:
+                        content = ""
                 else:
-                    content = ""
-            else:
-                # Already exists: read current .env, patch changed fields
-                content = env_path.read_text(encoding="utf-8")
-                # Merge ALL defaults from .env.example for any missing keys
-                if example_path.exists():
-                    for line in example_path.read_text(encoding="utf-8").splitlines():
-                        line = line.strip()
-                        if not line or line.startswith("#") or "=" not in line:
-                            continue
-                        key = line.split("=", 1)[0].strip()
-                        default_val = line.split("=", 1)[1].strip()
-                        if not re.search(rf"^{re.escape(key)}=", content, re.MULTILINE):
-                            content += f"\n{key}={default_val}"
+                    # Already exists: read current .env, patch changed fields
+                    content = env_path.read_text(encoding="utf-8")
+                    # Merge ALL defaults from .env.example for any missing keys
+                    if example_path.exists():
+                        for line in example_path.read_text(encoding="utf-8").splitlines():
+                            line = line.strip()
+                            if not line or line.startswith("#") or "=" not in line:
+                                continue
+                            key = line.split("=", 1)[0].strip()
+                            default_val = line.split("=", 1)[1].strip()
+                            if not re.search(rf"^{re.escape(key)}=", content, re.MULTILINE):
+                                content += f"\n{key}={default_val}"
 
-            # Auto-generate secrets for auto_gen fields if value is empty
-            for key, _, _, auto_gen, _ in ENV_SCHEMA:
-                val = values.get(key, "")
-                if auto_gen and not val:
-                    existing = re.search(rf"^{re.escape(key)}=(.+)$", content, re.MULTILINE)
-                    if not existing or not existing.group(1).strip() or \
-                       existing.group(1).strip() in ("change-me-in-production", "menzhen123", "minioadmin"):
-                        val = secrets.token_urlsafe(16)[:16]
-                        values[key] = val
+                # Auto-generate secrets for auto_gen fields if value is empty
+                for key, _, _, auto_gen, _ in ENV_SCHEMA:
+                    val = values.get(key, "")
+                    if auto_gen and not val:
+                        existing = re.search(rf"^{re.escape(key)}=(.+)$", content, re.MULTILINE)
+                        if not existing or not existing.group(1).strip() or \
+                           existing.group(1).strip() in ("change-me-in-production", "menzhen123", "minioadmin"):
+                            val = secrets.token_urlsafe(16)[:16]
+                            values[key] = val
 
-            # Update existing keys or add user-provided values
-            for key, val in values.items():
-                if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
-                    continue
-                val = val.replace("\n", "").replace("\r", "")
-                if re.search(rf"^{re.escape(key)}=", content, re.MULTILINE):
-                    content = re.sub(
-                        rf"^{re.escape(key)}=.*$", f"{key}={val}",
-                        content, flags=re.MULTILINE
-                    )
-                elif val:
-                    content += f"\n{key}={val}\n"
-            env_path.write_text(content, encoding="utf-8", newline="\n")
+                # Update existing keys or add user-provided values
+                for key, val in values.items():
+                    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
+                        continue
+                    val = val.replace("\n", "").replace("\r", "")
+                    if re.search(rf"^{re.escape(key)}=", content, re.MULTILINE):
+                        content = re.sub(
+                            rf"^{re.escape(key)}=.*$", f"{key}={val}",
+                            content, flags=re.MULTILINE
+                        )
+                    elif val:
+                        content += f"\n{key}={val}\n"
+                _safe_write_file(env_path, content)
             self._send_json({"ok": True, "first_install": first_install})
             return
 
@@ -3984,9 +4034,12 @@ async function renderStep5(el) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ values })
         });
-        msgDiv.innerHTML = resp.ok
-          ? '<span style="color:var(--success);font-size:15px;">配置已保存！</span>'
-          : '<span style="color:var(--danger);font-size:15px;">保存失败，请重试。</span>';
+        if (resp.ok) {
+          msgDiv.innerHTML = '<span style="color:var(--success);font-size:15px;">配置已保存！正在刷新...</span>';
+          setTimeout(() => renderStep5(el), 1000);
+        } else {
+          msgDiv.innerHTML = '<span style="color:var(--danger);font-size:15px;">保存失败，请重试。</span>';
+        }
       } catch(e) {
         msgDiv.innerHTML = '<span style="color:var(--danger);font-size:15px;">保存失败，请重试。</span>';
       }
