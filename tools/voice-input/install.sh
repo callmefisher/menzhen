@@ -83,10 +83,11 @@ echo "📦 构建 VoiceInput.app..."
 
 mkdir -p "$APP_DIR/Contents/MacOS"
 
-# 编译 Swift 原生入口（请求麦克风权限 + 启动 Python）
+# 编译 Swift 原生入口（请求麦克风权限 + 热键监听 + 启动 Python）
 swiftc "$SCRIPT_DIR/VoiceInputMain.swift" \
     -o "$APP_DIR/Contents/MacOS/VoiceInput" \
-    -framework AVFoundation
+    -framework AVFoundation \
+    -framework Cocoa
 echo "✅ Swift 入口编译完成"
 
 # 复制 Info.plist
@@ -138,11 +139,11 @@ echo ""
 echo "1. 运行以下命令首次启动（会弹出麦克风授权弹窗，点「允许」）："
 echo "   $APP_DIR/Contents/MacOS/VoiceInput"
 echo ""
-echo "2. 如果热键无效，还需在 系统设置→隐私与安全性→辅助功能 中添加："
-echo "   /Library/Frameworks/Python.framework/.../Resources/Python.app"
+echo "2. 如果热键无效，在 系统设置→隐私与安全性→辅助功能 中添加："
+echo "   VoiceInput.app（位于 ~/Applications/VoiceInput.app）"
 echo ""
 echo "3. 授权完成后，重新启动服务："
-echo "   launchctl load ~/Library/LaunchAgents/com.menzhen.voice-input.plist"
+echo "   launchctl kickstart -k gui/\$(id -u)/com.menzhen.voice-input"
 echo ""
 echo "热键: Cmd+Shift+V（按一次开始录音，再按一次停止并识别）"
 echo "日志: /tmp/voice-input.log"

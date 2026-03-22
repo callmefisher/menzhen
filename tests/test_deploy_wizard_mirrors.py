@@ -227,7 +227,11 @@ class TestStartWizardValidation:
 
     @pytest.fixture
     def wizard_bat(self):
-        return (WIZARD_PATH.parent / "start-wizard.bat").read_text()
+        bat_path = WIZARD_PATH.parent / "start-wizard.bat"
+        try:
+            return bat_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            return bat_path.read_text(encoding="gbk")
 
     def test_command_validates_shebang(self, wizard_command):
         """start-wizard.command should validate Python shebang, not just 'python3'."""
@@ -235,9 +239,9 @@ class TestStartWizardValidation:
             "Should match shebang pattern, not loose 'python3' substring"
 
     def test_bat_validates_shebang(self, wizard_bat):
-        """start-wizard.bat should validate Python shebang."""
-        assert "^#!/.*python" in wizard_bat, \
-            "Should match shebang pattern, not loose 'python3'"
+        """start-wizard.bat should validate downloaded file contains WIZARD_VERSION."""
+        assert "WIZARD_VERSION" in wizard_bat, \
+            "Should validate WIZARD_VERSION in downloaded file"
 
 
 # ---------------------------------------------------------------------------
