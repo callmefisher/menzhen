@@ -30,7 +30,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.03.22.125602"
+WIZARD_VERSION = "2026.03.22.153002"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -733,7 +733,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             site_id = ""
             source = ""
             # 1) Try local .env file
-            if env_path.exists():
+            if env_path.is_file():
                 for line in env_path.read_text(encoding="utf-8").splitlines():
                     line = line.strip()
                     if line.startswith("SITE_ID=") and not line.startswith("#"):
@@ -1451,7 +1451,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     clone_and_build = (
                         f'cd /d "{q_dir}" && '
                         "echo 正在下载源码... && "
-                        "git init && "
+                        "git init && git config core.autocrlf false && "
                         f'git remote add origin {q_url} 2>nul || git remote set-url origin {q_url} && '
                         "git fetch origin && "
                         f"git checkout -f origin/main -- . {EXCLUDE} && "
@@ -1464,7 +1464,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     clone_and_build = (
                         f"cd {q_dir} && "
                         "echo '正在下载源码...' && "
-                        "git init && "
+                        "git init && git config core.autocrlf false && "
                         f"git remote add origin {q_url} 2>/dev/null || git remote set-url origin {q_url} && "
                         "git fetch origin && "
                         f"git checkout -f origin/main -- . {EXCLUDE} && "
@@ -1513,7 +1513,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 stream_command(self, [
                     "cmd", "/c",
                     f'cd /d "{script_dir}" && '
-                    "git init && "
+                    "git init && git config core.autocrlf false && "
                     f'git remote add origin "{_repo}" 2>nul || git remote set-url origin "{_repo}" && '
                     "git fetch origin && "
                     "git checkout -f origin/main -- docker-compose.yml && "
@@ -1525,7 +1525,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 stream_command(self, [
                     "bash", "-c",
                     f"cd {q_dir} && "
-                    "git init && "
+                    "git init && git config core.autocrlf false && "
                     f"git remote add origin {q_url} 2>/dev/null || git remote set-url origin {q_url} && "
                     "git fetch origin && "
                     "git checkout -f origin/main -- docker-compose.yml && "
@@ -1549,7 +1549,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 stream_command(self, [
                     "cmd", "/c",
                     f'cd /d "{script_dir}" && '
-                    "git init && "
+                    "git init && git config core.autocrlf false && "
                     f'git remote add origin "{_repo}" 2>nul || git remote set-url origin "{_repo}" && '
                     "git fetch origin && "
                     f"git checkout -f origin/main -- . {EXCLUDE} && "
@@ -1562,7 +1562,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 stream_command(self, [
                     "bash", "-c",
                     f"cd {q_dir} && "
-                    "git init && "
+                    "git init && git config core.autocrlf false && "
                     f"git remote add origin {q_url} 2>/dev/null || git remote set-url origin {q_url} && "
                     "git fetch origin && "
                     f"git checkout -f origin/main -- . {EXCLUDE} && "
@@ -1878,7 +1878,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             q_url = shlex.quote(_repo)
             # Ensure git repo is initialized (idempotent)
             GIT_INIT = (
-                "git rev-parse --git-dir >/dev/null 2>&1 || git init && "
+                "git rev-parse --git-dir >/dev/null 2>&1 || { git init && git config core.autocrlf false; } && "
                 f"git remote set-url origin {q_url} 2>/dev/null || git remote add origin {q_url} && "
             )
             os_key, _ = detect_os()
@@ -1891,7 +1891,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             if os_key == "windows":
                 q_dir = str(SCRIPT_DIR)
                 GIT_INIT_WIN = (
-                    "git rev-parse --git-dir >nul 2>&1 || git init && "
+                    "git rev-parse --git-dir >nul 2>&1 || git init && git config core.autocrlf false && "
                     f'git remote set-url origin "{_repo}" 2>nul || git remote add origin "{_repo}" && '
                 )
                 cmd = [
@@ -1934,14 +1934,14 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             env_path = SCRIPT_DIR / ".env"
             example_path = SCRIPT_DIR / ".env.example"
             current = {}
-            src = env_path if env_path.exists() else example_path
+            src = env_path if env_path.is_file() else example_path
             if src and src.exists():
                 for line in src.read_text(encoding="utf-8").splitlines():
                     line = line.strip()
                     if line and not line.startswith("#") and "=" in line:
                         k, v = line.split("=", 1)
                         current[k.strip()] = v.strip()
-            first_install = not env_path.exists()
+            first_install = not env_path.is_file()
             # Placeholder values in .env.example that should show as empty
             placeholders = {"xxx", "xxxx", "sk-xxx", "change-me-in-production"}
             items = []
@@ -1996,7 +1996,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             env_path = SCRIPT_DIR / ".env"
             existing_id = ""
             # Check .env file
-            if env_path.exists():
+            if env_path.is_file():
                 for line in env_path.read_text(encoding="utf-8").splitlines():
                     line = line.strip()
                     if line.startswith("SITE_ID=") and not line.startswith("#"):
@@ -2029,7 +2029,12 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 }, 409)
                 return
             # Write SITE_ID to .env
-            if env_path.exists():
+            # Docker bind mount creates .env as a DIRECTORY when the file is
+            # missing — clean it up before writing (same as ensure-env logic).
+            if env_path.is_dir():
+                import shutil, stat
+                shutil.rmtree(str(env_path), onerror=lambda f, p, _: (os.chmod(p, stat.S_IWRITE), f(p)))
+            if env_path.is_file():
                 content = env_path.read_text(encoding="utf-8")
                 if re.search(r"^SITE_ID=", content, re.MULTILINE):
                     content = re.sub(
@@ -2048,7 +2053,11 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             # Generate .env from .env.example if it doesn't exist
             env_path = SCRIPT_DIR / ".env"
             example_path = SCRIPT_DIR / ".env.example"
-            if env_path.exists():
+            # Docker bind mount creates .env as a DIRECTORY — clean up
+            if env_path.is_dir():
+                import shutil, stat
+                shutil.rmtree(str(env_path), onerror=lambda f, p, _: (os.chmod(p, stat.S_IWRITE), f(p)))
+            if env_path.is_file():
                 self._send_json({"ok": True, "message": "配置文件已存在，无需重新生成"})
                 return
             if not example_path.exists():
@@ -2073,7 +2082,11 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 return
             env_path = SCRIPT_DIR / ".env"
             example_path = SCRIPT_DIR / ".env.example"
-            first_install = not env_path.exists()
+            # Docker bind mount creates .env as a DIRECTORY when file is missing
+            if env_path.is_dir():
+                import shutil, stat
+                shutil.rmtree(str(env_path), onerror=lambda f, p, _: (os.chmod(p, stat.S_IWRITE), f(p)))
+            first_install = not env_path.is_file()
 
             if first_install:
                 # First install: use .env.example as base
