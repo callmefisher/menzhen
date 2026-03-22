@@ -31,7 +31,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.03.22.170200"
+WIZARD_VERSION = "2026.03.22.175400"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -1607,6 +1607,9 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 EXCLUDE = "':!deploy-wizard.py' ':!start-wizard.command' ':!start-wizard.bat' ':!start-wizard.sh'"
             script_dir = str(SCRIPT_DIR)
             _repo = get_repo_url()
+            # After checkout, remove stale custom images so check-images
+            # forces a rebuild from the fresh source code.
+            STALE_IMGS = " ".join(f"menzhen-{s}:latest" for s in ["api", "web", "backup", "nginx", "mysql"])
             if os_key == "windows":
                 stream_command(self, [
                     "cmd", "/c",
@@ -1616,6 +1619,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "git fetch origin && "
                     f"git checkout -f origin/main -- . {EXCLUDE} && "
                     "git reset origin/main && "
+                    f"docker image rm -f {STALE_IMGS} 2>nul & "
                     'echo 代码下载完成!'
                 ])
             else:
@@ -1629,6 +1633,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "git fetch origin && "
                     f"git checkout -f origin/main -- . {EXCLUDE} && "
                     "git reset origin/main && "
+                    f"docker image rm -f {STALE_IMGS} 2>/dev/null; "
                     "echo '代码下载完成!'"
                 ])
             return
@@ -1907,21 +1912,19 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                                 continue  # already exists — never overwrite
                             content += f"\n{key}={default_val}"
                             patched = True
-                    # Step 2: auto-generate secrets for auto_gen fields (override placeholders)
+                    # Step 2: auto-generate secrets ONLY for missing auto_gen fields.
+                    # NOTE: Do NOT replace placeholder values (menzhen123, minioadmin,
+                    # change-me-in-production) — in recovery scenarios these ARE the
+                    # real passwords used by MySQL/MinIO/JWT.  Replacing them breaks
+                    # DB connections and invalidates all user sessions.
                     for key, _, _, auto_gen, _ in ENV_SCHEMA:
                         if not auto_gen:
                             continue
-                        existing = re.search(rf"^{re.escape(key)}=(.*)$", content, re.MULTILINE)
-                        if existing and existing.group(1).strip() and \
-                           existing.group(1).strip() not in ("change-me-in-production", "menzhen123", "minioadmin"):
-                            continue  # has a real value — keep it
-                        val = secrets.token_urlsafe(16)[:16]
+                        existing = re.search(rf"^{re.escape(key)}=", content, re.MULTILINE)
                         if existing:
-                            content = re.sub(
-                                rf"^{re.escape(key)}=.*$", f"{key}={val}",
-                                content, flags=re.MULTILINE)
-                        else:
-                            content += f"\n{key}={val}"
+                            continue  # has ANY value — keep it (even placeholders)
+                        val = secrets.token_urlsafe(16)[:16]
+                        content += f"\n{key}={val}"
                         patched = True
                     if patched:
                         _safe_write_file(env_path, content)
