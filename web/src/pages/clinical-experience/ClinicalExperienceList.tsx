@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Input, Table, message, Button, Popconfirm, Select, Space, Modal, Form, AutoComplete, Pagination, Spin, Empty } from 'antd';
+import { Input, Table, message, Button, Popconfirm, Space, Modal, Form, AutoComplete, Pagination, Spin, Empty } from 'antd';
 import { SearchOutlined, DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import {
@@ -23,7 +23,6 @@ export default function ClinicalExperienceList() {
   const [size, setSize] = useState(20);
   const [searchKeyword, setSearchKeyword] = useState('');
   const [categories, setCategories] = useState<string[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string | undefined>(undefined);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalLoading, setModalLoading] = useState(false);
   const [editingItem, setEditingItem] = useState<ClinicalExperienceItem | null>(null);
@@ -37,7 +36,7 @@ export default function ClinicalExperienceList() {
     page,
     pageSize: size,
     loading,
-    onPageChange: (p) => { setPage(p); fetchItems(searchKeyword, selectedCategory, p, size); },
+    onPageChange: (p) => { setPage(p); fetchItems(searchKeyword, undefined, p, size); },
     findPage: findClinicalExperiencePage,
     idPrefix: 'clinexp',
   });
@@ -73,13 +72,7 @@ export default function ClinicalExperienceList() {
   const handleSearch = (value: string) => {
     setSearchKeyword(value);
     setPage(1);
-    fetchItems(value, selectedCategory, 1, size);
-  };
-
-  const handleCategoryChange = (value: string | undefined) => {
-    setSelectedCategory(value);
-    setPage(1);
-    fetchItems(searchKeyword, value, 1, size);
+    fetchItems(value, undefined, 1, size);
   };
 
   const handleTableChange = (pagination: { current?: number; pageSize?: number }) => {
@@ -88,14 +81,14 @@ export default function ClinicalExperienceList() {
     highlight.setHighlightId(null);
     setPage(newPage);
     setSize(newSize);
-    fetchItems(searchKeyword, selectedCategory, newPage, newSize);
+    fetchItems(searchKeyword, undefined, newPage, newSize);
   };
 
   const handleDelete = async (id: number) => {
     try {
       await deleteClinicalExperience(id);
       message.success('删除成功');
-      fetchItems(searchKeyword, selectedCategory, page, size);
+      fetchItems(searchKeyword, undefined, page, size);
       loadCategories();
     } catch {
       // Error handled by interceptor
@@ -130,7 +123,7 @@ export default function ClinicalExperienceList() {
         setModalOpen(false);
         form.resetFields();
         setEditingItem(null);
-        fetchItems(searchKeyword, selectedCategory, page, size);
+        fetchItems(searchKeyword, undefined, page, size);
         loadCategories();
         highlight.setHighlightId(editingItem.id);
       } else {
@@ -140,7 +133,7 @@ export default function ClinicalExperienceList() {
         setModalOpen(false);
         form.resetFields();
         setEditingItem(null);
-        fetchItems(searchKeyword, selectedCategory, page, size);
+        fetchItems(searchKeyword, undefined, page, size);
         loadCategories();
         if (newId) highlight.setHighlightId(newId);
       }
@@ -158,13 +151,6 @@ export default function ClinicalExperienceList() {
       key: 'source',
       width: 150,
       ellipsis: true,
-    },
-    {
-      title: '分类',
-      dataIndex: 'category',
-      key: 'category',
-      width: 100,
-      responsive: ['md'] as any,
     },
     {
       title: '药物',
@@ -186,6 +172,7 @@ export default function ClinicalExperienceList() {
       title: '使用经验',
       dataIndex: 'experience',
       key: 'experience',
+      width: 280,
       ellipsis: true,
     },
     ...(hasPermission('role:manage')
@@ -193,9 +180,9 @@ export default function ClinicalExperienceList() {
           {
             title: '操作',
             key: 'action',
-            width: 140,
+            width: 110,
             render: (_: unknown, record: ClinicalExperienceItem) => (
-              <Space size="small">
+              <Space size={4}>
                 <Button
                   type="text"
                   size="small"
@@ -231,15 +218,6 @@ export default function ClinicalExperienceList() {
           size="large"
           onSearch={handleSearch}
           style={{ maxWidth: isMobile ? '100%' : 500 }}
-        />
-        <Select
-          placeholder="按分类筛选"
-          allowClear
-          size="large"
-          style={{ minWidth: isMobile ? '100%' : 160 }}
-          value={selectedCategory}
-          onChange={handleCategoryChange}
-          options={categories.map((c) => ({ label: c, value: c }))}
         />
         {hasPermission('role:manage') && (
           <Button
