@@ -31,7 +31,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.03.23.205600"
+WIZARD_VERSION = "2026.03.23.215600"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -1992,8 +1992,8 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     f"{GIT_INIT_WIN}"
                     "echo [1/3] 正在拉取最新代码... && "
                     "git fetch origin && "
-                    f"git checkout -f origin/main -- . {EXCLUDE} && "
                     "git reset origin/main && "
+                    f"(git checkout -f origin/main -- . {EXCLUDE} && echo [OK] 代码已更新 || echo [WARN] git checkout 失败，部分文件未更新，请检查上方错误信息) && "
                     f"echo [2/3] 正在重新构建程序（约5-15分钟）... & "
                     f"docker compose pull & {build_cmd} & "
                     "echo [3/3] 正在重启服务... & "
@@ -2009,8 +2009,8 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     f"{GIT_INIT}"
                     "echo '[1/3] 正在拉取最新代码...' && "
                     "git fetch origin && "
-                    f"git checkout -f origin/main -- . {EXCLUDE} && "
                     "git reset origin/main && "
+                    f"{{ git checkout -f origin/main -- . {EXCLUDE} && echo '[OK] 代码已更新' || echo '[WARN] git checkout 失败 (exit='$?'), 部分文件未更新，请检查上方错误信息'; }} && "
                     f"echo '[2/3] 正在重新构建程序（约5-15分钟）...' && "
                     f"docker compose pull; {build_cmd} && "
                     "echo '[3/3] 正在重启服务...' && "
