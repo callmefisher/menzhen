@@ -31,7 +31,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.03.23.175600"
+WIZARD_VERSION = "2026.03.23.185600"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -1304,7 +1304,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "cmd", "/c",
                     f'cd /d "{SCRIPT_DIR}" && '
                     "docker compose up -d 2>&1 && "
-                    "docker compose restart nginx 2>&1 && "
+                    "docker compose up -d nginx 2>&1 && "
                     "echo 服务启动完成!"
                 ])
             else:
@@ -1314,7 +1314,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     f"cd {q_dir} && "
                     "echo '正在启动服务...' && "
                     "docker compose up -d 2>&1 && "
-                    "docker compose restart nginx 2>&1 && "
+                    "docker compose up -d nginx 2>&1 && "
                     "echo '服务启动完成!'"
                 ])
             return
@@ -1473,7 +1473,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "cmd", "/c",
                     f'cd /d "{SCRIPT_DIR}" && '
                     "docker compose up -d --wait --wait-timeout 120 2>&1 && "
-                    "docker compose restart nginx 2>&1 && "
+                    "docker compose up -d nginx 2>&1 && "
                     "echo 服务启动完成!"
                 ], headers_sent=True)
             else:
@@ -1482,7 +1482,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "bash", "-c",
                     f"cd {q_dir} && "
                     "docker compose up -d --wait --wait-timeout 120 2>&1 && "
-                    "docker compose restart nginx 2>&1 && "
+                    "docker compose up -d nginx 2>&1 && "
                     "echo '服务启动完成!'"
                 ], headers_sent=True)
             return
@@ -1996,7 +1996,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     f"docker compose pull & {build_cmd} & "
                     "echo [3/3] 正在重启服务... & "
                     "docker compose up -d --force-recreate & "
-                    "docker compose restart nginx & "
+                    "docker compose up -d nginx & "
                     "echo 更新完成!"
                 ]
             else:
@@ -2013,7 +2013,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     f"docker compose pull; {build_cmd} && "
                     "echo '[3/3] 正在重启服务...' && "
                     "docker compose up -d --force-recreate && "
-                    "docker compose restart nginx && "
+                    "docker compose up -d nginx && "
                     "echo '更新完成!'"
                 ]
             stream_command(self, cmd)
