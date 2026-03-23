@@ -9,6 +9,7 @@ services:
         condition: service_healthy
       web:
         condition: service_healthy
+    restart: unless-stopped
 
   web:
     image: menzhen-web:latest

@@ -31,7 +31,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.03.23.165600"
+WIZARD_VERSION = "2026.03.23.175600"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -1473,6 +1473,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "cmd", "/c",
                     f'cd /d "{SCRIPT_DIR}" && '
                     "docker compose up -d --wait --wait-timeout 120 2>&1 && "
+                    "docker compose restart nginx 2>&1 && "
                     "echo 服务启动完成!"
                 ], headers_sent=True)
             else:
@@ -1481,6 +1482,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "bash", "-c",
                     f"cd {q_dir} && "
                     "docker compose up -d --wait --wait-timeout 120 2>&1 && "
+                    "docker compose restart nginx 2>&1 && "
                     "echo '服务启动完成!'"
                 ], headers_sent=True)
             return
