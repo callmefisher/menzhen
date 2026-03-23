@@ -31,7 +31,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.03.23.215600"
+WIZARD_VERSION = "2026.03.23.220500"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -1965,36 +1965,67 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             return
 
         if self.path == "/api/pull-and-rebuild":
-            # Pull latest code, rebuild images, restart services — all streamed
+            # Pull latest code, rebuild images, restart services — all streamed.
+            # Git operations run from Python (not shell chains) to avoid
+            # cmd.exe operator-precedence and file-lock issues on Windows.
             _repo = get_repo_url()
-            q_url = shlex.quote(_repo)
-            # Ensure git repo is initialized (idempotent)
-            GIT_INIT = (
-                "git rev-parse --git-dir >/dev/null 2>&1 || { git init && git config core.autocrlf false; } && "
-                f"git remote set-url origin {q_url} 2>/dev/null || git remote add origin {q_url} && "
-            )
             os_key, _ = detect_os()
-            # Windows cmd.exe does NOT strip single quotes — use unquoted pathspec
-            if os_key == "windows":
-                EXCLUDE = ":!deploy-wizard.py :!start-wizard.command :!start-wizard.bat :!start-wizard.sh"
-            else:
-                EXCLUDE = "':!deploy-wizard.py' ':!start-wizard.command' ':!start-wizard.bat' ':!start-wizard.sh'"
             build_cmd = _per_service_build_cmd(os_key, standalone=False)
+
+            # --- SSE setup ---
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self.end_headers()
+
+            def _sse(data):
+                self.wfile.write(f"data: {json.dumps(data, ensure_ascii=False)}\n\n".encode())
+                self.wfile.flush()
+
+            # --- [1/3] Git operations (Python-level, OS-independent) ---
+            _sse({"type": "log", "data": "[1/3] 正在拉取最新代码..."})
+
+            # Ensure git repo initialized
+            if not (SCRIPT_DIR / ".git").exists():
+                _sse({"type": "log", "data": "正在初始化代码仓库..."})
+                run_command(["git", "init"])
+                run_command(["git", "config", "core.autocrlf", "false"])
+            # Ensure remote origin points to the right URL
+            rc, _, _ = run_command(["git", "remote", "set-url", "origin", _repo])
+            if rc != 0:
+                run_command(["git", "remote", "add", "origin", _repo])
+
+            # Fetch
+            rc, _, err = run_command(["git", "fetch", "origin"], timeout=120)
+            if rc != 0:
+                _sse({"type": "log", "data": f"拉取代码失败: {(err or '').strip()}"})
+                _sse({"type": "done", "result": "error", "code": rc})
+                return
+
+            # Reset HEAD to origin/main — the critical operation that fixes
+            # the "check-updates still shows updates after pull" bug.
+            rc, _, err = run_command(["git", "reset", "origin/main"])
+            if rc != 0:
+                _sse({"type": "log", "data": f"[WARN] git reset 失败: {(err or '').strip()}"})
+
+            # Checkout files (excluding wizard scripts that may be locked/modified)
+            rc, out, err = run_command([
+                "git", "checkout", "-f", "origin/main", "--", ".",
+                ":!deploy-wizard.py", ":!start-wizard.command",
+                ":!start-wizard.bat", ":!start-wizard.sh",
+            ])
+            if rc == 0:
+                _sse({"type": "log", "data": "[OK] 代码已更新"})
+            else:
+                detail = (err or out or "").strip()
+                _sse({"type": "log", "data": f"[WARN] git checkout 退出码={rc}: {detail}"})
+
+            # --- [2/3]+[3/3] Docker rebuild + restart (streamed) ---
             if os_key == "windows":
-                q_dir = str(SCRIPT_DIR)
-                GIT_INIT_WIN = (
-                    "git rev-parse --git-dir >nul 2>&1 || (git init && git config core.autocrlf false) && "
-                    f'git remote set-url origin "{_repo}" 2>nul || git remote add origin "{_repo}" && '
-                )
-                cmd = [
+                docker_cmd = [
                     "cmd", "/c",
-                    f'cd /d "{q_dir}" && '
-                    f"{GIT_INIT_WIN}"
-                    "echo [1/3] 正在拉取最新代码... && "
-                    "git fetch origin && "
-                    "git reset origin/main && "
-                    f"(git checkout -f origin/main -- . {EXCLUDE} && echo [OK] 代码已更新 || echo [WARN] git checkout 失败，部分文件未更新，请检查上方错误信息) && "
-                    f"echo [2/3] 正在重新构建程序（约5-15分钟）... & "
+                    "echo [2/3] 正在重新构建程序（约5-15分钟）... & "
                     f"docker compose pull & {build_cmd} & "
                     "echo [3/3] 正在重启服务... & "
                     "docker compose up -d --force-recreate & "
@@ -2002,23 +2033,16 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "echo 更新完成!"
                 ]
             else:
-                q_dir = shlex.quote(str(SCRIPT_DIR))
-                cmd = [
+                docker_cmd = [
                     "bash", "-c",
-                    f"cd {q_dir} && "
-                    f"{GIT_INIT}"
-                    "echo '[1/3] 正在拉取最新代码...' && "
-                    "git fetch origin && "
-                    "git reset origin/main && "
-                    f"{{ git checkout -f origin/main -- . {EXCLUDE} && echo '[OK] 代码已更新' || echo '[WARN] git checkout 失败 (exit='$?'), 部分文件未更新，请检查上方错误信息'; }} && "
-                    f"echo '[2/3] 正在重新构建程序（约5-15分钟）...' && "
+                    "echo '[2/3] 正在重新构建程序（约5-15分钟）...' && "
                     f"docker compose pull; {build_cmd} && "
                     "echo '[3/3] 正在重启服务...' && "
                     "docker compose up -d --force-recreate && "
                     "docker compose up -d nginx && "
                     "echo '更新完成!'"
                 ]
-            stream_command(self, cmd)
+            stream_command(self, docker_cmd, headers_sent=True)
             return
 
         if self.path == "/api/get-env-config":
