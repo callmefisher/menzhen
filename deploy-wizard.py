@@ -31,7 +31,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.03.23.081600"
+WIZARD_VERSION = "2026.03.23.095000"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -317,9 +317,6 @@ def run_command(cmd, cwd=None, timeout=600):
 
 # Lock for .env read-modify-write sequences (server is multi-threaded)
 _env_lock = threading.Lock()
-
-# Flag: set True when save-env-config detects first install, consumed by build-full
-_fresh_install_pending = False
 
 
 def _rmdir_safe(path):
@@ -1490,12 +1487,9 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 ], headers_sent=True)
             return
 
-        if self.path == "/api/build-full":
+        if self.path.startswith("/api/build-full"):
             _refresh_windows_path()
-            global _fresh_install_pending
-            with _env_lock:
-                fresh_install = _fresh_install_pending
-                _fresh_install_pending = False
+            fresh_install = "fresh=1" in self.path
 
             # Before building, ensure source code exists (server/, web/, scripts/, nginx/, mysql/)
             # If missing, auto-clone from git — same logic as /api/clone-repo
@@ -2222,9 +2216,6 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     elif val:
                         content += f"\n{key}={val}\n"
                 _safe_write_file(env_path, content)
-                if first_install:
-                    global _fresh_install_pending
-                    _fresh_install_pending = True
             self._send_json({"ok": True, "first_install": first_install})
             return
 
@@ -2788,6 +2779,14 @@ function esc(s) {
   return d.innerHTML;
 }
 
+function freshInstallBanner() {
+  if (!state.freshInstall) return '';
+  return '<div style="background:linear-gradient(135deg,#fef2f2,#fff1f2); border:2px solid #dc2626; padding:16px 20px; border-radius:10px; margin-bottom:16px; display:flex; align-items:center; gap:14px;">' +
+    '<div style="font-size:28px; flex-shrink:0;">&#9888;&#65039;</div>' +
+    '<div><div style="font-size:15px; font-weight:700; color:#991b1b; margin-bottom:4px;">全新安装模式</div>' +
+    '<div style="font-size:14px; color:#7f1d1d; line-height:1.6;">构建时将<strong>清除旧数据库和文件存储</strong>，所有历史数据将被删除。如需保留数据，请先备份后再继续。</div></div></div>';
+}
+
 // Pick best URL: prefer http://IP when reachable, fallback to localhost
 function pickUrl(ip, reachable) {
   if (ip && ip !== '127.0.0.1' && reachable) return `http://${ip}`;
@@ -3165,12 +3164,12 @@ async function renderStep2(el) {
             }
           };
           el.querySelector('#freshInstallBtn').onclick = () => {
-            showConfirm('将进入全新安装流程，确定吗？', () => { state.step = 3; render(); });
+            showConfirm('将进入全新安装流程，确定吗？', () => { state.freshInstall = true; state.step = 3; render(); });
           };
         };
     }
     el.querySelector('#redeployBtn').onclick = () => {
-      showConfirm('重新安装会覆盖当前系统配置，确定要继续吗？', () => { state.step = 3; render(); });
+      showConfirm('重新安装会覆盖当前系统配置，确定要继续吗？', () => { state.freshInstall = true; state.step = 3; render(); });
     };
   } else if (data.status === 'partial') {
     el.innerHTML = `
@@ -3196,7 +3195,7 @@ async function renderStep2(el) {
       if (!envExists) {
         // .env 缺失 → 需要全新安装
         pc.innerHTML = '<div class="hint-box yellow"><strong>配置文件缺失。</strong><br>检测到容器存在，但当前目录缺少 .env 配置文件，需要重新进行安装配置。</div><div style="margin-top:12px;"><button class="btn btn-primary" id="freshInstallPartialBtn">继续安装 &rarr;</button></div>';
-        pc.querySelector('#freshInstallPartialBtn').onclick = () => { state.step = 3; render(); };
+        pc.querySelector('#freshInstallPartialBtn').onclick = () => { state.freshInstall = true; state.step = 3; render(); };
         return;
       }
 
@@ -3230,7 +3229,7 @@ async function renderStep2(el) {
                       } else {
                         logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">镜像构建完成，但启动服务失败。请检查日志或联系技术支持。</div><div class="actions" style="margin-top:8px;text-align:center;"><button class="btn btn-secondary" id="freshDeployAfterBuildBtn">全新部署 &rarr;</button></div>';
                         const fdBtn = logDiv.querySelector('#freshDeployAfterBuildBtn');
-                        if (fdBtn) fdBtn.onclick = () => { showConfirm('全新部署会覆盖当前所有配置和数据，确定要继续吗？', () => { state.step = 3; render(); }); };
+                        if (fdBtn) fdBtn.onclick = () => { showConfirm('全新部署会覆盖当前所有配置和数据，确定要继续吗？', () => { state.freshInstall = true; state.step = 3; render(); }); };
                         btn.disabled = false; btn.textContent = '重试';
                       }
                     }
@@ -3240,7 +3239,7 @@ async function renderStep2(el) {
               } else {
                 logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">构建失败。请检查日志。</div><div class="actions" style="margin-top:8px;text-align:center;"><button class="btn btn-secondary" id="freshDeployPartialBtn">全新部署 &rarr;</button></div>';
                 const fdBtn = logDiv.querySelector('#freshDeployPartialBtn');
-                if (fdBtn) fdBtn.onclick = () => { showConfirm('全新部署会覆盖当前所有配置和数据，确定要继续吗？', () => { state.step = 3; render(); }); };
+                if (fdBtn) fdBtn.onclick = () => { showConfirm('全新部署会覆盖当前所有配置和数据，确定要继续吗？', () => { state.freshInstall = true; state.step = 3; render(); }); };
                 btn.disabled = false; btn.textContent = '重试';
               }
             }
@@ -3248,7 +3247,7 @@ async function renderStep2(el) {
           es.onerror = () => { es.close(); btn.disabled = false; btn.textContent = '重试'; };
         };
         pc.querySelector('#reinstallPartialBtn').onclick = () => {
-          showConfirm('全新安装会覆盖当前所有配置和数据，确定要继续吗？', () => { state.step = 3; render(); });
+          showConfirm('全新安装会覆盖当前所有配置和数据，确定要继续吗？', () => { state.freshInstall = true; state.step = 3; render(); });
         };
       } else {
         // 镜像齐全 → 直接重启
@@ -3278,7 +3277,7 @@ async function renderStep2(el) {
           es.onerror = () => { es.close(); btn.disabled = false; btn.textContent = '重试'; };
         };
         pc.querySelector('#reinstallBtn').onclick = () => {
-          showConfirm('全新安装会覆盖当前所有配置和数据，确定要继续吗？', () => { state.step = 3; render(); });
+          showConfirm('全新安装会覆盖当前所有配置和数据，确定要继续吗？', () => { state.freshInstall = true; state.step = 3; render(); });
         };
       }
     });
@@ -3444,12 +3443,12 @@ async function renderStep2(el) {
       if (!envExists) {
         // .env 不存在 → 需要重新安装
         checkDiv.innerHTML = '<div class="hint-box yellow"><strong>配置文件缺失。</strong><br>未检测到 .env 配置文件，需要重新进行安装配置。</div><div class="actions" style="margin-top:12px;"><button class="btn btn-primary" id="freshInstallBtn">继续安装 &rarr;</button></div>';
-        checkDiv.querySelector('#freshInstallBtn').onclick = () => { state.step = 3; render(); };
+        checkDiv.querySelector('#freshInstallBtn').onclick = () => { state.freshInstall = true; state.step = 3; render(); };
       } else if (!allImagesExist) {
         // .env 存在但镜像缺失 → 需要重新构建
         checkDiv.innerHTML = recoveredHint + '<div class="hint-box yellow"><strong>镜像缺失，需要重新构建。</strong><br>缺失镜像：' + missingImages.join('、') + '</div><div class="actions" style="margin-top:12px;"><button class="btn btn-primary" id="rebuildBtn">重新构建</button><button class="btn btn-secondary" id="freshDeployBtn" style="margin-left:8px;">全新部署 &rarr;</button></div><div id="buildLog"></div>';
         checkDiv.querySelector('#freshDeployBtn').onclick = () => {
-          showConfirm('全新部署会覆盖当前所有配置和数据，确定要继续吗？', () => { state.step = 3; render(); });
+          showConfirm('全新部署会覆盖当前所有配置和数据，确定要继续吗？', () => { state.freshInstall = true; state.step = 3; render(); });
         };
         checkDiv.querySelector('#rebuildBtn').onclick = async () => {
           const btn = checkDiv.querySelector('#rebuildBtn');
@@ -3523,7 +3522,7 @@ async function renderStep2(el) {
               } else {
                 logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">构建失败。请检查日志。</div><div class="actions" style="margin-top:8px;text-align:center;"><button class="btn btn-secondary" id="freshDeployNoContBtn">全新部署 &rarr;</button></div>';
                 const fdBtn = logDiv.querySelector('#freshDeployNoContBtn');
-                if (fdBtn) fdBtn.onclick = () => { showConfirm('全新部署会覆盖当前所有配置和数据，确定要继续吗？', () => { state.step = 3; render(); }); };
+                if (fdBtn) fdBtn.onclick = () => { showConfirm('全新部署会覆盖当前所有配置和数据，确定要继续吗？', () => { state.freshInstall = true; state.step = 3; render(); }); };
                 btn.disabled = false; btn.textContent = '重试';
               }
             }
@@ -3534,7 +3533,7 @@ async function renderStep2(el) {
         // .env 存在且镜像齐全 → 可以直接启动
         checkDiv.innerHTML = recoveredHint + '<div class="hint-box green"><strong>环境就绪。</strong><br>配置文件和镜像均已就绪，可以直接启动服务。</div><div class="actions" style="margin-top:12px;"><button class="btn btn-success" id="startServicesBtn">启动服务</button><button class="btn btn-secondary" id="freshInstallReadyBtn" style="margin-left:8px; font-size:13px;">全新安装 &rarr;</button></div>';
         checkDiv.querySelector('#freshInstallReadyBtn').onclick = () => {
-          showConfirm('全新安装会覆盖当前所有配置和数据，确定要继续吗？', () => { state.step = 3; render(); });
+          showConfirm('全新安装会覆盖当前所有配置和数据，确定要继续吗？', () => { state.freshInstall = true; state.step = 3; render(); });
         };
         checkDiv.querySelector('#startServicesBtn').onclick = () => {
           const btn = checkDiv.querySelector('#startServicesBtn');
@@ -3555,7 +3554,7 @@ async function renderStep2(el) {
               } else {
                 logDiv.innerHTML = '<div class="hint-box red" style="text-align:center;">启动失败。请检查日志或尝试全新部署。</div><div class="actions" style="margin-top:8px;text-align:center;"><button class="btn btn-secondary" id="freshDeployStartBtn">全新部署 &rarr;</button></div>';
                 const fdBtn = logDiv.querySelector('#freshDeployStartBtn');
-                if (fdBtn) fdBtn.onclick = () => { showConfirm('全新部署会覆盖当前所有配置和数据，确定要继续吗？', () => { state.step = 3; render(); }); };
+                if (fdBtn) fdBtn.onclick = () => { showConfirm('全新部署会覆盖当前所有配置和数据，确定要继续吗？', () => { state.freshInstall = true; state.step = 3; render(); }); };
                 btn.disabled = false; btn.textContent = '重试';
               }
             }
@@ -4052,6 +4051,7 @@ async function renderStep5(el) {
   el.innerHTML = `
     <h2>第五步：准备程序和配置</h2>
     <p class="subtitle">${repoReady ? '请确认配置后构建程序。' : '需要先下载系统程序代码。'}</p>
+    ${freshInstallBanner()}
     ${repoHtml}${envFormHtml}${imgHtml}
     <div class="actions">
       <button class="btn btn-secondary" onclick="state.step=4;render();">&larr; 上一步</button>
@@ -4181,13 +4181,14 @@ async function renderStep5(el) {
       btn.innerHTML = '<span class="spinner"></span> 正在构建，请勿关闭...';
       logDiv.innerHTML = '<div style="font-size:17px;text-align:center;padding:16px;color:var(--primary);"><span class="spinner"></span> 正在构建程序（约5-15分钟）...</div><details style="margin-top:8px;"><summary style="cursor:pointer;color:var(--text-secondary);font-size:14px;">查看详细日志</summary><div class="log-console" id="buildConsole"></div></details>';
       const cons = logDiv.querySelector('#buildConsole');
-      const es = new EventSource('/api/build-full');
+      const es = new EventSource('/api/build-full' + (state.freshInstall ? '?fresh=1' : ''));
       es.onmessage = (e) => {
         const msg = JSON.parse(e.data);
         if (msg.type === 'log') { cons.textContent += msg.data + '\n'; cons.scrollTop = cons.scrollHeight; }
         else if (msg.type === 'done') {
           es.close();
           if (msg.result === 'success') {
+            state.freshInstall = false;
             logDiv.innerHTML = '<div class="hint-box green" style="text-align:center;font-size:17px;">构建完成！正在刷新...</div>';
             setTimeout(() => renderStep5(el), 2000);
           } else {
@@ -4242,6 +4243,7 @@ async function renderStep6(el) {
       } else if (msg.type === 'done') {
         es.close();
         if (msg.result === 'success') {
+          state.freshInstall = false;
           cons.innerHTML += '<span class="log-success">所有服务已启动！</span>\n';
           showDeployResult(el);
         } else {
