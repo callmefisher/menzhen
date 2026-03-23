@@ -31,7 +31,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.03.23.195600"
+WIZARD_VERSION = "2026.03.23.205600"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -4465,18 +4465,22 @@ async function showDeployResult(el) {
       if (data.mysql.length) {
         html += '<div style="margin-bottom:12px;"><strong style="font-size:14px;">数据库备份：</strong>';
         html += '<label style="display:block; padding:6px 0; font-size:13px; cursor:pointer; color:var(--text-secondary);"><input type="radio" name="restoreSql" value="" /> 不恢复数据库</label>';
+        const sqlDefault = data.mysql.findIndex(f => f.name.startsWith('xyj_'));
+        const sqlChecked = sqlDefault >= 0 ? sqlDefault : 0;
         html += data.mysql.map((f, i) =>
           '<label style="display:block; padding:6px 0; font-size:13px; cursor:pointer;">' +
-          '<input type="radio" name="restoreSql" value="' + esc(f.name) + '" ' + (i === 0 ? 'checked' : '') + ' /> ' +
+          '<input type="radio" name="restoreSql" value="' + esc(f.name) + '" ' + (i === sqlChecked ? 'checked' : '') + ' /> ' +
           esc(f.name) + ' <span style="color:var(--text-secondary);">(' + (f.size / 1024).toFixed(0) + ' KB)</span></label>'
         ).join('') + '</div>';
       }
       if (data.minio.length) {
         html += '<div style="margin-bottom:4px;"><strong style="font-size:14px;">文件存储备份：</strong>';
         html += '<label style="display:block; padding:6px 0; font-size:13px; cursor:pointer; color:var(--text-secondary);"><input type="radio" name="restoreMinio" value="" /> 不恢复文件存储</label>';
+        const minioDefault = data.minio.findIndex(f => f.name.startsWith('xyj_'));
+        const minioChecked = minioDefault >= 0 ? minioDefault : 0;
         html += data.minio.map((f, i) =>
           '<label style="display:block; padding:6px 0; font-size:13px; cursor:pointer;">' +
-          '<input type="radio" name="restoreMinio" value="' + esc(f.name) + '" ' + (i === 0 ? 'checked' : '') + ' /> ' +
+          '<input type="radio" name="restoreMinio" value="' + esc(f.name) + '" ' + (i === minioChecked ? 'checked' : '') + ' /> ' +
           esc(f.name) + ' <span style="color:var(--text-secondary);">(' + (f.size / 1048576).toFixed(1) + ' MB)</span></label>'
         ).join('') + '</div>';
       }
