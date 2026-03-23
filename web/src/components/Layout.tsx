@@ -61,10 +61,10 @@ export default function AppLayout() {
   const [alertCount, setAlertCount] = useState(0);
   const [followUpCount, setFollowUpCount] = useState(0);
 
-  // Scroll to top on route change (fixes mobile login landing position)
+  // Scroll to top only on initial mount (e.g. after login redirect)
   useEffect(() => {
     window.scrollTo(0, 0);
-  }, [location.pathname]);
+  }, []);
 
   useEffect(() => {
     if (!hasPermission('inventory:read')) return;
@@ -486,7 +486,7 @@ export default function AppLayout() {
           open={drawerOpen}
           onClose={() => setDrawerOpen(false)}
           width={220}
-          styles={{ body: { padding: 0, background: themeConfig.sidebarBg }, header: { display: 'none' } }}
+          styles={{ body: { padding: 0, background: themeConfig.sidebarBg, overflowY: 'auto' }, header: { display: 'none' } }}
         >
           {siderContent}
         </Drawer>
@@ -499,7 +499,7 @@ export default function AppLayout() {
           onBreakpoint={(broken) => {
             if (broken) setCollapsed(true);
           }}
-          style={{ background: themeConfig.sidebarBg }}
+          style={{ background: themeConfig.sidebarBg, height: '100vh', position: 'sticky', top: 0, overflow: 'auto' }}
         >
           {siderContent}
         </Sider>
