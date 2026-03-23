@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Input, Table, Tag, message, Button, Popconfirm, Select, Space, Pagination, Spin } from 'antd';
-import { SearchOutlined, RobotOutlined, DeleteOutlined, EditOutlined, SaveOutlined, CloseOutlined, ThunderboltOutlined, ExperimentOutlined } from '@ant-design/icons';
+import { Input, Table, Tag, message, Button, Popconfirm, Select, Space, Pagination, Spin, Modal, Form } from 'antd';
+import { SearchOutlined, RobotOutlined, DeleteOutlined, EditOutlined, SaveOutlined, CloseOutlined, ThunderboltOutlined, ExperimentOutlined, PlusOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { listHerbs, deleteHerb, listHerbCategories, updateHerb, aiRefreshHerb, findHerbPage } from '../../api/herb';
+import { listHerbs, deleteHerb, listHerbCategories, updateHerb, aiRefreshHerb, findHerbPage, createHerb } from '../../api/herb';
 import type { HerbItem } from '../../api/herb';
 import { useAuth } from '../../store/auth';
 import useIsMobile from '../../hooks/useIsMobile';
@@ -23,6 +23,10 @@ export default function HerbSearch() {
   const [aiRefreshing, setAiRefreshing] = useState(false);
   const { hasPermission } = useAuth();
   const isMobile = useIsMobile();
+
+  const [createModalVisible, setCreateModalVisible] = useState(false);
+  const [createForm] = Form.useForm();
+  const [creating, setCreating] = useState(false);
 
   const highlight = useRowHighlight({
     data: herbs,
@@ -158,33 +162,42 @@ export default function HerbSearch() {
     }
   };
 
+  const handleCreate = async () => {
+    try {
+      const values = await createForm.validateFields();
+      setCreating(true);
+      const res = await createHerb(values) as unknown as { data: HerbItem };
+      const newId = res.data?.id;
+      message.success('新增中药成功');
+      setCreateModalVisible(false);
+      createForm.resetFields();
+      // Clear search to ensure new record is visible, then navigate to last page
+      setSearchName('');
+      setSelectedCategory(undefined);
+      const newTotal = total + 1;
+      const lastPage = Math.ceil(newTotal / size) || 1;
+      setPage(lastPage);
+      await fetchHerbs('', undefined, lastPage, size);
+      if (newId) highlight.setHighlightId(newId);
+    } catch {
+      // Form validation error shows inline; API errors handled by interceptor
+    } finally {
+      setCreating(false);
+    }
+  };
+
   const columns: ColumnsType<HerbItem> = [
     {
       title: '药名',
       dataIndex: 'name',
       key: 'name',
-      width: 160,
-    },
-    {
-      title: '别名',
-      dataIndex: 'alias',
-      key: 'alias',
-      width: 200,
-      ellipsis: true,
-      responsive: ['md'] as any,
-    },
-    {
-      title: '分类',
-      dataIndex: 'category',
-      key: 'category',
       width: 100,
-      responsive: ['md'] as any,
     },
     {
       title: '性味归经',
       dataIndex: 'properties',
       key: 'properties',
-      width: 200,
+      width: 160,
       ellipsis: true,
       responsive: ['md'] as any,
     },
@@ -192,12 +205,14 @@ export default function HerbSearch() {
       title: '功效',
       dataIndex: 'effects',
       key: 'effects',
+      width: 180,
       ellipsis: true,
     },
     {
       title: '主治',
       dataIndex: 'indications',
       key: 'indications',
+      width: 280,
       ellipsis: true,
       responsive: ['md'] as any,
     },
@@ -208,21 +223,6 @@ export default function HerbSearch() {
       width: 120,
       ellipsis: true,
       responsive: ['md'] as any,
-    },
-    {
-      title: '来源',
-      dataIndex: 'source',
-      key: 'source',
-      width: 100,
-      responsive: ['md'] as any,
-      render: (source: string) =>
-        source === 'deepseek' ? (
-          <Tag className="warm-tag-ai" icon={<RobotOutlined />}>
-            AI
-          </Tag>
-        ) : (
-          <Tag className="warm-tag-local">本地</Tag>
-        ),
     },
     ...(hasPermission('role:manage')
       ? [
@@ -288,6 +288,17 @@ export default function HerbSearch() {
           onChange={handleCategoryChange}
           options={categories.map((c) => ({ label: c, value: c }))}
         />
+        {hasPermission('role:manage') && (
+          <Button
+            type="primary"
+            className="warm-btn-primary"
+            icon={<PlusOutlined />}
+            size="large"
+            onClick={() => setCreateModalVisible(true)}
+          >
+            新增中药
+          </Button>
+        )}
       </div>
 
       {isMobile ? (
@@ -307,6 +318,8 @@ export default function HerbSearch() {
                     <Space size="small">
                       {herb.source === 'deepseek' ? (
                         <Tag className="warm-tag-ai" icon={<RobotOutlined />}>AI</Tag>
+                      ) : herb.source === 'manual' ? (
+                        <Tag className="warm-tag-local">手动</Tag>
                       ) : (
                         <Tag className="warm-tag-local">本地</Tag>
                       )}
@@ -383,10 +396,14 @@ export default function HerbSearch() {
                           <p style={{ margin: '4px 0' }}><strong>功效：</strong>{herb.effects || '无'}</p>
                           <p style={{ margin: '4px 0' }}><strong>主治：</strong>{herb.indications || '无'}</p>
                           <p style={{ margin: '4px 0' }}><strong>道地产区：</strong>{herb.origin || '无'}</p>
-                          {herb.source === 'deepseek' && (
+                          {herb.source === 'deepseek' ? (
                             <Tag className="warm-tag-ai" icon={<RobotOutlined />} style={{ marginTop: 4 }}>
                               数据来源：DeepSeek AI（仅供参考，请结合临床经验）
                             </Tag>
+                          ) : herb.source === 'manual' ? (
+                            <Tag className="warm-tag-local" style={{ marginTop: 4 }}>数据来源：手动录入</Tag>
+                          ) : (
+                            <Tag className="warm-tag-local" style={{ marginTop: 4 }}>数据来源：本地数据</Tag>
                           )}
                         </>
                       )}
@@ -470,10 +487,14 @@ export default function HerbSearch() {
                     <p><strong>功效：</strong>{record.effects || '无'}</p>
                     <p><strong>主治：</strong>{record.indications || '无'}</p>
                     <p><strong>道地产区：</strong>{record.origin || '无'}</p>
-                    {record.source === 'deepseek' && (
+                    {record.source === 'deepseek' ? (
                       <Tag className="warm-tag-ai" icon={<RobotOutlined />}>
                         数据来源：DeepSeek AI（仅供参考，请结合临床经验）
                       </Tag>
+                    ) : record.source === 'manual' ? (
+                      <Tag className="warm-tag-local">数据来源：手动录入</Tag>
+                    ) : (
+                      <Tag className="warm-tag-local">数据来源：本地数据</Tag>
                     )}
                   </>
                 )}
@@ -482,6 +503,42 @@ export default function HerbSearch() {
           }}
         />
       )}
+
+      <Modal
+        title="新增中药"
+        open={createModalVisible}
+        onOk={handleCreate}
+        onCancel={() => { setCreateModalVisible(false); createForm.resetFields(); }}
+        confirmLoading={creating}
+        okText="保存"
+        cancelText="取消"
+        destroyOnClose
+        width={isMobile ? 'calc(100vw - 32px)' : 520}
+      >
+        <Form form={createForm} layout="vertical">
+          <Form.Item label="药名" name="name" rules={[{ required: true, message: '请输入药名' }]}>
+            <Input placeholder="请输入药名" />
+          </Form.Item>
+          <Form.Item label="别名" name="alias">
+            <Input placeholder="请输入别名" />
+          </Form.Item>
+          <Form.Item label="分类" name="category">
+            <Input placeholder="请输入分类（如：补气药、补血药）" />
+          </Form.Item>
+          <Form.Item label="性味归经" name="properties">
+            <Input placeholder="请输入性味归经" />
+          </Form.Item>
+          <Form.Item label="功效" name="effects">
+            <Input.TextArea rows={2} placeholder="请输入功效" />
+          </Form.Item>
+          <Form.Item label="主治" name="indications">
+            <Input.TextArea rows={2} placeholder="请输入主治" />
+          </Form.Item>
+          <Form.Item label="道地产区" name="origin">
+            <Input placeholder="请输入道地产区" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 }

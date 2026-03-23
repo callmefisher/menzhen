@@ -31,7 +31,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.03.23.102000"
+WIZARD_VERSION = "2026.03.23.144600"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -2047,6 +2047,80 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "value": val,
                 })
             self._send_json({"items": items, "has_env": not first_install})
+            return
+
+        # --- 数据恢复 API ---
+
+        if self.path == "/api/list-local-backups":
+            backup_dir = SCRIPT_DIR / "backups"
+            mysql_files = []
+            minio_files = []
+            if backup_dir.is_dir():
+                for f in sorted(backup_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+                    name = f.name
+                    if f.is_file() and not f.is_symlink() and (name.endswith(".sql.gz") or name.endswith(".sql")):
+                        mysql_files.append({"name": name, "size": f.stat().st_size})
+            minio_dir = backup_dir / "minio"
+            if minio_dir.is_dir():
+                for f in sorted(minio_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+                    name = f.name
+                    if f.is_file() and not f.is_symlink() and name.endswith(".tar.gz"):
+                        minio_files.append({"name": name, "size": f.stat().st_size})
+            self._send_json({"mysql": mysql_files, "minio": minio_files})
+            return
+
+        if self.path.startswith("/api/restore-backup"):
+            # Parse query params: ?sql=xxx&minio=xxx
+            from urllib.parse import urlparse, parse_qs
+            qs = parse_qs(urlparse(self.path).query)
+            sql_file = qs.get("sql", [""])[0]
+            minio_file = qs.get("minio", [""])[0]
+            if not sql_file and not minio_file:
+                self._start_sse()
+                self._sse_log("错误：未选择任何备份文件")
+                self._sse_done("error", code=1)
+                return
+            # Whitelist filenames to prevent path injection
+            safe_name = re.compile(r'^[A-Za-z0-9_.\-]+$')
+            if sql_file and not safe_name.match(sql_file):
+                self._start_sse()
+                self._sse_log("错误：数据库备份文件名不合法")
+                self._sse_done("error", code=1)
+                return
+            if minio_file and not safe_name.match(minio_file):
+                self._start_sse()
+                self._sse_log("错误：文件存储备份文件名不合法")
+                self._sse_done("error", code=1)
+                return
+            # Build restore.sh arguments
+            os_key, _ = detect_os()
+            args = []
+            if sql_file:
+                inner = f"/backups/{sql_file}"
+                args += ["--sql", shlex.quote(inner) if os_key != "windows" else inner]
+            if minio_file:
+                inner = f"/backups/minio/{minio_file}"
+                args += ["--minio-tar", shlex.quote(inner) if os_key != "windows" else inner]
+            q_dir = shlex.quote(str(SCRIPT_DIR)) if os_key != "windows" else str(SCRIPT_DIR)
+            # Execute restore in backup container, then restart api
+            if os_key == "windows":
+                restore_cmd = (
+                    f'cd /d "{q_dir}" && '
+                    f'docker compose exec -T backup /scripts/restore.sh {" ".join(args)} && '
+                    "echo Restarting API... && "
+                    "docker compose restart api && "
+                    "echo Restore complete!"
+                )
+                stream_command(self, ["cmd", "/c", restore_cmd])
+            else:
+                restore_cmd = (
+                    f"cd {q_dir} && "
+                    f"docker compose exec -T backup /scripts/restore.sh {' '.join(args)} && "
+                    "echo '正在重启后台服务...' && "
+                    "docker compose restart api && "
+                    "echo '数据恢复完成!'"
+                )
+                stream_command(self, ["bash", "-c", restore_cmd])
             return
 
         self.send_error(404)
@@ -4341,6 +4415,24 @@ async function showDeployResult(el) {
       <h2>安装成功！</h2>
       <p style="font-size:15px; margin:8px 0;">系统已安装完成，可以开始使用了。</p>
       <p style="color:var(--danger); font-size:14px;">首次登录后请及时修改默认密码。</p>
+
+      <details id="restoreSection" style="margin:20px 0; text-align:left; background:#f8fafc; border:1px solid var(--border); border-radius:8px; padding:0;">
+        <summary style="cursor:pointer; padding:14px 18px; font-size:15px; font-weight:600; color:var(--text-secondary); user-select:none;">
+          &#128230; 从备份恢复数据（可选）
+        </summary>
+        <div style="padding:4px 18px 18px;" id="restoreBody">
+          <p style="font-size:13px; color:var(--text-secondary); margin-bottom:12px;">
+            此功能用于首次安装后从旧系统备份恢复数据，为<strong>可选操作</strong>。<br>
+            如果没有备份文件或不需要恢复，可以直接忽略此区域，点击下方按钮打开系统。
+          </p>
+          <div id="restoreFileList"><span class="spinner"></span> 正在扫描备份文件...</div>
+          <div id="restoreActions" style="display:none; margin-top:12px;">
+            <button class="btn btn-primary" id="restoreBtn" style="padding:10px 24px;">开始恢复</button>
+          </div>
+          <div id="restoreLog" style="margin-top:8px;"></div>
+        </div>
+      </details>
+
       <div class="url"><a href="${esc(url)}" target="_blank">${esc(url)}</a></div>
       ${lanExtra ? `<p style="margin-top:4px;">${lanExtra}</p>` : ''}
       <a href="${esc(url)}" target="_blank" class="btn btn-success" style="font-size:18px; padding:14px 40px;">
@@ -4348,6 +4440,91 @@ async function showDeployResult(el) {
       </a>
     </div>
   `;
+
+  // --- 数据恢复逻辑 ---
+  const restoreDetails = result.querySelector('#restoreSection');
+  restoreDetails.addEventListener('toggle', async () => {
+    if (!restoreDetails.open) return;
+    const listDiv = result.querySelector('#restoreFileList');
+    const actionsDiv = result.querySelector('#restoreActions');
+    try {
+      const data = await api('/api/list-local-backups');
+      const SAFE = /^[A-Za-z0-9_.\-]+$/;
+      data.mysql = data.mysql.filter(f => SAFE.test(f.name));
+      data.minio = data.minio.filter(f => SAFE.test(f.name));
+      if (!data.mysql.length && !data.minio.length) {
+        listDiv.innerHTML = '<p style="color:var(--text-secondary);">未找到备份文件。请将备份文件放入 backups/ 目录后重试。</p>';
+        return;
+      }
+      let html = '';
+      if (data.mysql.length) {
+        html += '<div style="margin-bottom:12px;"><strong style="font-size:14px;">数据库备份：</strong>';
+        html += '<label style="display:block; padding:6px 0; font-size:13px; cursor:pointer; color:var(--text-secondary);"><input type="radio" name="restoreSql" value="" /> 不恢复数据库</label>';
+        html += data.mysql.map((f, i) =>
+          '<label style="display:block; padding:6px 0; font-size:13px; cursor:pointer;">' +
+          '<input type="radio" name="restoreSql" value="' + esc(f.name) + '" ' + (i === 0 ? 'checked' : '') + ' /> ' +
+          esc(f.name) + ' <span style="color:var(--text-secondary);">(' + (f.size / 1024).toFixed(0) + ' KB)</span></label>'
+        ).join('') + '</div>';
+      }
+      if (data.minio.length) {
+        html += '<div style="margin-bottom:4px;"><strong style="font-size:14px;">文件存储备份：</strong>';
+        html += '<label style="display:block; padding:6px 0; font-size:13px; cursor:pointer; color:var(--text-secondary);"><input type="radio" name="restoreMinio" value="" /> 不恢复文件存储</label>';
+        html += data.minio.map((f, i) =>
+          '<label style="display:block; padding:6px 0; font-size:13px; cursor:pointer;">' +
+          '<input type="radio" name="restoreMinio" value="' + esc(f.name) + '" ' + (i === 0 ? 'checked' : '') + ' /> ' +
+          esc(f.name) + ' <span style="color:var(--text-secondary);">(' + (f.size / 1048576).toFixed(1) + ' MB)</span></label>'
+        ).join('') + '</div>';
+      }
+      listDiv.innerHTML = html;
+      actionsDiv.style.display = '';
+    } catch (e) {
+      listDiv.innerHTML = '<p style="color:var(--danger);">扫描备份文件失败，请检查 backups/ 目录。</p>';
+    }
+  }, { once: true });
+
+  // Restore button handler
+  result.querySelector('#restoreBtn').onclick = () => {
+    const sqlEl = result.querySelector('input[name="restoreSql"]:checked');
+    const minioEl = result.querySelector('input[name="restoreMinio"]:checked');
+    const sqlFile = sqlEl ? sqlEl.value : '';
+    const minioFile = minioEl ? minioEl.value : '';
+    if (!sqlFile && !minioFile) return;
+
+    const btn = result.querySelector('#restoreBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> 正在恢复...';
+    const logDiv = result.querySelector('#restoreLog');
+    logDiv.innerHTML = '<details open><summary style="cursor:pointer;font-size:13px;color:var(--text-secondary);">恢复日志</summary><div class="log-console" id="restoreConsole"></div></details>';
+    const cons = logDiv.querySelector('#restoreConsole');
+
+    let params = [];
+    if (sqlFile) params.push('sql=' + encodeURIComponent(sqlFile));
+    if (minioFile) params.push('minio=' + encodeURIComponent(minioFile));
+    const es = new EventSource('/api/restore-backup?' + params.join('&'));
+    es.onmessage = (e) => {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'log') {
+        cons.textContent += msg.data + '\n';
+        cons.scrollTop = cons.scrollHeight;
+      } else if (msg.type === 'done') {
+        es.close();
+        if (msg.result === 'success') {
+          logDiv.innerHTML = '<div class="hint-box green" style="text-align:center;">数据恢复完成！可以打开系统使用了。</div>';
+          btn.innerHTML = '恢复完成';
+        } else {
+          logDiv.innerHTML += '<div class="hint-box red" style="text-align:center;">恢复失败，请检查日志。</div>';
+          btn.disabled = false;
+          btn.textContent = '重试';
+        }
+      }
+    };
+    es.onerror = () => {
+      es.close();
+      btn.disabled = false;
+      btn.textContent = '重试';
+      logDiv.innerHTML += '<div class="hint-box red" style="text-align:center;">连接中断。</div>';
+    };
+  };
 
   // Auto-scroll to "点击打开系统" button so user can click immediately
   const openBtn = result.querySelector('.btn-success');

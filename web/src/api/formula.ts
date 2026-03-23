@@ -46,6 +46,10 @@ export function updateFormulaNotes(id: number, notes: string) {
   return request.put(`/formulas/${id}/notes`, { notes });
 }
 
+export function createFormula(data: Partial<Omit<FormulaItem, 'id' | 'source' | 'created_at'>> & { name: string }) {
+  return request.post('/formulas', data);
+}
+
 export async function findFormulaPage(id: number, size: number): Promise<number> {
   const res = await request.get(`/formulas/${id}/page`, { params: { size } });
   return (res as any).data?.page || 1;

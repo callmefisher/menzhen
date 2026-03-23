@@ -113,6 +113,13 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
       <button class="btn primary" onclick="exportAll()">导出全部</button>
       <button class="btn primary" onclick="syncToSource()" style="background:#2ed573;border-color:#2ed573;color:#fff">同步到源码</button>
       <button class="btn" onclick="saveToStorage()">暂存</button>
+      <button class="btn" onclick="autoCalibratAll()" style="background:#e056fd;border-color:#e056fd;color:#fff;width:100%;margin-top:4px;font-weight:bold;padding:8px" title="迭代投影+双边平滑+自适应采样，一键处理全部经络">⚡ 一键全部校准</button>
+      <div id="calibrate-progress" style="display:none;width:100%;margin-top:4px;">
+        <div style="background:#0f3460;border-radius:3px;height:20px;overflow:hidden;position:relative">
+          <div id="calibrate-bar" style="background:#e056fd;height:100%;width:0%;transition:width 0.2s"></div>
+          <span id="calibrate-text" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:11px;color:#fff"></span>
+        </div>
+      </div>
     </div>
   </div>
   <div id="viewport"></div>
@@ -435,18 +442,29 @@ function updateVisualization() {
   if (editMode === 'path') {
     // Draw path as tube for visible thickness
     const pathData = workingPaths[mid]?.path || [];
-    if (pathData.length > 1) {
-      const pts = pathData.map(p => new THREE.Vector3(p[0], p[1], p[2]));
+    // Filter out NaN points for tube rendering
+    const validPathData = pathData.filter(p => p && isFinite(p[0]) && isFinite(p[1]) && isFinite(p[2]));
+    if (validPathData.length > 1) {
+      const pts = validPathData.map(p => new THREE.Vector3(p[0], p[1], p[2]));
       const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal', 0.3);
       const segments = Math.max(20, pts.length * 8);
       const tubeGeo = new THREE.TubeGeometry(curve, segments, 0.002, 6, false);
       const tubeMat = new THREE.MeshBasicMaterial({ color });
       pathLine = new THREE.Mesh(tubeGeo, tubeMat);
       vizGroup.add(pathLine);
+
+      // Meridian name label at path midpoint
+      const midPt = validPathData[Math.floor(validPathData.length / 2)];
+      if (midPt) {
+        const nameLabel = createTextSprite(meta.name, meta.color, 40, 'rgba(0,0,0,0.7)');
+        nameLabel.position.set(midPt[0], midPt[1] + 0.03, midPt[2]);
+        vizGroup.add(nameLabel);
+      }
     }
 
     // Control point spheres (small)
     pathData.forEach((p, i) => {
+      if (!p || !isFinite(p[0]) || !isFinite(p[1]) || !isFinite(p[2])) return;
       const isSelected = i === selectedPointIndex;
       const geo = new THREE.SphereGeometry(isSelected ? 0.007 : 0.005, 10, 10);
       const mat = new THREE.MeshBasicMaterial({
@@ -462,20 +480,29 @@ function updateVisualization() {
   } else {
     // Acupoint mode: show path as thin tube + acupoint markers
     const pathData = workingPaths[mid]?.path || [];
-    if (pathData.length > 1) {
-      const pts = pathData.map(p => new THREE.Vector3(p[0], p[1], p[2]));
+    const validPathData = pathData.filter(p => p && isFinite(p[0]) && isFinite(p[1]) && isFinite(p[2]));
+    if (validPathData.length > 1) {
+      const pts = validPathData.map(p => new THREE.Vector3(p[0], p[1], p[2]));
       const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal', 0.3);
       const segments = Math.max(20, pts.length * 8);
       const tubeGeo = new THREE.TubeGeometry(curve, segments, 0.001, 6, false);
       const tubeMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4 });
       vizGroup.add(new THREE.Mesh(tubeGeo, tubeMat));
+
+      // Meridian name label at path midpoint (acupoint mode)
+      const midPt = validPathData[Math.floor(validPathData.length / 2)];
+      if (midPt) {
+        const nameLabel = createTextSprite(meta.name, meta.color, 40, 'rgba(0,0,0,0.5)');
+        nameLabel.position.set(midPt[0], midPt[1] + 0.03, midPt[2]);
+        vizGroup.add(nameLabel);
+      }
     }
 
-    // Acupoint markers (larger, always visible)
+    // Acupoint markers (larger, always visible) + labels
     const codes = ACUPOINT_CODES[mid] || [];
     codes.forEach((code) => {
       const pos = workingAcupoints[code];
-      if (!pos) return;
+      if (!pos || !isValidVec3(pos)) return;
       const isSelected = code === selectedAcupointCode;
       const geo = new THREE.SphereGeometry(isSelected ? 0.008 : 0.006, 10, 10);
       const mat = new THREE.MeshBasicMaterial({
@@ -488,6 +515,12 @@ function updateVisualization() {
       sphere.userData = { type: 'acupoint', code };
       vizGroup.add(sphere);
       acupointMarkers.push(sphere);
+
+      // Text label above acupoint
+      const name = ACUPOINT_NAMES[code] || code;
+      const label = createTextSprite(`${code} ${name}`, isSelected ? '#ffffff' : meta.color, 36);
+      label.position.set(pos[0], pos[1] + 0.02, pos[2]);
+      vizGroup.add(label);
     });
   }
 
@@ -901,6 +934,7 @@ function buildMergedBVH() {
 
 function projectPointToSurface(point, offset = 0.006) {
   if (!mergedBVH) return point;
+  if (!isValidVec3(point)) return point;
   const p = new THREE.Vector3(point[0], point[1], point[2]);
   const target = { point: new THREE.Vector3(), distance: Infinity, faceIndex: 0 };
   mergedBVH.bvh.closestPointToPoint(p, target);
@@ -910,6 +944,7 @@ function projectPointToSurface(point, offset = 0.006) {
     const faceIdx = target.faceIndex;
     const idxAttr = mergedBVH.geometry.index;
     const posAttr = mergedBVH.geometry.attributes.position;
+    if (!idxAttr || !posAttr) return point;
     const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
     const ia = idxAttr.getX(faceIdx * 3);
     const ib = idxAttr.getX(faceIdx * 3 + 1);
@@ -922,8 +957,12 @@ function projectPointToSurface(point, offset = 0.006) {
     const edge2 = c.clone().sub(a);
     normal.crossVectors(edge1, edge2).normalize();
 
+    if (normal.lengthSq() < 0.0001) normal.set(0, 1, 0);
+
     const projected = target.point.clone().add(normal.multiplyScalar(offset));
-    return [round3(projected.x), round3(projected.y), round3(projected.z)];
+    const result = [round3(projected.x), round3(projected.y), round3(projected.z)];
+    if (!isValidVec3(result)) return point;
+    return result;
   }
   return point;
 }
@@ -1000,11 +1039,494 @@ function generatePathFromAcupoints(density = 4) {
   showToast(`从 ${positions.length} 个穴位生成了 ${newPath.length} 点路径`);
 }
 
+// ==================== AUTO-CALIBRATE ALGORITHM ====================
+// Iterative surface fitting with guided projection + bilateral smoothing
+
+let bodyCenterAxis = null; // cached center axis per model
+
+/**
+ * Build body center axis from mesh geometry (82 Y-slices).
+ * For trunk: average of all verts near center; for legs: split left/right.
+ */
+function buildBodyCenterAxis() {
+  if (!mergedBVH) return;
+  const posAttr = mergedBVH.geometry.attributes.position;
+  const count = posAttr.count;
+
+  // Collect vertices into Y-slices (step 0.02, 82 slices from 0 to 1.64)
+  const sliceStep = 0.02;
+  const numSlices = Math.ceil(1.64 / sliceStep) + 1;
+  const slices = Array.from({ length: numSlices }, () => ({ sumX: 0, sumZ: 0, count: 0 }));
+  const slicesTrunk = Array.from({ length: numSlices }, () => ({ sumX: 0, sumZ: 0, count: 0 }));
+  const slicesLegL = Array.from({ length: numSlices }, () => ({ sumX: 0, sumZ: 0, count: 0 }));
+  const slicesLegR = Array.from({ length: numSlices }, () => ({ sumX: 0, sumZ: 0, count: 0 }));
+
+  for (let i = 0; i < count; i++) {
+    const x = posAttr.getX(i);
+    const y = posAttr.getY(i);
+    const z = posAttr.getZ(i);
+    const si = Math.min(numSlices - 1, Math.max(0, Math.round(y / sliceStep)));
+
+    slices[si].sumX += x; slices[si].sumZ += z; slices[si].count++;
+
+    if (Math.abs(x) < 0.15) {
+      slicesTrunk[si].sumX += x; slicesTrunk[si].sumZ += z; slicesTrunk[si].count++;
+    }
+    if (y < 0.82) {
+      if (x < 0) { slicesLegL[si].sumX += x; slicesLegL[si].sumZ += z; slicesLegL[si].count++; }
+      else { slicesLegR[si].sumX += x; slicesLegR[si].sumZ += z; slicesLegR[si].count++; }
+    }
+  }
+
+  const getCenter = (s) => s.count > 0 ? { x: s.sumX / s.count, z: s.sumZ / s.count } : { x: 0, z: 0 };
+
+  bodyCenterAxis = {
+    all: slices.map(getCenter),
+    trunk: slicesTrunk.map(getCenter),
+    legL: slicesLegL.map(getCenter),
+    legR: slicesLegR.map(getCenter),
+    step: sliceStep,
+  };
+}
+
+/**
+ * Get body center point for a given 3D position and meridian.
+ */
+const ARM_MERIDIANS = new Set(['LU','LI','HT','SI','PC','TE']);
+
+function getBodyCenter(point, meridianId) {
+  if (!bodyCenterAxis) return new THREE.Vector3(0, point[1], 0);
+  const si = Math.min(bodyCenterAxis.all.length - 1, Math.max(0, Math.round(point[1] / bodyCenterAxis.step)));
+
+  // Arm meridians: use arm cross-section center (when far from trunk)
+  if (ARM_MERIDIANS.has(meridianId) && Math.abs(point[0]) > 0.15) {
+    // Arm center is roughly at same X, center of Y/Z cross-section
+    const s = bodyCenterAxis.all[si];
+    return new THREE.Vector3(point[0], point[1], s.z);
+  }
+
+  // Leg region
+  if (point[1] < 0.82) {
+    const s = point[0] < 0 ? bodyCenterAxis.legL[si] : bodyCenterAxis.legR[si];
+    return new THREE.Vector3(s.x, point[1], s.z);
+  }
+
+  // Trunk/head
+  const s = bodyCenterAxis.trunk[si].x !== undefined ? bodyCenterAxis.trunk[si] : bodyCenterAxis.all[si];
+  return new THREE.Vector3(s.x, point[1], s.z);
+}
+
+/**
+ * Compute barycentric-interpolated smooth normal at a surface point.
+ */
+function getSmoothNormal(faceIndex, surfacePoint) {
+  const geo = mergedBVH.geometry;
+  const normalAttr = geo.attributes.normal;
+  const idxAttr = geo.index;
+  const posAttr = geo.attributes.position;
+
+  if (!idxAttr || !posAttr) {
+    // No index buffer — cannot compute normal from geometry
+    return new THREE.Vector3(0, 1, 0);
+  }
+
+  if (!normalAttr) {
+    // Fallback to face normal (no vertex normals available)
+    const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+    const ia = idxAttr.getX(faceIndex * 3);
+    const ib = idxAttr.getX(faceIndex * 3 + 1);
+    const ic = idxAttr.getX(faceIndex * 3 + 2);
+    a.fromBufferAttribute(posAttr, ia);
+    b.fromBufferAttribute(posAttr, ib);
+    c.fromBufferAttribute(posAttr, ic);
+    const n = new THREE.Vector3();
+    n.crossVectors(b.clone().sub(a), c.clone().sub(a)).normalize();
+    return n;
+  }
+
+  const ia = idxAttr.getX(faceIndex * 3);
+  const ib = idxAttr.getX(faceIndex * 3 + 1);
+  const ic = idxAttr.getX(faceIndex * 3 + 2);
+
+  const a = new THREE.Vector3().fromBufferAttribute(posAttr, ia);
+  const b = new THREE.Vector3().fromBufferAttribute(posAttr, ib);
+  const c = new THREE.Vector3().fromBufferAttribute(posAttr, ic);
+
+  // Barycentric coordinates
+  const v0 = b.clone().sub(a);
+  const v1 = c.clone().sub(a);
+  const v2 = surfacePoint.clone().sub(a);
+  const d00 = v0.dot(v0);
+  const d01 = v0.dot(v1);
+  const d11 = v1.dot(v1);
+  const d20 = v2.dot(v0);
+  const d21 = v2.dot(v1);
+  const denom = d00 * d11 - d01 * d01;
+  const bv = denom !== 0 ? (d11 * d20 - d01 * d21) / denom : 1/3;
+  const bw = denom !== 0 ? (d00 * d21 - d01 * d20) / denom : 1/3;
+  const bu = 1 - bv - bw;
+
+  const na = new THREE.Vector3().fromBufferAttribute(normalAttr, ia);
+  const nb = new THREE.Vector3().fromBufferAttribute(normalAttr, ib);
+  const nc = new THREE.Vector3().fromBufferAttribute(normalAttr, ic);
+
+  return na.multiplyScalar(bu).add(nb.multiplyScalar(bv)).add(nc.multiplyScalar(bw)).normalize();
+}
+
+/**
+ * Project a point to nearest surface using BVH closestPointToPoint + smooth normal offset.
+ * Uses body center axis to ensure normal points outward (side guard).
+ */
+function projectToSurfaceSmooth(point, meridianId, offset = 0.006) {
+  if (!mergedBVH) return point;
+  if (!point || point.length < 3 || !isFinite(point[0]) || !isFinite(point[1]) || !isFinite(point[2])) return point;
+
+  const p = new THREE.Vector3(point[0], point[1], point[2]);
+  const target = { point: new THREE.Vector3(), distance: Infinity, faceIndex: 0 };
+  mergedBVH.bvh.closestPointToPoint(p, target);
+
+  if (target.distance >= Infinity) return point;
+
+  const normal = getSmoothNormal(target.faceIndex, target.point);
+
+  // Side guard: ensure normal points outward from body center
+  if (meridianId && bodyCenterAxis) {
+    const center = getBodyCenter(point, meridianId);
+    const outward = new THREE.Vector3().subVectors(target.point, center);
+    if (outward.lengthSq() > 0.0001 && normal.dot(outward) < 0) {
+      normal.negate();
+    }
+  }
+
+  if (normal.lengthSq() < 0.01) {
+    // Fallback: use direction from query point to surface
+    normal.subVectors(p, target.point).normalize();
+    if (normal.lengthSq() < 0.01) normal.set(0, 1, 0);
+  }
+
+  const projected = target.point.clone().add(normal.multiplyScalar(offset));
+  const result = [round3(projected.x), round3(projected.y), round3(projected.z)];
+
+  // NaN safety: return original point if projection fails
+  if (!isFinite(result[0]) || !isFinite(result[1]) || !isFinite(result[2])) return point;
+  return result;
+}
+
+/**
+ * Bilateral smoothing: preserves sharp transitions at joints while smoothing noise.
+ * Pinned points (acupoints) are never moved.
+ */
+function bilateralSmooth(points, pinnedSet, sigma_s = 3, sigma_r = 0.01) {
+  if (!points || points.length === 0) return points;
+  const result = points.map(p => [...p]);
+  const sigma_s2 = 2 * sigma_s * sigma_s;
+  const sigma_r2 = 2 * sigma_r * sigma_r;
+  const halfWin = 5;
+
+  for (let i = 0; i < points.length; i++) {
+    if (pinnedSet.has(i)) continue;
+
+    let wSum = 0, sx = 0, sy = 0, sz = 0;
+    const lo = Math.max(0, i - halfWin);
+    const hi = Math.min(points.length - 1, i + halfWin);
+
+    for (let j = lo; j <= hi; j++) {
+      const spatialW = Math.exp(-((i - j) * (i - j)) / sigma_s2);
+      const dx = points[i][0] - points[j][0];
+      const dy = points[i][1] - points[j][1];
+      const dz = points[i][2] - points[j][2];
+      const rangeD2 = dx * dx + dy * dy + dz * dz;
+      const rangeW = Math.exp(-rangeD2 / sigma_r2);
+      const w = spatialW * rangeW;
+      sx += points[j][0] * w;
+      sy += points[j][1] * w;
+      sz += points[j][2] * w;
+      wSum += w;
+    }
+
+    if (wSum > 0) {
+      result[i] = [sx / wSum, sy / wSum, sz / wSum];
+    }
+  }
+  return result;
+}
+
+/**
+ * Adaptive resampling: more points in high-curvature areas, fewer in straight sections.
+ */
+function adaptiveResample(points, minSpacing = 0.008, maxSpacing = 0.04) {
+  if (!points || points.length < 2) return points || [];
+
+  // Filter out any NaN points
+  const validPoints = points.filter(p => p && p.length >= 3 && isFinite(p[0]) && isFinite(p[1]) && isFinite(p[2]));
+  if (validPoints.length < 2) return validPoints;
+
+  // Compute curvature at each point
+  const curvature = new Float64Array(validPoints.length);
+  for (let i = 1; i < validPoints.length - 1; i++) {
+    const v1x = validPoints[i][0] - validPoints[i-1][0], v1y = validPoints[i][1] - validPoints[i-1][1], v1z = validPoints[i][2] - validPoints[i-1][2];
+    const v2x = validPoints[i+1][0] - validPoints[i][0], v2y = validPoints[i+1][1] - validPoints[i][1], v2z = validPoints[i+1][2] - validPoints[i][2];
+    const len1 = Math.sqrt(v1x*v1x + v1y*v1y + v1z*v1z);
+    const len2 = Math.sqrt(v2x*v2x + v2y*v2y + v2z*v2z);
+    if (len1 > 0 && len2 > 0) {
+      const dot = (v1x*v2x + v1y*v2y + v1z*v2z) / (len1 * len2);
+      curvature[i] = 1 - Math.max(-1, Math.min(1, dot)); // 0=straight, 2=U-turn
+    }
+  }
+
+  // Build CatmullRom curve
+  const vectors = validPoints.map(p => new THREE.Vector3(p[0], p[1], p[2]));
+  const curve = new THREE.CatmullRomCurve3(vectors, false, 'centripetal', 0.5);
+  const totalLen = curve.getLength();
+  if (totalLen < 0.01) return validPoints;
+
+  // Sample adaptively along arc length
+  const result = [];
+  let t = 0;
+  while (t <= 1.0) {
+    const pt = curve.getPoint(t);
+    result.push([round3(pt.x), round3(pt.y), round3(pt.z)]);
+
+    // Estimate curvature at current t
+    const idx = Math.min(validPoints.length - 2, Math.max(0, Math.floor(t * (validPoints.length - 1))));
+    const k = Math.max(curvature[idx], curvature[idx + 1] || 0);
+    const spacing = maxSpacing + (minSpacing - maxSpacing) * Math.min(1, k / 0.5);
+    t += spacing / totalLen;
+  }
+
+  // Ensure last point is included
+  const last = validPoints[validPoints.length - 1];
+  const lastResult = result[result.length - 1];
+  if (Math.abs(last[0] - lastResult[0]) > 0.001 || Math.abs(last[1] - lastResult[1]) > 0.001 || Math.abs(last[2] - lastResult[2]) > 0.001) {
+    result.push([...last]);
+  }
+
+  return result;
+}
+
+/**
+ * Douglas-Peucker simplification with pinned points.
+ */
+function douglasPeucker(points, tolerance = 0.001, pinnedSet = new Set(), minPoints = 15) {
+  if (points.length <= minPoints) return points;
+
+  function pointToLineDist(p, a, b) {
+    const abx = b[0]-a[0], aby = b[1]-a[1], abz = b[2]-a[2];
+    const apx = p[0]-a[0], apy = p[1]-a[1], apz = p[2]-a[2];
+    const abLen2 = abx*abx + aby*aby + abz*abz;
+    if (abLen2 < 1e-12) return Math.sqrt(apx*apx + apy*apy + apz*apz);
+    const t = Math.max(0, Math.min(1, (apx*abx + apy*aby + apz*abz) / abLen2));
+    const dx = apx - abx*t, dy = apy - aby*t, dz = apz - abz*t;
+    return Math.sqrt(dx*dx + dy*dy + dz*dz);
+  }
+
+  function dp(start, end) {
+    if (end - start <= 1) return [start];
+    let maxDist = 0, maxIdx = start;
+    for (let i = start + 1; i < end; i++) {
+      let d = pointToLineDist(points[i], points[start], points[end]);
+      if (pinnedSet.has(i)) d = Infinity; // Never remove pinned points
+      if (d > maxDist) { maxDist = d; maxIdx = i; }
+    }
+    if (maxDist > tolerance) {
+      return [...dp(start, maxIdx), ...dp(maxIdx, end)];
+    }
+    return [start];
+  }
+
+  const indices = [...dp(0, points.length - 1), points.length - 1];
+  const unique = [...new Set(indices)].sort((a, b) => a - b);
+
+  // Ensure minimum point count (preserve pinned points)
+  if (unique.length < minPoints) {
+    const step = (points.length - 1) / (minPoints - 1);
+    const idxSet = new Set([...pinnedSet]);
+    for (let i = 0; i < minPoints; i++) {
+      idxSet.add(Math.round(i * step));
+    }
+    const sorted = [...idxSet].sort((a, b) => a - b);
+    return sorted.map(i => points[i]);
+  }
+
+  return unique.map(i => points[i]);
+}
+
+/**
+ * Calibrate a single meridian path: resample → iterative project+smooth → simplify.
+ */
+function calibrateMeridianPath(meridianId) {
+  const origPath = workingPaths[meridianId]?.path || [];
+  const codes = ACUPOINT_CODES[meridianId] || [];
+  const acuPositions = [];
+
+  for (const code of codes) {
+    const pos = workingAcupoints[code];
+    if (pos) acuPositions.push(pos);
+  }
+
+  // Start from existing path if available, otherwise generate from acupoints
+  let guidePoints = origPath.length >= 2 ? origPath : [];
+  if (guidePoints.length < 2 && acuPositions.length >= 2) {
+    const vectors = acuPositions.map(p => new THREE.Vector3(p[0], p[1], p[2]));
+    const curve = new THREE.CatmullRomCurve3(vectors, false, 'centripetal', 0.5);
+    const pts = curve.getPoints(Math.max(20, acuPositions.length * 4));
+    guidePoints = pts.map(p => [round3(p.x), round3(p.y), round3(p.z)]);
+  }
+
+  if (guidePoints.length < 2) return null;
+
+  // Phase 1: Adaptive resample
+  let points = adaptiveResample(guidePoints);
+
+  // Map acupoint positions to nearest path indices (pinned set)
+  function buildPinnedMap(pts) {
+    const pinMap = new Map(); // acuPosition index → path index
+    const pinned = new Set();
+    for (let ai = 0; ai < acuPositions.length; ai++) {
+      const ap = acuPositions[ai];
+      let bestIdx = 0, bestDist = Infinity;
+      for (let i = 0; i < pts.length; i++) {
+        const d = Math.hypot(ap[0]-pts[i][0], ap[1]-pts[i][1], ap[2]-pts[i][2]);
+        if (d < bestDist) { bestDist = d; bestIdx = i; }
+      }
+      pinMap.set(ai, bestIdx);
+      pinned.add(bestIdx);
+    }
+    return { pinMap, pinned };
+  }
+
+  // Phase 2: Iterative project-smooth (3 iterations)
+  const maxIter = 3;
+  for (let iter = 0; iter < maxIter; iter++) {
+    let maxDisp = 0;
+
+    // Step A: Project all points with side guard
+    for (let i = 0; i < points.length; i++) {
+      const projected = projectToSurfaceSmooth(points[i], meridianId);
+      const dx = projected[0]-points[i][0], dy = projected[1]-points[i][1], dz = projected[2]-points[i][2];
+      maxDisp = Math.max(maxDisp, Math.sqrt(dx*dx + dy*dy + dz*dz));
+      points[i] = projected;
+    }
+
+    // Step B: Pin acupoint positions (reuse map to avoid redundant search)
+    const { pinMap, pinned: pinnedSet } = buildPinnedMap(points);
+    for (const [ai, pathIdx] of pinMap) {
+      points[pathIdx] = projectToSurfaceSmooth(acuPositions[ai], meridianId);
+    }
+
+    // Step C: Bilateral smooth
+    points = bilateralSmooth(points, pinnedSet, 3, 0.01);
+
+    // Step D: Convergence check
+    if (maxDisp < 0.0005) break;
+  }
+
+  // Phase 3: Douglas-Peucker simplify (preserve acupoints)
+  const { pinned: finalPinned } = buildPinnedMap(points);
+  points = douglasPeucker(points, 0.001, finalPinned, 15);
+
+  // Final NaN validation: filter out any remaining invalid points
+  points = points.filter(p => p && p.length >= 3 && isFinite(p[0]) && isFinite(p[1]) && isFinite(p[2]));
+  if (points.length < 2) return null;
+
+  return points;
+}
+
+/**
+ * Calibrate all acupoints for a meridian: project each to surface with side guard.
+ */
+function calibrateAcupoints(meridianId) {
+  const codes = ACUPOINT_CODES[meridianId] || [];
+  for (const code of codes) {
+    const pos = workingAcupoints[code];
+    if (pos && isFinite(pos[0]) && isFinite(pos[1]) && isFinite(pos[2])) {
+      const projected = projectToSurfaceSmooth(pos, meridianId);
+      // Only update if projection is valid
+      if (projected && isFinite(projected[0]) && isFinite(projected[1]) && isFinite(projected[2])) {
+        workingAcupoints[code] = projected;
+      }
+    }
+  }
+}
+
+/**
+ * AUTO-CALIBRATE ALL: one-click batch processing for all meridians.
+ */
+async function autoCalibratAllImpl() {
+  if (!mergedBVH || modelMeshes.length === 0) {
+    showToast('请先等待模型加载完成');
+    return;
+  }
+
+  const progressEl = document.getElementById('calibrate-progress');
+  const barEl = document.getElementById('calibrate-bar');
+  const textEl = document.getElementById('calibrate-text');
+  progressEl.style.display = 'block';
+
+  try {
+  // Ensure vertex normals are computed
+  if (!mergedBVH.geometry.attributes.normal) {
+    mergedBVH.geometry.computeVertexNormals();
+  }
+
+  // Build body center axis
+  buildBodyCenterAxis();
+
+  pushUndo(); // Save state for undo
+
+  const startTime = performance.now();
+  const total = MERIDIAN_META.length;
+
+  for (let mi = 0; mi < total; mi++) {
+    const m = MERIDIAN_META[mi];
+    textEl.textContent = `${mi + 1}/${total} ${m.name}`;
+    barEl.style.width = ((mi + 1) / total * 100) + '%';
+
+    // Yield to UI for progress updates
+    await new Promise(r => setTimeout(r, 0));
+
+    // Calibrate acupoints first
+    calibrateAcupoints(m.id);
+
+    // Calibrate path
+    const calibratedPath = calibrateMeridianPath(m.id);
+    if (calibratedPath) {
+      if (!workingPaths[m.id]) workingPaths[m.id] = {};
+      workingPaths[m.id].path = calibratedPath;
+    }
+
+    calibrated[m.id] = true;
+  }
+
+  const elapsed = (performance.now() - startTime).toFixed(0);
+
+  // Save to localStorage
+  localStorage.setItem(`meridian-cal-${currentModel}`, JSON.stringify({
+    paths: workingPaths,
+    acupoints: workingAcupoints,
+    calibrated,
+  }));
+
+  // Update UI
+  updateVisualization();
+  renderMeridianList();
+
+  showToast(`✓ 全部校准完成！${total}条经络，耗时 ${elapsed}ms`);
+
+  } catch (e) {
+    showToast(`校准失败: ${e.message}`);
+    console.error('Auto-calibrate error:', e);
+  } finally {
+    progressEl.style.display = 'none';
+  }
+}
+
 // ==================== UNDO ====================
 function pushUndo() {
   undoStack.push({
     paths: JSON.parse(JSON.stringify(workingPaths)),
     acupoints: JSON.parse(JSON.stringify(workingAcupoints)),
+    calibrated: JSON.parse(JSON.stringify(calibrated)),
   });
   if (undoStack.length > 50) undoStack.shift();
 }
@@ -1030,14 +1552,19 @@ function renderPointList() {
   if (editMode === 'path') {
     title.textContent = '路径点';
     const pts = workingPaths[currentMeridianId]?.path || [];
-    el.innerHTML = pts.map((p, i) => `
-      <div class="point-item ${i === selectedPointIndex ? 'selected' : ''}"
+    el.innerHTML = pts.map((p, i) => {
+      const x = isFinite(p[0]) ? p[0].toFixed(3) : 'NaN';
+      const y = isFinite(p[1]) ? p[1].toFixed(3) : 'NaN';
+      const z = isFinite(p[2]) ? p[2].toFixed(3) : 'NaN';
+      const hasNaN = !isFinite(p[0]) || !isFinite(p[1]) || !isFinite(p[2]);
+      return `
+      <div class="point-item ${i === selectedPointIndex ? 'selected' : ''}" ${hasNaN ? 'style="color:#e74c3c"' : ''}
            onclick="selectPathPoint(${i})">
         <span class="point-idx">#${i}</span>
-        <span class="point-coords">[${p[0].toFixed(3)}, ${p[1].toFixed(3)}, ${p[2].toFixed(3)}]</span>
+        <span class="point-coords">[${x}, ${y}, ${z}]</span>
         <span class="point-del" onclick="event.stopPropagation();deletePathPoint(${i})">&#10005;</span>
       </div>
-    `).join('');
+    `;}).join('');
   } else {
     title.textContent = '穴位';
     const codes = ACUPOINT_CODES[currentMeridianId] || [];
@@ -1162,6 +1689,10 @@ window.deletePathPoint = function(i) {
 
 window.snapToSurface = snapToSurface;
 
+window.autoCalibratAll = function() {
+  autoCalibratAllImpl();
+};
+
 window.autoGenPath = function() {
   generatePathFromAcupoints();
 };
@@ -1171,7 +1702,9 @@ window.undoAction = function() {
   const state = undoStack.pop();
   workingPaths = state.paths;
   workingAcupoints = state.acupoints;
+  if (state.calibrated) calibrated = state.calibrated;
   updateVisualization();
+  renderMeridianList();
   showToast('已撤销');
 };
 
@@ -1258,6 +1791,56 @@ window.syncToSource = async function() {
 
 // ==================== HELPERS ====================
 function round3(n) { return Math.round(n * 1000) / 1000; }
+
+function isValidVec3(p) {
+  return p && p.length >= 3 && isFinite(p[0]) && isFinite(p[1]) && isFinite(p[2]);
+}
+
+/**
+ * Create a text sprite label for 3D annotations.
+ */
+function createTextSprite(text, color = '#ffffff', fontSize = 48, bgColor = 'rgba(0,0,0,0.6)') {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  const padding = 8;
+  ctx.font = `bold ${fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
+  const metrics = ctx.measureText(text);
+  const textWidth = metrics.width;
+  canvas.width = Math.ceil(textWidth + padding * 2);
+  canvas.height = Math.ceil(fontSize * 1.4 + padding * 2);
+
+  // Background
+  ctx.fillStyle = bgColor;
+  const r = 6;
+  ctx.beginPath();
+  ctx.moveTo(r, 0);
+  ctx.lineTo(canvas.width - r, 0);
+  ctx.quadraticCurveTo(canvas.width, 0, canvas.width, r);
+  ctx.lineTo(canvas.width, canvas.height - r);
+  ctx.quadraticCurveTo(canvas.width, canvas.height, canvas.width - r, canvas.height);
+  ctx.lineTo(r, canvas.height);
+  ctx.quadraticCurveTo(0, canvas.height, 0, canvas.height - r);
+  ctx.lineTo(0, r);
+  ctx.quadraticCurveTo(0, 0, r, 0);
+  ctx.fill();
+
+  // Text
+  ctx.font = `bold ${fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(spriteMat);
+  sprite.renderOrder = 1000;
+  // Scale proportionally: sprite width in world units
+  const worldScale = 0.04;
+  sprite.scale.set(worldScale * (canvas.width / canvas.height), worldScale, 1);
+  return sprite;
+}
 
 function downloadFile(name, content) {
   const blob = new Blob([content], { type: 'application/json' });

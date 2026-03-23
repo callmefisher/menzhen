@@ -3,12 +3,14 @@ package service
 import (
 	"errors"
 	"log"
+	"strings"
 
 	"github.com/callmefisher/menzhen/server/model"
 	"gorm.io/gorm"
 )
 
 var ErrHerbNotFound = errors.New("herb not found")
+var ErrHerbDuplicate = errors.New("herb name already exists")
 
 // HerbService handles herb-related business logic.
 type HerbService struct {
@@ -102,6 +104,17 @@ func (s *HerbService) GetByID(id uint64) (*model.Herb, error) {
 // A valid herb must have at least effects or indications.
 func isValidHerbResult(result *HerbAIResult) bool {
 	return result.Effects != "" || result.Indications != ""
+}
+
+// Create creates a new herb.
+func (s *HerbService) Create(herb *model.Herb) error {
+	if err := s.DB.Create(herb).Error; err != nil {
+		if strings.Contains(err.Error(), "Duplicate entry") || errors.Is(err, gorm.ErrDuplicatedKey) {
+			return ErrHerbDuplicate
+		}
+		return err
+	}
+	return nil
 }
 
 // DeleteByID deletes a herb by ID.

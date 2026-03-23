@@ -408,7 +408,7 @@ export default function DrugList() {
       title: '进货价 (元/500克)',
       dataIndex: 'purchase_price',
       key: 'purchase_price',
-      width: 130,
+      width: 150,
       render: (val: number, record: InventoryDrug) =>
         record.category === 'patent' ? `¥${val}/盒` : `¥${val}`,
     },
@@ -416,20 +416,9 @@ export default function DrugList() {
       title: '出售价 (元/500克)',
       dataIndex: 'selling_price',
       key: 'selling_price',
-      width: 130,
+      width: 150,
       render: (val: number, record: InventoryDrug) =>
         record.category === 'patent' ? `¥${val}/盒` : `¥${val}`,
-    },
-    {
-      title: '预警阈值',
-      dataIndex: 'alert_threshold',
-      key: 'alert_threshold',
-      width: 100,
-      render: (val: number | null, record: InventoryDrug) => {
-        const threshold = val ?? getDefaultThreshold(record.category);
-        const unit = record.category === 'herb' ? 'g' : '盒';
-        return `${threshold}${unit}`;
-      },
     },
     {
       title: '状态',
@@ -439,18 +428,6 @@ export default function DrugList() {
         const status = getStockStatus(record);
         const cfg = statusConfig[status];
         return <Tag color={cfg.color} style={{ color: cfg.color, background: `${cfg.color}10`, borderColor: cfg.color }}>{cfg.label}</Tag>;
-      },
-    },
-    {
-      title: '最后更新',
-      dataIndex: 'updated_at',
-      key: 'updated_at',
-      width: 120,
-      responsive: ['md'] as any,
-      render: (val: string) => {
-        if (!val) return '-';
-        const d = new Date(val);
-        return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
       },
     },
     {
