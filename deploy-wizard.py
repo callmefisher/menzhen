@@ -31,7 +31,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.03.23.162600"
+WIZARD_VERSION = "2026.03.23.165600"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -1472,10 +1472,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 stream_command(self, [
                     "cmd", "/c",
                     f'cd /d "{SCRIPT_DIR}" && '
-                    "docker compose up -d 2>&1 && "
-                    "echo Waiting for services to initialize... && "
-                    "ping -n 31 127.0.0.1 >nul && "
-                    "docker compose restart nginx 2>&1 && "
+                    "docker compose up -d --wait --wait-timeout 120 2>&1 && "
                     "echo 服务启动完成!"
                 ], headers_sent=True)
             else:
@@ -1483,10 +1480,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 stream_command(self, [
                     "bash", "-c",
                     f"cd {q_dir} && "
-                    "docker compose up -d 2>&1 && "
-                    "echo '等待服务初始化...' && "
-                    "sleep 30 && "
-                    "docker compose restart nginx 2>&1 && "
+                    "docker compose up -d --wait --wait-timeout 120 2>&1 && "
                     "echo '服务启动完成!'"
                 ], headers_sent=True)
             return
@@ -4518,9 +4512,12 @@ async function showDeployResult(el) {
         if (msg.result === 'success') {
           logDiv.innerHTML = '<div class="hint-box green" style="text-align:center;">数据恢复完成！可以打开系统使用了。</div>';
           btn.innerHTML = '恢复完成';
-          // Update credential hint to restored account
+          // Update credential hint based on restored SQL file
           const credDiv = result.querySelector('#credentialHint');
-          if (credDiv) credDiv.innerHTML = '已从备份恢复账号，默认账号：<strong>admin</strong> &nbsp; 密码：<strong>654321</strong>';
+          if (credDiv) {
+            const restoredPwd = sqlFile.startsWith('xyj_') ? '654321' : 'admin123';
+            credDiv.innerHTML = '已从备份恢复账号，默认账号：<strong>admin</strong> &nbsp; 密码：<strong>' + restoredPwd + '</strong>';
+          }
         } else {
           logDiv.innerHTML += '<div class="hint-box red" style="text-align:center;">恢复失败，请检查日志。</div>';
           btn.disabled = false;
