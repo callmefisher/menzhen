@@ -69,14 +69,16 @@ func InitMinIO(cfg *config.Config) *minio.Client {
 		Secure: false,
 	})
 	if err != nil {
-		log.Fatalf("failed to create minio client: %v", err)
+		log.Fatalf("failed to create minio client: %v (endpoint=%s accessKey=%s secretKey=%s)",
+			err, cfg.MinIOEndpoint, cfg.MinIOAccessKey, cfg.MinIOSecretKey)
 	}
 
 	// Auto-create bucket if it does not exist.
 	ctx := context.Background()
 	exists, err := client.BucketExists(ctx, cfg.MinIOBucket)
 	if err != nil {
-		log.Fatalf("failed to check bucket existence: %v", err)
+		log.Fatalf("failed to check bucket existence: %v (endpoint=%s accessKey=%s secretKey=%s)",
+			err, cfg.MinIOEndpoint, cfg.MinIOAccessKey, cfg.MinIOSecretKey)
 	}
 	if !exists {
 		if err := client.MakeBucket(ctx, cfg.MinIOBucket, minio.MakeBucketOptions{}); err != nil {

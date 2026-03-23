@@ -31,7 +31,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.03.23.095000"
+WIZARD_VERSION = "2026.03.23.102000"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -2163,6 +2163,14 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             if not values:
                 self._send_json({"error": "未提供配置内容"}, 400)
                 return
+            # 数据库密码：至少 6 位，不含危险特殊字符
+            db_pass = values.get("DB_PASSWORD", "")
+            if db_pass and len(db_pass) < 6:
+                self._send_json({"error": "数据库密码至少需要 6 位字符"}, 400)
+                return
+            if db_pass and re.search(r"[#$'\"\\`]", db_pass):
+                self._send_json({"error": "数据库密码不能包含 # $ ' \" \\ ` 等特殊字符"}, 400)
+                return
             # MinIO 密码至少 8 位
             minio_secret = values.get("MINIO_SECRET_KEY", "")
             if minio_secret and len(minio_secret) < 8:
@@ -4030,13 +4038,31 @@ async function renderStep5(el) {
     ).join('');
 
     let buildSection = '';
-    if (hasMissingImages) {
+    if (hasMissingImages && state.freshInstall) {
+      // 全新安装 + 镜像缺失：显示红色按钮 + 数据清除警告
+      buildSection = `
+        <div class="hint-box yellow" style="margin-top:12px;">
+          全新安装需要构建程序并清理旧数据。<br>
+          <strong>构建需要 5-15 分钟</strong>，请耐心等待。
+        </div>
+        <button class="btn btn-danger" id="buildBtn" style="margin-top:12px; font-size:16px; padding:12px 28px;">构建程序（清除旧数据）</button>
+      `;
+    } else if (hasMissingImages) {
       buildSection = `
         <div class="hint-box yellow" style="margin-top:12px;">
           程序包尚未构建，请先保存上方配置，再点击下方按钮开始构建。<br>
           <strong>构建需要 5-15 分钟</strong>，请耐心等待。
         </div>
         <button class="btn btn-success" id="buildBtn" style="margin-top:12px; font-size:16px; padding:12px 28px;">开始构建程序</button>
+      `;
+    } else if (state.freshInstall) {
+      // 全新安装：镜像已存在但需要清理旧 volume 并重建
+      buildSection = `
+        <div class="hint-box yellow" style="margin-top:12px;">
+          全新安装需要重新构建程序并清理旧数据。<br>
+          请先保存上方配置，再点击下方按钮开始<strong>重新构建</strong>。
+        </div>
+        <button class="btn btn-danger" id="buildBtn" style="margin-top:12px; font-size:16px; padding:12px 28px;">重新构建程序（清除旧数据）</button>
       `;
     } else if (!envConfigured) {
       buildSection = '<div class="hint-box yellow" style="margin-top:12px; text-align:center;">程序已就绪，请先保存上方配置后继续。</div>';
@@ -4046,7 +4072,7 @@ async function renderStep5(el) {
     imgHtml = '<h3 style="font-size:16px; margin:20px 0 8px;">系统程序包</h3>' + imgRows + buildSection + '<div id="buildLog"></div>';
   }
 
-  const allReady = repoReady && !hasMissingImages && envConfigured;
+  const allReady = repoReady && !hasMissingImages && envConfigured && !state.freshInstall;
 
   el.innerHTML = `
     <h2>第五步：准备程序和配置</h2>
@@ -4096,6 +4122,16 @@ async function renderStep5(el) {
       const minioKey = values['MINIO_SECRET_KEY'] || '';
       if (minioKey && minioKey.length < 8) {
         msgDiv.innerHTML = '<span style="color:var(--danger);font-size:15px;">MinIO 文件存储密码至少需要 8 位字符。</span>';
+        return;
+      }
+      // 数据库密码：至少 6 位，不含特殊字符（避免 shell/DSN 解析问题）
+      const dbPass = values['DB_PASSWORD'] || '';
+      if (dbPass && dbPass.length < 6) {
+        msgDiv.innerHTML = '<span style="color:var(--danger);font-size:15px;">数据库密码至少需要 6 位字符。</span>';
+        return;
+      }
+      if (dbPass && /[#$'"\\`]/.test(dbPass)) {
+        msgDiv.innerHTML = '<span style="color:var(--danger);font-size:15px;">数据库密码不能包含 # $ \' " \\ ` 等特殊字符。</span>';
         return;
       }
       try {
