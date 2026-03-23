@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Input, Table, Tag, message, Button, Popconfirm, Space, Pagination, Spin } from 'antd';
+import { Input, Table, Tag, message, Button, Popconfirm, Space, Pagination, Spin, Modal, Form } from 'antd';
 import { SearchOutlined, RobotOutlined, DeleteOutlined, EditOutlined, PlusOutlined, MinusCircleOutlined, InfoCircleOutlined, ReadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { listFormulas, deleteFormula, updateFormulaComposition, updateFormulaName, updateFormulaNotes, findFormulaPage } from '../../api/formula';
+import { listFormulas, deleteFormula, updateFormulaComposition, updateFormulaName, updateFormulaNotes, findFormulaPage, createFormula } from '../../api/formula';
 import type { FormulaItem, FormulaCompositionItem } from '../../api/formula';
 import { useAuth } from '../../store/auth';
 import HerbDetailModal from '../../components/HerbDetailModal';
@@ -18,6 +18,10 @@ export default function FormulaSearch() {
   const [searchName, setSearchName] = useState('');
   const { hasPermission } = useAuth();
   const isMobile = useIsMobile();
+
+  const [createModalVisible, setCreateModalVisible] = useState(false);
+  const [createForm] = Form.useForm();
+  const [creating, setCreating] = useState(false);
 
   const highlight = useRowHighlight({
     data: formulas,
@@ -185,6 +189,38 @@ export default function FormulaSearch() {
     }
   };
 
+  const handleCreate = async () => {
+    try {
+      const values = await createForm.validateFields();
+      setCreating(true);
+      const composition = (values.composition || []).filter(
+        (c: FormulaCompositionItem) => c.herb_name?.trim()
+      );
+      const res = await createFormula({
+        name: values.name,
+        effects: values.effects || '',
+        indications: values.indications || '',
+        notes: values.notes || '',
+        composition,
+      }) as unknown as { data: FormulaItem };
+      const newId = res.data?.id;
+      message.success('新增方剂成功');
+      setCreateModalVisible(false);
+      createForm.resetFields();
+      // Clear search to ensure new record is visible, then navigate to last page
+      setSearchName('');
+      const newTotal = total + 1;
+      const lastPage = Math.ceil(newTotal / size) || 1;
+      setPage(lastPage);
+      await fetchFormulas('', lastPage, size);
+      if (newId) highlight.setHighlightId(newId);
+    } catch {
+      // Form validation error shows inline; API errors handled by interceptor
+    } finally {
+      setCreating(false);
+    }
+  };
+
   const columns: ColumnsType<FormulaItem> = [
     {
       title: '方剂名',
@@ -217,6 +253,7 @@ export default function FormulaSearch() {
       title: '功效',
       dataIndex: 'effects',
       key: 'effects',
+      width: 160,
       ellipsis: true,
       responsive: ['md'] as any,
     },
@@ -224,13 +261,14 @@ export default function FormulaSearch() {
       title: '主治',
       dataIndex: 'indications',
       key: 'indications',
+      width: 250,
       ellipsis: true,
       responsive: ['md'] as any,
     },
     {
       title: '组成',
       key: 'composition',
-      width: isMobile ? 200 : 300,
+      width: isMobile ? 200 : 250,
       responsive: ['md'] as any,
       render: (_: unknown, record: FormulaItem) => {
         const comp = record.composition || [];
@@ -238,21 +276,6 @@ export default function FormulaSearch() {
         return comp.map((c: FormulaCompositionItem) => `${c.herb_name} ${c.default_dosage}`).join('、');
       },
       ellipsis: true,
-    },
-    {
-      title: '来源',
-      dataIndex: 'source',
-      key: 'source',
-      width: 100,
-      responsive: ['md'] as any,
-      render: (source: string) =>
-        source === 'deepseek' ? (
-          <Tag className="warm-tag-ai" icon={<RobotOutlined />}>
-            AI
-          </Tag>
-        ) : (
-          <Tag className="warm-tag-local">本地</Tag>
-        ),
     },
     ...(hasPermission('role:manage')
       ? [
@@ -290,7 +313,7 @@ export default function FormulaSearch() {
 
   return (
     <div>
-      <div className="warm-search-bar">
+      <div className="warm-search-bar" style={{ display: 'flex', gap: 12, flexDirection: isMobile ? 'column' : 'row' }}>
         <Input.Search
           placeholder="输入方剂名称搜索（支持AI查询）"
           allowClear
@@ -299,6 +322,17 @@ export default function FormulaSearch() {
           onSearch={handleSearch}
           style={{ maxWidth: isMobile ? '100%' : 500 }}
         />
+        {hasPermission('role:manage') && (
+          <Button
+            type="primary"
+            className="warm-btn-primary"
+            icon={<PlusOutlined />}
+            size="large"
+            onClick={() => setCreateModalVisible(true)}
+          >
+            新增方剂
+          </Button>
+        )}
       </div>
 
       {isMobile ? (
@@ -350,6 +384,8 @@ export default function FormulaSearch() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                       {record.source === 'deepseek' ? (
                         <Tag className="warm-tag-ai" icon={<RobotOutlined />}>AI</Tag>
+                      ) : record.source === 'manual' ? (
+                        <Tag className="warm-tag-local">手动</Tag>
                       ) : (
                         <Tag className="warm-tag-local">本地</Tag>
                       )}
@@ -510,6 +546,7 @@ export default function FormulaSearch() {
                 pageSize={size}
                 total={total}
                 onChange={(newPage, newSize) => {
+                  highlight.setHighlightId(null);
                   setPage(newPage);
                   if (newSize) setSize(newSize);
                   fetchFormulas(searchName, newPage, newSize || size);
@@ -652,10 +689,14 @@ export default function FormulaSearch() {
                     <span>无组成信息</span>
                   )}
                   <Space style={{ marginTop: 8 }}>
-                    {record.source === 'deepseek' && (
+                    {record.source === 'deepseek' ? (
                       <Tag className="warm-tag-ai" icon={<RobotOutlined />}>
                         数据来源：DeepSeek AI（仅供参考，请结合临床经验）
                       </Tag>
+                    ) : record.source === 'manual' ? (
+                      <Tag className="warm-tag-local">数据来源：手动录入</Tag>
+                    ) : (
+                      <Tag className="warm-tag-local">数据来源：本地数据</Tag>
                     )}
                     {hasPermission('role:manage') && !isEditing && (
                       <Button
@@ -687,6 +728,66 @@ export default function FormulaSearch() {
           }}
         />
       )}
+
+      <Modal
+        title="新增方剂"
+        open={createModalVisible}
+        onOk={handleCreate}
+        onCancel={() => { setCreateModalVisible(false); createForm.resetFields(); }}
+        confirmLoading={creating}
+        okText="保存"
+        cancelText="取消"
+        destroyOnClose
+        width={isMobile ? 'calc(100vw - 32px)' : 600}
+      >
+        <Form form={createForm} layout="vertical">
+          <Form.Item label="方剂名" name="name" rules={[{ required: true, message: '请输入方剂名' }]}>
+            <Input placeholder="请输入方剂名" />
+          </Form.Item>
+          <Form.Item label="功效" name="effects">
+            <Input.TextArea rows={2} placeholder="请输入功效" />
+          </Form.Item>
+          <Form.Item label="主治" name="indications">
+            <Input.TextArea rows={2} placeholder="请输入主治" />
+          </Form.Item>
+          <Form.Item label="备注" name="notes">
+            <Input.TextArea rows={2} placeholder="请输入备注" />
+          </Form.Item>
+          <Form.Item label="组成">
+            <Form.List name="composition">
+              {(fields, { add, remove }) => (
+                <>
+                  {fields.map(({ key, name, ...restField }) => (
+                    <Space key={key} style={{ display: 'flex', marginBottom: 8 }} align="baseline">
+                      <Form.Item
+                        {...restField}
+                        name={[name, 'herb_name']}
+                        rules={[{ required: true, whitespace: true, message: '请输入药名' }]}
+                        style={{ marginBottom: 0 }}
+                      >
+                        <Input placeholder="药名" style={{ width: isMobile ? 140 : 200 }} />
+                      </Form.Item>
+                      <Form.Item
+                        {...restField}
+                        name={[name, 'default_dosage']}
+                        style={{ marginBottom: 0 }}
+                      >
+                        <Input placeholder="如 10g" style={{ width: 100 }} />
+                      </Form.Item>
+                      <MinusCircleOutlined onClick={() => remove(name)} />
+                    </Space>
+                  ))}
+                  <Form.Item>
+                    <Button type="dashed" onClick={() => add()} block icon={<PlusOutlined />}>
+                      添加药物
+                    </Button>
+                  </Form.Item>
+                </>
+              )}
+            </Form.List>
+          </Form.Item>
+        </Form>
+      </Modal>
 
       <HerbDetailModal
         open={herbDetailOpen}

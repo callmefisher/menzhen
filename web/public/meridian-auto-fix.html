@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>经络坐标自动修正</title>
+<style>
+body { font-family: monospace; background: #1a1a2e; color: #e0e0e0; padding: 20px; }
+h1 { color: #7ec8e3; }
+#status { color: #feca57; font-size: 14px; margin: 10px 0; }
+#output { background: #16213e; border: 1px solid #0f3460; border-radius: 6px; padding: 16px; white-space: pre-wrap; font-size: 12px; max-height: 70vh; overflow-y: auto; }
+.ok { color: #4caf50; }
+.warn { color: #ff9f43; }
+.err { color: #e74c3c; }
+button { padding: 10px 20px; background: #0f3460; color: #7ec8e3; border: 1px solid #7ec8e3; border-radius: 4px; cursor: pointer; font-size: 14px; margin: 5px; }
+button:hover { background: #7ec8e3; color: #1a1a2e; }
+</style>
+</head>
+<body>
+<h1>经络坐标自动修正工具</h1>
+<p>加载3D模型 → 构建BVH → 对每个穴位做 closestPointToPoint 查询精确表面坐标</p>
+<div id="status">等待开始...</div>
+<button onclick="run()">开始修正</button>
+<button onclick="copyOutput()">复制结果</button>
+<div id="output"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/",
+    "three-mesh-bvh": "https://unpkg.com/three-mesh-bvh@0.8.3/src/index.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { MeshBVH, acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
+
+THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
+THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
+THREE.Mesh.prototype.raycast = acceleratedRaycast;
+
+const statusEl = document.getElementById('status');
+const outputEl = document.getElementById('output');
+
+function log(msg, cls = '') {
+  const span = document.createElement('span');
+  span.className = cls;
+  span.textContent = msg + '\n';
+  outputEl.appendChild(span);
+  outputEl.scrollTop = outputEl.scrollHeight;
+}
+
+function setStatus(msg) { statusEl.textContent = msg; }
+
+// Original acupoint positions (for reference / guide points)
+const ORIG_ACUPOINTS = {
+  'LU1':[-0.098,1.323,0.047],'LU2':[-0.103,1.345,0.025],'LU3':[-0.231,1.261,0.024],'LU4':[-0.251,1.238,0.017],'LU5':[-0.36,1.158,0.012],'LU6':[-0.437,1.119,0.005],'LU7':[-0.513,1.05,0.001],'LU8':[-0.526,1.039,-0.003],'LU9':[-0.541,1.028,-0.006],'LU10':[-0.567,1.016,0.015],'LU11':[-0.608,0.998,0.053],
+  'LI1':[-0.69,0.98,0],'LI2':[-0.64,1,0],'LI3':[-0.6,1.02,0],'LI4':[-0.55,1.05,0.01],'LI5':[-0.51,1.07,0],'LI6':[-0.46,1.1,0],'LI7':[-0.42,1.12,0],'LI8':[-0.37,1.14,0],'LI9':[-0.32,1.14,0],'LI10':[-0.27,1.15,0.01],'LI11':[-0.22,1.16,0],'LI12':[-0.2,1.19,0.02],'LI13':[-0.17,1.23,0.05],'LI14':[-0.14,1.27,0.06],'LI15':[-0.1,1.3,0.06],'LI16':[-0.07,1.34,0.06],'LI17':[-0.04,1.37,0.06],'LI18':[0,1.41,0.06],'LI19':[0.01,1.45,0.09],'LI20':[0.01,1.49,0.13],
+  'ST1':[0.04,1.52,0.12],'ST2':[0.04,1.56,0.1],'ST3':[0.04,1.53,0.12],'ST4':[0.05,1.5,0.12],'ST5':[0.05,1.46,0.11],'ST6':[0.04,1.43,0.09],'ST7':[0.04,1.4,0.07],'ST8':[0.04,1.37,0.06],'ST9':[0.06,1.34,0.07],'ST10':[0.07,1.3,0.09],'ST11':[0.08,1.27,0.09],'ST12':[0.08,1.23,0.1],'ST13':[0.08,1.19,0.11],'ST14':[0.08,1.16,0.11],'ST15':[0.08,1.12,0.11],'ST16':[0.08,1.08,0.1],'ST17':[0.08,1.04,0.1],'ST18':[0.08,1.01,0.1],'ST19':[0.08,0.97,0.1],'ST20':[0.08,0.93,0.1],'ST21':[0.09,0.9,0.09],'ST22':[0.11,0.86,0.08],'ST23':[0.12,0.83,0.07],'ST24':[0.14,0.8,0.05],'ST25':[0.16,0.77,0.04],'ST26':[0.17,0.74,0.04],'ST27':[0.17,0.71,0.04],'ST28':[0.16,0.66,0.04],'ST29':[0.16,0.63,0.04],'ST30':[0.16,0.59,0.03],'ST31':[0.17,0.55,0.02],'ST32':[0.17,0.52,0.01],'ST33':[0.17,0.48,0],'ST34':[0.17,0.45,-0.01],'ST35':[0.18,0.41,-0.03],'ST36':[0.19,0.38,-0.03],'ST37':[0.2,0.34,-0.03],'ST38':[0.21,0.31,-0.03],'ST39':[0.21,0.27,-0.03],'ST40':[0.21,0.23,-0.03],'ST41':[0.21,0.19,-0.03],'ST42':[0.22,0.16,-0.03],'ST43':[0.22,0.12,-0.03],'ST44':[0.22,0.09,-0.01],'ST45':[0.21,0.07,0.02],
+};
+
+// Model config
+const MODEL_URL = '/models/sport-girl.glb';
+const MODEL_SCALE = 1.64 / 176.5;
+
+let mergedBVH = null;
+let mergedGeo = null;
+
+async function loadModel() {
+  setStatus('加载模型...');
+  return new Promise((resolve, reject) => {
+    const loader = new GLTFLoader();
+    loader.load(MODEL_URL, (gltf) => {
+      const group = new THREE.Group();
+      const inner = new THREE.Group();
+      inner.scale.setScalar(MODEL_SCALE);
+      inner.add(gltf.scene);
+      group.add(inner);
+
+      // Force world matrix update
+      group.updateMatrixWorld(true);
+      resolve(group);
+    }, undefined, reject);
+  });
+}
+
+function buildBVH(group) {
+  setStatus('构建BVH...');
+  const allPositions = [];
+  const allIndices = [];
+  let vertexOffset = 0;
+
+  group.traverse((child) => {
+    if (!(child instanceof THREE.Mesh) || !child.geometry) return;
+    const posAttr = child.geometry.getAttribute('position');
+    if (!posAttr) return;
+
+    const wm = child.matrixWorld;
+    const v = new THREE.Vector3();
+    for (let i = 0; i < posAttr.count; i++) {
+      v.fromBufferAttribute(posAttr, i);
+      v.applyMatrix4(wm);
+      allPositions.push(v.x, v.y, v.z);
+    }
+    const idx = child.geometry.index;
+    if (idx) {
+      for (let i = 0; i < idx.count; i++) allIndices.push(idx.getX(i) + vertexOffset);
+    } else {
+      for (let i = 0; i < posAttr.count; i++) allIndices.push(i + vertexOffset);
+    }
+    vertexOffset += posAttr.count;
+  });
+
+  mergedGeo = new THREE.BufferGeometry();
+  mergedGeo.setAttribute('position', new THREE.Float32BufferAttribute(allPositions, 3));
+  mergedGeo.setIndex(allIndices);
+  mergedGeo.computeVertexNormals();
+
+  mergedBVH = new MeshBVH(mergedGeo);
+  log(`BVH构建完成: ${vertexOffset} 顶点, ${allIndices.length / 3} 三角面`, 'ok');
+}
+
+function round4(n) { return Math.round(n * 10000) / 10000; }
+
+/**
+ * Project a single point to the nearest mesh surface.
+ * Returns { surfacePoint, normal, distance, faceIndex }
+ */
+function projectToSurface(point, offset = 0.005) {
+  const p = new THREE.Vector3(point[0], point[1], point[2]);
+  const target = { point: new THREE.Vector3(), distance: Infinity, faceIndex: 0 };
+  mergedBVH.closestPointToPoint(p, target);
+
+  if (target.distance >= Infinity) return { projected: point, distance: Infinity };
+
+  const surfacePoint = target.point.clone();
+
+  // Compute smooth normal
+  const idxAttr = mergedGeo.index;
+  const posAttr = mergedGeo.getAttribute('position');
+  const normalAttr = mergedGeo.getAttribute('normal');
+
+  let normal = new THREE.Vector3(0, 1, 0);
+  if (idxAttr && normalAttr && target.faceIndex >= 0) {
+    const fi = target.faceIndex;
+    const i0 = idxAttr.getX(fi * 3);
+    const i1 = idxAttr.getX(fi * 3 + 1);
+    const i2 = idxAttr.getX(fi * 3 + 2);
+
+    const a = new THREE.Vector3().fromBufferAttribute(posAttr, i0);
+    const b = new THREE.Vector3().fromBufferAttribute(posAttr, i1);
+    const c = new THREE.Vector3().fromBufferAttribute(posAttr, i2);
+
+    // Barycentric
+    const v0 = b.clone().sub(a);
+    const v1 = c.clone().sub(a);
+    const v2 = surfacePoint.clone().sub(a);
+    const d00 = v0.dot(v0), d01 = v0.dot(v1), d11 = v1.dot(v1);
+    const d20 = v2.dot(v0), d21 = v2.dot(v1);
+    const denom = d00 * d11 - d01 * d01;
+    const bv = denom !== 0 ? (d11 * d20 - d01 * d21) / denom : 1/3;
+    const bw = denom !== 0 ? (d00 * d21 - d01 * d20) / denom : 1/3;
+    const bu = 1 - bv - bw;
+
+    const na = new THREE.Vector3().fromBufferAttribute(normalAttr, i0);
+    const nb = new THREE.Vector3().fromBufferAttribute(normalAttr, i1);
+    const nc = new THREE.Vector3().fromBufferAttribute(normalAttr, i2);
+    normal = na.multiplyScalar(bu).add(nb.multiplyScalar(bv)).add(nc.multiplyScalar(bw)).normalize();
+  }
+
+  if (normal.lengthSq() < 0.01) {
+    normal.subVectors(p, surfacePoint).normalize();
+  }
+  if (normal.lengthSq() < 0.0001) normal.set(0, 1, 0);
+
+  const projected = surfacePoint.clone().add(normal.clone().multiplyScalar(offset));
+  return {
+    projected: [round4(projected.x), round4(projected.y), round4(projected.z)],
+    surface: [round4(surfacePoint.x), round4(surfacePoint.y), round4(surfacePoint.z)],
+    normal: [round4(normal.x), round4(normal.y), round4(normal.z)],
+    distance: round4(target.distance),
+  };
+}
+
+/**
+ * For each acupoint, project to surface and report.
+ */
+function fixAllAcupoints() {
+  setStatus('投影穴位坐标...');
+  const results = {};
+  const codes = Object.keys(ORIG_ACUPOINTS);
+
+  for (const code of codes) {
+    const orig = ORIG_ACUPOINTS[code];
+    const { projected, surface, distance } = projectToSurface(orig, 0.005);
+
+    results[code] = projected;
+
+    const distStr = (distance * 1000).toFixed(1);
+    const cls = distance > 0.03 ? 'err' : distance > 0.01 ? 'warn' : 'ok';
+    log(`  ${code.padEnd(6)} orig=[${orig.map(v=>v.toFixed(3)).join(', ')}] → proj=[${projected.map(v=>v.toFixed(4)).join(', ')}]  dist=${distStr}mm`, cls);
+  }
+
+  return results;
+}
+
+/**
+ * For each meridian path, project all control points and generate denser path.
+ */
+function fixMeridianPaths() {
+  setStatus('修正经络路径...');
+
+  // We read path data from the embedded source
+  // For now, fix all acupoints which is the key issue
+  log('\n穴位坐标修正完成。路径会通过 BVH 投影自动贴合表面。', 'ok');
+}
+
+window.run = async function() {
+  outputEl.innerHTML = '';
+  try {
+    const group = await loadModel();
+    log('模型加载完成', 'ok');
+
+    buildBVH(group);
+
+    log('\n=== 穴位坐标修正 ===');
+    log('(距离 >30mm 标红, >10mm 标黄, ≤10mm 标绿)\n');
+    const fixedAcupoints = fixAllAcupoints();
+
+    log('\n=== 可直接复制的修正结果 (TypeScript) ===\n');
+
+    // Group by meridian
+    const meridians = {};
+    for (const [code, pos] of Object.entries(fixedAcupoints)) {
+      const mid = code.replace(/\d+$/, '');
+      if (!meridians[mid]) meridians[mid] = [];
+      meridians[mid].push({ code, pos });
+    }
+
+    let tsOutput = 'const positions: Record<string, Vec3> = {\n';
+    for (const [mid, points] of Object.entries(meridians)) {
+      tsOutput += `  // ${mid}\n`;
+      for (const { code, pos } of points) {
+        tsOutput += `  '${code}': [${pos[0]}, ${pos[1]}, ${pos[2]}],\n`;
+      }
+    }
+    tsOutput += '};\n';
+    log(tsOutput);
+
+    // Store for copy
+    window._fixedData = { acupoints: fixedAcupoints, ts: tsOutput };
+
+    setStatus('完成！点击"复制结果"获取修正后的坐标');
+  } catch(e) {
+    log(`错误: ${e.message}`, 'err');
+    console.error(e);
+    setStatus('失败');
+  }
+};
+
+window.copyOutput = function() {
+  if (window._fixedData) {
+    navigator.clipboard.writeText(JSON.stringify(window._fixedData.acupoints, null, 2));
+    alert('已复制修正后的穴位坐标JSON到剪贴板');
+  }
+};
+</script>
+</body>
+</html>

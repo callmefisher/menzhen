@@ -3,12 +3,14 @@ package service
 import (
 	"errors"
 	"log"
+	"strings"
 
 	"github.com/callmefisher/menzhen/server/model"
 	"gorm.io/gorm"
 )
 
 var ErrFormulaNotFound = errors.New("formula not found")
+var ErrFormulaDuplicate = errors.New("formula name already exists")
 
 // FormulaService handles formula-related business logic.
 type FormulaService struct {
@@ -82,6 +84,17 @@ func (s *FormulaService) GetByID(id uint64) (*model.Formula, error) {
 		return nil, err
 	}
 	return &formula, nil
+}
+
+// Create creates a new formula.
+func (s *FormulaService) Create(formula *model.Formula) error {
+	if err := s.DB.Create(formula).Error; err != nil {
+		if strings.Contains(err.Error(), "Duplicate entry") || errors.Is(err, gorm.ErrDuplicatedKey) {
+			return ErrFormulaDuplicate
+		}
+		return err
+	}
+	return nil
 }
 
 // DeleteByID deletes a formula by ID.

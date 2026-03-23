@@ -22,6 +22,41 @@ func NewFormulaHandler(db *gorm.DB, ds *service.DeepSeekService) *FormulaHandler
 	return &FormulaHandler{db: db, deepSeek: ds}
 }
 
+// Create handles POST /api/v1/formulas
+func (h *FormulaHandler) Create(c *gin.Context) {
+	var req struct {
+		Name        string                  `json:"name" binding:"required"`
+		Effects     string                  `json:"effects"`
+		Indications string                  `json:"indications"`
+		Notes       string                  `json:"notes"`
+		Composition model.FormulaComposition `json:"composition"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	formula := model.Formula{
+		Name:        req.Name,
+		Effects:     req.Effects,
+		Indications: req.Indications,
+		Notes:       req.Notes,
+		Composition: req.Composition,
+		Source:      "manual",
+	}
+
+	svc := service.NewFormulaService(h.db, h.deepSeek)
+	if err := svc.Create(&formula); err != nil {
+		if errors.Is(err, service.ErrFormulaDuplicate) {
+			Error(c, http.StatusConflict, "该方剂名称已存在")
+			return
+		}
+		Error(c, http.StatusInternalServerError, "failed to create formula")
+		return
+	}
+	Created(c, formula)
+}
+
 // List handles GET /api/v1/formulas?name=&page=&size=
 func (h *FormulaHandler) List(c *gin.Context) {
 	name := c.Query("name")

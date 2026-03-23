@@ -147,20 +147,20 @@ export default function RecordList() {
       title: '患者姓名',
       dataIndex: 'patient_name',
       key: 'patient_name',
-      width: 160,
+      width: 100,
     },
     {
       title: '年龄',
       dataIndex: 'patient_age',
       key: 'patient_age',
-      width: 80,
+      width: 60,
       responsive: ['md'],
     },
     {
       title: '就诊日期',
       dataIndex: 'visit_date',
       key: 'visit_date',
-      width: 130,
+      width: 120,
       defaultSortOrder: 'descend',
       sorter: (a, b) =>
         new Date(a.visit_date).getTime() - new Date(b.visit_date).getTime(),
@@ -174,6 +174,7 @@ export default function RecordList() {
       title: '诊断摘要',
       dataIndex: 'diagnosis',
       key: 'diagnosis',
+      width: 300,
       ellipsis: true,
       responsive: ['md'],
       render: (text: string) => {
@@ -184,7 +185,7 @@ export default function RecordList() {
     {
       title: '操作',
       key: 'action',
-      width: isMobile ? 100 : 200,
+      width: isMobile ? 100 : 160,
       render: (_, record) => (
         <Space size="small">
           <Button

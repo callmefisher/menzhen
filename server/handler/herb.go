@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/callmefisher/menzhen/server/model"
 	"github.com/callmefisher/menzhen/server/service"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -19,6 +20,45 @@ type HerbHandler struct {
 // NewHerbHandler creates a new HerbHandler.
 func NewHerbHandler(db *gorm.DB, ds *service.DeepSeekService) *HerbHandler {
 	return &HerbHandler{db: db, deepSeek: ds}
+}
+
+// Create handles POST /api/v1/herbs
+func (h *HerbHandler) Create(c *gin.Context) {
+	var req struct {
+		Name        string `json:"name" binding:"required"`
+		Alias       string `json:"alias"`
+		Category    string `json:"category"`
+		Properties  string `json:"properties"`
+		Effects     string `json:"effects"`
+		Indications string `json:"indications"`
+		Origin      string `json:"origin"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	herb := model.Herb{
+		Name:        req.Name,
+		Alias:       req.Alias,
+		Category:    req.Category,
+		Properties:  req.Properties,
+		Effects:     req.Effects,
+		Indications: req.Indications,
+		Origin:      req.Origin,
+		Source:      "manual",
+	}
+
+	svc := service.NewHerbService(h.db, h.deepSeek)
+	if err := svc.Create(&herb); err != nil {
+		if errors.Is(err, service.ErrHerbDuplicate) {
+			Error(c, http.StatusConflict, "该中药名称已存在")
+			return
+		}
+		Error(c, http.StatusInternalServerError, "failed to create herb")
+		return
+	}
+	Created(c, herb)
 }
 
 // List handles GET /api/v1/herbs?name=&category=&page=&size=

@@ -6,6 +6,7 @@ import { listPulses, deletePulse, listPulseCategories, updatePulse, createPulse 
 import type { PulseItem } from '../../api/pulse';
 import { useAuth } from '../../store/auth';
 import useIsMobile from '../../hooks/useIsMobile';
+import useRowHighlight from '../../hooks/useRowHighlight';
 
 export default function PulseList() {
   const [pulses, setPulses] = useState<PulseItem[]>([]);
@@ -24,6 +25,15 @@ export default function PulseList() {
   const { hasPermission } = useAuth();
   const isMobile = useIsMobile();
   const [createForm] = Form.useForm();
+
+  const highlight = useRowHighlight({
+    data: pulses,
+    page,
+    pageSize: size,
+    loading,
+    onPageChange: (p) => { setPage(p); fetchPulses(searchName, selectedCategory, p, size); },
+    idPrefix: 'pulse',
+  });
 
   useEffect(() => {
     listPulseCategories()
@@ -67,6 +77,7 @@ export default function PulseList() {
   const handleTableChange = (pagination: { current?: number; pageSize?: number }) => {
     const newPage = pagination.current || 1;
     const newSize = pagination.pageSize || 20;
+    highlight.setHighlightId(null);
     setPage(newPage);
     setSize(newSize);
     fetchPulses(searchName, selectedCategory, newPage, newSize);
@@ -85,11 +96,11 @@ export default function PulseList() {
   const startEdit = (record: PulseItem) => {
     setEditingId(record.id);
     setEditingData({
-      name: record.name,
-      category: record.category,
-      description: record.description,
-      clinical_meaning: record.clinical_meaning,
-      common_conditions: record.common_conditions,
+      name: record.name || '',
+      category: record.category || '',
+      description: record.description || '',
+      clinical_meaning: record.clinical_meaning || '',
+      common_conditions: record.common_conditions || '',
     });
     setExpandedRowKeys((keys) =>
       keys.includes(record.id) ? keys : [...keys, record.id]
@@ -101,8 +112,10 @@ export default function PulseList() {
     try {
       await updatePulse(editingId, editingData);
       message.success('更新成功');
+      const savedId = editingId;
       setEditingId(null);
-      fetchPulses(searchName, selectedCategory, page, size);
+      await fetchPulses(searchName, selectedCategory, page, size);
+      highlight.setHighlightId(savedId);
     } catch {
       // Error handled by interceptor
     }
@@ -112,11 +125,17 @@ export default function PulseList() {
     try {
       const values = await createForm.validateFields();
       setCreateLoading(true);
-      await createPulse(values);
+      const res = await createPulse(values) as unknown as { data: PulseItem };
+      const newId = res.data?.id;
       message.success('新增脉象成功');
       setCreateModalOpen(false);
       createForm.resetFields();
-      fetchPulses(searchName, selectedCategory, page, size);
+      // New record is on the last page; navigate there
+      const newTotal = total + 1;
+      const lastPage = Math.ceil(newTotal / size) || 1;
+      setPage(lastPage);
+      await fetchPulses(searchName, selectedCategory, lastPage, size);
+      if (newId) highlight.setHighlightId(newId);
       // Refresh categories in case a new one was added
       listPulseCategories()
         .then((res) => {
@@ -149,6 +168,7 @@ export default function PulseList() {
       title: '特征描述',
       dataIndex: 'description',
       key: 'description',
+      width: 300,
       ellipsis: true,
     },
     ...(hasPermission('role:manage')
@@ -229,7 +249,7 @@ export default function PulseList() {
               const desc = record.description || '';
               const shortDesc = desc.slice(0, 50) + (desc.length > 50 ? '...' : '');
               return (
-                <div key={record.id} style={{ background: '#fafafa', borderRadius: 8, padding: 12, marginBottom: 8 }}>
+                <div key={record.id} id={`pulse-row-${record.id}`} className={highlight.isHighlighted(record.id) ? 'row-highlight' : undefined} style={{ background: '#fafafa', borderRadius: 8, padding: 12, marginBottom: 8 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                     <span style={{ fontWeight: 'bold', fontSize: 15 }}>{record.name}</span>
                     {hasPermission('role:manage') && (
@@ -314,6 +334,8 @@ export default function PulseList() {
           dataSource={pulses}
           rowKey="id"
           loading={loading}
+          rowClassName={highlight.rowClassName}
+          onRow={highlight.onRow}
           pagination={{
             current: page,
             pageSize: size,

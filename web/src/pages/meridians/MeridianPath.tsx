@@ -53,7 +53,9 @@ const internalFragmentShader = `
 `;
 
 function createTubePath(points: Vec3[]): THREE.CatmullRomCurve3 {
-  const vectors = points.map(p => new THREE.Vector3(p[0], p[1], p[2]));
+  const vectors = points
+    .filter(p => Number.isFinite(p[0]) && Number.isFinite(p[1]) && Number.isFinite(p[2]))
+    .map(p => new THREE.Vector3(p[0], p[1], p[2]));
   return new THREE.CatmullRomCurve3(vectors, false, 'catmullrom', 0.5);
 }
 
@@ -85,7 +87,7 @@ function FlowTube({
   // Project external paths onto model surface; skip internal paths
   const projectedPoints = useMemo(() => {
     if (!mergedBVH || isInternal || points.length < 2) return points;
-    return projectPathToSurface(points, mergedBVH, 0.006);
+    return projectPathToSurface(points, mergedBVH, 0.005);
   }, [points, mergedBVH, isInternal]);
 
   const geometry = useMemo(() => {

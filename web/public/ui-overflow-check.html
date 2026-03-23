@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>四个页面溢出检查 + 优化方案</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=Noto+Sans+SC:wght@300;400;500;600&display=swap');
+  :root {
+    --bg:#F8F5EF; --card:#FFFDF8; --border:#E8E0D0; --text:#3D3225;
+    --text-sub:#8B7355; --accent:#52C41A; --warm-brown:#5C4A32;
+    --danger:#FF4D4F; --blue:#1890FF;
+    --shadow:0 2px 12px rgba(92,74,50,0.08);
+    --shadow-lg:0 8px 32px rgba(92,74,50,0.12);
+    --radius:10px;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:'Noto Sans SC',-apple-system,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;padding:0 0 80px;}
+  .page-header{background:linear-gradient(135deg,#5C4A32 0%,#3D3225 60%,#2A231A 100%);color:#F8F5EF;padding:48px 40px 40px;position:relative;}
+  .page-header h1{font-family:'Noto Serif SC',serif;font-size:28px;font-weight:700;margin-bottom:8px;}
+  .page-header p{font-size:15px;opacity:0.7;}
+  .section{max-width:1200px;margin:0 auto;padding:0 24px;}
+  .section-title{font-family:'Noto Serif SC',serif;font-size:22px;font-weight:700;color:var(--warm-brown);margin:48px 0 8px;display:flex;align-items:center;gap:12px;}
+  .section-title .num{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;background:var(--warm-brown);color:#fff;border-radius:50%;font-size:16px;font-family:'Noto Sans SC',sans-serif;flex-shrink:0;}
+  .section-desc{color:var(--text-sub);font-size:14px;margin-bottom:24px;padding-left:48px;}
+  .sep{height:1px;background:linear-gradient(90deg,transparent,var(--border),transparent);margin:48px 0;}
+
+  .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);margin-bottom:24px;}
+  .card-header{display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,#FDFBF6,#FAF7F0);flex-wrap:wrap;}
+  .card-header h3{font-size:16px;font-weight:600;color:var(--warm-brown);}
+  .card-body{padding:20px;}
+  .card-footer{padding:12px 20px;background:#FDFBF6;border-top:1px solid var(--border);display:flex;gap:16px;font-size:13px;color:var(--text-sub);flex-wrap:wrap;}
+
+  .badge{font-size:12px;font-weight:600;padding:3px 12px;border-radius:20px;white-space:nowrap;}
+  .badge-red{background:#FFF1F0;color:#CF1322;}
+  .badge-yellow{background:#FFF7E6;color:#D46B08;}
+  .badge-green{background:#F6FFED;color:#389E0D;}
+  .badge-blue{background:#E6F7FF;color:#0958D9;}
+
+  .risk{display:inline-flex;align-items:center;gap:4px;font-size:13px;font-weight:600;padding:4px 14px;border-radius:20px;}
+  .risk-high{background:#FFF1F0;color:#CF1322;border:1px solid #FFCCC7;}
+  .risk-medium{background:#FFF7E6;color:#D46B08;border:1px solid #FFD591;}
+  .risk-low{background:#F6FFED;color:#389E0D;border:1px solid #B7EB8F;}
+
+  .mock-table{width:100%;border-collapse:separate;border-spacing:0;border:1px solid #E8E0D0;border-radius:8px;overflow:hidden;font-size:12px;}
+  .mock-table th{background:#F9F6F0;color:var(--warm-brown);font-weight:600;padding:8px 10px;text-align:left;border-bottom:1px solid #E8E0D0;white-space:nowrap;}
+  .mock-table td{padding:8px 10px;border-bottom:1px solid #F0EBE0;white-space:nowrap;}
+  .mock-table tr:last-child td{border-bottom:none;}
+  .mock-table .col-hide{background:#FFF1F0;text-decoration:line-through;color:#CF1322;opacity:0.5;}
+  .mock-table th.col-hide{background:#FFCCC7;}
+  .mock-table .col-keep{background:#F6FFED;}
+
+  .overflow-container{width:100%;overflow-x:auto;}
+  .tag-pro{color:#389E0D;}
+  .tag-con{color:#CF1322;}
+
+  .width-bar{display:flex;align-items:center;gap:8px;font-size:12px;margin-top:8px;}
+  .width-bar .bar{flex:1;height:6px;border-radius:3px;position:relative;overflow:hidden;}
+  .width-bar .bar-bg{position:absolute;inset:0;background:#F0EBE0;border-radius:3px;}
+  .width-bar .bar-fill{position:absolute;top:0;bottom:0;left:0;border-radius:3px;}
+
+  .compare-2col{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+  @media(max-width:900px){.compare-2col{grid-template-columns:1fr;}}
+
+  .label-before{display:inline-block;font-size:12px;font-weight:600;padding:2px 10px;border-radius:4px;margin-bottom:8px;background:#FFF1F0;color:#CF1322;}
+  .label-after{display:inline-block;font-size:12px;font-weight:600;padding:2px 10px;border-radius:4px;margin-bottom:8px;background:#F6FFED;color:#389E0D;}
+
+  @media(max-width:768px){.page-header{padding:32px 20px;}.page-header h1{font-size:22px;}.section{padding:0 16px;}.section-title{font-size:18px;margin-top:36px;}.section-desc{padding-left:0;}}
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>四页面窄屏溢出检查</h1>
+  <p>库存药物 / 中药查询 / 方剂查询 / 病历列表</p>
+</div>
+
+<!-- ═══════════════════════════ -->
+<!-- Summary -->
+<!-- ═══════════════════════════ -->
+<div class="section">
+  <h2 class="section-title"><span class="num">0</span>总览</h2>
+  <div class="overflow-container">
+    <table class="mock-table" style="font-size:13px;">
+      <thead><tr>
+        <th>页面</th><th>桌面总宽</th><th>已有 responsive 隐藏</th><th>平板可见宽</th><th>溢出风险</th><th>建议</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td style="font-weight:600;">库存药物 DrugList</td>
+          <td>~1070px</td>
+          <td>2 列（最后更新、备注）</td>
+          <td style="color:#CF1322;font-weight:600;">~850px</td>
+          <td><span class="risk risk-high">HIGH</span></td>
+          <td>移除「货架号」「预警阈值」列</td>
+        </tr>
+        <tr>
+          <td style="font-weight:600;">中药查询 HerbSearch</td>
+          <td>~920px+auto</td>
+          <td>6 列（别名、分类、性味归经、主治、产区、来源）</td>
+          <td style="color:#D46B08;">~300-500px</td>
+          <td><span class="risk risk-medium">MEDIUM</span></td>
+          <td>给「功效」列加固定宽度</td>
+        </tr>
+        <tr>
+          <td style="font-weight:600;">方剂查询 FormulaSearch</td>
+          <td>~630-800px</td>
+          <td>4 列（功效、主治、组成、来源）</td>
+          <td style="color:#389E0D;">~230px</td>
+          <td><span class="risk risk-low">LOW</span></td>
+          <td>无需改动</td>
+        </tr>
+        <tr>
+          <td style="font-weight:600;">病历列表 RecordList</td>
+          <td>~570px</td>
+          <td>2 列（年龄、诊断摘要）</td>
+          <td style="color:#389E0D;">~490px</td>
+          <td><span class="risk risk-low">LOW</span></td>
+          <td>无需改动</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="section"><div class="sep"></div></div>
+
+<!-- ═══════════════════════════ -->
+<!-- 1. DrugList - HIGH -->
+<!-- ═══════════════════════════ -->
+<div class="section">
+  <h2 class="section-title"><span class="num">1</span>库存药物 DrugList <span class="risk risk-high" style="margin-left:8px;">HIGH</span></h2>
+  <p class="section-desc">
+    10 列表格，桌面总宽 ~1070px。即使已隐藏 2 列，平板仍有 8 列 ~850px，在 1024px 屏幕下紧凑或溢出。
+    建议移除「货架号」「预警阈值」，它们在编辑弹窗和入库时可查看。
+  </p>
+
+  <div class="compare-2col">
+    <div>
+      <span class="label-before">改动前 — 10 列 ~1070px</span>
+      <div class="overflow-container">
+        <table class="mock-table" style="min-width:1070px;">
+          <thead><tr>
+            <th style="width:120px">药材名称</th>
+            <th class="col-hide" style="width:80px">货架号</th>
+            <th style="width:100px">库存</th>
+            <th style="width:130px">进货价(元/500g)</th>
+            <th style="width:130px">出售价(元/500g)</th>
+            <th class="col-hide" style="width:100px">预警阈值</th>
+            <th style="width:70px">状态</th>
+            <th style="width:120px;color:#999;">最后更新 <small>(md隐藏)</small></th>
+            <th style="width:100px;color:#999;">备注 <small>(md隐藏)</small></th>
+            <th style="width:160px">操作</th>
+          </tr></thead>
+          <tbody><tr>
+            <td>黄芪</td>
+            <td class="col-hide">H1</td>
+            <td><span style="color:#389E0D;font-weight:500;">5000g</span></td>
+            <td>¥45</td>
+            <td>¥60</td>
+            <td class="col-hide">500g</td>
+            <td><span style="color:#389E0D;font-size:11px;background:#F6FFED;padding:1px 6px;border-radius:4px;border:1px solid #B7EB8F;">充足</span></td>
+            <td style="color:#999;">03-22 14:30</td>
+            <td style="color:#999;">-</td>
+            <td>
+              <span style="color:#1890FF;font-size:12px;">入库</span>&nbsp;
+              <span style="color:#1890FF;font-size:12px;">编辑</span>&nbsp;
+              <span style="color:#FF4D4F;font-size:12px;">删除</span>
+            </td>
+          </tr></tbody>
+        </table>
+      </div>
+      <div class="width-bar">
+        <span style="color:#CF1322;font-weight:600;">~1070px</span>
+        <div class="bar"><div class="bar-bg"></div><div class="bar-fill" style="width:100%;background:linear-gradient(90deg,#FFCCC7,#CF1322);"></div></div>
+        <span style="color:#CF1322;">溢出</span>
+      </div>
+    </div>
+
+    <div>
+      <span class="label-after">改动后 — 8 列 ~810px（平板安全）</span>
+      <div class="overflow-container">
+        <table class="mock-table">
+          <thead><tr>
+            <th style="width:120px">药材名称</th>
+            <th style="width:100px">库存</th>
+            <th style="width:130px">进货价(元/500g)</th>
+            <th style="width:130px">出售价(元/500g)</th>
+            <th style="width:70px">状态</th>
+            <th style="width:120px;color:#999;">最后更新 <small>(md隐藏)</small></th>
+            <th style="width:100px;color:#999;">备注 <small>(md隐藏)</small></th>
+            <th style="width:160px">操作</th>
+          </tr></thead>
+          <tbody>
+            <tr>
+              <td>黄芪</td>
+              <td><span style="color:#389E0D;font-weight:500;">5000g</span></td>
+              <td>¥45</td>
+              <td>¥60</td>
+              <td><span style="color:#389E0D;font-size:11px;background:#F6FFED;padding:1px 6px;border-radius:4px;border:1px solid #B7EB8F;">充足</span></td>
+              <td style="color:#999;">03-22 14:30</td>
+              <td style="color:#999;">-</td>
+              <td>
+                <span style="color:#1890FF;font-size:12px;">入库</span>&nbsp;
+                <span style="color:#1890FF;font-size:12px;">编辑</span>&nbsp;
+                <span style="color:#FF4D4F;font-size:12px;">删除</span>
+              </td>
+            </tr>
+            <tr>
+              <td>当归</td>
+              <td><span style="color:#D46B08;font-weight:500;">300g</span></td>
+              <td>¥55</td>
+              <td>¥75</td>
+              <td><span style="color:#D46B08;font-size:11px;background:#FFF7E6;padding:1px 6px;border-radius:4px;border:1px solid #FFD591;">偏低</span></td>
+              <td style="color:#999;">03-21 09:15</td>
+              <td style="color:#999;">需补货</td>
+              <td>
+                <span style="color:#1890FF;font-size:12px;">入库</span>&nbsp;
+                <span style="color:#1890FF;font-size:12px;">编辑</span>&nbsp;
+                <span style="color:#FF4D4F;font-size:12px;">删除</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="width-bar">
+        <span style="color:#389E0D;font-weight:600;">~810px</span>
+        <div class="bar"><div class="bar-bg"></div><div class="bar-fill" style="width:76%;background:linear-gradient(90deg,#B7EB8F,#389E0D);"></div></div>
+        <span style="color:#389E0D;">平板安全</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px;">
+    <div class="card-footer">
+      <span class="tag-pro">+ 移除「货架号」「预警阈值」，节省 180px</span>
+      <span class="tag-pro">+ 编辑弹窗中仍可查看/修改这两个字段</span>
+      <span class="tag-pro">+ 入库操作时也能看到预警值</span>
+    </div>
+  </div>
+</div>
+
+<div class="section"><div class="sep"></div></div>
+
+<!-- ═══════════════════════════ -->
+<!-- 2. HerbSearch - MEDIUM -->
+<!-- ═══════════════════════════ -->
+<div class="section">
+  <h2 class="section-title"><span class="num">2</span>中药查询 HerbSearch <span class="risk risk-medium" style="margin-left:8px;">MEDIUM</span></h2>
+  <p class="section-desc">
+    已有 6 列设置了 <code>responsive: ['md']</code>，平板上只显示「药名」「功效」「操作」。
+    但「功效」列没有固定宽度（auto），可能导致布局不稳定。建议给功效列加上宽度限制。
+  </p>
+
+  <div class="compare-2col">
+    <div>
+      <span class="label-before">当前 — 功效列 auto 宽度</span>
+      <div class="overflow-container">
+        <table class="mock-table">
+          <thead><tr>
+            <th style="width:160px">药名</th>
+            <th style="color:#999;width:200px">别名 <small>(md隐藏)</small></th>
+            <th style="color:#999;width:100px">分类 <small>(md隐藏)</small></th>
+            <th style="color:#999;width:200px">性味归经 <small>(md隐藏)</small></th>
+            <th>功效 <span style="color:#D46B08;font-size:11px;">(auto, 无宽度限制)</span></th>
+            <th style="color:#999;">主治 <small>(md隐藏)</small></th>
+            <th style="color:#999;width:120px">道地产区 <small>(md隐藏)</small></th>
+            <th style="color:#999;width:100px">来源 <small>(md隐藏)</small></th>
+            <th style="width:140px">操作</th>
+          </tr></thead>
+          <tbody><tr>
+            <td>黄芪</td>
+            <td style="color:#999;">北芪、绵芪</td>
+            <td style="color:#999;">补气药</td>
+            <td style="color:#999;">甘，微温。归脾、肺经</td>
+            <td>补气升阳，固表止汗，利水消肿，生津养血，行滞通痹，托毒排脓，敛疮生肌</td>
+            <td style="color:#999;">气虚乏力...</td>
+            <td style="color:#999;">内蒙古</td>
+            <td style="color:#999;">本地</td>
+            <td>编辑 删除</td>
+          </tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div>
+      <span class="label-after">优化后 — 功效列加 ellipsis + 宽度</span>
+      <div class="overflow-container">
+        <table class="mock-table">
+          <thead><tr>
+            <th style="width:160px">药名</th>
+            <th style="color:#999;width:200px">别名 <small>(md隐藏)</small></th>
+            <th style="color:#999;width:100px">分类 <small>(md隐藏)</small></th>
+            <th style="color:#999;width:200px">性味归经 <small>(md隐藏)</small></th>
+            <th style="width:200px;">功效 <span style="color:#389E0D;font-size:11px;">(限宽 + ellipsis)</span></th>
+            <th style="color:#999;">主治 <small>(md隐藏)</small></th>
+            <th style="color:#999;width:120px">道地产区 <small>(md隐藏)</small></th>
+            <th style="color:#999;width:100px">来源 <small>(md隐藏)</small></th>
+            <th style="width:140px">操作</th>
+          </tr></thead>
+          <tbody><tr>
+            <td>黄芪</td>
+            <td style="color:#999;">北芪、绵芪</td>
+            <td style="color:#999;">补气药</td>
+            <td style="color:#999;">甘，微温。归脾、肺经</td>
+            <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">补气升阳，固表止汗，利水消肿，生津养血...</td>
+            <td style="color:#999;">气虚乏力...</td>
+            <td style="color:#999;">内蒙古</td>
+            <td style="color:#999;">本地</td>
+            <td>编辑 删除</td>
+          </tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px;">
+    <div class="card-footer">
+      <span class="tag-pro">+ 给功效列加 width + ellipsis，布局稳定</span>
+      <span class="tag-pro">+ 展开行仍可看完整功效内容</span>
+      <span class="tag-pro">+ 平板上仅 3 列 ~500px，完全安全</span>
+    </div>
+  </div>
+</div>
+
+<div class="section"><div class="sep"></div></div>
+
+<!-- ═══════════════════════════ -->
+<!-- 3. FormulaSearch - LOW -->
+<!-- ═══════════════════════════ -->
+<div class="section">
+  <h2 class="section-title"><span class="num">3</span>方剂查询 FormulaSearch <span class="risk risk-low" style="margin-left:8px;">LOW</span></h2>
+  <p class="section-desc">
+    6 列中已有 4 列设置 <code>responsive: ['md']</code>，平板只显示「方剂名」「操作」共 ~230px。
+    <b>无需改动，响应式设计良好。</b>
+  </p>
+
+  <div class="overflow-container">
+    <table class="mock-table" style="font-size:13px;">
+      <thead><tr>
+        <th style="width:150px">方剂名</th>
+        <th style="color:#999;">功效 <small>(md隐藏)</small></th>
+        <th style="color:#999;">主治 <small>(md隐藏)</small></th>
+        <th style="color:#999;width:300px;">组成 <small>(md隐藏)</small></th>
+        <th style="color:#999;width:100px;">来源 <small>(md隐藏)</small></th>
+        <th style="width:80px">操作</th>
+      </tr></thead>
+      <tbody><tr>
+        <td style="color:var(--blue);cursor:pointer;">四君子汤</td>
+        <td style="color:#999;">益气健脾</td>
+        <td style="color:#999;">脾胃气虚证</td>
+        <td style="color:#999;">人参 9g、白术 9g、茯苓 9g、甘草 6g</td>
+        <td style="color:#999;"><span style="font-size:11px;background:#F6FFED;padding:1px 6px;border-radius:4px;border:1px solid #B7EB8F;color:#389E0D;">本地</span></td>
+        <td><span style="color:#FF4D4F;font-size:12px;">删除</span></td>
+      </tr></tbody>
+    </table>
+  </div>
+  <p style="font-size:13px;color:var(--accent);margin-top:8px;text-align:center;">&#10004; 平板仅显示 2 列 ~230px，无溢出风险</p>
+</div>
+
+<div class="section"><div class="sep"></div></div>
+
+<!-- ═══════════════════════════ -->
+<!-- 4. RecordList - LOW -->
+<!-- ═══════════════════════════ -->
+<div class="section">
+  <h2 class="section-title"><span class="num">4</span>病历列表 RecordList <span class="risk risk-low" style="margin-left:8px;">LOW</span></h2>
+  <p class="section-desc">
+    仅 5 列，已有 2 列设置 <code>responsive: ['md']</code>，平板只显示 3 列共 ~490px。
+    <b>无需改动。</b>
+  </p>
+
+  <div class="overflow-container">
+    <table class="mock-table" style="font-size:13px;">
+      <thead><tr>
+        <th style="width:160px">患者姓名</th>
+        <th style="color:#999;width:80px;">年龄 <small>(md隐藏)</small></th>
+        <th style="width:130px">就诊日期</th>
+        <th style="color:#999;">诊断摘要 <small>(md隐藏)</small></th>
+        <th style="width:200px">操作</th>
+      </tr></thead>
+      <tbody><tr>
+        <td>张三</td>
+        <td style="color:#999;">45</td>
+        <td><span style="font-size:11px;background:#F6FFED;padding:1px 6px;border-radius:4px;border:1px solid #B7EB8F;color:#389E0D;">2026-03-23</span></td>
+        <td style="color:#999;">慢性胃炎，脾虚湿盛...</td>
+        <td>
+          <span style="color:#1890FF;font-size:12px;">查看</span>&nbsp;
+          <span style="color:#1890FF;font-size:12px;">编辑</span>&nbsp;
+          <span style="color:#FF4D4F;font-size:12px;">删除</span>
+        </td>
+      </tr></tbody>
+    </table>
+  </div>
+  <p style="font-size:13px;color:var(--accent);margin-top:8px;text-align:center;">&#10004; 平板仅 3 列 ~490px，无溢出风险</p>
+</div>
+
+<div class="section"><div class="sep"></div></div>
+
+<!-- ═══════════════════════════ -->
+<!-- Summary -->
+<!-- ═══════════════════════════ -->
+<div class="section">
+  <h2 class="section-title"><span class="num">5</span>实施清单</h2>
+
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:24px;">
+    <table class="mock-table" style="font-size:13px;">
+      <thead><tr><th>#</th><th>改动</th><th>文件</th><th>风险等级</th></tr></thead>
+      <tbody>
+        <tr>
+          <td style="font-weight:600;">1</td>
+          <td>DrugList 移除「货架号」「预警阈值」列</td>
+          <td><code>DrugList.tsx</code></td>
+          <td><span class="risk risk-high" style="font-size:11px;padding:2px 8px;">HIGH</span></td>
+        </tr>
+        <tr>
+          <td style="font-weight:600;">2</td>
+          <td>HerbSearch「功效」列加 width:200 + ellipsis</td>
+          <td><code>HerbSearch.tsx</code></td>
+          <td><span class="risk risk-medium" style="font-size:11px;padding:2px 8px;">MEDIUM</span></td>
+        </tr>
+        <tr>
+          <td style="font-weight:600;">3</td>
+          <td>FormulaSearch — 无需改动</td>
+          <td>-</td>
+          <td><span class="risk risk-low" style="font-size:11px;padding:2px 8px;">LOW</span></td>
+        </tr>
+        <tr>
+          <td style="font-weight:600;">4</td>
+          <td>RecordList — 无需改动</td>
+          <td>-</td>
+          <td><span class="risk risk-low" style="font-size:11px;padding:2px 8px;">LOW</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div style="margin-top:24px;padding:20px;background:var(--card);border:2px solid var(--accent);border-radius:var(--radius);text-align:center;">
+    <p style="font-size:15px;color:var(--warm-brown);font-weight:600;">
+      仅 DrugList 和 HerbSearch 需要优化，方剂和病历已经做好了响应式。确认后立即实施。
+    </p>
+  </div>
+</div>
+
+</body>
+</html>

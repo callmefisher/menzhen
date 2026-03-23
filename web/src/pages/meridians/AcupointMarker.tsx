@@ -16,6 +16,11 @@ export default function AcupointMarker({ data, color, isFocused, onClick }: Acup
   const [showCard, setShowCard] = useState(false);
   const meshRef = useRef<THREE.Mesh>(null);
 
+  // Skip rendering if position is invalid
+  if (!data.position || !Number.isFinite(data.position[0]) || !Number.isFinite(data.position[1]) || !Number.isFinite(data.position[2])) {
+    return null;
+  }
+
   // Smooth scale on hover (no pulse, no exaggerated scaling)
   useFrame((_, delta) => {
     if (!meshRef.current) return;

@@ -636,7 +636,7 @@ class TestWindowsCmdQuotingFix:
     def test_build_full_calls_refresh_windows_path(self, wizard_source):
         """build-full endpoint should call _refresh_windows_path before checks."""
         bf_start = wizard_source.find('"/api/build-full"')
-        next_ep = wizard_source.find('if self.path ==', bf_start + 30)
+        next_ep = wizard_source.find('if self.path', bf_start + 30)
         section = wizard_source[bf_start:next_ep]
         refresh_pos = section.find("_refresh_windows_path()")
         needs_clone_pos = section.find("needs_clone")
@@ -680,8 +680,10 @@ class TestWindowsExcludePathspec:
     def _extract_windows_exclude(wizard_source, api_path):
         """Helper: extract Windows EXCLUDE line from a given API handler."""
         handler_start = wizard_source.find(f'if self.path == "{api_path}":')
+        if handler_start == -1:
+            handler_start = wizard_source.find(f'if self.path.startswith("{api_path}"):')
         assert handler_start != -1, f"{api_path} handler not found"
-        handler_end = wizard_source.find("\n        if self.path ==", handler_start + 1)
+        handler_end = wizard_source.find("\n        if self.path", handler_start + 1)
         if handler_end == -1:
             handler_end = len(wizard_source)
         handler_body = wizard_source[handler_start:handler_end]
@@ -920,7 +922,7 @@ class TestPerServiceBuild:
         """build-full must NOT use bare 'docker compose build' (all-at-once).
         It should always use per-service _per_service_build_cmd."""
         bf_start = wizard_source.find('"/api/build-full"')
-        bf_end = wizard_source.find('if self.path ==', bf_start + 30)
+        bf_end = wizard_source.find('if self.path', bf_start + 30)
         section = wizard_source[bf_start:bf_end]
         # Should NOT have the old bare command
         assert '["docker", "compose", "build"]' not in section, \
@@ -930,7 +932,7 @@ class TestPerServiceBuild:
         """build-full should run 'docker compose pull' to fetch pre-built
         images (e.g. minio/minio) that are not covered by build."""
         bf_start = wizard_source.find('"/api/build-full"')
-        bf_end = wizard_source.find('if self.path ==', bf_start + 30)
+        bf_end = wizard_source.find('if self.path', bf_start + 30)
         section = wizard_source[bf_start:bf_end]
         assert "docker compose pull" in section, \
             "build-full must pull pre-built images (minio) before building"
@@ -942,7 +944,7 @@ class TestPerServiceBuild:
     def test_build_full_needs_clone_windows_per_service(self, wizard_source):
         """build-full needs_clone=True Windows should use per-service build."""
         bf_start = wizard_source.find('"/api/build-full"')
-        bf_end = wizard_source.find('if self.path ==', bf_start + 30)
+        bf_end = wizard_source.find('if self.path', bf_start + 30)
         section = wizard_source[bf_start:bf_end]
         # Windows needs_clone branch should call _per_service_build_cmd
         assert "_per_service_build_cmd" in section
@@ -950,7 +952,7 @@ class TestPerServiceBuild:
     def test_build_full_needs_clone_unix_per_service(self, wizard_source):
         """build-full needs_clone=True Unix should use per-service build."""
         bf_start = wizard_source.find('"/api/build-full"')
-        bf_end = wizard_source.find('if self.path ==', bf_start + 30)
+        bf_end = wizard_source.find('if self.path', bf_start + 30)
         section = wizard_source[bf_start:bf_end]
         # Count occurrences — should appear in clone branch + else branch
         count = section.count("_per_service_build_cmd")
@@ -1455,10 +1457,10 @@ class TestStep6AutoScroll:
 
     def test_step6_has_scroll_into_view(self, wizard_source):
         """renderStep6 success path should call scrollIntoView."""
-        pos = wizard_source.find("点击打开系统")
+        pos = wizard_source.find("async function showDeployResult")
         assert pos != -1
-        # scrollIntoView should be within 500 chars after the success HTML
-        section = wizard_source[pos:pos + 500]
+        end = wizard_source.find("\n// ", pos + 1)
+        section = wizard_source[pos:end] if end != -1 else wizard_source[pos:]
         assert "scrollIntoView" in section
 
 
@@ -1729,7 +1731,7 @@ class TestStep5SaveRefresh:
         # Find the saveEnvBtn onclick handler (not the HTML template)
         pos = wizard_source.find("#saveEnvBtn').onclick")
         assert pos != -1, "saveEnvBtn onclick handler not found"
-        section = wizard_source[pos:pos + 800]
+        section = wizard_source[pos:pos + 1600]
         assert "renderStep5(el)" in section
 
 
@@ -1941,3 +1943,80 @@ class TestEnsureEnvPreservesAllExistingSecrets:
         import re as _re
         assert _re.search(r"^DB_PASSWORD=$", content, _re.MULTILINE), \
             "DB_PASSWORD= (empty) must be preserved, not auto-generated over"
+
+
+# ---------------------------------------------------------------------------
+# Step 5: .env directory cleanup, Cache-Control, green message consistency
+# ---------------------------------------------------------------------------
+class TestStep5EnvDirCleanup:
+    """Step 5 (renderStep5) must call ensure-env before get-env-config
+    to clean up Docker bind-mount .env directories."""
+
+    def test_render_step5_calls_ensure_env_before_get_env_config(self, wizard_source):
+        """renderStep5 must call /api/ensure-env before /api/get-env-config."""
+        fn_start = wizard_source.find("async function renderStep5")
+        fn_end = wizard_source.find("async function renderStep6")
+        section = wizard_source[fn_start:fn_end]
+        ensure_pos = section.find("/api/ensure-env")
+        get_config_pos = section.find("/api/get-env-config")
+        assert ensure_pos != -1, \
+            "renderStep5 must call /api/ensure-env"
+        assert get_config_pos != -1
+        assert ensure_pos < get_config_pos, \
+            "ensure-env must be called BEFORE get-env-config"
+
+    def test_render_step5_ensure_env_has_catch(self, wizard_source):
+        """ensure-env call must have .catch() so failures don't block Step 5."""
+        fn_start = wizard_source.find("async function renderStep5")
+        fn_end = wizard_source.find("async function renderStep6")
+        section = wizard_source[fn_start:fn_end]
+        # Find the ensure-env call and verify it has .catch
+        pos = section.find("/api/ensure-env")
+        nearby = section[pos:pos + 80]
+        assert ".catch" in nearby, \
+            "ensure-env call must have .catch() to handle failures gracefully"
+
+    def test_get_env_config_cleans_env_dir(self, wizard_source):
+        """get-env-config must call _rmdir_safe on env_path."""
+        fn_start = wizard_source.find('"/api/get-env-config"')
+        fn_end = wizard_source.find('self.send_error(404)', fn_start)
+        section = wizard_source[fn_start:fn_end]
+        assert "_rmdir_safe" in section, \
+            "get-env-config must clean up .env directory (Docker bind-mount)"
+
+
+class TestSendJsonCacheControl:
+    """_send_json must include Cache-Control: no-cache, no-store."""
+
+    def test_send_json_has_cache_control(self, wizard_source):
+        fn_start = wizard_source.find("def _send_json(")
+        fn_end = wizard_source.find("\n    def ", fn_start + 10)
+        fn_body = wizard_source[fn_start:fn_end]
+        assert "Cache-Control" in fn_body
+        assert "no-cache" in fn_body
+        assert "no-store" in fn_body
+
+
+class TestStep5GreenMessageConsistency:
+    """The green '所有程序已就绪' message must only show when allReady is true."""
+
+    def test_env_not_configured_shows_yellow_hint(self, wizard_source):
+        """When images are ready but env is not configured, show yellow hint."""
+        fn_start = wizard_source.find("async function renderStep5")
+        fn_end = wizard_source.find("async function renderStep6")
+        section = wizard_source[fn_start:fn_end]
+        assert "!envConfigured" in section or "envConfigured" in section
+        assert "请先保存" in section, \
+            "Must prompt user to save config when env is not configured"
+
+    def test_green_message_only_when_env_configured(self, wizard_source):
+        """The green '所有程序已就绪' must be in the else branch (envConfigured=true)."""
+        fn_start = wizard_source.find("async function renderStep5")
+        fn_end = wizard_source.find("async function renderStep6")
+        section = wizard_source[fn_start:fn_end]
+        # Green message should appear AFTER envConfigured check
+        green_pos = section.find("所有程序已就绪")
+        env_check_pos = section.find("!envConfigured")
+        assert env_check_pos != -1 and green_pos != -1
+        assert env_check_pos < green_pos, \
+            "envConfigured check must come before the green all-ready message"
