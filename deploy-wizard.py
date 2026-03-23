@@ -31,7 +31,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.03.23.073000"
+WIZARD_VERSION = "2026.03.23.081600"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -3649,10 +3649,25 @@ async function renderStep3(el) {
                 <input type="text" id="siteIdInput" maxlength="20" placeholder="输入新的站点编号" value="" style="border-color:#dc2626;" />
                 <button class="btn btn-secondary" id="genBtn">自动生成</button>
               </div>
-              <div style="font-size:13px; color:var(--danger);">仅允许英文字母和数字，长度6-20位</div>
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div style="font-size:13px; color:var(--danger);">仅允许英文字母和数字，长度6-20位</div>
+                <button class="btn btn-secondary" id="cancelEditBtn" style="font-size:13px; padding:4px 12px;">取消，使用原编号</button>
+              </div>
             </div>
           `;
           el.querySelector('#unlockBtn').style.display = 'none';
+          // Cancel button: hide edit section, restore original state
+          el.querySelector('#cancelEditBtn').onclick = () => {
+            editDiv.style.display = 'none';
+            editDiv.innerHTML = '';
+            el.querySelector('#unlockBtn').style.display = '';
+            el.querySelector('#siteIdError').style.display = 'none';
+            const nb = el.querySelector('#nextBtn');
+            nb.textContent = '确认，下一步 →';
+            nb.className = 'btn btn-primary';
+            state.siteId = existingSiteId;
+            nb.onclick = () => { state.step = 4; render(); };
+          };
           // 替换"下一步"按钮行为为强制保存
           const nextBtn = el.querySelector('#nextBtn');
           nextBtn.textContent = '保存新编号，下一步 →';
