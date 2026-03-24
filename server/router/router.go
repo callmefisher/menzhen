@@ -56,6 +56,8 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	hexagramHandler := handler.NewHexagramHandler(db)
 	followUpHandler := handler.NewFollowUpHandler(db)
 	configHandler := handler.NewConfigHandler(db)
+	wsHandler := handler.NewWSHandler(cfg.JWTSecret)
+	pnHandler := handler.NewPrescriptionNotificationHandler(db)
 
 	// ---------- Route groups ----------
 
@@ -67,6 +69,9 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		auth.POST("/login", authHandler.Login)
 		auth.POST("/register", authHandler.Register)
 	}
+
+	// WebSocket upgrade (handles its own JWT auth via query param or header).
+	v1.GET("/ws", wsHandler.Upgrade)
 
 	// Auth-only routes (JWT validated, but no token_version check).
 	// The refresh endpoint must bypass TokenVersionMiddleware so that
@@ -299,6 +304,16 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			inventoryDrugs.GET("/:id/page", middleware.RequirePermission(db, "inventory:read"), inventoryDrugHandler.FindPage)
 			inventoryDrugs.PUT("/:id", middleware.RequirePermission(db, "inventory:update"), inventoryDrugHandler.Update)
 			inventoryDrugs.DELETE("/:id", middleware.RequirePermission(db, "inventory:delete"), inventoryDrugHandler.Delete)
+		}
+
+		// Prescription notification routes (tenant-scoped, dispense workflow).
+		pn := authenticated.Group("/prescription-notifications")
+		{
+			pn.GET("", middleware.RequirePermission(db, "inventory:read"), pnHandler.List)
+			pn.GET("/pending-count", middleware.RequirePermission(db, "inventory:read"), pnHandler.PendingCount)
+			pn.GET("/:id/detail", middleware.RequirePermission(db, "inventory:read"), pnHandler.Detail)
+			pn.POST("/:id/done", middleware.RequirePermission(db, "inventory:update"), pnHandler.MarkDone)
+			pn.POST("/batch-done", middleware.RequirePermission(db, "inventory:update"), pnHandler.BatchDone)
 		}
 
 		// Follow-up routes (tenant-scoped).
