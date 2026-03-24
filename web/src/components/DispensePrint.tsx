@@ -124,18 +124,20 @@ const DispensePrint = forwardRef<DispensePrintHandle, DispensePrintProps>(
   .print-info .info-value { font-weight: 600; }
   .print-info .info-value.big { font-size: 15px; color: #d4380d; }
   .print-section-title { padding: 6px 20px; font-size: 12px; font-weight: 700; background: #f9f9f9; border-bottom: 1px solid #ddd; }
-  .print-multi-col { display: table; table-layout: fixed; width: 100%; padding: 0 8px; }
-  .print-multi-col .pcol { display: table-cell; width: 50%; vertical-align: top; }
-  .print-multi-col .pcol + .pcol { border-left: 1px dashed #ccc; padding-left: 8px; }
-  .print-herb-row { display: flex; align-items: baseline; gap: 2px; padding: 2px 0; font-size: 12px; border-bottom: 1px dotted #eee; overflow: hidden; }
-  .print-herb-row .ph-shelf { font-weight: 700; min-width: 18px; color: #333; flex-shrink: 0; }
-  .print-herb-row .ph-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .print-herb-row .ph-calc { color: #666; white-space: nowrap; flex-shrink: 0; font-size: 11px; margin-left: auto; }
-  .print-herb-row .ph-total { font-weight: 700; width: 40px; text-align: right; flex-shrink: 0; }
-  .print-patent-row { display: flex; align-items: baseline; gap: 2px; padding: 2px 0; font-size: 12px; border-bottom: 1px dotted #eee; overflow: hidden; }
-  .print-patent-row .pp-shelf { font-weight: 700; min-width: 18px; color: #333; flex-shrink: 0; }
-  .print-patent-row .pp-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .print-patent-row .pp-qty { font-weight: 700; text-align: right; width: 40px; flex-shrink: 0; }
+  .print-multi-col { display: table; table-layout: fixed; width: 100%; }
+  .print-multi-col .pcol { display: table-cell; width: 50%; vertical-align: top; padding: 0 4px; }
+  .print-multi-col .pcol + .pcol { border-left: 1px dashed #ccc; }
+  .print-herb-row { display: table; table-layout: fixed; width: 100%; font-size: 12px; border-bottom: 1px dotted #eee; }
+  .print-herb-row > span { display: table-cell; padding: 2px 0; vertical-align: baseline; }
+  .print-herb-row .ph-shelf { width: 15%; font-weight: 700; color: #333; }
+  .print-herb-row .ph-name { width: 35%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .print-herb-row .ph-calc { width: 25%; color: #666; font-size: 11px; text-align: right; }
+  .print-herb-row .ph-total { width: 25%; font-weight: 700; text-align: right; }
+  .print-patent-row { display: table; table-layout: fixed; width: 100%; font-size: 12px; border-bottom: 1px dotted #eee; }
+  .print-patent-row > span { display: table-cell; padding: 2px 0; vertical-align: baseline; }
+  .print-patent-row .pp-shelf { width: 15%; font-weight: 700; color: #333; }
+  .print-patent-row .pp-name { width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .print-patent-row .pp-qty { width: 25%; font-weight: 700; text-align: right; }
   .print-summary { padding: 6px 20px; font-size: 12px; font-weight: 600; border-top: 2px solid #666; text-align: right; }
   .print-notes { padding: 8px 20px; font-size: 11px; color: #333; border-top: 1px dashed #ccc; }
   .print-footer { display: flex; justify-content: space-between; padding: 10px 20px; font-size: 11px; color: #666; border-top: 1px dashed #ccc; }
