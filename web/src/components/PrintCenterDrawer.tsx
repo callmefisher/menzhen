@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { createPortal } from 'react-dom';
 import {
   Drawer,
   Segmented,
@@ -316,8 +315,6 @@ export default function PrintCenterDrawer({
   const isMobile = useIsMobile();
   const [mode, setMode] = useState<PrintMode>('combined');
   const [loading, setLoading] = useState(false);
-  const [isPrinting] = useState(false);
-  const [printHtml] = useState('');
   const [billingDetail, setBillingDetail] = useState<BillingDetail | null>(null);
   const [consultationFee, setConsultationFee] = useState(100);
   const [actualPaid, setActualPaid] = useState(0);

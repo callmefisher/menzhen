@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Badge, Button, Spin, message } from 'antd';
+import { Button, Spin, message } from 'antd';
 import { CheckOutlined, DownOutlined, RightOutlined } from '@ant-design/icons';
 import {
   listNotifications,
@@ -90,7 +90,7 @@ export default function DispenseNotification() {
 
   useWebSocket('rx_done', useCallback((msg) => {
     if (msg.payload?.batch) {
-      fetchList(); // full refetch for batch
+      fullRefetch();
     } else {
       const id = msg.payload?.id as number;
       if (tab === 'pending') {
@@ -100,7 +100,7 @@ export default function DispenseNotification() {
       } else {
         fetchList();
       }
-      setPendingCount(c => Math.max(0, c - 1));
+      fetchCount(); // always re-fetch actual count from server
     }
   }, [tab, fetchList]));
 
@@ -170,7 +170,6 @@ export default function DispenseNotification() {
             <span style={{ fontWeight: 600, fontSize: isMobile ? 14 : 15 }}>
               处方通知
             </span>
-            <Badge count={pendingCount} overflowCount={99} size="small" />
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#52c41a' }}>
               <span style={{
                 width: 7, height: 7, borderRadius: '50%', background: '#52c41a',
@@ -205,9 +204,16 @@ export default function DispenseNotification() {
                     color: tab === 'pending' ? '#fff' : '#666',
                   }}
                 >
-                  待抓药{pendingCount > 0 && (
-                    <span style={{ color: tab === 'pending' ? '#fff' : '#ff4d4f', fontWeight: 700, marginLeft: 4 }}>
-                      {pendingCount}
+                  待抓药
+                  {pendingCount > 0 && (
+                    <span style={{
+                      position: 'relative', top: -8, marginLeft: 2,
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      minWidth: 16, height: 16, padding: '0 4px',
+                      background: '#ff4d4f', color: '#fff',
+                      fontSize: 10, fontWeight: 600, borderRadius: 8, lineHeight: 1,
+                    }}>
+                      {pendingCount > 99 ? '99+' : pendingCount}
                     </span>
                   )}
                 </button>
