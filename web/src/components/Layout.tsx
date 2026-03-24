@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Layout as AntLayout, Menu, Button, theme, Dropdown, Modal, Form, Input, message, Drawer, Popover } from 'antd';
 import {
@@ -37,7 +37,9 @@ import { changePassword } from '../api/auth';
 import { listInventoryDrugs } from '../api/inventory';
 import type { InventoryDrug } from '../api/inventory';
 import { getFollowUpStats } from '../api/followUp';
+import { getPendingCount } from '../api/prescriptionNotification';
 import useIsMobile from '../hooks/useIsMobile';
+import { useWebSocket } from '../hooks/useWebSocket';
 import AccessibilityToggle from './AccessibilityToggle';
 import { useAccessibility } from '../store/accessibility';
 
@@ -63,6 +65,7 @@ export default function AppLayout() {
 
   const [alertCount, setAlertCount] = useState(0);
   const [followUpCount, setFollowUpCount] = useState(0);
+  const [rxPendingCount, setRxPendingCount] = useState(0);
 
   // Auto-collapse sidebar in large-font mode, auto-expand back in normal mode
   useEffect(() => {
@@ -171,6 +174,35 @@ export default function AppLayout() {
     };
   }, [hasPermission]);
 
+  // --- Prescription notification badge (rx) ---
+  const fetchRxPendingCount = useCallback(async () => {
+    try {
+      const res = await getPendingCount();
+      const data = (res as any).data;
+      setRxPendingCount(typeof data?.count === 'number' ? data.count : 0);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    fetchRxPendingCount();
+  }, [fetchRxPendingCount]);
+
+  useWebSocket('_reconnect', () => {
+    fetchRxPendingCount();
+  });
+
+  useWebSocket('rx_notify', () => {
+    setRxPendingCount((prev) => prev + 1);
+  });
+
+  useWebSocket('rx_done', (msg) => {
+    if (msg.payload?.batch) {
+      fetchRxPendingCount();
+    } else {
+      setRxPendingCount((prev) => Math.max(0, prev - 1));
+    }
+  });
+
   const menuItems = useMemo(() => {
     const items: MenuItem[] = [];
 
@@ -262,7 +294,12 @@ export default function AppLayout() {
             {
               key: '/inventory/drugs',
               icon: <MedicineBoxOutlined />,
-              label: '库存药物',
+              label: rxPendingCount > 0
+                ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    库存药物
+                    <span style={badgeStyle}>{fmtBadge(rxPendingCount)}</span>
+                  </span>
+                : '库存药物',
             },
             {
               key: '/inventory/alerts',
@@ -351,7 +388,7 @@ export default function AppLayout() {
     }
 
     return items;
-  }, [hasPermission, alertCount, followUpCount]);
+  }, [hasPermission, alertCount, followUpCount, rxPendingCount]);
 
   // Determine selected keys from current path
   const selectedKeys = useMemo(() => {
@@ -550,7 +587,24 @@ export default function AppLayout() {
               </div>
             </Popover>
             <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
-              <Button type="text" icon={<UserOutlined />}>
+              <Button type="text" icon={
+                (user?.real_name || user?.username) ? (
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: 28,
+                    height: 28,
+                    borderRadius: '50%',
+                    background: themeConfig.titleColor || '#1890ff',
+                    color: '#fff',
+                    fontSize: 15,
+                    fontWeight: 600,
+                  }}>
+                    {(user?.real_name || user?.username || '').charAt(0)}
+                  </span>
+                ) : <UserOutlined />
+              }>
                 {user?.real_name || user?.username || '用户'}
               </Button>
             </Dropdown>

@@ -37,6 +37,7 @@ import useIsMobile from '../../hooks/useIsMobile';
 import useRowHighlight from '../../hooks/useRowHighlight';
 import { useAccessibleColumns, type AccessibleColumnsType } from '../../hooks/useAccessibleColumns';
 import HiddenColumnsHint from '../../components/HiddenColumnsHint';
+import DispenseNotification from '../../components/DispenseNotification';
 
 const getDefaultThreshold = (category: string): number => {
   const config = JSON.parse(localStorage.getItem('inventory-alert-config') || '{}');
@@ -902,6 +903,9 @@ export default function DrugList() {
   return (
     <>
       <Card styles={isMobile ? { body: { padding: 12 } } : undefined}>
+        {/* Prescription dispense notifications */}
+        <DispenseNotification />
+
         {/* Search bar */}
         {isMobile ? renderMobileSearchBar() : renderDesktopSearchBar()}
 
