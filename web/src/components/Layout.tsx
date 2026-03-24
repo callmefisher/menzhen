@@ -282,7 +282,7 @@ export default function AppLayout() {
 
     const showOps = hasPermission('inventory:read') || hasPermission('followup:read') || hasPermission('statistics:read');
     if (showOps) {
-      const totalBadge = alertCount + followUpCount;
+      const totalBadge = alertCount + followUpCount + rxPendingCount;
       items.push({
         key: '/ops',
         icon: <ShopOutlined />,
