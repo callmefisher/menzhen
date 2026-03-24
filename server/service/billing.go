@@ -380,7 +380,7 @@ func (s *BillingService) DeductStockAndBill(tenantID, userID, prescriptionID uin
 		}
 		// Get doctor name
 		var doctorName string
-		if err := s.DB.Table("users").Select("display_name").Where("id = ? AND tenant_id = ?", result.CreatedBy, tenantID).Scan(&doctorName).Error; err != nil {
+		if err := s.DB.Table("users").Select("real_name").Where("id = ? AND tenant_id = ?", result.CreatedBy, tenantID).Scan(&doctorName).Error; err != nil {
 			log.Printf("failed to query doctor name for notification (user_id=%d): %v", result.CreatedBy, err)
 		}
 		// Count herbs and patents
