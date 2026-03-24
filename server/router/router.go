@@ -310,7 +310,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		pn := authenticated.Group("/prescription-notifications")
 		{
 			pn.GET("", middleware.RequirePermission(db, "inventory:read"), pnHandler.List)
-			pn.GET("/pending-count", middleware.RequirePermission(db, "inventory:read"), pnHandler.PendingCount)
+			pn.GET("/pending-count", pnHandler.PendingCount)
 			pn.GET("/:id/detail", middleware.RequirePermission(db, "inventory:read"), pnHandler.Detail)
 			pn.POST("/:id/done", middleware.RequirePermission(db, "inventory:update"), pnHandler.MarkDone)
 			pn.POST("/batch-done", middleware.RequirePermission(db, "inventory:update"), pnHandler.BatchDone)

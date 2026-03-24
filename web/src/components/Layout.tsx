@@ -28,6 +28,8 @@ import {
   BarChartOutlined,
   ToolOutlined,
   PhoneOutlined,
+  FontSizeOutlined,
+  BgColorsOutlined,
 } from '@ant-design/icons';
 import type { MenuProps as AntMenuProps } from 'antd';
 import { useAuth } from '../store/auth';
@@ -41,6 +43,7 @@ import { getPendingCount } from '../api/prescriptionNotification';
 import useIsMobile from '../hooks/useIsMobile';
 import { useWebSocket } from '../hooks/useWebSocket';
 import AccessibilityToggle from './AccessibilityToggle';
+import { modeLabels } from './AccessibilitySettingsPanel';
 import { useAccessibility } from '../store/accessibility';
 
 const { Header, Sider, Content } = AntLayout;
@@ -58,7 +61,7 @@ export default function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const isMobile = useIsMobile();
-  const { mode: a11yMode } = useAccessibility();
+  const { mode: a11yMode, cycleMode } = useAccessibility();
   const {
     token: { borderRadiusLG },
   } = theme.useToken();
@@ -184,8 +187,8 @@ export default function AppLayout() {
   }, []);
 
   useEffect(() => {
-    fetchRxPendingCount();
-  }, [fetchRxPendingCount]);
+    if (user) fetchRxPendingCount();
+  }, [fetchRxPendingCount, user]);
 
   useWebSocket('_reconnect', () => {
     fetchRxPendingCount();
@@ -453,6 +456,35 @@ export default function AppLayout() {
   };
 
   const userMenuItems: AntMenuProps['items'] = [
+    ...(isMobile ? [
+      {
+        key: 'font-size',
+        icon: <FontSizeOutlined />,
+        label: `字号：${modeLabels[a11yMode]}`,
+        onClick: cycleMode,
+      },
+      {
+        key: 'theme-picker',
+        icon: <BgColorsOutlined />,
+        label: '主题色',
+        children: Object.values(sidebarThemes).map((t) => ({
+          key: `theme-${t.key}`,
+          label: (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <span style={{
+                width: 16, height: 16, borderRadius: '50%',
+                background: t.sidebarBg, display: 'inline-block',
+                border: themeKey === t.key ? '2px solid #52C41A' : '2px solid transparent',
+              }} />
+              {t.label}
+              {themeKey === t.key && <span style={{ color: '#52C41A', fontSize: 12 }}>✓</span>}
+            </span>
+          ),
+          onClick: () => setTheme(t.key),
+        })),
+      },
+      { type: 'divider' as const },
+    ] : []),
     {
       key: 'change-password',
       icon: <KeyOutlined />,
@@ -570,8 +602,8 @@ export default function AppLayout() {
             style={{ fontSize: 16, width: 48, height: 48 }}
           />
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <AccessibilityToggle />
-            <Popover content={themePickerContent} trigger="click" placement="bottomRight">
+            {!isMobile && <AccessibilityToggle />}
+            {!isMobile && <Popover content={themePickerContent} trigger="click" placement="bottomRight">
               <div style={{
                 width: 22,
                 height: 22,
@@ -585,7 +617,7 @@ export default function AppLayout() {
               }}>
                 <span style={{ width: 9, height: 9, borderRadius: '50%', background: themeConfig.titleColor, display: 'block' }} />
               </div>
-            </Popover>
+            </Popover>}
             <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
               <Button type="text" icon={
                 (user?.real_name || user?.username) ? (
@@ -593,13 +625,16 @@ export default function AppLayout() {
                     display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    width: 28,
-                    height: 28,
+                    width: 32,
+                    height: 32,
                     borderRadius: '50%',
                     background: themeConfig.titleColor || '#1890ff',
                     color: '#fff',
-                    fontSize: 15,
-                    fontWeight: 600,
+                    fontSize: 18,
+                    fontWeight: 900,
+                    fontFamily: "'Noto Sans SC', 'PingFang SC', sans-serif",
+                    textShadow: '0 0 1px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.2)',
+                    WebkitFontSmoothing: 'antialiased',
                   }}>
                     {(user?.real_name || user?.username || '').charAt(0)}
                   </span>
