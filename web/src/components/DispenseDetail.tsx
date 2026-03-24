@@ -431,8 +431,8 @@ export default function DispenseDetail({ notificationId, open, onClose, onDone }
               fontSize: isMobile ? 11 : 12, color: '#999',
               borderTop: '1px solid #e8e5d8',
             }}>
-              <span>核对人：<b style={{ color: '#333' }}>{user?.real_name || user?.username || '--'}</b></span>
-              <span>处方号：RX-{noti.id}</span>
+              <span>核对人：<b style={{ color: '#333' }}>{isPending ? (user?.real_name || user?.username || '--') : (noti?.done_by_name || '--')}</b></span>
+              <span>处方号：RX-{noti?.id}</span>
             </div>
 
             {/* Footer */}

@@ -230,6 +230,7 @@ export default function DispenseNotification() {
                   size="small"
                   loading={batchLoading}
                   onClick={handleBatchDone}
+                  disabled={pendingCount === 0}
                   style={{ fontSize: isMobile ? 10 : 12, whiteSpace: 'nowrap' }}
                 >
                   忽略全部

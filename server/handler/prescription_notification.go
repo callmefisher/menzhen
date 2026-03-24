@@ -60,14 +60,19 @@ func (h *PrescriptionNotificationHandler) Detail(c *gin.Context) {
 
 func (h *PrescriptionNotificationHandler) MarkDone(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
+	userID := middleware.GetUserID(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "invalid id"})
 		return
 	}
 
+	// Get operator name
+	var userName string
+	h.db.Table("users").Select("real_name").Where("id = ?", userID).Scan(&userName)
+
 	svc := service.NewPrescriptionNotificationService(h.db)
-	if err := svc.MarkDone(tenantID, id); err != nil {
+	if err := svc.MarkDone(tenantID, id, userID, userName); err != nil {
 		if errors.Is(err, service.ErrNotificationNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"code": 404, "message": "notification not found"})
 			return
@@ -87,9 +92,14 @@ func (h *PrescriptionNotificationHandler) MarkDone(c *gin.Context) {
 
 func (h *PrescriptionNotificationHandler) BatchDone(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
+	userID := middleware.GetUserID(c)
+
+	// Get operator name
+	var userName string
+	h.db.Table("users").Select("real_name").Where("id = ?", userID).Scan(&userName)
 
 	svc := service.NewPrescriptionNotificationService(h.db)
-	affected, err := svc.BatchMarkDone(tenantID)
+	affected, err := svc.BatchMarkDone(tenantID, userID, userName)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "failed to batch mark done"})
 		return

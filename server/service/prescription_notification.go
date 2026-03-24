@@ -48,11 +48,11 @@ func (s *PrescriptionNotificationService) PendingCount(tenantID uint64) (int64, 
 }
 
 // MarkDone marks a single notification as done
-func (s *PrescriptionNotificationService) MarkDone(tenantID, id uint64) error {
+func (s *PrescriptionNotificationService) MarkDone(tenantID, id, userID uint64, userName string) error {
 	now := time.Now()
 	result := s.DB.Model(&model.PrescriptionNotification{}).
 		Where("id = ? AND tenant_id = ? AND status = 'pending'", id, tenantID).
-		Updates(map[string]interface{}{"status": "done", "done_at": now})
+		Updates(map[string]interface{}{"status": "done", "done_at": now, "done_by": userID, "done_by_name": userName})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -63,11 +63,11 @@ func (s *PrescriptionNotificationService) MarkDone(tenantID, id uint64) error {
 }
 
 // BatchMarkDone marks all pending notifications as done for a tenant
-func (s *PrescriptionNotificationService) BatchMarkDone(tenantID uint64) (int64, error) {
+func (s *PrescriptionNotificationService) BatchMarkDone(tenantID, userID uint64, userName string) (int64, error) {
 	now := time.Now()
 	result := s.DB.Model(&model.PrescriptionNotification{}).
 		Where("tenant_id = ? AND status = 'pending'", tenantID).
-		Updates(map[string]interface{}{"status": "done", "done_at": now})
+		Updates(map[string]interface{}{"status": "done", "done_at": now, "done_by": userID, "done_by_name": userName})
 	return result.RowsAffected, result.Error
 }
 

@@ -14,6 +14,8 @@ export interface PrescriptionNotificationItem {
   notes: string;
   status: 'pending' | 'done';
   done_at: string | null;
+  done_by: number;
+  done_by_name: string;
   created_at: string;
 }
 

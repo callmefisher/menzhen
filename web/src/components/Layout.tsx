@@ -190,20 +190,11 @@ export default function AppLayout() {
     if (user) fetchRxPendingCount();
   }, [fetchRxPendingCount, user]);
 
-  useWebSocket('_reconnect', () => {
-    fetchRxPendingCount();
-  });
-
-  useWebSocket('rx_notify', () => {
-    setRxPendingCount((prev) => prev + 1);
-  });
-
+  useWebSocket('_reconnect', () => { fetchRxPendingCount(); });
+  useWebSocket('rx_notify', () => { setRxPendingCount((prev) => prev + 1); });
   useWebSocket('rx_done', (msg) => {
-    if (msg.payload?.batch) {
-      fetchRxPendingCount();
-    } else {
-      setRxPendingCount((prev) => Math.max(0, prev - 1));
-    }
+    if (msg.payload?.batch) fetchRxPendingCount();
+    else setRxPendingCount((prev) => Math.max(0, prev - 1));
   });
 
   const menuItems = useMemo(() => {
@@ -282,7 +273,7 @@ export default function AppLayout() {
 
     const showOps = hasPermission('inventory:read') || hasPermission('followup:read') || hasPermission('statistics:read');
     if (showOps) {
-      const totalBadge = alertCount + followUpCount;
+      const totalBadge = alertCount + followUpCount + rxPendingCount;
       items.push({
         key: '/ops',
         icon: <ShopOutlined />,
@@ -297,7 +288,12 @@ export default function AppLayout() {
             {
               key: '/inventory/drugs',
               icon: <MedicineBoxOutlined />,
-              label: '库存药物',
+              label: rxPendingCount > 0
+                ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    库存药物
+                    <span style={badgeStyle}>{fmtBadge(rxPendingCount)}</span>
+                  </span>
+                : '库存药物',
             },
             {
               key: '/inventory/alerts',
@@ -386,7 +382,7 @@ export default function AppLayout() {
     }
 
     return items;
-  }, [hasPermission, alertCount, followUpCount]);
+  }, [hasPermission, alertCount, followUpCount, rxPendingCount]);
 
   // Determine selected keys from current path
   const selectedKeys = useMemo(() => {

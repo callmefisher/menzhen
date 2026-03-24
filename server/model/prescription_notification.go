@@ -22,6 +22,8 @@ type PrescriptionNotification struct {
 	Notes          string     `gorm:"column:notes;type:varchar(500)" json:"notes"`
 	Status         string     `gorm:"column:status;type:varchar(10);not null;default:'pending';index:idx_pn_tenant_status_created,priority:2" json:"status"`
 	DoneAt         *time.Time `gorm:"column:done_at" json:"done_at"`
+	DoneBy         uint64     `gorm:"column:done_by" json:"done_by"`
+	DoneByName     string     `gorm:"column:done_by_name;type:varchar(50)" json:"done_by_name"`
 	CreatedBy      uint64     `gorm:"column:created_by;not null" json:"created_by"`
 }
 
