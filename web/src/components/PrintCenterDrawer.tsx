@@ -316,23 +316,14 @@ export default function PrintCenterDrawer({
   const isMobile = useIsMobile();
   const [mode, setMode] = useState<PrintMode>('combined');
   const [loading, setLoading] = useState(false);
+  const [isPrinting] = useState(false);
+  const [printHtml] = useState('');
   const [billingDetail, setBillingDetail] = useState<BillingDetail | null>(null);
   const [consultationFee, setConsultationFee] = useState(100);
   const [actualPaid, setActualPaid] = useState(0);
   const actualPaidManualRef = useRef(false);
 
-  /* Portal print state (mobile-compatible) */
-  const [printHtml, setPrintHtml] = useState('');
-  const [isPrinting, setIsPrinting] = useState(false);
-
   useEffect(() => { ensurePortalPrintStyle(); }, []);
-
-  useEffect(() => {
-    if (!isPrinting) return;
-    const onAfterPrint = () => setIsPrinting(false);
-    window.addEventListener('afterprint', onAfterPrint);
-    return () => window.removeEventListener('afterprint', onAfterPrint);
-  }, [isPrinting]);
 
   const loadBilling = useCallback(async () => {
     if (!prescriptionId) return;
@@ -378,10 +369,21 @@ export default function PrintCenterDrawer({
       body += buildBillingHtml(billingDetail, consultationFee, actualPaid, patientName, patientAge, doctorName, timeStr, clinicName);
     }
     if (isMobile) {
-      /* Mobile: portal + @media print */
-      setPrintHtml(body);
-      setIsPrinting(true);
-      setTimeout(() => window.print(), 100);
+      /* Mobile: inject DOM directly + @media print (no React timing issues) */
+      const div = document.createElement('div');
+      div.className = 'print-portal';
+      div.innerHTML = `<style>${PRINT_STYLES}</style>${body}`;
+      document.body.appendChild(div);
+      setTimeout(() => {
+        window.print();
+        const cleanup = () => {
+          if (div.parentNode) document.body.removeChild(div);
+          window.removeEventListener('afterprint', cleanup);
+        };
+        window.addEventListener('afterprint', cleanup);
+        // fallback cleanup after 10s in case afterprint doesn't fire
+        setTimeout(cleanup, 10000);
+      }, 50);
     } else {
       /* Desktop: window.open (more reliable print preview) */
       const win = window.open('', '_blank');
@@ -716,15 +718,6 @@ export default function PrintCenterDrawer({
         )}
       </Spin>
     </Drawer>
-
-    {/* Mobile print portal */}
-    {isPrinting && createPortal(
-      <div className="print-portal" style={{ display: 'block' }}>
-        <style>{PRINT_STYLES}</style>
-        <div dangerouslySetInnerHTML={{ __html: printHtml }} />
-      </div>,
-      document.body,
-    )}
     </>
   );
 }

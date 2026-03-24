@@ -1,5 +1,4 @@
-import { useState, useImperativeHandle, forwardRef, useEffect } from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect, useImperativeHandle, forwardRef } from 'react';
 import type { DispenseDetail, DispenseDetailItem } from '../api/prescriptionNotification';
 
 export interface DispensePrintHandle {
@@ -24,7 +23,11 @@ function getCurrentBeijingTime(): string {
   return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}`;
 }
 
-/* Inject shared @media print style (shared with PrintCenterDrawer) */
+function escapeHtml(s: string) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/* Inject shared @media print style */
 const PRINT_STYLE_ID = 'shared-print-portal-style';
 function ensurePrintStyle() {
   if (document.getElementById(PRINT_STYLE_ID)) return;
@@ -39,163 +42,141 @@ function ensurePrintStyle() {
   document.head.appendChild(style);
 }
 
+const DISPENSE_PRINT_STYLES = `
+  @page { margin: 10mm; }
+  body { font-family: "SimSun", "宋体", serif; color: #333; }
+  .dp-page { max-width: 800px; margin: 0 auto; }
+  .dp-clinic { text-align: center; padding: 16px 20px 4px; font-size: 15px; font-weight: 600; }
+  .dp-title { text-align: center; padding: 4px 20px 12px; font-size: 22px; font-weight: 800; letter-spacing: 4px; border-bottom: 2px solid #333; }
+  .dp-info { display: flex; flex-wrap: wrap; gap: 6px 20px; padding: 10px 20px; font-size: 12px; border-bottom: 1px dashed #ccc; }
+  .dp-info .label { color: #999; }
+  .dp-info b.big { font-size: 15px; color: #d4380d; }
+  .dp-section { padding: 6px 20px; font-size: 12px; font-weight: 700; background: #f9f9f9; border-bottom: 1px solid #ddd; }
+  .dp-cols { display: table; table-layout: fixed; width: 100%; }
+  .dp-col { display: table-cell; width: 50%; vertical-align: top; padding: 0 4px; }
+  .dp-col + .dp-col { border-left: 1px dashed #ccc; }
+  .dp-row { display: table; table-layout: fixed; width: 100%; font-size: 12px; border-bottom: 1px dotted #eee; }
+  .dp-row > span { display: table-cell; padding: 2px 0; vertical-align: baseline; }
+  .dp-sh { width: 15%; font-weight: 700; }
+  .dp-nm { width: 35%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dp-ca { width: 25%; color: #666; font-size: 11px; text-align: right; }
+  .dp-to { width: 25%; font-weight: 700; text-align: right; }
+  .dp-pn { width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dp-pq { width: 25%; font-weight: 700; text-align: right; }
+  .dp-sum { padding: 6px 20px; font-size: 12px; font-weight: 600; border-top: 2px solid #666; text-align: right; }
+  .dp-notes { padding: 8px 20px; font-size: 11px; border-top: 1px dashed #ccc; }
+  .dp-footer { display: flex; justify-content: space-between; padding: 10px 20px; font-size: 11px; color: #666; border-top: 1px dashed #ccc; }
+`;
+
+function buildHerbRows(items: DispenseDetailItem[], totalDoses: number): string {
+  return items.map(item => {
+    const dosageNum = parseFloat(item.dosage) || 0;
+    const total = dosageNum * totalDoses;
+    const nameDisplay = item.notes
+      ? `${escapeHtml(item.herb_name)}(${escapeHtml(item.notes)})`
+      : escapeHtml(item.herb_name);
+    return `<div class="dp-row">` +
+      `<span class="dp-sh">${escapeHtml(item.shelf_no || '--')}</span>` +
+      `<span class="dp-nm">${nameDisplay}</span>` +
+      `<span class="dp-ca">${escapeHtml(item.dosage)}g×${totalDoses}</span>` +
+      `<span class="dp-to">${total}g</span>` +
+      `</div>`;
+  }).join('');
+}
+
+function buildPatentRows(items: DispenseDetailItem[]): string {
+  return items.map(item => {
+    return `<div class="dp-row">` +
+      `<span class="dp-sh">${escapeHtml(item.shelf_no || '--')}</span>` +
+      `<span class="dp-pn">${escapeHtml(item.herb_name)}</span>` +
+      `<span class="dp-pq">×${escapeHtml(item.dosage)}</span>` +
+      `</div>`;
+  }).join('');
+}
+
+function buildDispenseHtml(
+  detail: DispenseDetail,
+  clinicName?: string,
+  operatorName?: string,
+): string {
+  const noti = detail.notification;
+  const herbs = detail.herbs || [];
+  const patents = detail.patents || [];
+  const totalDoses = noti.total_doses || 0;
+  const timeStr = getCurrentBeijingTime();
+
+  let html = '<div class="dp-page">';
+
+  if (clinicName) html += `<div class="dp-clinic">${escapeHtml(clinicName)}</div>`;
+  html += `<div class="dp-title">抓 药 单</div>`;
+
+  html += `<div class="dp-info">`;
+  html += `<span><span class="label">患者：</span><b>${escapeHtml(noti.patient_name)}</b></span>`;
+  html += `<span><span class="label">医师：</span><b>${escapeHtml(noti.doctor_name)}</b></span>`;
+  html += `<span><span class="label">方剂：</span><b>${escapeHtml(noti.formula_name)}</b></span>`;
+  if (totalDoses > 0) html += `<span><span class="label">总付数：</span><b class="big">${totalDoses} 付</b></span>`;
+  html += `</div>`;
+
+  if (herbs.length > 0) {
+    html += `<div class="dp-section">中药明细（${herbs.length}味）</div>`;
+    const mid = Math.ceil(herbs.length / 2);
+    html += `<div class="dp-cols"><div class="dp-col">${buildHerbRows(herbs.slice(0, mid), totalDoses)}</div>`;
+    if (herbs.length > mid) html += `<div class="dp-col">${buildHerbRows(herbs.slice(mid), totalDoses)}</div>`;
+    html += `</div>`;
+    html += `<div class="dp-sum">总付数：${totalDoses} 付</div>`;
+  }
+
+  if (patents.length > 0) {
+    html += `<div class="dp-section">中成药明细（${patents.length}种）</div>`;
+    const mid = Math.ceil(patents.length / 2);
+    const totalQty = patents.reduce((s, p) => s + (parseFloat(p.dosage) || 0), 0);
+    html += `<div class="dp-cols"><div class="dp-col">${buildPatentRows(patents.slice(0, mid))}</div>`;
+    if (patents.length > mid) html += `<div class="dp-col">${buildPatentRows(patents.slice(mid))}</div>`;
+    html += `</div>`;
+    html += `<div class="dp-sum">合计：${totalQty} 盒</div>`;
+  }
+
+  if (noti.notes) html += `<div class="dp-notes"><strong>医嘱：</strong>${escapeHtml(noti.notes)}</div>`;
+
+  html += `<div class="dp-footer">`;
+  html += `<span>核对人：${operatorName ? escapeHtml(operatorName) : '__________'}</span>`;
+  html += `<span>RX-${noti.id}</span>`;
+  html += `<span>${timeStr}</span>`;
+  html += `</div></div>`;
+
+  return html;
+}
+
 const DispensePrint = forwardRef<DispensePrintHandle, DispensePrintProps>(
   ({ detail, clinicName, operatorName }, ref) => {
-    const [printing, setPrinting] = useState(false);
-    const [timeStr, setTimeStr] = useState('');
 
-    useEffect(() => {
-      ensurePrintStyle();
-    }, []);
-
-    /* Listen for afterprint to hide the portal */
-    useEffect(() => {
-      if (!printing) return;
-      const onAfterPrint = () => setPrinting(false);
-      window.addEventListener('afterprint', onAfterPrint);
-      return () => window.removeEventListener('afterprint', onAfterPrint);
-    }, [printing]);
+    useEffect(() => { ensurePrintStyle(); }, []);
 
     useImperativeHandle(ref, () => ({
       print: () => {
-        setTimeStr(getCurrentBeijingTime());
-        setPrinting(true);
-        /* Delay to allow React render, then trigger print */
-        setTimeout(() => window.print(), 100);
+        const html = buildDispenseHtml(detail, clinicName, operatorName);
+
+        /* Direct DOM injection — no React timing issues */
+        const div = document.createElement('div');
+        div.className = 'print-portal';
+        div.innerHTML = `<style>${DISPENSE_PRINT_STYLES}</style>${html}`;
+        document.body.appendChild(div);
+
+        setTimeout(() => {
+          window.print();
+          const cleanup = () => {
+            if (div.parentNode) document.body.removeChild(div);
+            window.removeEventListener('afterprint', cleanup);
+          };
+          window.addEventListener('afterprint', cleanup);
+          setTimeout(cleanup, 10000); // fallback
+        }, 50);
       },
     }));
 
-    const noti = detail.notification;
-    const herbs = detail.herbs || [];
-    const patents = detail.patents || [];
-    const totalDoses = noti.total_doses || 0;
-
-    /* Split herbs into 2 columns */
-    const herbMid = Math.ceil(herbs.length / 2);
-    const herbCol1 = herbs.slice(0, herbMid);
-    const herbCol2 = herbs.slice(herbMid);
-
-    /* Split patents into 2 columns */
-    const patentMid = Math.ceil(patents.length / 2);
-    const patentCol1 = patents.slice(0, patentMid);
-    const patentCol2 = patents.slice(patentMid);
-
-    const totalQty = patents.reduce((s, p) => s + (parseFloat(p.dosage) || 0), 0);
-
-    const renderHerbRow = (item: DispenseDetailItem, idx: number) => {
-      const dosageNum = parseFloat(item.dosage) || 0;
-      const total = dosageNum * totalDoses;
-      const nameDisplay = item.notes ? `${item.herb_name}(${item.notes})` : item.herb_name;
-      return (
-        <tr key={idx} style={{ borderBottom: '1px dotted #eee' }}>
-          <td style={S.shelf}>{item.shelf_no || '--'}</td>
-          <td style={S.name}>{nameDisplay}</td>
-          <td style={S.calc}>{item.dosage}g×{totalDoses}</td>
-          <td style={S.total}>{total}g</td>
-        </tr>
-      );
-    };
-
-    const renderPatentRow = (item: DispenseDetailItem, idx: number) => (
-      <tr key={idx} style={{ borderBottom: '1px dotted #eee' }}>
-        <td style={S.shelf}>{item.shelf_no || '--'}</td>
-        <td style={S.pName}>{item.herb_name}</td>
-        <td style={S.pQty}>×{item.dosage}</td>
-      </tr>
-    );
-
-    const printContent = (
-      <div className="print-portal" style={{ display: printing ? 'block' : 'none' }}>
-        <div style={S.page}>
-          {/* Header */}
-          {clinicName && <div style={S.clinic}>{clinicName}</div>}
-          <div style={S.title}>抓 药 单</div>
-
-          {/* Info */}
-          <div style={S.info}>
-            <span><span style={S.label}>患者：</span><b>{noti.patient_name}</b></span>
-            <span><span style={S.label}>医师：</span><b>{noti.doctor_name}</b></span>
-            <span><span style={S.label}>方剂：</span><b>{noti.formula_name}</b></span>
-            {totalDoses > 0 && <span><span style={S.label}>总付数：</span><b style={{ fontSize: 15, color: '#d4380d' }}>{totalDoses} 付</b></span>}
-          </div>
-
-          {/* Herbs */}
-          {herbs.length > 0 && (
-            <>
-              <div style={S.sectionTitle}>中药明细（{herbs.length}味）</div>
-              <div style={S.multiCol}>
-                <div style={S.col}>
-                  <table style={S.table}><tbody>{herbCol1.map(renderHerbRow)}</tbody></table>
-                </div>
-                {herbCol2.length > 0 && (
-                  <div style={{ ...S.col, borderLeft: '1px dashed #ccc' }}>
-                    <table style={S.table}><tbody>{herbCol2.map(renderHerbRow)}</tbody></table>
-                  </div>
-                )}
-              </div>
-              <div style={S.summary}>总付数：{totalDoses} 付</div>
-            </>
-          )}
-
-          {/* Patents */}
-          {patents.length > 0 && (
-            <>
-              <div style={S.sectionTitle}>中成药明细（{patents.length}种）</div>
-              <div style={S.multiCol}>
-                <div style={S.col}>
-                  <table style={S.table}><tbody>{patentCol1.map(renderPatentRow)}</tbody></table>
-                </div>
-                {patentCol2.length > 0 && (
-                  <div style={{ ...S.col, borderLeft: '1px dashed #ccc' }}>
-                    <table style={S.table}><tbody>{patentCol2.map(renderPatentRow)}</tbody></table>
-                  </div>
-                )}
-              </div>
-              <div style={S.summary}>合计：{totalQty} 盒</div>
-            </>
-          )}
-
-          {/* Notes */}
-          {noti.notes && (
-            <div style={S.notes}><strong>医嘱：</strong>{noti.notes}</div>
-          )}
-
-          {/* Footer */}
-          <div style={S.footer}>
-            <span>核对人：{operatorName || '__________'}</span>
-            <span>RX-{noti.id}</span>
-            <span>{timeStr}</span>
-          </div>
-        </div>
-      </div>
-    );
-
-    /* Portal to body so @media print can hide #root and show only this */
-    return createPortal(printContent, document.body);
+    return null; // no visible render needed
   }
 );
-
-/* All styles as inline objects for print reliability */
-const S: Record<string, React.CSSProperties> = {
-  page: { fontFamily: '"SimSun", "宋体", serif', color: '#333', maxWidth: 800, margin: '0 auto', padding: 0 },
-  clinic: { textAlign: 'center', padding: '16px 20px 4px', fontSize: 15, fontWeight: 600 },
-  title: { textAlign: 'center', padding: '4px 20px 12px', fontSize: 22, fontWeight: 800, letterSpacing: 4, borderBottom: '2px solid #333' },
-  info: { display: 'flex', flexWrap: 'wrap', gap: '6px 20px', padding: '10px 20px', fontSize: 12, borderBottom: '1px dashed #ccc' },
-  label: { color: '#999' },
-  sectionTitle: { padding: '6px 20px', fontSize: 12, fontWeight: 700, background: '#f9f9f9', borderBottom: '1px solid #ddd' },
-  multiCol: { display: 'flex', width: '100%' },
-  col: { flex: 1, minWidth: 0, padding: '0 4px' },
-  table: { width: '100%', borderCollapse: 'collapse' as const, tableLayout: 'fixed' as const },
-  shelf: { width: '15%', fontWeight: 700, padding: '2px 0', fontSize: 12, verticalAlign: 'baseline' as const },
-  name: { width: '35%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, padding: '2px 0', fontSize: 12, verticalAlign: 'baseline' as const },
-  calc: { width: '25%', color: '#666', fontSize: 11, textAlign: 'right' as const, padding: '2px 0', verticalAlign: 'baseline' as const },
-  total: { width: '25%', fontWeight: 700, textAlign: 'right' as const, padding: '2px 0', fontSize: 12, verticalAlign: 'baseline' as const },
-  pName: { width: '60%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, padding: '2px 0', fontSize: 12, verticalAlign: 'baseline' as const },
-  pQty: { width: '25%', fontWeight: 700, textAlign: 'right' as const, padding: '2px 0', fontSize: 12, verticalAlign: 'baseline' as const },
-  summary: { padding: '6px 20px', fontSize: 12, fontWeight: 600, borderTop: '2px solid #666', textAlign: 'right' as const },
-  notes: { padding: '8px 20px', fontSize: 11, borderTop: '1px dashed #ccc' },
-  footer: { display: 'flex', justifyContent: 'space-between', padding: '10px 20px', fontSize: 11, color: '#666', borderTop: '1px dashed #ccc' },
-};
 
 DispensePrint.displayName = 'DispensePrint';
 export default DispensePrint;
