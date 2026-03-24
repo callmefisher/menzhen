@@ -24,16 +24,16 @@ function getCurrentBeijingTime(): string {
   return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}`;
 }
 
-/* Inject global @media print style once */
-const PRINT_STYLE_ID = 'dispense-print-style';
+/* Inject shared @media print style (shared with PrintCenterDrawer) */
+const PRINT_STYLE_ID = 'shared-print-portal-style';
 function ensurePrintStyle() {
   if (document.getElementById(PRINT_STYLE_ID)) return;
   const style = document.createElement('style');
   style.id = PRINT_STYLE_ID;
   style.textContent = `
     @media print {
-      body > *:not(.dispense-print-portal) { display: none !important; }
-      .dispense-print-portal { display: block !important; }
+      body > *:not(.print-portal) { display: none !important; }
+      .print-portal { display: block !important; }
     }
   `;
   document.head.appendChild(style);
@@ -105,7 +105,7 @@ const DispensePrint = forwardRef<DispensePrintHandle, DispensePrintProps>(
     );
 
     const printContent = (
-      <div className="dispense-print-portal" style={{ display: printing ? 'block' : 'none' }}>
+      <div className="print-portal" style={{ display: printing ? 'block' : 'none' }}>
         <div style={S.page}>
           {/* Header */}
           {clinicName && <div style={S.clinic}>{clinicName}</div>}

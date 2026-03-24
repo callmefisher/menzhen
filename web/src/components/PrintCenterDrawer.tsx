@@ -284,16 +284,16 @@ const PRINT_STYLES = `
   .print-separator { border: none; border-top: 2px dashed #999; margin: 24px 0; }
 `;
 
-/* Inject @media print style to hide app and show portal */
-const PORTAL_STYLE_ID = 'print-center-portal-style';
+/* Inject @media print style to hide app and show portal (shared with DispensePrint) */
+const PORTAL_STYLE_ID = 'shared-print-portal-style';
 function ensurePortalPrintStyle() {
   if (document.getElementById(PORTAL_STYLE_ID)) return;
   const style = document.createElement('style');
   style.id = PORTAL_STYLE_ID;
   style.textContent = `
     @media print {
-      body > *:not(.print-center-portal) { display: none !important; }
-      .print-center-portal { display: block !important; }
+      body > *:not(.print-portal) { display: none !important; }
+      .print-portal { display: block !important; }
     }
   `;
   document.head.appendChild(style);
@@ -719,7 +719,7 @@ export default function PrintCenterDrawer({
 
     {/* Mobile print portal */}
     {isPrinting && createPortal(
-      <div className="print-center-portal" style={{ display: 'block' }}>
+      <div className="print-portal" style={{ display: 'block' }}>
         <style>{PRINT_STYLES}</style>
         <div dangerouslySetInnerHTML={{ __html: printHtml }} />
       </div>,
