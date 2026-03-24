@@ -232,7 +232,7 @@ export default function DispenseNotification() {
                   onClick={handleBatchDone}
                   style={{ fontSize: isMobile ? 10 : 12, whiteSpace: 'nowrap' }}
                 >
-                  {isMobile ? '全部完成' : '全部标记已抓药'}
+                  {isMobile ? '全部完成' : '全部标记已完成'}
                 </Button>
               )}
             </div>
@@ -328,7 +328,7 @@ export default function DispenseNotification() {
                             transition: 'all .15s',
                           }}
                         >
-                          未抓药
+                          未完成
                         </button>
                       ) : (
                         <span style={{
@@ -336,7 +336,7 @@ export default function DispenseNotification() {
                           background: '#f6ffed', borderRadius: 4, fontSize: 12,
                           color: '#52c41a', whiteSpace: 'nowrap',
                         }}>
-                          已抓药 <CheckOutlined />
+                          已完成 <CheckOutlined />
                         </span>
                       )}
                     </div>

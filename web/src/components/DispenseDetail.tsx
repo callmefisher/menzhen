@@ -457,7 +457,7 @@ export default function DispenseDetail({ notificationId, open, onClose, onDone }
                   }}
                   icon={<CheckOutlined />}
                 >
-                  标记已抓药
+                  标记已完成
                 </Button>
               )}
             </div>
