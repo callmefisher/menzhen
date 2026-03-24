@@ -386,7 +386,7 @@ export default function AppLayout() {
     }
 
     return items;
-  }, [hasPermission, alertCount, followUpCount, rxPendingCount]);
+  }, [hasPermission, alertCount, followUpCount]);
 
   // Determine selected keys from current path
   const selectedKeys = useMemo(() => {

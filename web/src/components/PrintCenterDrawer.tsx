@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Drawer,
   Segmented,
@@ -283,6 +284,21 @@ const PRINT_STYLES = `
   .print-separator { border: none; border-top: 2px dashed #999; margin: 24px 0; }
 `;
 
+/* Inject @media print style to hide app and show portal */
+const PORTAL_STYLE_ID = 'print-center-portal-style';
+function ensurePortalPrintStyle() {
+  if (document.getElementById(PORTAL_STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = PORTAL_STYLE_ID;
+  style.textContent = `
+    @media print {
+      body > *:not(.print-center-portal) { display: none !important; }
+      .print-center-portal { display: block !important; }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 /* ---------- component ---------- */
 export default function PrintCenterDrawer({
   open,
@@ -304,6 +320,19 @@ export default function PrintCenterDrawer({
   const [consultationFee, setConsultationFee] = useState(100);
   const [actualPaid, setActualPaid] = useState(0);
   const actualPaidManualRef = useRef(false);
+
+  /* Portal print state (mobile-compatible) */
+  const [printHtml, setPrintHtml] = useState('');
+  const [isPrinting, setIsPrinting] = useState(false);
+
+  useEffect(() => { ensurePortalPrintStyle(); }, []);
+
+  useEffect(() => {
+    if (!isPrinting) return;
+    const onAfterPrint = () => setIsPrinting(false);
+    window.addEventListener('afterprint', onAfterPrint);
+    return () => window.removeEventListener('afterprint', onAfterPrint);
+  }, [isPrinting]);
 
   const loadBilling = useCallback(async () => {
     if (!prescriptionId) return;
@@ -335,7 +364,7 @@ export default function PrintCenterDrawer({
   const drugCostTotal = billingDetail?.drug_cost_total ?? 0;
   const totalAmount = drugCostTotal + consultationFee;
 
-  /* ---------- print handler ---------- */
+  /* ---------- print handler (mobile-compatible, no window.open) ---------- */
   const handlePrint = () => {
     const timeStr = getCurrentBeijingTime();
     let body = '';
@@ -348,15 +377,23 @@ export default function PrintCenterDrawer({
     if ((mode === 'billing' || mode === 'combined') && billingDetail) {
       body += buildBillingHtml(billingDetail, consultationFee, actualPaid, patientName, patientAge, doctorName, timeStr, clinicName);
     }
-    const win = window.open('', '_blank');
-    if (!win) {
-      message.error('打印窗口被浏览器拦截，请允许弹出窗口后重试');
-      return;
+    if (isMobile) {
+      /* Mobile: portal + @media print */
+      setPrintHtml(body);
+      setIsPrinting(true);
+      setTimeout(() => window.print(), 100);
+    } else {
+      /* Desktop: window.open (more reliable print preview) */
+      const win = window.open('', '_blank');
+      if (!win) {
+        message.error('打印窗口被浏览器拦截，请允许弹出窗口后重试');
+        return;
+      }
+      win.document.write(`<html><head><title>${mode === 'prescription' ? '处方笺' : mode === 'billing' ? '收费单' : '处方笺 + 收费单'}</title><style>${PRINT_STYLES}</style></head><body>${body}</body></html>`);
+      win.document.close();
+      win.print();
+      win.close();
     }
-    win.document.write(`<html><head><title>${mode === 'prescription' ? '处方笺' : mode === 'billing' ? '收费单' : '处方笺 + 收费单'}</title><style>${PRINT_STYLES}</style></head><body>${body}</body></html>`);
-    win.document.close();
-    win.print();
-    win.close();
   };
 
   /* ---------- preview helpers ---------- */
@@ -395,6 +432,7 @@ export default function PrintCenterDrawer({
   const showPrescriptionSection = mode === 'prescription' || mode === 'combined';
 
   return (
+    <>
     <Drawer
       title={
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -678,5 +716,15 @@ export default function PrintCenterDrawer({
         )}
       </Spin>
     </Drawer>
+
+    {/* Mobile print portal */}
+    {isPrinting && createPortal(
+      <div className="print-center-portal" style={{ display: 'block' }}>
+        <style>{PRINT_STYLES}</style>
+        <div dangerouslySetInnerHTML={{ __html: printHtml }} />
+      </div>,
+      document.body,
+    )}
+    </>
   );
 }
