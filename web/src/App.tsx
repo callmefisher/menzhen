@@ -3,6 +3,9 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Spin, ConfigProvider } from 'antd';
 import { AuthProvider, useAuth } from './store/auth';
 import { ThemeProvider } from './store/theme';
+import { AccessibilityProvider, useAccessibility } from './store/accessibility';
+import { largeTheme, xlargeTheme, highContrastTokenOverrides } from './theme/accessibilityThemes';
+import './styles/accessibility.css';
 import AppLayout from './components/Layout';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -141,7 +144,21 @@ const warmTheme = {
 
 export default function App() {
   return (
-    <ConfigProvider theme={warmTheme}>
+    <AccessibilityProvider>
+      <AppInner />
+    </AccessibilityProvider>
+  );
+}
+
+function AppInner() {
+  const { mode, highContrast } = useAccessibility();
+  const baseTheme = mode === 'xlarge' ? xlargeTheme : mode === 'large' ? largeTheme : warmTheme;
+  const currentTheme = highContrast
+    ? { ...baseTheme, token: { ...baseTheme.token, ...highContrastTokenOverrides } }
+    : baseTheme;
+
+  return (
+    <ConfigProvider theme={currentTheme}>
       <ThemeProvider>
         <BrowserRouter>
           <AuthProvider>

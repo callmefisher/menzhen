@@ -89,6 +89,29 @@ export function batchStockIn(data: BatchStockInReq) {
   return request.post('/inventory/drugs/batch-stock-in', data);
 }
 
+export interface StockOutReq {
+  quantity: number;
+  reason?: string;
+}
+
+export function stockOutDrug(id: number, data: StockOutReq) {
+  return request.post(`/inventory/drugs/${id}/stock-out`, data);
+}
+
+export interface BatchStockOutItem {
+  name: string;
+  quantity: number;
+}
+
+export interface BatchStockOutReq {
+  items: BatchStockOutItem[];
+  reason?: string;
+}
+
+export function batchStockOut(data: BatchStockOutReq) {
+  return request.post('/inventory/drugs/batch-stock-out', data);
+}
+
 export async function findDrugPage(id: number, size: number): Promise<number> {
   const res = await request.get(`/inventory/drugs/${id}/page`, { params: { size } });
   return (res as any).data?.page || 1;

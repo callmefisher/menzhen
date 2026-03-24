@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, Table, Button, Space, InputNumber, Tag, message } from 'antd';
 import { ReloadOutlined, BellOutlined, ClearOutlined } from '@ant-design/icons';
-import type { ColumnsType } from 'antd/es/table';
 import { listInventoryDrugs } from '../../api/inventory';
 import type { InventoryDrug } from '../../api/inventory';
 import useIsMobile from '../../hooks/useIsMobile';
+import { useAccessibleColumns, type AccessibleColumnsType } from '../../hooks/useAccessibleColumns';
+import HiddenColumnsHint from '../../components/HiddenColumnsHint';
 
 const CONFIG_KEY = 'inventory-alert-config';
 
@@ -12,6 +13,12 @@ interface AlertConfig {
   herbThreshold: number;
   patentThreshold: number;
   scanInterval: number;
+}
+
+interface EditableAlertConfig {
+  herbThreshold: number | null;
+  patentThreshold: number | null;
+  scanInterval: number | null;
 }
 
 interface AlertRow extends InventoryDrug {
@@ -39,7 +46,7 @@ function loadConfig(): AlertConfig {
 export default function InventoryAlert() {
   const isMobile = useIsMobile();
   const [config, setConfig] = useState<AlertConfig>(loadConfig);
-  const [editConfig, setEditConfig] = useState<AlertConfig>(loadConfig);
+  const [editConfig, setEditConfig] = useState<EditableAlertConfig>(loadConfig);
   const [alertRows, setAlertRows] = useState<AlertRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [lastScanTime, setLastScanTime] = useState<Date | null>(null);
@@ -184,7 +191,7 @@ export default function InventoryAlert() {
     if (count >= 0) window.dispatchEvent(new CustomEvent('inventory-alert-changed', { detail: { count } }));
   };
 
-  const columns: ColumnsType<AlertRow> = [
+  const allColumns: AccessibleColumnsType<AlertRow> = [
     {
       title: '药物名',
       dataIndex: 'name',
@@ -196,6 +203,7 @@ export default function InventoryAlert() {
       dataIndex: 'shelf_no',
       key: 'shelf_no',
       width: 80,
+      a11yPriority: 1,
       render: (val: string) => val || 'H1',
     },
     {
@@ -204,6 +212,7 @@ export default function InventoryAlert() {
       key: 'category',
       width: 80,
       responsive: ['md'] as any,
+      a11yPriority: 2,
       render: (val: string) =>
         val === 'herb' ? (
           <Tag color="green">本草</Tag>
@@ -223,6 +232,7 @@ export default function InventoryAlert() {
       key: 'effectiveThreshold',
       width: 100,
       responsive: ['md'] as any,
+      a11yPriority: 2,
       render: (_, record) =>
         `${record.effectiveThreshold} ${record.category === 'herb' ? '克' : '盒'}`,
     },
@@ -231,6 +241,7 @@ export default function InventoryAlert() {
       key: 'gap',
       width: 100,
       responsive: ['md'] as any,
+      a11yPriority: 2,
       render: (_, record) =>
         `${record.gap.toFixed(2)} ${record.category === 'herb' ? '克' : '盒'}`,
     },
@@ -249,6 +260,8 @@ export default function InventoryAlert() {
       ),
     },
   ];
+
+  const { columns, hiddenColumnTitles, hasHiddenColumns, restoreAll } = useAccessibleColumns(allColumns);
 
   // --- Mobile card view for alerts ---
   const renderMobileAlertCard = (row: AlertRow) => {
@@ -298,7 +311,8 @@ export default function InventoryAlert() {
           <InputNumber
             min={0}
             value={editConfig.herbThreshold}
-            onChange={(val) => setEditConfig((prev) => ({ ...prev, herbThreshold: val ?? 500 }))}
+            onChange={(val) => setEditConfig((prev) => ({ ...prev, herbThreshold: val }))}
+            changeOnBlur={false}
             addonAfter="克"
             style={{ flex: 1 }}
             size="small"
@@ -309,7 +323,8 @@ export default function InventoryAlert() {
           <InputNumber
             min={0}
             value={editConfig.patentThreshold}
-            onChange={(val) => setEditConfig((prev) => ({ ...prev, patentThreshold: val ?? 10 }))}
+            onChange={(val) => setEditConfig((prev) => ({ ...prev, patentThreshold: val }))}
+            changeOnBlur={false}
             addonAfter="盒"
             style={{ flex: 1 }}
             size="small"
@@ -320,7 +335,8 @@ export default function InventoryAlert() {
           <InputNumber
             min={1}
             value={editConfig.scanInterval}
-            onChange={(val) => setEditConfig((prev) => ({ ...prev, scanInterval: val ?? 30 }))}
+            onChange={(val) => setEditConfig((prev) => ({ ...prev, scanInterval: val }))}
+            changeOnBlur={false}
             addonAfter="分钟"
             style={{ flex: 1 }}
             size="small"
@@ -350,7 +366,8 @@ export default function InventoryAlert() {
         <InputNumber
           min={0}
           value={editConfig.herbThreshold}
-          onChange={(val) => setEditConfig((prev) => ({ ...prev, herbThreshold: val ?? 500 }))}
+          onChange={(val) => setEditConfig((prev) => ({ ...prev, herbThreshold: val }))}
+          changeOnBlur={false}
           addonAfter="克"
           style={{ width: 140 }}
         />
@@ -358,7 +375,8 @@ export default function InventoryAlert() {
         <InputNumber
           min={0}
           value={editConfig.patentThreshold}
-          onChange={(val) => setEditConfig((prev) => ({ ...prev, patentThreshold: val ?? 10 }))}
+          onChange={(val) => setEditConfig((prev) => ({ ...prev, patentThreshold: val }))}
+          changeOnBlur={false}
           addonAfter="盒"
           style={{ width: 140 }}
         />
@@ -366,7 +384,8 @@ export default function InventoryAlert() {
         <InputNumber
           min={1}
           value={editConfig.scanInterval}
-          onChange={(val) => setEditConfig((prev) => ({ ...prev, scanInterval: val ?? 30 }))}
+          onChange={(val) => setEditConfig((prev) => ({ ...prev, scanInterval: val }))}
+          changeOnBlur={false}
           addonAfter="分钟"
           style={{ width: 140 }}
         />
@@ -439,6 +458,7 @@ export default function InventoryAlert() {
             alertRows.map(renderMobileAlertCard)
           )
         ) : (
+          <>
           <Table<AlertRow>
             rowKey="id"
             columns={columns}
@@ -448,6 +468,8 @@ export default function InventoryAlert() {
             pagination={false}
             locale={{ emptyText: '暂无库存预警，库存充足' }}
           />
+          {hasHiddenColumns && <HiddenColumnsHint titles={hiddenColumnTitles} onRestoreAll={restoreAll} />}
+          </>
         )}
       </Card>
     </>

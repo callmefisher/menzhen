@@ -21,7 +21,6 @@ import {
   EditOutlined,
   UserSwitchOutlined,
 } from '@ant-design/icons';
-import type { ColumnsType } from 'antd/es/table';
 import { listUsers, updateUser, assignRoles } from '../../api/user';
 import { listRoles } from '../../api/role';
 import { listTenants } from '../../api/tenant';
@@ -33,6 +32,8 @@ import {
 } from '../../api/tenant-admin';
 import { useAuth } from '../../store/auth';
 import useIsMobile from '../../hooks/useIsMobile';
+import { useAccessibleColumns, type AccessibleColumnsType } from '../../hooks/useAccessibleColumns';
+import HiddenColumnsHint from '../../components/HiddenColumnsHint';
 
 interface TenantItem {
   id: number;
@@ -216,7 +217,7 @@ export default function UserList() {
     }
   };
 
-  const columns: ColumnsType<UserItem> = [
+  const allColumns: AccessibleColumnsType<UserItem> = [
     {
       title: '用户名',
       dataIndex: 'username',
@@ -243,20 +244,23 @@ export default function UserList() {
       dataIndex: 'phone',
       key: 'phone',
       width: 140,
+      a11yPriority: 1,
       render: (val: string) => val || '-',
     },
     ...(isGlobalAdmin ? [{
       title: '所属诊所',
       key: 'tenant',
       width: 120,
+      a11yPriority: 2,
       render: (_: unknown, record: UserItem) => record.tenant?.name || '-',
-    }] : []),
+    } as AccessibleColumnsType<UserItem>[number]] : []),
     {
       title: '备注',
       dataIndex: 'notes',
       key: 'notes',
       width: 150,
       ellipsis: true,
+      a11yPriority: 2,
       render: (val: string) => val || '-',
     },
     {
@@ -330,6 +334,8 @@ export default function UserList() {
     },
   ];
 
+  const { columns, hiddenColumnTitles, hasHiddenColumns, restoreAll } = useAccessibleColumns(allColumns);
+
   return (
     <Card>
       {isMobile ? (
@@ -400,6 +406,7 @@ export default function UserList() {
           </>
         )
       ) : (
+        <>
         <Table<UserItem>
           rowKey="id"
           columns={columns}
@@ -422,6 +429,8 @@ export default function UserList() {
             emptyText: '暂无用户记录',
           }}
         />
+        {hasHiddenColumns && <HiddenColumnsHint titles={hiddenColumnTitles} onRestoreAll={restoreAll} />}
+        </>
       )}
 
       {/* Edit user modal */}

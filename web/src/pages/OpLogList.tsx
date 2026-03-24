@@ -19,12 +19,13 @@ import {
   CheckSquareOutlined,
   CloseOutlined,
 } from '@ant-design/icons';
-import type { ColumnsType } from 'antd/es/table';
 import type { Dayjs } from 'dayjs';
 import { listOpLogs, deleteOpLog, batchDeleteOpLogs } from '../api/oplog';
 import type { OpLogItem, OpLogListParams } from '../api/oplog';
 import { useAuth } from '../store/auth';
 import useIsMobile from '../hooks/useIsMobile';
+import { useAccessibleColumns, type AccessibleColumnsType } from '../hooks/useAccessibleColumns';
+import HiddenColumnsHint from '../components/HiddenColumnsHint';
 
 const { RangePicker } = DatePicker;
 
@@ -43,7 +44,9 @@ const ACTION_MAP: Record<string, { label: string; color: string }> = {
   update: { label: '修改', color: 'blue' },
   delete: { label: '删除', color: 'red' },
   stock_in: { label: '入库', color: 'cyan' },
+  stock_out: { label: '出库', color: 'orange' },
   batch_stock_in: { label: '批量入库', color: 'cyan' },
+  batch_stock_out: { label: '批量出库', color: 'orange' },
   deduct_stock: { label: '扣减库存', color: 'orange' },
   backup: { label: '备份', color: 'purple' },
   restore: { label: '恢复', color: 'magenta' },
@@ -215,7 +218,7 @@ function computeDiff(action: string, oldData: any, newData: any, resourceType?: 
     return fields;
   }
 
-  // deduct_stock / stock_in / batch_stock_in: old_data is null, treat like create
+  // deduct_stock / stock_in / stock_out / batch_stock_in: old_data may be null, treat like create
   if (!oldData && newData && action !== 'create') {
     for (const key of Object.keys(newData)) {
       if (SKIP_FIELDS.has(key)) continue;
@@ -363,9 +366,66 @@ function BatchStockInView({ record, isMobile }: { record: OpLogItem; isMobile: b
   );
 }
 
+/** Special view for batch_stock_out action showing deducted items */
+function BatchStockOutView({ record, isMobile }: { record: OpLogItem; isMobile: boolean }) {
+  const data = record.new_data;
+  if (!data) return <div style={{ color: '#999', padding: 8 }}>无变更数据</div>;
+
+  const items: any[] = data.items || [];
+  const succeeded = data.succeeded ?? 0;
+  const failed = data.failed ?? 0;
+  const total = data.total ?? 0;
+  const errors: any[] = data.errors || [];
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {/* Summary line */}
+      <div style={{
+        display: 'flex', flexWrap: 'wrap', gap: isMobile ? 6 : 12, alignItems: 'center',
+        padding: '5px 10px', background: failed > 0 ? '#fff7e6' : '#f6ffed', borderRadius: 4, fontSize: 13,
+      }}>
+        <span><b>总计</b> {total} 种</span>
+        <span style={{ color: '#52c41a' }}><b>成功</b> {succeeded}</span>
+        {failed > 0 && <span style={{ color: '#ff4d4f' }}><b>失败</b> {failed}</span>}
+        {data.reason && <span style={{ color: '#666' }}>原因：{data.reason}</span>}
+      </div>
+      {/* Drug items — compact inline tags */}
+      {items.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '2px 0' }}>
+          {items.map((item: any, idx: number) => (
+            <span key={idx} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              padding: '2px 10px', borderRadius: 4, fontSize: 13,
+              background: '#fafafa', border: '1px solid #f0f0f0',
+            }}>
+              <span style={{ fontWeight: 500 }}>{item.name}</span>
+              <span style={{ color: '#eb6b3d', fontWeight: 600 }}>{item.quantity}g</span>
+            </span>
+          ))}
+        </div>
+      )}
+      {/* Errors — compact */}
+      {errors.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '2px 0' }}>
+          {errors.map((e: any, idx: number) => (
+            <span key={idx} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              padding: '2px 10px', borderRadius: 4, fontSize: 13,
+              background: '#fff2f0', border: '1px solid #ffccc7', color: '#ff4d4f',
+            }}>
+              <b>{e.name}</b>
+              {e.reason === 'not_found' ? `未找到（请求${e.need}g）` : e.reason === 'db_error' ? 'DB错误' : `需${e.need}g/存${e.current}g`}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Check if a record has expandable detail */
 function hasExpandableDetail(record: OpLogItem): boolean {
-  if (record.action === 'backup' || record.action === 'restore' || record.action === 'deduct_stock' || record.action === 'batch_stock_in') {
+  if (record.action === 'backup' || record.action === 'restore' || record.action === 'deduct_stock' || record.action === 'batch_stock_in' || record.action === 'batch_stock_out') {
     return !!(record.new_data);
   }
   return computeDiff(record.action, record.old_data, record.new_data, record.resource_type).length > 0;
@@ -417,6 +477,10 @@ function DiffView({ record, isMobile }: { record: OpLogItem; isMobile: boolean }
   // Special rendering for batch_stock_in
   if (record.action === 'batch_stock_in') {
     return <BatchStockInView record={record} isMobile={isMobile} />;
+  }
+  // Special rendering for batch_stock_out
+  if (record.action === 'batch_stock_out') {
+    return <BatchStockOutView record={record} isMobile={isMobile} />;
   }
 
   const fields = computeDiff(record.action, record.old_data, record.new_data, record.resource_type);
@@ -562,7 +626,7 @@ export default function OpLogList() {
     }
   };
 
-  const columns: ColumnsType<OpLogItem> = [
+  const allColumns: AccessibleColumnsType<OpLogItem> = [
     {
       title: '操作时间',
       dataIndex: 'created_at',
@@ -592,6 +656,7 @@ export default function OpLogList() {
       dataIndex: 'resource_type',
       key: 'resource_type',
       width: 160,
+      a11yPriority: 2,
       render: (_: string, rec: OpLogItem) => {
         const label = RESOURCE_TYPE_MAP[rec.resource_type] || rec.resource_type;
         const displayName = getResourceDisplayName(rec);
@@ -605,6 +670,7 @@ export default function OpLogList() {
       key: 'resource_id',
       width: 100,
       responsive: ['md'] as any,
+      a11yPriority: 2,
     },
     ...(canDelete
       ? [
@@ -624,10 +690,12 @@ export default function OpLogList() {
                 </Button>
               </Popconfirm>
             ),
-          } as ColumnsType<OpLogItem>[number],
+          } as AccessibleColumnsType<OpLogItem>[number],
         ]
       : []),
   ];
+
+  const { columns, hiddenColumnTitles, hasHiddenColumns, restoreAll } = useAccessibleColumns(allColumns);
 
   // --- Mobile card ---
   const toggleExpand = (id: number) => {
@@ -902,6 +970,7 @@ export default function OpLogList() {
           )}
         </>
       ) : (
+        <>
         <Table<OpLogItem>
           rowKey="id"
           columns={columns}
@@ -935,6 +1004,8 @@ export default function OpLogList() {
             emptyText: '暂无操作日志',
           }}
         />
+        {hasHiddenColumns && <HiddenColumnsHint titles={hiddenColumnTitles} onRestoreAll={restoreAll} />}
+        </>
       )}
     </Card>
   );

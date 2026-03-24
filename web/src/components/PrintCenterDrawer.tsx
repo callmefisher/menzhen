@@ -36,6 +36,7 @@ interface PrintCenterDrawerProps {
   chiefComplaint?: string;
   treatment?: string;
   doctorName?: string;
+  clinicName?: string;
   onClose: () => void;
 }
 
@@ -78,6 +79,7 @@ function buildPrescriptionHtml(
   treatment?: string,
   timeStr?: string,
   shelfMap?: Record<string, string>,
+  clinicName?: string,
 ): string {
   const allItems = prescription.items || [];
   const herbs = allItems.filter((i) => !i.category || i.category === 'herb');
@@ -91,8 +93,8 @@ function buildPrescriptionHtml(
 
   return `
     <div class="prescription-print">
+      ${clinicName ? `<div class="clinic-header">${escapeHtml(clinicName)}</div><hr class="clinic-sep" />` : ''}
       <h2>处 方 笺</h2>
-      <div class="subtitle">Prescription</div>
       <div class="info-row">
         <span>姓名：${escapeHtml(patientName) || '—'}</span>
         <span>年龄：${patientAge ? `${patientAge}岁` : '—'}</span>
@@ -155,6 +157,7 @@ function buildBillingHtml(
   patientAge?: number,
   doctorName?: string,
   timeStr?: string,
+  clinicName?: string,
 ): string {
   const herbs = (detail.items || []).filter((i) => i.category === 'herb');
   const patents = (detail.items || []).filter((i) => i.category === 'patent');
@@ -174,8 +177,8 @@ function buildBillingHtml(
 
   return `
     <div class="billing-print">
+      ${clinicName ? `<div class="clinic-header">${escapeHtml(clinicName)}</div><hr class="clinic-sep" />` : ''}
       <h2>收 费 单</h2>
-      <div class="subtitle">Billing Statement</div>
       <div class="info-row">
         <span>姓名：${escapeHtml(patientName) || '—'}</span>
         <span>年龄：${patientAge ? `${patientAge}岁` : '—'}</span>
@@ -238,8 +241,9 @@ const PRINT_STYLES = `
   body { font-family: "SimSun", "宋体", serif; color: #333; }
   /* Prescription styles */
   .prescription-print { max-width: 800px; margin: 0 auto; }
-  .prescription-print h2 { text-align: center; margin-bottom: 4px; color: #000; }
-  .prescription-print .subtitle { text-align: center; font-size: 12px; color: #999; margin-bottom: 16px; }
+  .prescription-print .clinic-header { text-align: center; font-size: 16px; font-weight: bold; color: #000; letter-spacing: 4px; margin-bottom: 6px; }
+  .prescription-print .clinic-sep { width: 60px; border: none; border-top: 1px solid #ccc; margin: 6px auto 10px; }
+  .prescription-print h2 { text-align: center; margin-bottom: 12px; color: #000; }
   .prescription-print .info-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; padding-bottom: 10px; border-bottom: 1px solid #ddd; }
   .prescription-print .clinical-info { font-size: 14px; margin-bottom: 4px; }
   .prescription-print .clinical-info .label { font-weight: bold; }
@@ -259,8 +263,9 @@ const PRINT_STYLES = `
   .prescription-print .signature { margin-top: 32px; text-align: right; font-size: 14px; color: #666; }
   /* Billing styles */
   .billing-print { max-width: 800px; margin: 0 auto; }
-  .billing-print h2 { text-align: center; margin-bottom: 4px; color: #000; }
-  .billing-print .subtitle { text-align: center; font-size: 12px; color: #999; margin-bottom: 16px; }
+  .billing-print .clinic-header { text-align: center; font-size: 16px; font-weight: bold; color: #000; letter-spacing: 4px; margin-bottom: 6px; }
+  .billing-print .clinic-sep { width: 60px; border: none; border-top: 1px solid #ccc; margin: 6px auto 10px; }
+  .billing-print h2 { text-align: center; margin-bottom: 12px; color: #000; }
   .billing-print .info-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; padding-bottom: 10px; border-bottom: 1px solid #ddd; }
   .billing-print .summary { font-size: 14px; margin-top: 20px; padding-top: 12px; border-top: 1px solid #ddd; }
   .billing-print .summary .row { display: flex; justify-content: space-between; margin-bottom: 6px; }
@@ -289,6 +294,7 @@ export default function PrintCenterDrawer({
   chiefComplaint,
   treatment,
   doctorName,
+  clinicName,
   onClose,
 }: PrintCenterDrawerProps) {
   const isMobile = useIsMobile();
@@ -334,13 +340,13 @@ export default function PrintCenterDrawer({
     const timeStr = getCurrentBeijingTime();
     let body = '';
     if (mode === 'prescription' || mode === 'combined') {
-      body += buildPrescriptionHtml(prescription, patientName, patientAge, chiefComplaint, treatment, timeStr, Object.keys(shelfMap).length > 0 ? shelfMap : undefined);
+      body += buildPrescriptionHtml(prescription, patientName, patientAge, chiefComplaint, treatment, timeStr, Object.keys(shelfMap).length > 0 ? shelfMap : undefined, clinicName);
     }
     if (mode === 'combined') {
       body += '<hr class="print-separator" />';
     }
     if ((mode === 'billing' || mode === 'combined') && billingDetail) {
-      body += buildBillingHtml(billingDetail, consultationFee, actualPaid, patientName, patientAge, doctorName, timeStr);
+      body += buildBillingHtml(billingDetail, consultationFee, actualPaid, patientName, patientAge, doctorName, timeStr, clinicName);
     }
     const win = window.open('', '_blank');
     if (!win) {
