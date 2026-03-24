@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/callmefisher/menzhen/server/middleware"
@@ -18,9 +19,12 @@ var upgrader = gws.Upgrader{
 		if origin == "" {
 			return true
 		}
-		host := r.Host
-		// Allow if origin matches the request host
-		return strings.Contains(origin, host)
+		// Parse origin and match host exactly
+		u, err := url.Parse(origin)
+		if err != nil {
+			return false
+		}
+		return u.Host == r.Host
 	},
 }
 

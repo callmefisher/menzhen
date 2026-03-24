@@ -166,7 +166,7 @@ function buildHerbRows(items: DispenseDetailItem[], totalDoses: number): string 
     return `<div class="print-herb-row">` +
       `<span class="ph-shelf">${escapeHtml(item.shelf_no || '--')}</span>` +
       `<span class="ph-name">${nameDisplay}</span>` +
-      `<span class="ph-calc">${item.dosage}g×${totalDoses}</span>` +
+      `<span class="ph-calc">${escapeHtml(item.dosage)}g×${totalDoses}</span>` +
       `<span class="ph-total">${total}g</span>` +
       `</div>`;
   }).join('');

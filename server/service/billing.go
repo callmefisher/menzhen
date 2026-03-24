@@ -375,12 +375,12 @@ func (s *BillingService) DeductStockAndBill(tenantID, userID, prescriptionID uin
 		var patientName string
 		if err := s.DB.Table("patients").Select("name").
 			Joins("JOIN medical_records ON medical_records.patient_id = patients.id").
-			Where("medical_records.id = ?", result.RecordID).Scan(&patientName).Error; err != nil {
+			Where("medical_records.id = ? AND medical_records.tenant_id = ?", result.RecordID, tenantID).Scan(&patientName).Error; err != nil {
 			log.Printf("failed to query patient name for notification (record_id=%d): %v", result.RecordID, err)
 		}
 		// Get doctor name
 		var doctorName string
-		if err := s.DB.Table("users").Select("display_name").Where("id = ?", result.CreatedBy).Scan(&doctorName).Error; err != nil {
+		if err := s.DB.Table("users").Select("display_name").Where("id = ? AND tenant_id = ?", result.CreatedBy, tenantID).Scan(&doctorName).Error; err != nil {
 			log.Printf("failed to query doctor name for notification (user_id=%d): %v", result.CreatedBy, err)
 		}
 		// Count herbs and patents

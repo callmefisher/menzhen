@@ -53,10 +53,13 @@ func (s *PrescriptionNotificationService) MarkDone(tenantID, id uint64) error {
 	result := s.DB.Model(&model.PrescriptionNotification{}).
 		Where("id = ? AND tenant_id = ? AND status = 'pending'", id, tenantID).
 		Updates(map[string]interface{}{"status": "done", "done_at": now})
+	if result.Error != nil {
+		return result.Error
+	}
 	if result.RowsAffected == 0 {
 		return ErrNotificationNotFound
 	}
-	return result.Error
+	return nil
 }
 
 // BatchMarkDone marks all pending notifications as done for a tenant

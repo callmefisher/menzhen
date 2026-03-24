@@ -23,6 +23,10 @@ func NewPrescriptionNotificationHandler(db *gorm.DB) *PrescriptionNotificationHa
 func (h *PrescriptionNotificationHandler) List(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
 	status := c.Query("status")
+	if status != "" && status != "pending" && status != "done" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "invalid status, must be pending or done"})
+		return
+	}
 
 	svc := service.NewPrescriptionNotificationService(h.db)
 	list, err := svc.ListByTenant(tenantID, status)
