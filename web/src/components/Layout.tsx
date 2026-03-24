@@ -282,7 +282,7 @@ export default function AppLayout() {
 
     const showOps = hasPermission('inventory:read') || hasPermission('followup:read') || hasPermission('statistics:read');
     if (showOps) {
-      const totalBadge = alertCount + followUpCount + rxPendingCount;
+      const totalBadge = alertCount + followUpCount;
       items.push({
         key: '/ops',
         icon: <ShopOutlined />,
@@ -297,12 +297,7 @@ export default function AppLayout() {
             {
               key: '/inventory/drugs',
               icon: <MedicineBoxOutlined />,
-              label: rxPendingCount > 0
-                ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    库存药物
-                    <span style={badgeStyle}>{fmtBadge(rxPendingCount)}</span>
-                  </span>
-                : '库存药物',
+              label: '库存药物',
             },
             {
               key: '/inventory/alerts',

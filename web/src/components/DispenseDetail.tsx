@@ -471,7 +471,7 @@ export default function DispenseDetail({ notificationId, open, onClose, onDone }
           ref={printRef}
           detail={data}
           clinicName={user?.tenant_name}
-          operatorName={user?.real_name}
+          operatorName={user?.real_name || user?.username}
         />
       )}
     </>

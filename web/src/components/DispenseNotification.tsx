@@ -232,7 +232,7 @@ export default function DispenseNotification() {
                   onClick={handleBatchDone}
                   style={{ fontSize: isMobile ? 10 : 12, whiteSpace: 'nowrap' }}
                 >
-                  {isMobile ? '忽略全部' : '忽略全部'}
+                  忽略全部
                 </Button>
               )}
             </div>

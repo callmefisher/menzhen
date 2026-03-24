@@ -114,7 +114,7 @@ const DispensePrint = forwardRef<DispensePrintHandle, DispensePrintProps>(
         win.document.write(`<!DOCTYPE html>
 <html><head><title>抓药单</title>
 <style>
-  @page { margin: 15mm; }
+  @page { margin: 10mm; }
   body { font-family: "SimSun", "宋体", serif; color: #333; margin: 0; padding: 0; }
   .print-clinic { text-align: center; padding: 16px 20px 4px; font-size: 15px; font-weight: 600; color: #333; }
   .print-title { text-align: center; padding: 4px 20px 12px; font-size: 22px; font-weight: 800; letter-spacing: 4px; border-bottom: 2px solid #333; }
@@ -127,11 +127,11 @@ const DispensePrint = forwardRef<DispensePrintHandle, DispensePrintProps>(
   .print-multi-col { display: flex; gap: 0; width: 100%; padding: 0 10px; }
   .print-multi-col .pcol { flex: 1; min-width: 0; overflow: hidden; }
   .print-multi-col .pcol + .pcol { border-left: 1px dashed #ccc; padding-left: 8px; }
-  .print-herb-row { display: flex; align-items: baseline; gap: 3px; padding: 3px 0; font-size: 12px; border-bottom: 1px dotted #eee; }
+  .print-herb-row { display: flex; align-items: baseline; gap: 2px; padding: 3px 0; font-size: 12px; border-bottom: 1px dotted #eee; }
   .print-herb-row .ph-shelf { font-weight: 700; min-width: 20px; color: #333; flex-shrink: 0; }
   .print-herb-row .ph-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .print-herb-row .ph-calc { color: #666; white-space: nowrap; flex-shrink: 0; }
-  .print-herb-row .ph-total { font-weight: 700; min-width: 36px; text-align: right; flex-shrink: 0; }
+  .print-herb-row .ph-calc { color: #666; white-space: nowrap; flex-shrink: 0; font-size: 11px; }
+  .print-herb-row .ph-total { font-weight: 700; min-width: 38px; text-align: right; flex-shrink: 0; padding-left: 2px; }
   .print-patent-row { display: flex; align-items: baseline; gap: 3px; padding: 3px 0; font-size: 12px; border-bottom: 1px dotted #eee; }
   .print-patent-row .pp-shelf { font-weight: 700; min-width: 20px; color: #333; flex-shrink: 0; }
   .print-patent-row .pp-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
