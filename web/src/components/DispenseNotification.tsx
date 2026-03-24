@@ -125,7 +125,7 @@ export default function DispenseNotification() {
     setBatchLoading(true);
     try {
       await batchMarkDone();
-      message.success('已全部标记完成');
+      message.success('已全部忽略');
       setItems([]);
       setPendingCount(0);
     } catch { message.error('操作失败'); }
@@ -205,7 +205,7 @@ export default function DispenseNotification() {
                     color: tab === 'pending' ? '#fff' : '#666',
                   }}
                 >
-                  待抓药{tab === 'pending' && pendingCount > 0 && (
+                  待抓药{pendingCount > 0 && (
                     <span style={{ color: tab === 'pending' ? '#fff' : '#ff4d4f', fontWeight: 700, marginLeft: 4 }}>
                       {pendingCount}
                     </span>
@@ -232,7 +232,7 @@ export default function DispenseNotification() {
                   onClick={handleBatchDone}
                   style={{ fontSize: isMobile ? 10 : 12, whiteSpace: 'nowrap' }}
                 >
-                  {isMobile ? '全部完成' : '全部标记已完成'}
+                  {isMobile ? '忽略全部' : '忽略全部'}
                 </Button>
               )}
             </div>
@@ -319,7 +319,7 @@ export default function DispenseNotification() {
                       justifyContent: 'center',
                     }}>
                       {isPending ? (
-                        <button
+                        !isMobile && <button
                           onClick={(e) => handleMarkDone(item.id, e)}
                           style={{
                             padding: '4px 10px', border: '1px solid #faad14',

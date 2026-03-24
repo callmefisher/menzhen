@@ -8,6 +8,7 @@ export interface DispensePrintHandle {
 interface DispensePrintProps {
   detail: DispenseDetail;
   clinicName?: string;
+  operatorName?: string;
 }
 
 function getCurrentBeijingTime(): string {
@@ -31,7 +32,7 @@ function escapeHtml(s: string) {
 }
 
 const DispensePrint = forwardRef<DispensePrintHandle, DispensePrintProps>(
-  ({ detail, clinicName }, ref) => {
+  ({ detail, clinicName, operatorName }, ref) => {
     const printRef = useRef<HTMLDivElement>(null);
 
     useImperativeHandle(ref, () => ({
@@ -102,7 +103,7 @@ const DispensePrint = forwardRef<DispensePrintHandle, DispensePrintProps>(
 
         /* Footer */
         html += `<div class="print-footer">`;
-        html += `<span>核对人：__________</span>`;
+        html += `<span>核对人：${operatorName ? escapeHtml(operatorName) : '__________'}</span>`;
         html += `<span>RX-${noti.id}</span>`;
         html += `<span>${timeStr}</span>`;
         html += `</div>`;
