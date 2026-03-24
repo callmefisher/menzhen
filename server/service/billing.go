@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/callmefisher/menzhen/server/model"
+	ws "github.com/callmefisher/menzhen/server/ws"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -365,6 +366,45 @@ func (s *BillingService) DeductStockAndBill(tenantID, userID, prescriptionID uin
 			_ = statsSvc.RefreshDailyStats(tenantID, record.VisitDate)
 		}
 	}
+
+	// After the transaction succeeds and stats are refreshed, create notification asynchronously
+	go func() {
+		pnSvc := NewPrescriptionNotificationService(s.DB)
+		// Get patient name
+		var patientName string
+		s.DB.Table("patients").Select("name").
+			Joins("JOIN medical_records ON medical_records.patient_id = patients.id").
+			Where("medical_records.id = ?", result.RecordID).Scan(&patientName)
+		// Get doctor name
+		var doctorName string
+		s.DB.Table("users").Select("display_name").Where("id = ?", result.CreatedBy).Scan(&doctorName)
+		// Count herbs and patents
+		var herbCount, patentCount int64
+		s.DB.Model(&model.PrescriptionItem{}).Where("prescription_id = ? AND category != 'patent'", prescriptionID).Count(&herbCount)
+		s.DB.Model(&model.PrescriptionItem{}).Where("prescription_id = ? AND category = 'patent'", prescriptionID).Count(&patentCount)
+
+		// Load prescription for formula details
+		var prescription model.Prescription
+		s.DB.Where("tenant_id = ?", tenantID).First(&prescription, prescriptionID)
+
+		n := &model.PrescriptionNotification{
+			TenantID:       tenantID,
+			PrescriptionID: prescriptionID,
+			RecordID:       result.RecordID,
+			PatientName:    patientName,
+			DoctorName:     doctorName,
+			FormulaName:    prescription.FormulaName,
+			TotalDoses:     prescription.TotalDoses,
+			HerbCount:      int(herbCount),
+			PatentCount:    int(patentCount),
+			Notes:          prescription.Notes,
+			Status:         "pending",
+			CreatedBy:      result.CreatedBy,
+		}
+		if err := pnSvc.Create(n); err == nil {
+			ws.DefaultHub.Broadcast(tenantID, ws.Message{Type: "rx_notify", Payload: n})
+		}
+	}()
 
 	return result, nil
 }
