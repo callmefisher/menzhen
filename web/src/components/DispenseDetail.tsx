@@ -424,6 +424,17 @@ export default function DispenseDetail({ notificationId, open, onClose, onDone }
               </div>
             )}
 
+            {/* Operator info */}
+            <div style={{
+              display: 'flex', gap: 16, flexWrap: 'wrap',
+              padding: isMobile ? '6px 12px' : '10px 20px',
+              fontSize: isMobile ? 11 : 12, color: '#999',
+              borderTop: '1px solid #e8e5d8',
+            }}>
+              <span>核对人：<b style={{ color: '#333' }}>{user?.real_name || user?.username || '--'}</b></span>
+              <span>处方号：RX-{noti.id}</span>
+            </div>
+
             {/* Footer */}
             <div style={{
               display: 'flex', gap: 8, justifyContent: 'flex-end',
