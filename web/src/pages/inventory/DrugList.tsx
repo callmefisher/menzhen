@@ -588,7 +588,7 @@ export default function DrugList() {
     {
       title: '操作',
       key: 'action',
-      width: isMobile ? 140 : 210,
+      width: isMobile ? 160 : 210,
       render: (_, record) => (
         <Space size="small">
           <Button
@@ -731,7 +731,7 @@ export default function DrugList() {
         />
       </div>
       {/* Row 2: action buttons */}
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>
           搜索
         </Button>
@@ -791,7 +791,7 @@ export default function DrugList() {
         </Button>
         <Button onClick={handleReset}>重置</Button>
       </Space>
-      <Space>
+      <Space wrap>
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
           + 入库
         </Button>
@@ -864,11 +864,11 @@ export default function DrugList() {
       <div style={{
         background: '#fafafa',
         borderRadius: 8,
-        padding: 16,
+        padding: isMobile ? 12 : 16,
         marginBottom: 20,
         display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        gap: '12px 24px',
+        gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+        gap: isMobile ? '8px' : '12px 24px',
       }}>
         <div style={{ gridColumn: '1 / -1', fontSize: 16, fontWeight: 600, paddingBottom: 8, borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 8 }}>
           {drug.name}
@@ -1006,7 +1006,7 @@ export default function DrugList() {
         okText={editingDrug ? '保存' : '新增'}
         cancelText="取消"
         destroyOnClose
-        width={isMobile ? '100%' : 520}
+        width={isMobile ? 'calc(100% - 16px)' : 520}
         style={isMobile ? { top: 16, maxWidth: '100%', margin: '0 8px' } : undefined}
       >
         <Form
@@ -1111,7 +1111,7 @@ export default function DrugList() {
         okText="确认入库"
         cancelText="取消"
         destroyOnClose
-        width={isMobile ? '100%' : 520}
+        width={isMobile ? 'calc(100% - 16px)' : 520}
         style={isMobile ? { top: 16, maxWidth: '100%', margin: '0 8px' } : undefined}
       >
         <Tabs
@@ -1236,7 +1236,7 @@ export default function DrugList() {
         }}
         cancelText="取消"
         destroyOnClose
-        width={isMobile ? '100%' : 520}
+        width={isMobile ? 'calc(100% - 16px)' : 520}
         style={isMobile ? { top: 16, maxWidth: '100%', margin: '0 8px' } : undefined}
       >
         {stockOutMode === 'single' ? (
