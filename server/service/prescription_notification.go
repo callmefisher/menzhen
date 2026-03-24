@@ -94,7 +94,7 @@ func (s *PrescriptionNotificationService) GetDetail(tenantID, id uint64) (*Dispe
 
 	// Get prescription items
 	var items []model.PrescriptionItem
-	s.DB.Where("prescription_id = ?", n.PrescriptionID).Order("sort_order ASC").Find(&items)
+	s.DB.Where("prescription_id = ?", n.PrescriptionID).Order("sort_order ASC").Limit(100).Find(&items)
 
 	if len(items) == 0 {
 		return &DispenseDetail{Notification: n}, nil

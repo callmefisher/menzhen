@@ -89,13 +89,19 @@ export default function DispenseNotification() {
   }, [tab]));
 
   useWebSocket('rx_done', useCallback((msg) => {
-    const id = msg.payload?.id as number;
-    if (tab === 'pending') {
-      setItems(prev => prev.filter(i => i.id !== id));
+    if (msg.payload?.batch) {
+      fetchList(); // full refetch for batch
     } else {
-      fetchList();
+      const id = msg.payload?.id as number;
+      if (tab === 'pending') {
+        if (id) {
+          setItems(prev => prev.filter(i => i.id !== id));
+        }
+      } else {
+        fetchList();
+      }
+      setPendingCount(c => Math.max(0, c - 1));
     }
-    setPendingCount(c => Math.max(0, c - 1));
   }, [tab, fetchList]));
 
   useWebSocket('_reconnect', useCallback(() => {

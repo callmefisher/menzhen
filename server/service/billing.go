@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"log"
 	"regexp"
 	"strconv"
 	"strings"
@@ -372,12 +373,16 @@ func (s *BillingService) DeductStockAndBill(tenantID, userID, prescriptionID uin
 		pnSvc := NewPrescriptionNotificationService(s.DB)
 		// Get patient name
 		var patientName string
-		s.DB.Table("patients").Select("name").
+		if err := s.DB.Table("patients").Select("name").
 			Joins("JOIN medical_records ON medical_records.patient_id = patients.id").
-			Where("medical_records.id = ?", result.RecordID).Scan(&patientName)
+			Where("medical_records.id = ?", result.RecordID).Scan(&patientName).Error; err != nil {
+			log.Printf("failed to query patient name for notification (record_id=%d): %v", result.RecordID, err)
+		}
 		// Get doctor name
 		var doctorName string
-		s.DB.Table("users").Select("display_name").Where("id = ?", result.CreatedBy).Scan(&doctorName)
+		if err := s.DB.Table("users").Select("display_name").Where("id = ?", result.CreatedBy).Scan(&doctorName).Error; err != nil {
+			log.Printf("failed to query doctor name for notification (user_id=%d): %v", result.CreatedBy, err)
+		}
 		// Count herbs and patents
 		var herbCount, patentCount int64
 		s.DB.Model(&model.PrescriptionItem{}).Where("prescription_id = ? AND category != 'patent'", prescriptionID).Count(&herbCount)
@@ -401,7 +406,9 @@ func (s *BillingService) DeductStockAndBill(tenantID, userID, prescriptionID uin
 			Status:         "pending",
 			CreatedBy:      result.CreatedBy,
 		}
-		if err := pnSvc.Create(n); err == nil {
+		if err := pnSvc.Create(n); err != nil {
+			log.Printf("failed to create prescription notification: %v", err)
+		} else {
 			ws.DefaultHub.Broadcast(tenantID, ws.Message{Type: "rx_notify", Payload: n})
 		}
 	}()

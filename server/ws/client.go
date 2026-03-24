@@ -42,6 +42,8 @@ func (c *Client) Send(msg Message) {
 	}
 	select {
 	case c.send <- data:
+	default:
+		// drop message for slow consumer; they'll refetch via API
 	case <-c.closed:
 	}
 }
