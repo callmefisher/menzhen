@@ -5,10 +5,12 @@ import (
 
 	"github.com/callmefisher/menzhen/server/model"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var (
 	ErrInventoryDrugNotFound = errors.New("inventory drug not found")
+	ErrStockInsufficient     = errors.New("stock insufficient for stock-out")
 )
 
 // CreateInventoryDrugRequest is the input for creating a new inventory drug.
@@ -350,6 +352,158 @@ func (s *InventoryDrugService) BatchStockIn(tenantID uint64, req *BatchStockInRe
 		}
 	}
 
+	return result, nil
+}
+
+// StockOutRequest is the input for single drug stock-out (deducts from existing stock).
+type StockOutRequest struct {
+	Quantity float64 `json:"quantity" binding:"required,gt=0"`
+	Reason   string  `json:"reason"`
+}
+
+// StockOut deducts quantity from an existing drug's stock.
+// Uses transaction with row-level locking to prevent race conditions.
+// Returns error if quantity exceeds current stock.
+func (s *InventoryDrugService) StockOut(tenantID, id uint64, req *StockOutRequest) (StockInDrugResult, error) {
+	var oldDrug model.InventoryDrug
+	var newDrug model.InventoryDrug
+
+	err := s.DB.Transaction(func(tx *gorm.DB) error {
+		// Lock the row with FOR UPDATE to prevent concurrent reads.
+		var drug model.InventoryDrug
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("tenant_id = ? AND id = ?", tenantID, id).
+			First(&drug).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrInventoryDrugNotFound
+			}
+			return err
+		}
+
+		if req.Quantity > drug.Stock {
+			return ErrStockInsufficient
+		}
+
+		oldDrug = drug
+
+		if err := tx.Model(&drug).Update("stock", gorm.Expr("stock - ?", req.Quantity)).Error; err != nil {
+			return err
+		}
+
+		// Reload to get the updated record.
+		if err := tx.Where("tenant_id = ? AND id = ?", tenantID, id).First(&newDrug).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+
+	if err != nil {
+		return StockInDrugResult{}, err
+	}
+	return StockInDrugResult{OldDrug: &oldDrug, NewDrug: &newDrug}, nil
+}
+
+// BatchStockOutItem represents a single item in a batch stock-out request.
+type BatchStockOutItem struct {
+	Name     string  `json:"name" binding:"required"`
+	Quantity float64 `json:"quantity" binding:"required,gt=0"`
+}
+
+// BatchStockOutRequest is the input for batch stocking out drugs.
+type BatchStockOutRequest struct {
+	Items  []BatchStockOutItem `json:"items" binding:"required,min=1"`
+	Reason string              `json:"reason"`
+}
+
+// BatchStockOutError describes a single item that failed stock-out.
+type BatchStockOutError struct {
+	Name    string  `json:"name"`
+	Reason  string  `json:"reason"`
+	Need    float64 `json:"need"`
+	Current float64 `json:"current"`
+}
+
+// BatchStockOutResult holds the result of a batch stock-out operation.
+type BatchStockOutResult struct {
+	Succeeded int                  `json:"succeeded"`
+	Failed    int                  `json:"failed"`
+	Total     int                  `json:"total"`
+	DrugIDs   []uint64             `json:"drug_ids"`
+	Errors    []BatchStockOutError `json:"errors"`
+}
+
+// BatchStockOut deducts stock from multiple drugs by name.
+// Uses transaction with row-level locking. Merges duplicate names.
+// Items with insufficient stock or not found are recorded in Errors.
+// DB errors on individual items are also recorded as errors (not fatal).
+func (s *InventoryDrugService) BatchStockOut(tenantID uint64, req *BatchStockOutRequest) (*BatchStockOutResult, error) {
+	// Merge duplicate names: sum quantities.
+	merged := make(map[string]float64)
+	order := make([]string, 0) // preserve order
+	for _, item := range req.Items {
+		if _, seen := merged[item.Name]; !seen {
+			order = append(order, item.Name)
+		}
+		merged[item.Name] += item.Quantity
+	}
+
+	result := &BatchStockOutResult{Total: len(merged)}
+
+	err := s.DB.Transaction(func(tx *gorm.DB) error {
+		// Lock all matching rows with FOR UPDATE.
+		var existingDrugs []model.InventoryDrug
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("tenant_id = ? AND name IN ?", tenantID, order).
+			Find(&existingDrugs).Error; err != nil {
+			return err
+		}
+		drugMap := make(map[string]*model.InventoryDrug, len(existingDrugs))
+		for i := range existingDrugs {
+			drugMap[existingDrugs[i].Name] = &existingDrugs[i]
+		}
+
+		for _, name := range order {
+			qty := merged[name]
+			drug, exists := drugMap[name]
+			if !exists {
+				result.Failed++
+				result.Errors = append(result.Errors, BatchStockOutError{
+					Name:   name,
+					Reason: "not_found",
+					Need:   qty,
+				})
+				continue
+			}
+			if qty > drug.Stock {
+				result.Failed++
+				result.Errors = append(result.Errors, BatchStockOutError{
+					Name:    name,
+					Reason:  "insufficient",
+					Need:    qty,
+					Current: drug.Stock,
+				})
+				continue
+			}
+			if err := tx.Model(drug).Update("stock", gorm.Expr("stock - ?", qty)).Error; err != nil {
+				// Record DB error as item failure instead of aborting the entire transaction.
+				result.Failed++
+				result.Errors = append(result.Errors, BatchStockOutError{
+					Name:    name,
+					Reason:  "db_error",
+					Need:    qty,
+					Current: drug.Stock,
+				})
+				continue
+			}
+			result.Succeeded++
+			result.DrugIDs = append(result.DrugIDs, uint64(drug.ID))
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 

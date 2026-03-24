@@ -17,6 +17,10 @@ vi.mock('../../hooks/useIsMobile', () => ({
   default: () => false,
 }));
 
+vi.mock('../../store/auth', () => ({
+  useAuth: () => ({ user: { tenant_name: '测试诊所' }, hasPermission: () => true }),
+}));
+
 const makeMockDetail = (overrides = {}) => ({
   prescription_id: 1,
   record_id: 1,

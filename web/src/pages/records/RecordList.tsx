@@ -22,11 +22,12 @@ import {
   MedicineBoxOutlined,
   CalendarOutlined,
 } from '@ant-design/icons';
-import type { ColumnsType } from 'antd/es/table';
 import type { Dayjs } from 'dayjs';
 import { listRecords, deleteRecord, findRecordPage } from '../../api/record';
 import type { RecordListItem, RecordListParams } from '../../api/record';
 import useIsMobile from '../../hooks/useIsMobile';
+import { useAccessibleColumns, type AccessibleColumnsType } from '../../hooks/useAccessibleColumns';
+import HiddenColumnsHint from '../../components/HiddenColumnsHint';
 
 const { RangePicker } = DatePicker;
 
@@ -142,7 +143,7 @@ export default function RecordList() {
     }
   };
 
-  const columns: ColumnsType<RecordListItem> = [
+  const allColumns: AccessibleColumnsType<RecordListItem> = [
     {
       title: '患者姓名',
       dataIndex: 'patient_name',
@@ -155,6 +156,7 @@ export default function RecordList() {
       key: 'patient_age',
       width: 60,
       responsive: ['md'],
+      a11yPriority: 2,
     },
     {
       title: '就诊日期',
@@ -218,6 +220,8 @@ export default function RecordList() {
       ),
     },
   ];
+
+  const { columns, hiddenColumnTitles, hasHiddenColumns, restoreAll } = useAccessibleColumns(allColumns);
 
   // --- Mobile record card ---
   const renderMobileRecordCard = (record: RecordListItem) => (
@@ -378,6 +382,7 @@ export default function RecordList() {
           )}
         </>
       ) : (
+        <>
         <Table<RecordListItem>
           rowKey="id"
           columns={columns}
@@ -397,6 +402,8 @@ export default function RecordList() {
             emptyText: renderEmpty(),
           }}
         />
+        {hasHiddenColumns && <HiddenColumnsHint titles={hiddenColumnTitles} onRestoreAll={restoreAll} />}
+        </>
       )}
     </Card>
   );

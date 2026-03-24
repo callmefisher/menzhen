@@ -20,24 +20,26 @@ import (
 const TestJWTSecret = "test-jwt-secret-for-testing"
 
 var (
-	rootDB   *gorm.DB
-	rootOnce sync.Once
+	rootDB    *gorm.DB
+	rootDBErr error
+	rootOnce  sync.Once
 )
 
 // getRootDB returns a shared root MySQL connection (no database selected).
 // This avoids opening a new connection per test, preventing "too many connections".
-func getRootDB(t *testing.T) *gorm.DB {
+// Returns (nil, error) when MySQL is not reachable; callers should t.Skip in that case.
+func getRootDB(t *testing.T) (*gorm.DB, error) {
 	t.Helper()
 	rootOnce.Do(func() {
 		dsn := getTestDSN()
-		var err error
-		rootDB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{
+		var db *gorm.DB
+		db, rootDBErr = gorm.Open(mysql.Open(dsn), &gorm.Config{
 			Logger: logger.Default.LogMode(logger.Silent),
 		})
-		if err != nil {
-			// Cannot use t.Fatalf inside sync.Once across tests; panic instead.
-			panic(fmt.Sprintf("failed to connect to test MySQL: %v", err))
+		if rootDBErr != nil {
+			return
 		}
+		rootDB = db
 		// Limit root connection pool to avoid exhausting MySQL connections.
 		sqlDB, _ := rootDB.DB()
 		if sqlDB != nil {
@@ -45,15 +47,19 @@ func getRootDB(t *testing.T) *gorm.DB {
 			sqlDB.SetMaxIdleConns(5)
 		}
 	})
-	return rootDB
+	return rootDB, rootDBErr
 }
 
 // SetupTestDB creates a temporary test database and returns a *gorm.DB.
 // The database is automatically dropped when the test finishes.
+// The test is skipped when MySQL is not reachable.
 func SetupTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	db := getRootDB(t)
+	db, err := getRootDB(t)
+	if err != nil {
+		t.Skipf("skipping: MySQL not available (%v)", err)
+	}
 
 	// Create a unique database for this test.
 	dbName := fmt.Sprintf("test_mz_%d_%d", time.Now().UnixNano()%1e9, rand.Intn(10000))

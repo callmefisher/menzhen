@@ -38,6 +38,8 @@ import { listInventoryDrugs } from '../api/inventory';
 import type { InventoryDrug } from '../api/inventory';
 import { getFollowUpStats } from '../api/followUp';
 import useIsMobile from '../hooks/useIsMobile';
+import AccessibilityToggle from './AccessibilityToggle';
+import { useAccessibility } from '../store/accessibility';
 
 const { Header, Sider, Content } = AntLayout;
 
@@ -54,12 +56,20 @@ export default function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const isMobile = useIsMobile();
+  const { mode: a11yMode } = useAccessibility();
   const {
     token: { borderRadiusLG },
   } = theme.useToken();
 
   const [alertCount, setAlertCount] = useState(0);
   const [followUpCount, setFollowUpCount] = useState(0);
+
+  // Auto-collapse sidebar in large-font mode, auto-expand back in normal mode
+  useEffect(() => {
+    if (!isMobile) {
+      setCollapsed(a11yMode !== 'normal');
+    }
+  }, [a11yMode, isMobile]);
 
   // Scroll to top only on initial mount (e.g. after login redirect)
   useEffect(() => {
@@ -522,7 +532,8 @@ export default function AppLayout() {
             onClick={() => isMobile ? setDrawerOpen(true) : setCollapsed(!collapsed)}
             style={{ fontSize: 16, width: 48, height: 48 }}
           />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <AccessibilityToggle />
             <Popover content={themePickerContent} trigger="click" placement="bottomRight">
               <div style={{
                 width: 22,

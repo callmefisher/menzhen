@@ -20,9 +20,10 @@ import {
   EditOutlined,
   DeleteOutlined,
 } from '@ant-design/icons';
-import type { ColumnsType } from 'antd/es/table';
 import { listTenants, createTenant, updateTenant, deleteTenant } from '../../api/tenant';
 import useIsMobile from '../../hooks/useIsMobile';
+import { useAccessibleColumns, type AccessibleColumnsType } from '../../hooks/useAccessibleColumns';
+import HiddenColumnsHint from '../../components/HiddenColumnsHint';
 
 interface TenantItem {
   id: number;
@@ -134,12 +135,13 @@ export default function TenantList() {
     }
   };
 
-  const columns: ColumnsType<TenantItem> = [
+  const allColumns: AccessibleColumnsType<TenantItem> = [
     {
       title: 'ID',
       dataIndex: 'id',
       key: 'id',
       width: 60,
+      a11yPriority: 2,
     },
     {
       title: '诊所名称',
@@ -152,6 +154,7 @@ export default function TenantList() {
       dataIndex: 'code',
       key: 'code',
       width: 120,
+      a11yPriority: 2,
     },
     {
       title: '状态',
@@ -200,6 +203,8 @@ export default function TenantList() {
       ),
     },
   ];
+
+  const { columns, hiddenColumnTitles, hasHiddenColumns, restoreAll } = useAccessibleColumns(allColumns);
 
   return (
     <Card>
@@ -266,6 +271,7 @@ export default function TenantList() {
           </>
         )
       ) : (
+        <>
         <Table<TenantItem>
           rowKey="id"
           columns={columns}
@@ -285,6 +291,8 @@ export default function TenantList() {
             emptyText: '暂无诊所记录',
           }}
         />
+        {hasHiddenColumns && <HiddenColumnsHint titles={hiddenColumnTitles} onRestoreAll={restoreAll} />}
+        </>
       )}
 
       <Modal

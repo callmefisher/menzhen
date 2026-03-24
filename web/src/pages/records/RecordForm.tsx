@@ -1701,6 +1701,7 @@ export default function RecordForm() {
                               chiefComplaint={form.getFieldValue('chief_complaint')}
                               treatment={form.getFieldValue('treatment')}
                               shelfMap={shelfMaps[item.id]}
+                              clinicName={user?.tenant_name}
                               iconOnly
                             />
                           </>
@@ -1835,6 +1836,7 @@ export default function RecordForm() {
           chiefComplaint={form.getFieldValue('chief_complaint')}
           treatment={form.getFieldValue('treatment')}
           doctorName={user?.real_name || user?.username}
+          clinicName={user?.tenant_name}
           onClose={() => {
             setPrintCenterOpen(false);
             setPrintCenterPrescription(null);

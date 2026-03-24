@@ -1,0 +1,244 @@
+/* ============================
+   无障碍 / 大字版本全局样式
+   ============================ */
+
+/* --- L1: 大字模式 (.a11y-large / .a11y-xlarge) --- */
+
+/* 表格行高增大 */
+.a11y-large .ant-table-cell {
+  padding: 14px 16px !important;
+  line-height: 1.8 !important;
+}
+.a11y-xlarge .ant-table-cell {
+  padding: 18px 20px !important;
+  line-height: 1.8 !important;
+}
+
+/* 标签/Badge 字号提升 */
+.a11y-large .ant-tag,
+.a11y-large .ant-badge-count {
+  font-size: 15px !important;
+}
+.a11y-xlarge .ant-tag,
+.a11y-xlarge .ant-badge-count {
+  font-size: 18px !important;
+}
+
+/* 弹窗最小宽度增大（仅桌面端） */
+@media (min-width: 768px) {
+  .a11y-large .ant-modal {
+    min-width: 560px;
+  }
+  .a11y-xlarge .ant-modal {
+    min-width: 640px;
+  }
+
+  /* RecordForm: 大字模式下 form-row 竖排 */
+  .a11y-large .form-row,
+  .a11y-xlarge .form-row {
+    flex-direction: column !important;
+  }
+
+  /* WuyunLiuqi: markdown 表格横向滚动 */
+  .a11y-large .wuyun-content table,
+  .a11y-xlarge .wuyun-content table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+}
+
+/* 侧边栏菜单文字加大 */
+.a11y-large .ant-menu-item,
+.a11y-large .ant-menu-submenu-title {
+  font-size: 16px !important;
+  line-height: 48px !important;
+  height: 48px !important;
+}
+.a11y-xlarge .ant-menu-item,
+.a11y-xlarge .ant-menu-submenu-title {
+  font-size: 18px !important;
+  line-height: 52px !important;
+  height: 52px !important;
+}
+
+/* 按钮文字加大 */
+.a11y-large .ant-btn {
+  font-size: 16px !important;
+  height: auto !important;
+  min-height: 40px !important;
+  padding: 6px 20px !important;
+}
+.a11y-xlarge .ant-btn {
+  font-size: 18px !important;
+  height: auto !important;
+  min-height: 44px !important;
+  padding: 8px 24px !important;
+}
+
+/* 输入框字号 */
+.a11y-large .ant-input,
+.a11y-large .ant-select-selection-item,
+.a11y-large .ant-select-selection-placeholder,
+.a11y-large .ant-picker-input > input {
+  font-size: 16px !important;
+}
+.a11y-xlarge .ant-input,
+.a11y-xlarge .ant-select-selection-item,
+.a11y-xlarge .ant-select-selection-placeholder,
+.a11y-xlarge .ant-picker-input > input {
+  font-size: 20px !important;
+}
+
+/* 移动端：大字模式只放大字号，幅度减半 */
+@media (max-width: 767px) {
+  .a11y-large {
+    font-size: 15px !important;
+  }
+  .a11y-xlarge {
+    font-size: 17px !important;
+  }
+  /* 移动端不改变间距/布局 */
+  .a11y-large .ant-table-cell,
+  .a11y-xlarge .ant-table-cell {
+    padding: revert !important;
+  }
+  .a11y-large .ant-btn,
+  .a11y-xlarge .ant-btn {
+    height: revert !important;
+    min-height: revert !important;
+    padding: revert !important;
+  }
+}
+
+/* --- 加大间距 (.spacing-loose) --- */
+
+.spacing-loose .ant-card {
+  padding: 24px !important;
+}
+.spacing-loose .ant-form-item {
+  margin-bottom: 28px !important;
+}
+.spacing-loose .ant-space {
+  gap: 16px !important;
+}
+
+/* 移动端间距减半 */
+@media (max-width: 767px) {
+  .spacing-loose .ant-card {
+    padding: 16px !important;
+  }
+  .spacing-loose .ant-form-item {
+    margin-bottom: 20px !important;
+  }
+}
+
+/* --- 高对比度 (.high-contrast) --- */
+
+.high-contrast {
+  --a11y-text: #000000;
+  --a11y-bg: #FFFFFF;
+  --a11y-border: #333333;
+  --a11y-secondary: #555555;
+}
+
+.high-contrast .ant-table-thead > tr > th {
+  background: #e0e0e0 !important;
+  color: #000 !important;
+  border-bottom: 2px solid #333 !important;
+}
+
+.high-contrast .ant-table-tbody > tr:nth-child(even) > td {
+  background: #f0f0f0 !important;
+}
+
+.high-contrast .ant-table-tbody > tr > td {
+  border-bottom: 1px solid #999 !important;
+}
+
+.high-contrast .ant-btn-default {
+  border-color: #333 !important;
+  color: #000 !important;
+}
+
+.high-contrast .ant-input,
+.high-contrast .ant-select-selector {
+  border-color: #333 !important;
+}
+
+.high-contrast .ant-menu-dark {
+  color: #fff !important;
+}
+
+/* 禁用状态 */
+.high-contrast .ant-btn[disabled],
+.high-contrast .ant-input[disabled] {
+  color: #888 !important;
+  text-decoration: line-through;
+}
+
+/* --- 焦点增强 (.focus-enhanced) --- */
+
+.focus-enhanced *:focus-visible {
+  outline: 3px solid #1677FF !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 0 6px rgba(22, 119, 255, 0.15) !important;
+}
+
+.focus-enhanced .ant-btn:focus-visible {
+  outline-color: #52C41A !important;
+  box-shadow: 0 0 0 6px rgba(82, 196, 26, 0.15) !important;
+}
+
+.focus-enhanced .ant-menu-item:focus-visible {
+  outline-color: #52C41A !important;
+}
+
+/* --- 系统偏好集成 --- */
+
+@media (prefers-contrast: more) {
+  body:not(.high-contrast-off) {
+    --a11y-text: #000000;
+    --a11y-bg: #FFFFFF;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .a11y-large *,
+  .a11y-xlarge * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* --- Meridians 3D 穴位标注放大 --- */
+
+.a11y-large .acupoint-info-card {
+  font-size: 15px !important;
+  padding: 5px 10px !important;
+}
+.a11y-large .acupoint-info-card span {
+  font-size: 13px !important;
+}
+
+.a11y-xlarge .acupoint-info-card {
+  font-size: 18px !important;
+  padding: 6px 12px !important;
+}
+.a11y-xlarge .acupoint-info-card span {
+  font-size: 15px !important;
+}
+
+/* --- sr-only 辅助类 --- */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

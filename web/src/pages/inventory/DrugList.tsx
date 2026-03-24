@@ -18,9 +18,9 @@ import {
   Col,
   Tooltip,
   Pagination,
+  Dropdown,
 } from 'antd';
-import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, ImportOutlined } from '@ant-design/icons';
-import type { ColumnsType } from 'antd/es/table';
+import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, ImportOutlined, ExportOutlined, DownOutlined } from '@ant-design/icons';
 import {
   listInventoryDrugs,
   createInventoryDrug,
@@ -28,11 +28,15 @@ import {
   deleteInventoryDrug,
   stockInDrug,
   batchStockIn,
+  stockOutDrug,
+  batchStockOut,
   findDrugPage,
 } from '../../api/inventory';
-import type { InventoryDrug, CreateInventoryDrugReq, BatchStockInItem } from '../../api/inventory';
+import type { InventoryDrug, CreateInventoryDrugReq, BatchStockInItem, BatchStockOutItem } from '../../api/inventory';
 import useIsMobile from '../../hooks/useIsMobile';
 import useRowHighlight from '../../hooks/useRowHighlight';
+import { useAccessibleColumns, type AccessibleColumnsType } from '../../hooks/useAccessibleColumns';
+import HiddenColumnsHint from '../../components/HiddenColumnsHint';
 
 const getDefaultThreshold = (category: string): number => {
   const config = JSON.parse(localStorage.getItem('inventory-alert-config') || '{}');
@@ -87,6 +91,27 @@ function parseBatchText(text: string): ParsedBatchItem[] {
   return items;
 }
 
+interface ParsedBatchOutItem {
+  name: string;
+  quantity: number;
+}
+
+function parseBatchOutText(text: string): ParsedBatchOutItem[] {
+  const lines = text.trim().split('\n').filter(Boolean);
+  const items: ParsedBatchOutItem[] = [];
+  for (const line of lines) {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      const name = parts[0];
+      const quantity = parseFloat(parts[1]);
+      if (name && !isNaN(quantity) && quantity > 0) {
+        items.push({ name, quantity });
+      }
+    }
+  }
+  return items;
+}
+
 export default function DrugList() {
   const isMobile = useIsMobile();
   const [drugs, setDrugs] = useState<InventoryDrug[]>([]);
@@ -107,6 +132,15 @@ export default function DrugList() {
   const [stockInForm] = Form.useForm();
   const [batchText, setBatchText] = useState('');
   const [stockInLoading, setStockInLoading] = useState(false);
+
+  // Stock-out modal state
+  const [stockOutModalOpen, setStockOutModalOpen] = useState(false);
+  const [stockOutMode, setStockOutMode] = useState<'single' | 'batch'>('single');
+  const [stockOutDrugTarget, setStockOutDrugTarget] = useState<InventoryDrug | null>(null);
+  const [stockOutForm] = Form.useForm();
+  const [stockOutQty, setStockOutQty] = useState<number>(0);
+  const [batchOutText, setBatchOutText] = useState('');
+  const [stockOutLoading, setStockOutLoading] = useState(false);
 
   // Search local state
   const [searchName, setSearchName] = useState('');
@@ -372,13 +406,114 @@ export default function DrugList() {
     }
   };
 
+  // --- Stock-out modal ---
+  const handleOpenStockOut = (drug?: InventoryDrug) => {
+    // Refresh allDrugs for latest stock data before opening modal
+    fetchAllDrugs();
+    if (drug) {
+      setStockOutDrugTarget(drug);
+      setStockOutMode('single');
+      setStockOutQty(0);
+      stockOutForm.resetFields();
+    } else {
+      setStockOutDrugTarget(null);
+      setStockOutMode('batch');
+      setBatchOutText('');
+    }
+    setStockOutModalOpen(true);
+  };
+
+  const stockOutExceeds = stockOutDrugTarget ? stockOutQty > stockOutDrugTarget.stock : false;
+  const stockOutRemaining = stockOutDrugTarget ? stockOutDrugTarget.stock - stockOutQty : 0;
+
+  const handleStockOutOk = async () => {
+    setStockOutLoading(true);
+    try {
+      if (stockOutMode === 'single' && stockOutDrugTarget) {
+        const values = await stockOutForm.validateFields();
+        if (values.quantity > stockOutDrugTarget.stock) {
+          message.error('出库数量超出库存');
+          setStockOutLoading(false);
+          return;
+        }
+        await stockOutDrug(stockOutDrugTarget.id, { quantity: values.quantity });
+        message.success('出库成功');
+        highlight.setHighlightId(stockOutDrugTarget.id);
+      } else if (stockOutMode === 'batch') {
+        const items = parseBatchOutText(batchOutText);
+        if (items.length === 0) {
+          message.error('请输入有效的批量出库数据');
+          setStockOutLoading(false);
+          return;
+        }
+        const batchItems: BatchStockOutItem[] = items.map((i) => ({
+          name: i.name,
+          quantity: i.quantity,
+        }));
+        const res = await batchStockOut({ items: batchItems });
+        const body = res as any;
+        const data = body.data;
+        const failedCount = data?.failed || 0;
+        if (failedCount > 0) {
+          const errors: { name: string; reason: string; need: number; current: number }[] = data?.errors || [];
+          const errMsgs = errors.map((e) =>
+            e.reason === 'not_found'
+              ? `${e.name}: 未找到`
+              : `${e.name}: 需${e.need}g, 库存${e.current}g`
+          );
+          message.warning(`批量出库：成功 ${data?.succeeded || 0} 种，失败 ${failedCount} 种\n${errMsgs.join('；')}`, 6);
+          // Keep modal open on partial failure so user can fix
+          if (data?.drug_ids?.length) {
+            highlight.setHighlightIds(data.drug_ids);
+          }
+          fetchDrugs();
+          fetchAllDrugs();
+          window.dispatchEvent(new Event('inventory-data-changed'));
+          setStockOutLoading(false);
+          return;
+        } else {
+          message.success(`批量出库完成：${data?.succeeded || 0} 种`);
+        }
+        if (data?.drug_ids?.length) {
+          highlight.setHighlightIds(data.drug_ids);
+        }
+      }
+      setStockOutModalOpen(false);
+      fetchDrugs();
+      fetchAllDrugs();
+      window.dispatchEvent(new Event('inventory-data-changed'));
+    } catch {
+      // handled
+    } finally {
+      setStockOutLoading(false);
+    }
+  };
+
+  // Batch out validation: check each item against allDrugs
+  const parsedBatchOut = useMemo(() => parseBatchOutText(batchOutText), [batchOutText]);
+  const batchOutTotalQty = useMemo(() => parsedBatchOut.reduce((sum, i) => sum + i.quantity, 0), [parsedBatchOut]);
+  const batchOutErrors = useMemo(() => {
+    if (parsedBatchOut.length === 0) return [];
+    const drugMap = new Map(allDrugs.map((d) => [d.name, d]));
+    const errors: { name: string; reason: string; need: number; current: number }[] = [];
+    for (const item of parsedBatchOut) {
+      const drug = drugMap.get(item.name);
+      if (!drug) {
+        errors.push({ name: item.name, reason: 'not_found', need: item.quantity, current: 0 });
+      } else if (item.quantity > drug.stock) {
+        errors.push({ name: item.name, reason: 'insufficient', need: item.quantity, current: drug.stock });
+      }
+    }
+    return errors;
+  }, [parsedBatchOut, allDrugs]);
+
   const parsedBatch = useMemo(() => parseBatchText(batchText), [batchText]);
   const batchTotalQty = useMemo(() => parsedBatch.reduce((sum, i) => sum + i.quantity, 0), [parsedBatch]);
 
   const unitLabel = modalCategory === 'herb' ? '克' : '盒';
   const priceUnit = <span style={{ whiteSpace: 'nowrap' }}>{modalCategory === 'herb' ? '元/500克' : '元/盒'}</span>;
 
-  const columns: ColumnsType<InventoryDrug> = [
+  const allColumns: AccessibleColumnsType<InventoryDrug> = [
     {
       title: '药材名称',
       dataIndex: 'name',
@@ -390,6 +525,7 @@ export default function DrugList() {
       dataIndex: 'shelf_no',
       key: 'shelf_no',
       width: 80,
+      a11yPriority: 1,
       render: (val: string) => val || 'H1',
     },
     {
@@ -409,6 +545,7 @@ export default function DrugList() {
       dataIndex: 'purchase_price',
       key: 'purchase_price',
       width: 150,
+      a11yPriority: 2,
       render: (val: number, record: InventoryDrug) =>
         record.category === 'patent' ? `¥${val}/盒` : `¥${val}`,
     },
@@ -417,6 +554,7 @@ export default function DrugList() {
       dataIndex: 'selling_price',
       key: 'selling_price',
       width: 150,
+      a11yPriority: 1,
       render: (val: number, record: InventoryDrug) =>
         record.category === 'patent' ? `¥${val}/盒` : `¥${val}`,
     },
@@ -437,6 +575,7 @@ export default function DrugList() {
       width: 100,
       ellipsis: true,
       responsive: ['md'] as any,
+      a11yPriority: 2,
       render: (val: string) => {
         if (!val) return '-';
         return (
@@ -449,7 +588,7 @@ export default function DrugList() {
     {
       title: '操作',
       key: 'action',
-      width: isMobile ? 120 : 160,
+      width: isMobile ? 140 : 210,
       render: (_, record) => (
         <Space size="small">
           <Button
@@ -458,6 +597,14 @@ export default function DrugList() {
             onClick={() => handleOpenStockIn(record)}
           >
             入库
+          </Button>
+          <Button
+            type="link"
+            size="small"
+            style={{ color: '#eb6b3d' }}
+            onClick={() => handleOpenStockOut(record)}
+          >
+            出库
           </Button>
           <Button
             type="link"
@@ -481,6 +628,8 @@ export default function DrugList() {
       ),
     },
   ];
+
+  const { columns, hiddenColumnTitles, hasHiddenColumns, restoreAll } = useAccessibleColumns(allColumns);
 
   // --- Mobile card view ---
   const renderMobileDrugCard = (drug: InventoryDrug) => {
@@ -533,6 +682,9 @@ export default function DrugList() {
         <div style={{ display: 'flex', gap: 8 }}>
           <Button size="small" type="primary" ghost onClick={() => handleOpenStockIn(drug)}>
             入库
+          </Button>
+          <Button size="small" ghost style={{ color: '#eb6b3d', borderColor: '#eb6b3d' }} onClick={() => handleOpenStockOut(drug)}>
+            出库
           </Button>
           <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(drug)}>
             编辑
@@ -588,9 +740,16 @@ export default function DrugList() {
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
           入库
         </Button>
-        <Button icon={<ImportOutlined />} onClick={() => handleOpenStockIn()}>
-          批量
-        </Button>
+        <Dropdown
+          menu={{
+            items: [
+              { key: 'batch-in', label: '批量入库', icon: <ImportOutlined />, onClick: () => handleOpenStockIn() },
+              { key: 'batch-out', label: '批量出库', icon: <ExportOutlined />, onClick: () => handleOpenStockOut() },
+            ],
+          }}
+        >
+          <Button icon={<DownOutlined />}>批量</Button>
+        </Dropdown>
       </div>
     </div>
   );
@@ -638,6 +797,9 @@ export default function DrugList() {
         </Button>
         <Button icon={<ImportOutlined />} onClick={() => handleOpenStockIn()}>
           批量入库
+        </Button>
+        <Button icon={<ExportOutlined />} style={{ color: '#eb6b3d', borderColor: '#eb6b3d' }} onClick={() => handleOpenStockOut()}>
+          批量出库
         </Button>
       </Space>
     </div>
@@ -689,6 +851,53 @@ export default function DrugList() {
       ))}
     </div>
   );
+
+  // --- Stock-out drug info panel ---
+  const renderStockOutDrugInfo = () => {
+    if (!stockOutDrugTarget) return null;
+    const drug = stockOutDrugTarget;
+    const status = getStockStatus(drug);
+    const cfg = statusConfig[status];
+    const unit = drug.category === 'herb' ? 'g' : '盒';
+    const pUnit = drug.category === 'herb' ? '/500g' : '/盒';
+    return (
+      <div style={{
+        background: '#fafafa',
+        borderRadius: 8,
+        padding: 16,
+        marginBottom: 20,
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: '12px 24px',
+      }}>
+        <div style={{ gridColumn: '1 / -1', fontSize: 16, fontWeight: 600, paddingBottom: 8, borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 8 }}>
+          {drug.name}
+          <Tag color={drug.category === 'herb' ? 'green' : 'blue'} style={{ margin: 0 }}>
+            {drug.category === 'herb' ? '草' : '成'}
+          </Tag>
+          <Tag style={{ margin: 0, background: '#e6f4ff', color: '#1677ff', borderColor: '#91caff' }}>
+            {drug.shelf_no || 'H1'}
+          </Tag>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 13, color: '#8c8c8c', minWidth: 56 }}>当前库存</span>
+          <span style={{ fontSize: 18, fontWeight: 600, color: cfg.color }}>{drug.stock}{unit}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 13, color: '#8c8c8c', minWidth: 56 }}>状态</span>
+          <Tag color={cfg.color} style={{ color: cfg.color, background: `${cfg.color}10`, borderColor: cfg.color }}>{cfg.label}</Tag>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 13, color: '#8c8c8c', minWidth: 56 }}>进货价</span>
+          <span style={{ fontSize: 14, fontWeight: 500 }}>¥{drug.purchase_price}{pUnit}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 13, color: '#8c8c8c', minWidth: 56 }}>出售价</span>
+          <span style={{ fontSize: 14, fontWeight: 500 }}>¥{drug.selling_price}{pUnit}</span>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <>
@@ -757,6 +966,7 @@ export default function DrugList() {
             )}
           </>
         ) : (
+          <>
           <Table<InventoryDrug>
             rowKey="id"
             columns={columns}
@@ -781,6 +991,8 @@ export default function DrugList() {
             }
             locale={{ emptyText: '暂无药物记录' }}
           />
+          {hasHiddenColumns && <HiddenColumnsHint titles={hiddenColumnTitles} onRestoreAll={restoreAll} />}
+          </>
         )}
       </Card>
 
@@ -1006,6 +1218,124 @@ export default function DrugList() {
             },
           ]}
         />
+      </Modal>
+
+      {/* Stock-out modal */}
+      <Modal
+        title="药材出库"
+        open={stockOutModalOpen}
+        onOk={handleStockOutOk}
+        onCancel={() => setStockOutModalOpen(false)}
+        confirmLoading={stockOutLoading}
+        okText="确认出库"
+        okButtonProps={{
+          danger: true,
+          disabled: stockOutMode === 'single'
+            ? (!stockOutQty || stockOutExceeds)
+            : parsedBatchOut.length === 0,
+        }}
+        cancelText="取消"
+        destroyOnClose
+        width={isMobile ? '100%' : 520}
+        style={isMobile ? { top: 16, maxWidth: '100%', margin: '0 8px' } : undefined}
+      >
+        {stockOutMode === 'single' ? (
+          <>
+            {renderStockOutDrugInfo()}
+            <Form form={stockOutForm} layout="vertical">
+              <Form.Item
+                label="出库数量"
+                name="quantity"
+                rules={[{ required: true, message: '请输入出库数量' }]}
+              >
+                <InputNumber
+                  min={0.01}
+                  precision={2}
+                  addonAfter={stockOutDrugTarget?.category === 'patent' ? '盒' : 'g'}
+                  style={{ width: '100%' }}
+                  placeholder="请输入出库数量"
+                  status={stockOutExceeds ? 'error' : undefined}
+                  onChange={(val) => setStockOutQty(val || 0)}
+                />
+              </Form.Item>
+            </Form>
+            {stockOutDrugTarget && stockOutQty > 0 && !stockOutExceeds && (
+              <div style={{
+                background: '#f6ffed',
+                border: '1px solid #b7eb8f',
+                borderRadius: 6,
+                padding: '8px 12px',
+                color: '#389e0d',
+                fontSize: 13,
+              }}>
+                出库后剩余: <strong>{stockOutRemaining}{stockOutDrugTarget.category === 'patent' ? '盒' : 'g'}</strong>
+                {(() => {
+                  const remaining = { ...stockOutDrugTarget, stock: stockOutRemaining };
+                  const s = getStockStatus(remaining);
+                  return <span>（{statusConfig[s].label}）</span>;
+                })()}
+              </div>
+            )}
+            {stockOutExceeds && (
+              <div style={{
+                background: '#fff2f0',
+                border: '1px solid #ffccc7',
+                borderRadius: 6,
+                padding: '8px 12px',
+                color: '#ff4d4f',
+                fontSize: 13,
+                fontWeight: 500,
+              }}>
+                出库数量 ({stockOutQty}{stockOutDrugTarget?.category === 'patent' ? '盒' : 'g'}) 超出当前库存 ({stockOutDrugTarget?.stock}{stockOutDrugTarget?.category === 'patent' ? '盒' : 'g'})！
+              </div>
+            )}
+          </>
+        ) : (
+          <div>
+            <div style={{ color: '#666', marginBottom: 8, fontSize: 13 }}>
+              每行一味药，格式：药名 数量(g)
+            </div>
+            <Input.TextArea
+              rows={8}
+              value={batchOutText}
+              onChange={(e) => setBatchOutText(e.target.value)}
+              placeholder={'当归 100\n黄芪 200\n白术 50'}
+              style={{ fontFamily: 'monospace' }}
+            />
+            {parsedBatchOut.length > 0 && batchOutErrors.length === 0 && (
+              <div style={{
+                background: '#f6ffed',
+                border: '1px solid #b7eb8f',
+                borderRadius: 6,
+                padding: '8px 12px',
+                color: '#389e0d',
+                fontSize: 13,
+                marginTop: 8,
+              }}>
+                已识别 {parsedBatchOut.length} 味药材，合计出库 {batchOutTotalQty}g — 全部库存充足
+              </div>
+            )}
+            {parsedBatchOut.length > 0 && batchOutErrors.length > 0 && (
+              <div style={{
+                background: '#fff7e6',
+                border: '1px solid #ffd591',
+                borderRadius: 6,
+                padding: '8px 12px',
+                fontSize: 13,
+                marginTop: 8,
+              }}>
+                <div style={{ color: '#d46b08' }}>已识别 {parsedBatchOut.length} 味药材，其中 <strong>{batchOutErrors.length} 项有问题</strong>（提交后将跳过失败项）：</div>
+                <ul style={{ margin: '6px 0 0', paddingLeft: 16 }}>
+                  {batchOutErrors.map((e) => (
+                    <li key={e.name} style={{ padding: '2px 0', color: '#ff4d4f' }}>
+                      <strong>{e.name}</strong>：{e.reason === 'not_found' ? '未找到此药材' : `需要 ${e.need}g，库存仅 ${e.current}g（差 ${(e.need - e.current).toFixed(1)}g）`}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
       </Modal>
     </>
   );

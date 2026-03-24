@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { message } from 'antd';
 import { useAuth } from '../store/auth';
 import LoginBackground from './LoginBackground';
+import AccessibilityFab from '../components/AccessibilityFab';
 
 export default function LoginNew() {
   const [username, setUsername] = useState('');
@@ -28,6 +29,7 @@ export default function LoginNew() {
   };
 
   return (
+  <>
     <LoginBackground>
       <div className="lp-fheader">
         <h2>欢迎回来</h2>
@@ -123,5 +125,7 @@ export default function LoginNew() {
         还没有账号？ <Link to="/register">立即注册</Link>
       </div>
     </LoginBackground>
+    <AccessibilityFab />
+  </>
   );
 }

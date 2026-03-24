@@ -27,6 +27,7 @@ import {
 import BillingPrint from './BillingPrint';
 import type { BillingPrintHandle } from './BillingPrint';
 import useIsMobile from '../hooks/useIsMobile';
+import { useAuth } from '../store/auth';
 
 interface BillingDrawerProps {
   open: boolean;
@@ -55,6 +56,7 @@ export default function BillingDrawer({
   onSuccess,
 }: BillingDrawerProps) {
   const isMobile = useIsMobile();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [detail, setDetail] = useState<BillingDetail | null>(null);
@@ -507,6 +509,7 @@ export default function BillingDrawer({
           patientName={patientName}
           patientAge={patientAge}
           doctorName={doctorName}
+          clinicName={user?.tenant_name}
         />
       )}
     </Drawer>

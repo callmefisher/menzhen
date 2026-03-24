@@ -23,12 +23,13 @@ import {
   WomanOutlined,
   TeamOutlined,
 } from '@ant-design/icons';
-import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 import { listPatients, deletePatient, findPatientPage } from '../../api/patient';
 import { PatientFormModal } from './PatientForm';
 import useIsMobile from '../../hooks/useIsMobile';
 import useRowHighlight from '../../hooks/useRowHighlight';
+import { useAccessibleColumns, type AccessibleColumnsType } from '../../hooks/useAccessibleColumns';
+import HiddenColumnsHint from '../../components/HiddenColumnsHint';
 
 interface PatientItem {
   id: number;
@@ -148,7 +149,7 @@ export default function PatientList() {
     highlight.setHighlightId(id);
   };
 
-  const columns: ColumnsType<PatientItem> = [
+  const allColumns: AccessibleColumnsType<PatientItem> = [
     {
       title: '姓名',
       dataIndex: 'name',
@@ -177,6 +178,7 @@ export default function PatientList() {
       key: 'birthday',
       width: 120,
       responsive: ['md'],
+      a11yPriority: 2,
       render: (val: string) => val ? dayjs(val).format('YYYY-MM-DD') : '-',
     },
     {
@@ -194,6 +196,7 @@ export default function PatientList() {
       width: 150,
       ellipsis: true,
       responsive: ['md'],
+      a11yPriority: 2,
       render: (val: string) => val || '-',
     },
     {
@@ -203,6 +206,7 @@ export default function PatientList() {
       width: 150,
       ellipsis: true,
       responsive: ['md'],
+      a11yPriority: 1,
       render: (val: string) => val || '-',
     },
     {
@@ -241,6 +245,8 @@ export default function PatientList() {
       ),
     },
   ];
+
+  const { columns, hiddenColumnTitles, hasHiddenColumns, restoreAll } = useAccessibleColumns(allColumns);
 
   // --- Mobile patient card ---
   const renderMobilePatientCard = (patient: PatientItem) => {
@@ -398,6 +404,7 @@ export default function PatientList() {
           )}
         </>
       ) : (
+        <>
         <Table<PatientItem>
           rowKey="id"
           columns={columns}
@@ -420,6 +427,8 @@ export default function PatientList() {
             emptyText: renderEmpty(),
           }}
         />
+        {hasHiddenColumns && <HiddenColumnsHint titles={hiddenColumnTitles} onRestoreAll={restoreAll} />}
+        </>
       )}
 
       <PatientFormModal

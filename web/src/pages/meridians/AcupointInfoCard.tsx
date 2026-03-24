@@ -15,6 +15,7 @@ export default function AcupointInfoCard({ data, color }: AcupointInfoCardProps)
       zIndexRange={[10, 0]}
     >
       <div
+        className="acupoint-info-card"
         style={{
           background: 'rgba(255, 255, 255, 0.92)',
           borderRadius: 6,

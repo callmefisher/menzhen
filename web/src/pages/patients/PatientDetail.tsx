@@ -396,7 +396,7 @@ export default function PatientDetail() {
             {patient.weight ? `${patient.weight}` : '-'}
           </Descriptions.Item>
           <Descriptions.Item label="联系电话">
-            {patient.phone || '-'}
+            {patient.phone ? <a href={`tel:${patient.phone}`}>{patient.phone}</a> : '-'}
           </Descriptions.Item>
           <Descriptions.Item label="身份证号">
             {patient.id_card || '-'}

@@ -289,3 +289,97 @@ func (h *InventoryDrugHandler) StockIn(c *gin.Context) {
 		"data":    drug.NewDrug,
 	})
 }
+
+// StockOut handles POST /api/v1/inventory/drugs/:id/stock-out.
+func (h *InventoryDrugHandler) StockOut(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "invalid inventory drug id",
+		})
+		return
+	}
+
+	var req service.StockOutRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "invalid request: " + err.Error(),
+		})
+		return
+	}
+
+	svc := service.NewInventoryDrugService(h.db)
+	result, err := svc.StockOut(tenantID, id, &req)
+	if err != nil {
+		if errors.Is(err, service.ErrInventoryDrugNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"code":    404,
+				"message": "inventory drug not found",
+			})
+			return
+		}
+		if errors.Is(err, service.ErrStockInsufficient) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "stock insufficient for stock-out",
+			})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "stock-out failed",
+		})
+		return
+	}
+
+	middleware.LogOperation(h.db, c, "stock_out", "inventory_drug", id, result.OldDrug, result.NewDrug)
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    result.NewDrug,
+	})
+}
+
+// BatchStockOut handles POST /api/v1/inventory/drugs/batch-stock-out.
+func (h *InventoryDrugHandler) BatchStockOut(c *gin.Context) {
+	var req service.BatchStockOutRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "invalid request: " + err.Error(),
+		})
+		return
+	}
+
+	tenantID := middleware.GetTenantID(c)
+	svc := service.NewInventoryDrugService(h.db)
+	result, err := svc.BatchStockOut(tenantID, &req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "batch stock-out failed",
+		})
+		return
+	}
+
+	logData := map[string]interface{}{
+		"items":     req.Items,
+		"succeeded": result.Succeeded,
+		"failed":    result.Failed,
+		"total":     result.Total,
+		"reason":    req.Reason,
+		"errors":    result.Errors,
+		"drug_ids":  result.DrugIDs,
+	}
+	middleware.LogOperation(h.db, c, "batch_stock_out", "inventory_drug", 0, nil, logData)
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    result,
+	})
+}

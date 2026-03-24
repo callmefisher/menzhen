@@ -259,6 +259,7 @@ export default function RoleList() {
       title: '描述',
       dataIndex: 'description',
       key: 'description',
+      width: 250,
       ellipsis: true,
       render: (val: string) => val || '-',
     },

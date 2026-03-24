@@ -11,6 +11,8 @@ interface BillingPrintProps {
   patientName?: string;
   patientAge?: number;
   doctorName?: string;
+  /** Clinic name displayed as header on the printed page. */
+  clinicName?: string;
 }
 
 function getCurrentBeijingTime(): string {
@@ -32,7 +34,7 @@ function getCurrentBeijingTime(): string {
 const HERBS_PER_COLUMN = 10;
 
 const BillingPrint = forwardRef<BillingPrintHandle, BillingPrintProps>(
-  ({ detail, patientName, patientAge, doctorName }, ref) => {
+  ({ detail, patientName, patientAge, doctorName, clinicName }, ref) => {
     const printRef = useRef<HTMLDivElement>(null);
 
     useImperativeHandle(ref, () => ({
@@ -53,8 +55,9 @@ const BillingPrint = forwardRef<BillingPrintHandle, BillingPrintProps>(
                 @page { margin: 20mm; }
                 body { font-family: "SimSun", "宋体", serif; color: #333; }
                 .billing-print { max-width: 800px; margin: 0 auto; }
-                .billing-print h2 { text-align: center; margin-bottom: 4px; color: #000; }
-                .billing-print .subtitle { text-align: center; font-size: 12px; color: #999; margin-bottom: 16px; }
+                .billing-print .clinic-header { text-align: center; font-size: 16px; font-weight: bold; color: #000; letter-spacing: 4px; margin-bottom: 6px; }
+                .billing-print .clinic-sep { width: 60px; border: none; border-top: 1px solid #ccc; margin: 6px auto 10px; }
+                .billing-print h2 { text-align: center; margin-bottom: 12px; color: #000; }
                 .billing-print .info-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; padding-bottom: 10px; border-bottom: 1px solid #ddd; }
                 .billing-print .herb-columns { display: flex; gap: 24px; flex-wrap: wrap; }
                 .billing-print .herb-column { flex: 1; min-width: 280px; }
@@ -106,8 +109,13 @@ const BillingPrint = forwardRef<BillingPrintHandle, BillingPrintProps>(
       <div style={{ display: 'none' }}>
         <div ref={printRef}>
           <div className="billing-print">
+            {clinicName && (
+              <>
+                <div className="clinic-header">{clinicName}</div>
+                <hr className="clinic-sep" />
+              </>
+            )}
             <h2>收 费 单</h2>
-            <div className="subtitle">Billing Statement</div>
 
             <div className="info-row">
               <span>姓名：{patientName || '—'}</span>

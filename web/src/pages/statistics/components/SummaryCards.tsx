@@ -2,6 +2,7 @@ import { Row, Col } from 'antd';
 import { ArrowUpOutlined, ArrowDownOutlined } from '@ant-design/icons';
 import type { DashboardSummary } from '../../../api/statistics';
 import useIsMobile from '../../../hooks/useIsMobile';
+import { useAccessibility } from '../../../store/accessibility';
 
 interface SummaryCardsProps {
   summary: DashboardSummary;
@@ -27,6 +28,8 @@ function ChangeTag({ value }: { value: number | null }) {
 
 export default function SummaryCards({ summary }: SummaryCardsProps) {
   const isMobile = useIsMobile();
+  const { mode } = useAccessibility();
+  const isLargeMode = mode !== 'normal' && !isMobile;
 
   const cards: CardConfig[] = [
     {
@@ -106,9 +109,9 @@ export default function SummaryCards({ summary }: SummaryCardsProps) {
   }
 
   return (
-    <Row gutter={16}>
+    <Row gutter={[16, isLargeMode ? 16 : 0]}>
       {cards.map((card) => (
-        <Col span={6} key={card.title}>
+        <Col span={isLargeMode ? 12 : 6} key={card.title}>
           <div
             style={{
               background: card.gradient,
