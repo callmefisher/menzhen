@@ -1,6 +1,7 @@
 package service_test
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -244,6 +245,87 @@ func TestQueueTenantIsolation(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, entriesB, 1, "tenant B should see only its own entry")
 	assert.Equal(t, tenantB, entriesB[0].TenantID)
+}
+
+// TestQueueConcurrentTakeNumber verifies that concurrent TakeNumber calls yield unique seq numbers.
+func TestQueueConcurrentTakeNumber(t *testing.T) {
+	svc, tenantID := makeQueueSvcSingle(t)
+
+	const n = 10
+	results := make(chan int, n)
+	var wg sync.WaitGroup
+	wg.Add(n)
+
+	for i := 0; i < n; i++ {
+		go func(i int) {
+			defer wg.Done()
+			e, err := svc.TakeNumber(tenantID, "并发患者", 1, "医生", "诊室")
+			require.NoError(t, err)
+			results <- e.SeqNumber
+		}(i)
+	}
+	wg.Wait()
+	close(results)
+
+	seen := make(map[int]bool)
+	for seq := range results {
+		assert.False(t, seen[seq], "duplicate seq number %d", seq)
+		seen[seq] = true
+	}
+	assert.Len(t, seen, n, "should have %d distinct seq numbers", n)
+}
+
+// TestQueueCall_NotFound verifies that calling a non-existent entry returns ErrQueueEntryNotFound.
+func TestQueueCall_NotFound(t *testing.T) {
+	svc, tenantID := makeQueueSvcSingle(t)
+
+	_, err := svc.Call(tenantID, 99999)
+	assert.ErrorIs(t, err, service.ErrQueueEntryNotFound)
+}
+
+// TestQueueComplete_WaitingStatus verifies that completing a waiting (not seeing) entry
+// returns ErrInvalidStatus.
+func TestQueueComplete_WaitingStatus(t *testing.T) {
+	svc, tenantID := makeQueueSvcSingle(t)
+
+	e, err := svc.TakeNumber(tenantID, "患者", 1, "医生", "诊室")
+	require.NoError(t, err)
+	require.Equal(t, "waiting", e.Status)
+
+	// Attempt to complete without calling first.
+	_, _, err = svc.Complete(tenantID, e.ID)
+	assert.ErrorIs(t, err, service.ErrInvalidStatus)
+}
+
+// TestQueueTakeNumber_EmptyName verifies that TakeNumber accepts an empty patient name
+// at the service level (validation is the handler's responsibility).
+func TestQueueTakeNumber_EmptyName(t *testing.T) {
+	svc, tenantID := makeQueueSvcSingle(t)
+
+	e, err := svc.TakeNumber(tenantID, "", 1, "医生", "诊室")
+	require.NoError(t, err)
+	assert.Equal(t, "", e.PatientName)
+	assert.Equal(t, 1, e.SeqNumber)
+}
+
+// TestQueueStats_Empty verifies that Stats returns an empty map when no entries exist today.
+func TestQueueStats_Empty(t *testing.T) {
+	svc, tenantID := makeQueueSvcSingle(t)
+
+	stats, err := svc.Stats(tenantID)
+	require.NoError(t, err)
+	assert.NotNil(t, stats, "stats map should not be nil")
+	assert.Len(t, stats, 0, "stats map should be empty when no entries exist")
+}
+
+// TestQueueClear_Empty verifies that Clear on an empty queue returns 0 affected rows
+// without error.
+func TestQueueClear_Empty(t *testing.T) {
+	svc, tenantID := makeQueueSvcSingle(t)
+
+	affected, err := svc.Clear(tenantID)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), affected, "clearing empty queue should affect 0 rows")
 }
 
 // TestQueueCrossDayCleanup verifies that entries with queue_date < today are deleted.
