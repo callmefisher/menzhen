@@ -1,0 +1,168 @@
+<h2>排队叫号看板 — 叫号弹窗集成</h2>
+<p class="subtitle">在排队叫号页面，点击医生卡片上的「叫号」按钮，弹出全屏叫号通知</p>
+
+<div class="cards">
+  <div class="card" data-choice="integrated" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div id="app" style="font-size:12px;padding:0;background:#f5f5f5;border-radius:8px;overflow:hidden;position:relative">
+        <div style="display:flex;height:640px">
+          <!-- Sidebar -->
+          <div style="width:150px;background:#1A2E1A;flex-shrink:0;padding:12px 0;font-size:11px">
+            <div style="padding:8px 14px;color:#95DE64;font-weight:700;font-size:12px;margin-bottom:8px">🏥 门诊管理系统</div>
+            <div style="padding:6px 14px;color:#ffffffa6">👤 患者管理</div>
+            <div style="padding:6px 14px;color:#fff;background:#52c41a20;border-right:3px solid #52c41a;font-weight:600">📢 排队叫号 <span style="background:#ff4d4f;color:#fff;font-size:9px;padding:0 5px;border-radius:8px;margin-left:2px">8</span></div>
+            <div style="padding:6px 14px;color:#ffffffa6">📋 病历列表</div>
+            <div style="padding:6px 14px;color:#ffffffa6">🌿 中医药 ▾</div>
+          </div>
+          <!-- Content -->
+          <div style="flex:1;padding:14px;background:#FFFEF9;display:flex;flex-direction:column;overflow:hidden">
+            <!-- Header -->
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;flex-shrink:0">
+              <span style="font-size:15px;font-weight:700">排队叫号</span>
+              <div style="background:linear-gradient(135deg,#e6f7ff,#f0f5ff);padding:4px 14px;border-radius:6px;border:1px solid #d6e4ff;font-size:11px"><b style="color:#1677ff">8</b> <span style="color:#4096ff">候诊</span></div>
+              <div style="background:linear-gradient(135deg,#f6ffed,#fcffe6);padding:4px 14px;border-radius:6px;border:1px solid #d9f7be;font-size:11px"><b style="color:#52c41a">2</b> <span style="color:#73d13d">就诊</span></div>
+              <div style="margin-left:auto;background:#fff;border:1.5px solid #ff4d4f;color:#ff4d4f;padding:3px 12px;border-radius:6px;font-size:10px;font-weight:600;cursor:pointer">🗑 一键清空</div>
+            </div>
+
+            <!-- Doctor Cards -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;flex:1;min-height:0">
+              <!-- 张明德 -->
+              <div style="background:#fff;border-radius:10px;border:1px solid #f0f0f0;box-shadow:0 1px 4px rgba(0,0,0,.04);overflow:hidden;display:flex;flex-direction:column">
+                <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid #f5f5f5;background:linear-gradient(90deg,#f6ffed 0%,#fff 100%);flex-shrink:0">
+                  <div style="width:28px;height:28px;background:linear-gradient(135deg,#52c41a,#389e0d);color:#fff;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">张</div>
+                  <div><div style="font-weight:700;font-size:12px">张明德</div><div style="font-size:9px;color:#999">中医内科 · 诊室1</div></div>
+                  <div style="margin-left:auto;display:flex;gap:4px;align-items:center">
+                    <div style="background:#52c41a;color:#fff;font-size:9px;padding:2px 8px;border-radius:10px;font-weight:600">等候 4</div>
+                    <div onclick="doCall('张明德','诊室1','003','孙志强')" style="background:linear-gradient(135deg,#52c41a,#389e0d);color:#fff;font-size:10px;padding:3px 10px;border-radius:6px;font-weight:700;cursor:pointer;box-shadow:0 1px 4px rgba(82,196,26,.3)">📢 叫号</div>
+                  </div>
+                </div>
+                <div style="flex:1;overflow-y:auto;padding:6px 8px;min-height:0">
+                  <!-- 就诊中 -->
+                  <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;background:#fffff0;border-left:3.5px solid #52c41a;border-radius:0 8px 8px 0;margin-bottom:5px">
+                    <div style="width:34px;height:34px;background:linear-gradient(135deg,#52c41a,#389e0d);color:#fff;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0">03</div>
+                    <div style="flex:1"><div style="display:flex;align-items:center;gap:5px"><span style="font-weight:700;font-size:14px">孙志强</span><span style="font-size:10px;color:#52c41a;border:1.5px solid #b7eb8f;background:#f6ffed;padding:0 6px;border-radius:3px;font-weight:600">就诊中</span></div><div style="font-size:10px;color:#999;margin-top:1px">约09:30 · 到09:28</div></div>
+                  </div>
+                  <!-- 请准备 -->
+                  <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;background:#fff7e6;border-left:3.5px solid #fa8c16;border-radius:0 8px 8px 0;margin-bottom:5px">
+                    <div style="width:34px;height:34px;background:linear-gradient(135deg,#ffa940,#fa8c16);color:#fff;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0">04</div>
+                    <div style="flex:1"><div style="display:flex;align-items:center;gap:5px"><span style="font-weight:700;font-size:14px">周雪梅</span><span style="font-size:10px;color:#fa8c16;border:1.5px solid #ffd591;background:#fff7e6;padding:0 6px;border-radius:3px;font-weight:600;animation:orangeP 2s infinite">请准备</span></div><div style="font-size:10px;color:#999;margin-top:1px">约10:00 · 到09:45</div></div>
+                  </div>
+                  <!-- 候诊 -->
+                  <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;background:#f0f7ff;border-left:3.5px solid #1677ff;border-radius:0 8px 8px 0;margin-bottom:5px">
+                    <div style="width:34px;height:34px;background:linear-gradient(135deg,#4096ff,#1677ff);color:#fff;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0">05</div>
+                    <div style="flex:1"><div style="display:flex;align-items:center;gap:5px"><span style="font-weight:700;font-size:14px">钱大海</span><span style="font-size:10px;color:#52c41a;border:1.5px solid #b7eb8f;background:#f6ffed;padding:0 6px;border-radius:3px;font-weight:600">候诊中</span></div><div style="font-size:10px;color:#999;margin-top:1px">约10:30 · 到09:50</div></div>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;background:#f0f7ff;border-left:3.5px solid #1677ff;border-radius:0 8px 8px 0;margin-bottom:5px">
+                    <div style="width:34px;height:34px;background:linear-gradient(135deg,#4096ff,#1677ff);color:#fff;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0">06</div>
+                    <div style="flex:1"><div style="display:flex;align-items:center;gap:5px"><span style="font-weight:700;font-size:14px">吴丽华</span><span style="font-size:10px;color:#52c41a;border:1.5px solid #b7eb8f;background:#f6ffed;padding:0 6px;border-radius:3px;font-weight:600">候诊中</span></div><div style="font-size:10px;color:#999;margin-top:1px">约11:00 · 到10:02</div></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 李秀芳 -->
+              <div style="background:#fff;border-radius:10px;border:1px solid #f0f0f0;box-shadow:0 1px 4px rgba(0,0,0,.04);overflow:hidden;display:flex;flex-direction:column">
+                <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid #f5f5f5;background:linear-gradient(90deg,#fff7e6 0%,#fff 100%);flex-shrink:0">
+                  <div style="width:28px;height:28px;background:linear-gradient(135deg,#faad14,#d48806);color:#fff;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">李</div>
+                  <div><div style="font-weight:700;font-size:12px">李秀芳</div><div style="font-size:9px;color:#999">针灸推拿 · 诊室2</div></div>
+                  <div style="margin-left:auto;display:flex;gap:4px;align-items:center">
+                    <div style="background:#faad14;color:#fff;font-size:9px;padding:2px 8px;border-radius:10px;font-weight:600">等候 3</div>
+                    <div onclick="doCall('李秀芳','诊室2','008','王秋月')" style="background:linear-gradient(135deg,#faad14,#d48806);color:#fff;font-size:10px;padding:3px 10px;border-radius:6px;font-weight:700;cursor:pointer;box-shadow:0 1px 4px rgba(250,173,20,.3)">📢 叫号</div>
+                  </div>
+                </div>
+                <div style="flex:1;overflow-y:auto;padding:6px 8px;min-height:0">
+                  <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;background:#fffff0;border-left:3.5px solid #52c41a;border-radius:0 8px 8px 0;margin-bottom:5px">
+                    <div style="width:34px;height:34px;background:linear-gradient(135deg,#52c41a,#389e0d);color:#fff;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0">08</div>
+                    <div style="flex:1"><div style="display:flex;align-items:center;gap:5px"><span style="font-weight:700;font-size:14px">王秋月</span><span style="font-size:10px;color:#52c41a;border:1.5px solid #b7eb8f;background:#f6ffed;padding:0 6px;border-radius:3px;font-weight:600">就诊中</span></div><div style="font-size:10px;color:#999;margin-top:1px">约09:00 · 到09:10</div></div>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;background:#fff7e6;border-left:3.5px solid #fa8c16;border-radius:0 8px 8px 0;margin-bottom:5px">
+                    <div style="width:34px;height:34px;background:linear-gradient(135deg,#ffa940,#fa8c16);color:#fff;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0">09</div>
+                    <div style="flex:1"><div style="display:flex;align-items:center;gap:5px"><span style="font-weight:700;font-size:14px">黄建民</span><span style="font-size:10px;color:#fa8c16;border:1.5px solid #ffd591;background:#fff7e6;padding:0 6px;border-radius:3px;font-weight:600;animation:orangeP 2s infinite">请准备</span></div><div style="font-size:10px;color:#999;margin-top:1px">约09:30 · 到09:42</div></div>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;background:#f0f7ff;border-left:3.5px solid #1677ff;border-radius:0 8px 8px 0;margin-bottom:5px">
+                    <div style="width:34px;height:34px;background:linear-gradient(135deg,#4096ff,#1677ff);color:#fff;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0">10</div>
+                    <div style="flex:1"><div style="display:flex;align-items:center;gap:5px"><span style="font-weight:700;font-size:14px">林美玲</span><span style="font-size:10px;color:#52c41a;border:1.5px solid #b7eb8f;background:#f6ffed;padding:0 6px;border-radius:3px;font-weight:600">候诊中</span></div><div style="font-size:10px;color:#999;margin-top:1px">约10:00 · 到10:00</div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Take Number -->
+            <div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:10px;flex-shrink:0">
+              <span style="font-size:12px;font-weight:600;color:#555">现场取号</span>
+              <input style="border:1px solid #d9d9d9;padding:5px 10px;border-radius:6px;font-size:12px;width:100px;outline:none" placeholder="患者姓名">
+              <select style="border:1px solid #d9d9d9;padding:5px 8px;border-radius:6px;font-size:12px;background:#fff;outline:none;width:90px"><option>张明德</option><option>李秀芳</option></select>
+              <div style="background:linear-gradient(135deg,#73d13d,#52c41a);color:#fff;padding:7px 20px;border-radius:8px;font-size:14px;font-weight:800;cursor:pointer;box-shadow:0 2px 8px rgba(82,196,26,.3)">📋 取号</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══ 叫号弹窗 ═══ -->
+        <div id="callOverlay" style="position:absolute;inset:0;background:rgba(0,0,0,.55);z-index:100;display:none;align-items:center;justify-content:center;backdrop-filter:blur(3px)" onclick="closeCall()">
+          <div onclick="event.stopPropagation()" style="background:#fff;border-radius:20px;padding:36px 56px;text-align:center;box-shadow:0 24px 80px rgba(0,0,0,.2);animation:popIn .4s ease;position:relative;overflow:hidden">
+            <!-- 顶部光带 -->
+            <div style="position:absolute;top:0;left:0;right:0;height:4px;background:linear-gradient(90deg,#52c41a,#73d13d,#95de64,#73d13d,#52c41a);background-size:200% 100%;animation:shimmer 2s linear infinite"></div>
+            <div style="font-size:11px;color:#52c41a;font-weight:700;letter-spacing:3px;margin-bottom:6px;text-transform:uppercase">请到诊室就诊</div>
+            <div id="callNum" style="font-size:68px;font-weight:900;background:linear-gradient(135deg,#52c41a,#389e0d);-webkit-background-clip:text;-webkit-text-fill-color:transparent;line-height:1;margin-bottom:6px"></div>
+            <div id="callName" style="font-size:26px;font-weight:700;color:#1a1a1a;margin-bottom:4px"></div>
+            <div id="callRoom" style="font-size:14px;color:#999"></div>
+            <div style="margin-top:20px">
+              <div onclick="closeCall()" style="background:linear-gradient(135deg,#52c41a,#389e0d);color:#fff;padding:9px 36px;border-radius:10px;font-size:14px;font-weight:700;display:inline-block;cursor:pointer;box-shadow:0 3px 12px rgba(82,196,26,.3)">确 定</div>
+            </div>
+            <!-- 进度条 -->
+            <div style="margin-top:14px;height:3px;background:#f0f0f0;border-radius:2px;overflow:hidden;width:180px;margin-left:auto;margin-right:auto">
+              <div id="callProgress" style="height:100%;background:linear-gradient(90deg,#52c41a,#73d13d);border-radius:2px;transition:width .1s linear"></div>
+            </div>
+            <div style="font-size:9px;color:#d9d9d9;margin-top:3px"><span id="callCountdown">3</span>秒后自动关闭</div>
+          </div>
+        </div>
+      </div>
+
+      <style>
+        @keyframes orangeP{0%,100%{opacity:1}50%{opacity:.6}}
+        @keyframes popIn{0%{opacity:0;transform:scale(.6) translateY(20px)}60%{transform:scale(1.03)}100%{opacity:1;transform:scale(1) translateY(0)}}
+        @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+      </style>
+
+      <script>
+        let callTimer=null;
+        let countdownTimer=null;
+
+        function doCall(doc,room,seq,name){
+          document.getElementById('callNum').textContent=seq+'号';
+          document.getElementById('callName').textContent=name;
+          document.getElementById('callRoom').textContent=room+' · '+doc+'医生';
+          const ov=document.getElementById('callOverlay');
+          ov.style.display='flex';
+
+          // Progress bar countdown
+          const bar=document.getElementById('callProgress');
+          const cdEl=document.getElementById('callCountdown');
+          let remaining=3000;
+          bar.style.width='100%';
+
+          clearInterval(countdownTimer);
+          clearTimeout(callTimer);
+
+          countdownTimer=setInterval(()=>{
+            remaining-=100;
+            bar.style.width=Math.max(0,remaining/3000*100)+'%';
+            cdEl.textContent=Math.ceil(remaining/1000);
+            if(remaining<=0){clearInterval(countdownTimer);closeCall()}
+          },100);
+
+          callTimer=setTimeout(()=>{},3100);
+        }
+
+        function closeCall(){
+          document.getElementById('callOverlay').style.display='none';
+          clearInterval(countdownTimer);
+          clearTimeout(callTimer);
+        }
+      </script>
+    </div>
+    <div class="card-body">
+      <h3>叫号弹窗集成到排队看板</h3>
+      <p>点击医生卡片上的「📢 叫号」按钮试试！弹出全屏叫号通知：大号码 + 患者姓名 + 诊室信息 + 顶部流光 + 3秒进度条自动关闭。</p>
+    </div>
+  </div>
+</div>

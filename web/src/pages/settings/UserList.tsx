@@ -347,7 +347,7 @@ export default function UserList() {
       title: '用户名',
       dataIndex: 'username',
       key: 'username',
-      width: 180,
+      width: 150,
       render: (val: string, record: UserItem) => {
         const isCurrentUser = record.id === currentUser?.id;
         const isProtectedAdmin = record.username === 'admin' && (record.roles || []).some(r => r.name === '管理员');
@@ -407,21 +407,23 @@ export default function UserList() {
       title: '真实姓名',
       dataIndex: 'real_name',
       key: 'real_name',
-      width: 120,
+      width: 100,
+      ellipsis: true,
       render: (val: string) => val || '-',
     },
     {
       title: '手机号',
       dataIndex: 'phone',
       key: 'phone',
-      width: 140,
+      width: 120,
       a11yPriority: 1,
       render: (val: string) => val || '-',
     },
     ...(isGlobalAdmin ? [{
       title: '所属诊所',
       key: 'tenant',
-      width: 120,
+      width: 100,
+      ellipsis: true,
       a11yPriority: 2,
       render: (_: unknown, record: UserItem) => record.tenant?.name || '-',
     } as AccessibleColumnsType<UserItem>[number]] : []),
@@ -429,7 +431,7 @@ export default function UserList() {
       title: '备注',
       dataIndex: 'notes',
       key: 'notes',
-      width: 150,
+      width: 120,
       ellipsis: true,
       a11yPriority: 2,
       render: (val: string) => val || '-',
@@ -438,7 +440,7 @@ export default function UserList() {
       title: '角色',
       dataIndex: 'roles',
       key: 'roles',
-      width: 120,
+      width: 100,
       render: (roles: RoleItem[]) => {
         if (!roles || roles.length === 0) return '-';
         return (
@@ -455,19 +457,20 @@ export default function UserList() {
     {
       title: '操作',
       key: 'action',
-      width: 300,
+      width: 220,
       render: (_, record) => {
         const isCurrentUser = record.id === currentUser?.id;
         const isProtectedAdmin = record.username === 'admin' && (record.roles || []).some(r => r.name === '管理员');
         const isReadOnly = !isCurrentUser && isProtectedAdmin;
         return (
-          <Space size="small">
+          <Space size={4} wrap>
             <Button
               type="link"
               size="small"
               icon={<EditOutlined />}
               onClick={() => handleEdit(record)}
               disabled={isReadOnly}
+              style={{ padding: '0 4px' }}
             >
               编辑
             </Button>
@@ -477,8 +480,9 @@ export default function UserList() {
               icon={<UserSwitchOutlined />}
               onClick={() => handleOpenRoleModal(record)}
               disabled={isCurrentUser || isReadOnly}
+              style={{ padding: '0 4px' }}
             >
-              分配角色
+              角色
             </Button>
             {!isCurrentUser && !isReadOnly && (
               <Button
@@ -486,8 +490,10 @@ export default function UserList() {
                 size="small"
                 icon={<KeyOutlined />}
                 onClick={() => handleOpenResetPwd(record)}
+                title="重置密码"
+                style={{ padding: '0 4px' }}
               >
-                重置密码
+                密码
               </Button>
             )}
             {!isCurrentUser && !isReadOnly && (
@@ -503,6 +509,7 @@ export default function UserList() {
                   size="small"
                   danger
                   icon={<DeleteOutlined />}
+                  style={{ padding: '0 4px' }}
                 >
                   删除
                 </Button>
@@ -647,6 +654,7 @@ export default function UserList() {
           columns={columns}
           dataSource={data}
           loading={loading}
+          scroll={{ x: 'max-content' }}
           rowClassName={(record) => {
             const classes: string[] = [];
             if (record.id === currentUser?.id) classes.push('current-user-row');

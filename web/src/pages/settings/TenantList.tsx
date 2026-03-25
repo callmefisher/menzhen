@@ -153,16 +153,11 @@ export default function TenantList() {
 
   const allColumns: AccessibleColumnsType<TenantItem> = [
     {
-      title: 'ID',
-      dataIndex: 'id',
-      key: 'id',
-      width: 50,
-      a11yPriority: 2,
-    },
-    {
       title: '诊所名称',
       dataIndex: 'name',
       key: 'name',
+      width: 160,
+      ellipsis: true,
       render: (val: string, record: TenantItem) => {
         const isDisabled = record.status !== 1;
         return (
@@ -207,12 +202,13 @@ export default function TenantList() {
       dataIndex: 'code',
       key: 'code',
       width: 100,
+      ellipsis: true,
       a11yPriority: 2,
     },
     {
       title: '操作',
       key: 'action',
-      width: 140,
+      width: 150,
       render: (_, record) => (
         <Space size="small">
           <Button
@@ -344,7 +340,7 @@ export default function TenantList() {
           </>
         )
       ) : (
-        <>
+        <div>
         <Table<TenantItem>
           rowKey="id"
           columns={columns}
@@ -352,6 +348,7 @@ export default function TenantList() {
           loading={loading}
           rowClassName={highlight.rowClassName}
           onRow={highlight.onRow}
+          scroll={{ x: 'max-content' }}
           pagination={{
             current: params.page,
             pageSize: params.size,
@@ -368,7 +365,7 @@ export default function TenantList() {
           }}
         />
         {hasHiddenColumns && <HiddenColumnsHint titles={hiddenColumnTitles} onRestoreAll={restoreAll} />}
-        </>
+        </div>
       )}
 
       <Modal

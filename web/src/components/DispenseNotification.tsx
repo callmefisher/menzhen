@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Button, Spin, message } from 'antd';
 import { CheckOutlined, DownOutlined, RightOutlined } from '@ant-design/icons';
 import {
@@ -50,6 +50,13 @@ export default function DispenseNotification() {
   const [pendingCount, setPendingCount] = useState(0);
   const [detailId, setDetailId] = useState<number | null>(null);
   const [batchLoading, setBatchLoading] = useState(false);
+  const initialLoadDone = useRef(false);
+
+  /* --- auto-collapse when pending=0, auto-expand when pending>0 --- */
+  useEffect(() => {
+    if (!initialLoadDone.current) return;
+    setExpanded(pendingCount > 0);
+  }, [pendingCount]);
 
   /* --- data fetching --- */
 
@@ -68,6 +75,10 @@ export default function DispenseNotification() {
       const res = await getPendingCount();
       const count = (res as any).data?.count ?? 0;
       setPendingCount(count);
+      if (!initialLoadDone.current) {
+        initialLoadDone.current = true;
+        if (count === 0) setExpanded(false);
+      }
     } catch { /* ignore */ }
   }, []);
 
@@ -102,7 +113,7 @@ export default function DispenseNotification() {
       }
       fetchCount(); // always re-fetch actual count from server
     }
-  }, [tab, fetchList]));
+  }, [tab, fetchList, fetchCount, fullRefetch]));
 
   useWebSocket('_reconnect', useCallback(() => {
     fullRefetch();
