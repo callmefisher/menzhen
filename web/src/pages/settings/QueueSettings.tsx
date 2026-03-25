@@ -475,7 +475,7 @@ export default function QueueSettings() {
             label="诊室名称"
             rules={[{ required: true, message: '请输入诊室名称' }]}
           >
-            <Input placeholder="例如：诊室1" />
+            <Input addonBefore="诊室:" placeholder="例如：1" />
           </Form.Item>
 
           <Form.Item name="enabled" label="初始状态">

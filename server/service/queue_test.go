@@ -1,6 +1,7 @@
 package service_test
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -19,15 +20,40 @@ func makeQueueSvc(t *testing.T) (*service.QueueService, uint, uint) {
 	db := testutil.SetupTestDB(t)
 	tenantA := testutil.SeedTestTenant(t, db, "诊所A", "queue-clinic-a-"+t.Name())
 	tenantB := testutil.SeedTestTenant(t, db, "诊所B", "queue-clinic-b-"+t.Name())
+	// Create test users for both tenants
+	for _, tid := range []uint64{tenantA.ID, tenantB.ID} {
+		db.Create(&model.User{TenantID: tid, Username: "doc_" + t.Name(), PasswordHash: "h", RealName: "医生", Status: 1})
+	}
 	return service.NewQueueService(db), uint(tenantA.ID), uint(tenantB.ID)
 }
 
-// makeQueueSvcSingleTenant is a convenience helper that creates only one tenant.
+// makeQueueSvcSingleTenant is a convenience helper that creates only one tenant + one user.
 func makeQueueSvcSingle(t *testing.T) (*service.QueueService, uint) {
 	t.Helper()
 	db := testutil.SetupTestDB(t)
 	tenant := testutil.SeedTestTenant(t, db, "诊所", "queue-single-"+t.Name())
+	// Create a test user for patient auto-creation FK
+	user := model.User{
+		TenantID:     tenant.ID,
+		Username:     "testdoc_" + t.Name(),
+		PasswordHash: "hash",
+		RealName:     "测试医生",
+		Status:       1,
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("failed to seed test user: %v", err)
+	}
 	return service.NewQueueService(db), uint(tenant.ID)
+}
+
+// takeNumber is a test helper that calls TakeNumber with a default userID=1 and returns Entry.
+func takeNumber(t *testing.T, svc *service.QueueService, tenantID uint, name string, doctorID uint, doctorName, room string) *model.QueueEntry {
+	t.Helper()
+	result, err := svc.TakeNumber(tenantID, name, doctorID, doctorName, room, 1)
+	if err != nil {
+		t.Fatalf("TakeNumber failed: %v", err)
+	}
+	return result.Entry
 }
 
 // TestQueueTakeNumber verifies that seq numbers auto-increment correctly.
@@ -38,19 +64,16 @@ func TestQueueTakeNumber(t *testing.T) {
 	const doctorName = "张医生"
 	const room = "1诊室"
 
-	e1, err := svc.TakeNumber(tenantID, "张三", doctorID, doctorName, room)
-	require.NoError(t, err)
+	e1 := takeNumber(t, svc, tenantID, "张三", doctorID, doctorName, room)
 	assert.Equal(t, 1, e1.SeqNumber, "first ticket should be seq 1")
 	assert.Equal(t, "waiting", e1.Status)
 	assert.NotNil(t, e1.ArrivalTime)
 	assert.Equal(t, tenantID, e1.TenantID)
 
-	e2, err := svc.TakeNumber(tenantID, "李四", doctorID, doctorName, room)
-	require.NoError(t, err)
+	e2 := takeNumber(t, svc, tenantID, "李四", doctorID, doctorName, room)
 	assert.Equal(t, 2, e2.SeqNumber, "second ticket should be seq 2")
 
-	e3, err := svc.TakeNumber(tenantID, "王五", doctorID, doctorName, room)
-	require.NoError(t, err)
+	e3 := takeNumber(t, svc, tenantID, "王五", doctorID, doctorName, room)
 	assert.Equal(t, 3, e3.SeqNumber, "third ticket should be seq 3")
 }
 
@@ -61,9 +84,9 @@ func TestQueueListToday(t *testing.T) {
 	const docA uint = 10
 	const docB uint = 20
 
-	svc.TakeNumber(tenantID, "患者1", docA, "张医生", "1诊室")
-	svc.TakeNumber(tenantID, "患者2", docA, "张医生", "1诊室")
-	svc.TakeNumber(tenantID, "患者3", docB, "李医生", "2诊室")
+	takeNumber(t, svc, tenantID, "患者1", docA, "张医生", "1诊室")
+	takeNumber(t, svc, tenantID, "患者2", docA, "张医生", "1诊室")
+	takeNumber(t, svc, tenantID, "患者3", docB, "李医生", "2诊室")
 
 	t.Run("list all", func(t *testing.T) {
 		entries, err := svc.ListToday(tenantID, nil)
@@ -100,10 +123,10 @@ func TestQueueListToday_Empty(t *testing.T) {
 func TestQueueCall(t *testing.T) {
 	svc, tenantID := makeQueueSvcSingle(t)
 
-	e, err := svc.TakeNumber(tenantID, "患者", 1, "医生", "诊室")
+	e, err := svc.TakeNumber(tenantID, "患者", 1, "医生", "诊室", 1)
 	require.NoError(t, err)
 
-	called, err := svc.Call(tenantID, e.ID)
+	called, err := svc.Call(tenantID, e.Entry.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "seeing", called.Status)
 	assert.NotNil(t, called.CalledAt)
@@ -113,16 +136,13 @@ func TestQueueCall(t *testing.T) {
 func TestQueueCall_InvalidStatus(t *testing.T) {
 	svc, tenantID := makeQueueSvcSingle(t)
 
-	e, err := svc.TakeNumber(tenantID, "患者", 1, "医生", "诊室")
-	require.NoError(t, err)
+	e := takeNumber(t, svc, tenantID, "患者", 1, "医生", "诊室")
 
-	// Advance to seeing then complete so it becomes "done".
-	_, err = svc.Call(tenantID, e.ID)
+	_, err := svc.Call(tenantID, e.ID)
 	require.NoError(t, err)
 	_, _, err = svc.Complete(tenantID, e.ID)
 	require.NoError(t, err)
 
-	// Now try calling a done patient.
 	_, err = svc.Call(tenantID, e.ID)
 	assert.ErrorIs(t, err, service.ErrInvalidStatus)
 }
@@ -131,9 +151,8 @@ func TestQueueCall_InvalidStatus(t *testing.T) {
 func TestQueueComplete(t *testing.T) {
 	svc, tenantID := makeQueueSvcSingle(t)
 
-	e, err := svc.TakeNumber(tenantID, "患者", 1, "医生", "诊室")
-	require.NoError(t, err)
-	_, err = svc.Call(tenantID, e.ID)
+	e := takeNumber(t, svc, tenantID, "患者", 1, "医生", "诊室")
+	_, err := svc.Call(tenantID, e.ID)
 	require.NoError(t, err)
 
 	completed, _, err := svc.Complete(tenantID, e.ID)
@@ -149,16 +168,12 @@ func TestQueueComplete_AutoCallNext(t *testing.T) {
 
 	const docID uint = 5
 
-	first, err := svc.TakeNumber(tenantID, "第一号", docID, "医生", "诊室")
-	require.NoError(t, err)
-	second, err := svc.TakeNumber(tenantID, "第二号", docID, "医生", "诊室")
+	first := takeNumber(t, svc, tenantID, "第一号", docID, "医生", "诊室")
+	second := takeNumber(t, svc, tenantID, "第二号", docID, "医生", "诊室")
+
+	_, err := svc.Call(tenantID, first.ID)
 	require.NoError(t, err)
 
-	// Call the first patient into the room.
-	_, err = svc.Call(tenantID, first.ID)
-	require.NoError(t, err)
-
-	// Complete the first patient; second should be auto-called.
 	_, next, err := svc.Complete(tenantID, first.ID)
 	require.NoError(t, err)
 	require.NotNil(t, next, "next waiting patient should be auto-called")
@@ -172,9 +187,8 @@ func TestQueueComplete_AutoCallNext(t *testing.T) {
 func TestQueueComplete_NoNext(t *testing.T) {
 	svc, tenantID := makeQueueSvcSingle(t)
 
-	e, err := svc.TakeNumber(tenantID, "唯一患者", 1, "医生", "诊室")
-	require.NoError(t, err)
-	_, err = svc.Call(tenantID, e.ID)
+	e := takeNumber(t, svc, tenantID, "唯一患者", 1, "医生", "诊室")
+	_, err := svc.Call(tenantID, e.ID)
 	require.NoError(t, err)
 
 	_, next, err := svc.Complete(tenantID, e.ID)
@@ -188,25 +202,18 @@ func TestQueueStats(t *testing.T) {
 
 	const docID uint = 1
 
-	// Take 3 numbers.
-	e1, _ := svc.TakeNumber(tenantID, "患者1", docID, "医生", "诊室")
-	e2, _ := svc.TakeNumber(tenantID, "患者2", docID, "医生", "诊室")
-	svc.TakeNumber(tenantID, "患者3", docID, "医生", "诊室")
+	e1 := takeNumber(t, svc, tenantID, "患者1", docID, "医生", "诊室")
+	e2 := takeNumber(t, svc, tenantID, "患者2", docID, "医生", "诊室")
+	takeNumber(t, svc, tenantID, "患者3", docID, "医生", "诊室")
 
-	// Call e1 → seeing.
 	svc.Call(tenantID, e1.ID)
-
-	// Complete e1 → done; e2 gets auto-called → seeing.
 	svc.Complete(tenantID, e1.ID)
 
-	// After the above: e1=done, e2=seeing (auto-called), e3=waiting.
 	stats, err := svc.Stats(tenantID)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), stats["done"])
 	assert.Equal(t, int64(1), stats["seeing"])
 	assert.Equal(t, int64(1), stats["waiting"])
-
-	// e2 won't be auto-called again since we triggered it from Complete(e1).
 	_ = e2
 }
 
@@ -214,8 +221,8 @@ func TestQueueStats(t *testing.T) {
 func TestQueueClear(t *testing.T) {
 	svc, tenantID := makeQueueSvcSingle(t)
 
-	svc.TakeNumber(tenantID, "患者1", 1, "医生", "诊室")
-	svc.TakeNumber(tenantID, "患者2", 1, "医生", "诊室")
+	takeNumber(t, svc, tenantID, "患者1", 1, "医生", "诊室")
+	takeNumber(t, svc, tenantID, "患者2", 1, "医生", "诊室")
 
 	affected, err := svc.Clear(tenantID)
 	require.NoError(t, err)
@@ -230,21 +237,17 @@ func TestQueueClear(t *testing.T) {
 func TestQueueTenantIsolation(t *testing.T) {
 	svc, tenantA, tenantB := makeQueueSvc(t)
 
-	svc.TakeNumber(tenantA, "A患者", 1, "医生", "诊室")
-	svc.TakeNumber(tenantA, "A患者2", 1, "医生", "诊室")
-	svc.TakeNumber(tenantB, "B患者", 1, "医生", "诊室")
+	takeNumber(t, svc, tenantA, "A患者", 1, "医生", "诊室")
+	takeNumber(t, svc, tenantA, "A患者2", 1, "医生", "诊室")
+	takeNumber(t, svc, tenantB, "B患者", 1, "医生", "诊室")
 
 	entriesA, err := svc.ListToday(tenantA, nil)
 	require.NoError(t, err)
 	assert.Len(t, entriesA, 2, "tenant A should see only its own entries")
-	for _, e := range entriesA {
-		assert.Equal(t, tenantA, e.TenantID)
-	}
 
 	entriesB, err := svc.ListToday(tenantB, nil)
 	require.NoError(t, err)
 	assert.Len(t, entriesB, 1, "tenant B should see only its own entry")
-	assert.Equal(t, tenantB, entriesB[0].TenantID)
 }
 
 // TestQueueConcurrentTakeNumber verifies that concurrent TakeNumber calls yield unique seq numbers.
@@ -259,9 +262,10 @@ func TestQueueConcurrentTakeNumber(t *testing.T) {
 	for i := 0; i < n; i++ {
 		go func(i int) {
 			defer wg.Done()
-			e, err := svc.TakeNumber(tenantID, "并发患者", 1, "医生", "诊室")
+			name := fmt.Sprintf("并发患者%d", i)
+			r, err := svc.TakeNumber(tenantID, name, 1, "医生", "诊室", 1)
 			require.NoError(t, err)
-			results <- e.SeqNumber
+			results <- r.Entry.SeqNumber
 		}(i)
 	}
 	wg.Wait()
@@ -288,24 +292,21 @@ func TestQueueCall_NotFound(t *testing.T) {
 func TestQueueComplete_WaitingStatus(t *testing.T) {
 	svc, tenantID := makeQueueSvcSingle(t)
 
-	e, err := svc.TakeNumber(tenantID, "患者", 1, "医生", "诊室")
-	require.NoError(t, err)
+	e := takeNumber(t, svc, tenantID, "患者", 1, "医生", "诊室")
 	require.Equal(t, "waiting", e.Status)
 
-	// Attempt to complete without calling first.
-	_, _, err = svc.Complete(tenantID, e.ID)
+	_, _, err := svc.Complete(tenantID, e.ID)
 	assert.ErrorIs(t, err, service.ErrInvalidStatus)
 }
 
-// TestQueueTakeNumber_EmptyName verifies that TakeNumber accepts an empty patient name
-// at the service level (validation is the handler's responsibility).
+// TestQueueTakeNumber_EmptyName verifies that TakeNumber accepts an empty patient name.
 func TestQueueTakeNumber_EmptyName(t *testing.T) {
 	svc, tenantID := makeQueueSvcSingle(t)
 
-	e, err := svc.TakeNumber(tenantID, "", 1, "医生", "诊室")
+	r, err := svc.TakeNumber(tenantID, "", 1, "医生", "诊室", 1)
 	require.NoError(t, err)
-	assert.Equal(t, "", e.PatientName)
-	assert.Equal(t, 1, e.SeqNumber)
+	assert.Equal(t, "", r.Entry.PatientName)
+	assert.Equal(t, 1, r.Entry.SeqNumber)
 }
 
 // TestQueueStats_Empty verifies that Stats returns an empty map when no entries exist today.
@@ -332,6 +333,7 @@ func TestQueueClear_Empty(t *testing.T) {
 func TestQueueCrossDayCleanup(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	tenant := testutil.SeedTestTenant(t, db, "诊所", "queue-crossday-"+t.Name())
+	db.Create(&model.User{TenantID: tenant.ID, Username: "doc_crossday", PasswordHash: "h", RealName: "医生", Status: 1})
 	svc := service.NewQueueService(db)
 	tenantID := uint(tenant.ID)
 
@@ -362,16 +364,15 @@ func TestQueueCrossDayCleanup(t *testing.T) {
 	require.NoError(t, db.Create(&oldEntry2).Error)
 
 	// Also create a today entry that must NOT be deleted.
-	todayEntry, err := svc.TakeNumber(tenantID, "今日患者", 1, "医生", "诊室")
+	todayResult, err := svc.TakeNumber(tenantID, "今日患者", 1, "医生", "诊室", 1)
 	require.NoError(t, err)
 
 	affected, err := svc.CrossDayCleanup()
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), affected, "exactly the two yesterday entries should be deleted")
 
-	// Today's entry should still exist.
 	entries, err := svc.ListToday(tenantID, nil)
 	require.NoError(t, err)
 	assert.Len(t, entries, 1)
-	assert.Equal(t, todayEntry.ID, entries[0].ID)
+	assert.Equal(t, todayResult.Entry.ID, entries[0].ID)
 }

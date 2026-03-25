@@ -72,6 +72,10 @@ export default function QueueDashboard() {
           .filter(d => d.enabled)
           .map(d => ({ id: d.user_id, name: d.user_name, room: d.room }));
         setDoctors(docs);
+        // Default select first enabled doctor
+        if (docs.length > 0 && !takeDoctorId) {
+          setTakeDoctorId(docs[0].id);
+        }
       } catch {
         /* fallback: derive from queue data */
       }
@@ -302,7 +306,7 @@ export default function QueueDashboard() {
         optionFilterProp="label"
         options={doctorOptions.map(d => ({
           value: d.id,
-          label: d.room ? `${d.name}（${d.room}）` : d.name,
+          label: d.name,
         }))}
       />
       <Button

@@ -57,9 +57,11 @@ button.green { background: #2ed573; border-color: #2ed573; color: #fff; font-wei
   background: rgba(255,255,255,0.92); color: #333; font-size: 11px; font-weight: 600;
   padding: 2px 6px; border-radius: 4px; white-space: nowrap;
   border: 1px solid #ddd; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-  transform: translate(-50%, -130%);
+  transform: translate(-50%, -220%);
 }
 .acupoint-label .cn { font-size: 10px; color: #888; font-weight: 400; margin-left: 3px; }
+.acupoint-label.sel { background: #ff6b6b; color: #fff; border-color: #ff6b6b; }
+.acupoint-label.sel .cn { color: #ffd; }
 </style>
 </head>
 <body>
@@ -81,6 +83,7 @@ button.green { background: #2ed573; border-color: #2ed573; color: #fff; font-wei
     <button onclick="addPointAtMiddle()">+ 插入点</button>
     <button onclick="snapAllPoints()">全部贴合</button>
     <button onclick="undoAction()">撤销</button>
+    <button onclick="resetToDefault()" style="color:#e74c3c;border-color:#e74c3c">重置</button>
   </div>
   <div id="coords-display">双击绿球选中 → 拖拽到皮肤上</div>
   <div class="point-list" id="point-list"></div>
@@ -100,9 +103,9 @@ button.green { background: #2ed573; border-color: #2ed573; color: #fff; font-wei
 <script type="importmap">
 {
   "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
-    "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.8.3/src/index.js"
+    "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/",
+    "three-mesh-bvh": "https://unpkg.com/three-mesh-bvh@0.8.3/src/index.js"
   }
 }
 </script>
@@ -145,13 +148,33 @@ const ACUPOINTS = {
   },
 };
 
-function matchAcupoint(pt) {
-  const acuMap = ACUPOINTS[currentModel];
-  for (const [code, info] of Object.entries(acuMap)) {
-    const dx = pt[0]-info.pos[0], dy = pt[1]-info.pos[1], dz = pt[2]-info.pos[2];
-    if (Math.sqrt(dx*dx+dy*dy+dz*dz) < 0.015) return { code, cn: info.cn };
+// 穴位索引映射（硬编码，不靠距离匹配）
+const ACU_INDEX = {
+  female: { 0:'LU1', 1:'LU2', 5:'LU3', 6:'LU4', 11:'LU5', 14:'LU6', 18:'LU7', 19:'LU8', 20:'LU9', 21:'LU10', 24:'LU11' },
+  male:   { 0:'LU1', 1:'LU2', 5:'LU3', 6:'LU4', 11:'LU5', 14:'LU6', 18:'LU7', 19:'LU8', 20:'LU9', 21:'LU10', 26:'LU11' },
+};
+
+const ACU_NAMES = {
+  LU1:'中府', LU2:'云门', LU3:'天府', LU4:'侠白', LU5:'尺泽', LU6:'孔最',
+  LU7:'列缺', LU8:'经渠', LU9:'太渊', LU10:'鱼际', LU11:'少商',
+};
+
+let acuPointMap = {};
+
+function buildAcuPointMap() {
+  acuPointMap = {};
+  const map = ACU_INDEX[currentModel] || {};
+  for (const [idx, code] of Object.entries(map)) {
+    acuPointMap[idx] = { code, cn: ACU_NAMES[code] || '' };
   }
-  return null;
+}
+
+function getAcupoint(idx) {
+  return acuPointMap[idx] || null;
+}
+
+function isAcupoint(idx) {
+  return !!acuPointMap[idx];
 }
 
 let labelEls = [];
@@ -161,10 +184,11 @@ function rebuildLabels() {
   container.innerHTML = '';
   labelEls = [];
   for (let i = 0; i < points.length; i++) {
-    const acu = matchAcupoint(points[i]);
+    const acu = getAcupoint(i);
     if (!acu) continue;
+    const isSel = i === selectedIdx;
     const div = document.createElement('div');
-    div.className = 'acupoint-label';
+    div.className = 'acupoint-label' + (isSel ? ' sel' : '');
     div.innerHTML = `${acu.code}<span class="cn">${acu.cn}</span>`;
     container.appendChild(div);
     labelEls.push({ el: div, idx: i });
@@ -190,28 +214,60 @@ function updateLabels() {
    ============================================================ */
 const PATHS = {
   female: [
-    [-0.098,1.323,0.047],[-0.103,1.345,0.025],
-    [-0.135,1.335,0.028],[-0.168,1.310,0.026],[-0.200,1.286,0.025],
-    [-0.231,1.261,0.024],[-0.251,1.238,0.017],
-    [-0.280,1.218,0.015],[-0.310,1.198,0.014],[-0.335,1.178,0.013],
-    [-0.360,1.158,0.012],[-0.385,1.145,0.010],[-0.410,1.132,0.008],
-    [-0.437,1.119,0.005],[-0.458,1.105,0.004],[-0.478,1.090,0.003],
-    [-0.497,1.072,0.002],[-0.513,1.050,0.001],[-0.526,1.039,-0.003],
-    [-0.541,1.028,-0.006],[-0.550,1.022,0.002],[-0.558,1.019,0.008],
-    [-0.567,1.016,0.015],[-0.580,1.010,0.025],[-0.594,1.004,0.038],
-    [-0.608,0.998,0.053],
+    [-0.103, 1.318, 0.041],  // 0  LU1 中府
+    [-0.103, 1.341, 0.021],  // 1  LU2 云门
+    [-0.135, 1.336, 0.03],   // 2
+    [-0.17, 1.312, 0.032],   // 3
+    [-0.2, 1.286, 0.025],    // 4
+    [-0.228, 1.259, 0.019],  // 5  LU3 天府
+    [-0.251, 1.238, 0.017],  // 6  LU4 侠白
+    [-0.277, 1.217, 0.016],  // 7
+    [-0.3, 1.201, 0.015],    // 8
+    [-0.32, 1.185, 0.012],   // 9
+    [-0.343, 1.167, 0.006],  // 10
+    [-0.355, 1.158, 0.006],  // 11 LU5 尺泽
+    [-0.372, 1.152, 0.005],  // 12
+    [-0.4, 1.137, 0.003],    // 13
+    [-0.406, 1.133, 0.003],  // 14 LU6 孔最
+    [-0.456, 1.097, 0],      // 15
+    [-0.473, 1.086, -0.002], // 16
+    [-0.49, 1.076, -0.003],  // 17
+    [-0.514, 1.07, -0.006],  // 18 LU7 列缺
+    [-0.53, 1.053, -0.004],  // 19 LU8 经渠
+    [-0.552, 1.038, -0.002], // 20 LU9 太渊
+    [-0.571, 1.014, 0.011],  // 21 LU10 鱼际
+    [-0.583, 1.009, 0.021],  // 22
+    [-0.598, 1.003, 0.033],  // 23
+    [-0.612, 0.996, 0.049],  // 24 LU11 少商
   ],
   male: [
-    [-0.098,1.323,0.047],[-0.103,1.345,0.025],
-    [-0.135,1.320,0.025],[-0.167,1.303,0.024],[-0.200,1.282,0.024],
-    [-0.231,1.261,0.024],[-0.243,1.253,0.021],[-0.256,1.245,0.017],
-    [-0.280,1.220,0.015],[-0.308,1.201,0.014],[-0.335,1.178,0.013],
-    [-0.360,1.158,0.012],[-0.385,1.145,0.010],[-0.410,1.132,0.008],
-    [-0.437,1.119,0.005],[-0.458,1.105,0.004],[-0.478,1.088,0.003],
-    [-0.497,1.070,0.002],[-0.513,1.050,0.001],[-0.519,1.044,-0.001],
-    [-0.526,1.039,-0.003],[-0.533,1.033,-0.004],[-0.541,1.028,-0.006],
-    [-0.554,1.022,0.005],[-0.567,1.016,0.015],[-0.587,1.007,0.034],
-    [-0.608,0.998,0.053],
+    [-0.138, 1.296, 0.089],  // 0  LU1 中府
+    [-0.141, 1.33, 0.075],   // 1  LU2 云门
+    [-0.178, 1.312, 0.071],  // 2
+    [-0.193, 1.299, 0.069],  // 3
+    [-0.209, 1.271, 0.068],  // 4
+    [-0.224, 1.22, 0.048],   // 5  LU3 天府
+    [-0.228, 1.205, 0.042],  // 6  LU4 侠白
+    [-0.235, 1.187, 0.035],  // 7
+    [-0.243, 1.167, 0.03],   // 8
+    [-0.246, 1.157, 0.028],  // 9
+    [-0.249, 1.147, 0.026],  // 10
+    [-0.264, 1.098, 0.013],  // 11 LU5 尺泽
+    [-0.275, 1.08, 0.023],   // 12
+    [-0.288, 1.059, 0.039],  // 13
+    [-0.31, 1.017, 0.051],   // 14 LU6 孔最
+    [-0.325, 0.994, 0.054],  // 15
+    [-0.334, 0.977, 0.055],  // 16
+    [-0.348, 0.939, 0.062],  // 17
+    [-0.37, 0.894, 0.076],   // 18 LU7 列缺
+    [-0.364, 0.881, 0.081],  // 19 LU8 经渠
+    [-0.367, 0.87, 0.085],   // 20 LU9 太渊
+    [-0.37, 0.858, 0.09],    // 21 LU10 鱼际
+    [-0.372, 0.843, 0.104],  // 22
+    [-0.374, 0.832, 0.129],  // 23
+    [-0.374, 0.823, 0.138],  // 24
+    [-0.376, 0.814, 0.147],  // 25
+    [-0.377, 0.793, 0.174],  // 26 LU11 少商
   ],
 };
 
@@ -358,7 +414,7 @@ function setupInteraction() {
     document.getElementById('sel-badge').style.display = 'none';
     // 最终贴合
     if (selectedIdx >= 0) {
-      points[selectedIdx] = projectSingle(points[selectedIdx], normalOffset);
+      points[selectedIdx] = projectSingle(points[selectedIdx], 0);
       rebuildAll();
       toast(`点 ${selectedIdx} 已放置`);
     }
@@ -407,11 +463,18 @@ function loadModel(type) {
     });
 
     buildBVH();
-    points = JSON.parse(JSON.stringify(PATHS[currentModel]));
+    buildAcuPointMap();
+    const saved = loadFromStorage();
+    if (saved && saved.length >= 2) {
+      points = saved;
+      toast('✅ 已恢复上次保存的坐标');
+    } else {
+      points = JSON.parse(JSON.stringify(PATHS[currentModel]));
+    }
     undoStack = [];
     selectedIdx = -1;
     rebuildAll();
-    toast('✅ 模型加载完成 — 双击绿球选中后拖拽');
+    if (!saved) toast('✅ 模型加载完成 — 双击绿球选中后拖拽');
   }, undefined, err => toast('加载失败: ' + err.message));
 }
 
@@ -494,7 +557,7 @@ function projectPath(pts, offset) {
 /* ============================================================
    渲染
    ============================================================ */
-function rebuildAll() { rebuildTube(); rebuildSpheres(); rebuildLabels(); renderPointList(); updateCoordsDisplay(); }
+function rebuildAll() { rebuildTube(); rebuildSpheres(); rebuildLabels(); renderPointList(); updateCoordsDisplay(); saveToStorage(); }
 
 function rebuildTube() {
   if (tubeMesh) { scene.remove(tubeMesh); tubeMesh.geometry.dispose(); tubeMesh = null; }
@@ -538,6 +601,7 @@ function rebuildSpheres() {
 function selectPoint(idx) {
   selectedIdx = idx;
   rebuildSpheres();
+  rebuildLabels();
   renderPointList();
   updateCoordsDisplay();
 }
@@ -546,6 +610,39 @@ function selectPoint(idx) {
    操作
    ============================================================ */
 function pushUndo() { undoStack.push(JSON.parse(JSON.stringify(points))); if (undoStack.length > 50) undoStack.shift(); }
+
+/* --- localStorage 自动保存/恢复 --- */
+const STORAGE_KEY = 'lu-preview-points';
+
+function saveToStorage() {
+  try {
+    const data = { female: null, male: null };
+    // 保存当前模型的点
+    data[currentModel] = points;
+    // 保留另一个模型的旧存储
+    const old = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+    const otherModel = currentModel === 'female' ? 'male' : 'female';
+    data[otherModel] = old[otherModel] || null;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch { /* ignore */ }
+}
+
+function loadFromStorage() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    return data[currentModel] || null;
+  } catch { return null; }
+}
+
+function clearStorage() {
+  try {
+    const old = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+    delete old[currentModel];
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(old));
+  } catch { /* ignore */ }
+}
 
 window.undoAction = () => {
   if (!undoStack.length) { toast('无可撤销'); return; }
@@ -557,16 +654,27 @@ window.undoAction = () => {
 
 window.snapAllPoints = () => {
   pushUndo();
-  for (let i = 0; i < points.length; i++) points[i] = projectSingle(points[i], normalOffset);
+  for (let i = 0; i < points.length; i++) points[i] = projectSingle(points[i], 0);
   rebuildAll();
   toast('全部贴合完成');
+};
+
+window.resetToDefault = () => {
+  if (!confirm('确定重置为初始坐标？当前修改将丢失。')) return;
+  localStorage.removeItem(STORAGE_KEY);
+  points = JSON.parse(JSON.stringify(PATHS[currentModel]));
+  undoStack = [];
+  selectedIdx = -1;
+  buildAcuPointMap();
+  rebuildAll();
+  toast('已重置为初始坐标（含全部 11 个穴位）');
 };
 
 window.addPointAtMiddle = () => {
   if (selectedIdx < 0 || selectedIdx >= points.length - 1) { toast('选中一个非末尾点'); return; }
   pushUndo();
   const a = points[selectedIdx], b = points[selectedIdx + 1];
-  const mid = projectSingle([r3((a[0]+b[0])/2), r3((a[1]+b[1])/2), r3((a[2]+b[2])/2)], normalOffset);
+  const mid = projectSingle([r3((a[0]+b[0])/2), r3((a[1]+b[1])/2), r3((a[2]+b[2])/2)], 0);
   points.splice(selectedIdx + 1, 0, mid);
   selectedIdx++;
   rebuildAll();
@@ -575,6 +683,7 @@ window.addPointAtMiddle = () => {
 
 function deleteSelected() {
   if (selectedIdx < 0 || points.length <= 2) { toast('至少保留2个点'); return; }
+  if (isAcupoint(selectedIdx)) { toast('❌ 穴位点不可删除'); return; }
   pushUndo();
   points.splice(selectedIdx, 1);
   selectedIdx = Math.min(selectedIdx, points.length - 1);
@@ -598,12 +707,13 @@ window.exportCoords = () => {
 function renderPointList() {
   const el = document.getElementById('point-list');
   el.innerHTML = points.map((p, i) => {
-    const acu = matchAcupoint(p);
+    const acu = getAcupoint(i);
     const acuTag = acu ? `<span style="color:#ff6b6b;font-weight:600;margin-left:4px;font-size:10px">${acu.code}</span>` : '';
+    const delBtn = acu ? '' : `<span class="del" onclick="event.stopPropagation();window._del(${i})">×</span>`;
     return `<div class="pt ${i===selectedIdx?'sel':''}" onclick="window._sel(${i})">
       <span class="idx">${i}</span>
       <span class="coords">[${p[0]}, ${p[1]}, ${p[2]}]</span>${acuTag}
-      <span class="del" onclick="event.stopPropagation();window._del(${i})">×</span>
+      ${delBtn}
     </div>`;
   }).join('');
   if (selectedIdx >= 0 && el.children[selectedIdx]) el.children[selectedIdx].scrollIntoView({ block: 'nearest' });

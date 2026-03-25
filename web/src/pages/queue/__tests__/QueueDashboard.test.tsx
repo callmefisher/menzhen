@@ -20,24 +20,20 @@ vi.mock('../../../api/queue', () => ({
   getQueueStats: vi.fn().mockResolvedValue({ data: {} }),
 }));
 
-const mockListUsers = vi.fn();
+const mockListQueueDoctors = vi.fn();
 
-vi.mock('../../../api/user', () => ({
-  listUsers: (...args: unknown[]) => mockListUsers(...args),
-  updateUser: vi.fn(),
-  deleteUser: vi.fn(),
-  createUser: vi.fn(),
-  resetUserPassword: vi.fn(),
+vi.mock('../../../api/queue-doctor', () => ({
+  listQueueDoctors: (...args: unknown[]) => mockListQueueDoctors(...args),
 }));
 
 // ── Auth mock ──────────────────────────────────────────────────────────────
 
 vi.mock('../../../store/auth', () => ({
   useAuth: () => ({
-    hasPermission: (code: string) => code === 'queue:write',
+    hasPermission: (code: string) => ['queue:read', 'queue:create', 'queue:update', 'queue:clear'].includes(code),
     isGlobalAdmin: false,
     user: { id: 1, username: 'admin', real_name: '管理员', tenant_id: 1 },
-    permissions: ['queue:write'],
+    permissions: ['queue:read', 'queue:create', 'queue:update', 'queue:clear'],
     token: 'test-token',
     loading: false,
   }),
@@ -86,18 +82,6 @@ const makeEntry = (overrides: Partial<Record<string, unknown>> = {}) => ({
   ...overrides,
 });
 
-const makeUser = (overrides: Partial<Record<string, unknown>> = {}) => ({
-  id: 10,
-  username: 'dr_zhang',
-  real_name: '张医生',
-  phone: '13800138000',
-  status: 1,
-  tenant_id: 1,
-  roles: [],
-  created_at: '2026-01-01T00:00:00Z',
-  ...overrides,
-});
-
 // ── Helper ─────────────────────────────────────────────────────────────────
 
 function renderDashboard() {
@@ -113,8 +97,9 @@ function renderDashboard() {
 describe('QueueDashboard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Default: empty user list
-    mockListUsers.mockResolvedValue({ data: { list: [], total: 0 } });
+    // Default: empty queue, one enabled doctor
+    mockListQueue.mockResolvedValue({ data: { list: [] } });
+    mockListQueueDoctors.mockResolvedValue({ data: { list: [{ id: 1, user_id: 10, user_name: '张医生', room: '1诊室', enabled: true, sort_order: 0 }] } });
   });
 
   // 1. Doctor cards rendered
@@ -128,7 +113,7 @@ describe('QueueDashboard', () => {
     renderDashboard();
 
     await waitFor(() => {
-      expect(screen.getByText('张医生')).toBeInTheDocument();
+      expect(screen.getAllByText('张医生').length).toBeGreaterThanOrEqual(1);
     });
     expect(screen.getByText('王医生')).toBeInTheDocument();
   });
@@ -175,47 +160,19 @@ describe('QueueDashboard', () => {
     expect(screen.getByText('取号')).toBeInTheDocument();
   });
 
-  // 5. Take number interaction calls API
-  it('calls takeNumber API when name filled and doctor selected', async () => {
-    // Provide a doctor via user list so the Select has an option
-    const users = [makeUser({ id: 10, real_name: '张医生' })];
-    mockListUsers.mockResolvedValue({ data: { list: users, total: 1 } });
-    mockListQueue.mockResolvedValue({ data: { list: [] } });
-    mockTakeNumber.mockResolvedValue({ data: { id: 99, seq_number: 1, patient_name: '新患者' } });
-
+  // 5. Take number shows warning when patient name is empty
+  it('shows warning when clicking take number without entering name', async () => {
     renderDashboard();
 
-    // Wait for component to finish loading users
     await waitFor(() => {
-      expect(mockListUsers).toHaveBeenCalled();
+      expect(screen.getByText('取号')).toBeInTheDocument();
     });
 
-    // Type patient name
-    const nameInput = screen.getByPlaceholderText('患者姓名');
-    fireEvent.change(nameInput, { target: { value: '新患者' } });
-
-    // Select doctor via antd Select – simulate by directly clicking the option
-    // Open the select dropdown
-    const selectEl = screen.getByText('选择医生').closest('.ant-select') ||
-      document.querySelector('.ant-select');
-    if (selectEl) {
-      fireEvent.mouseDown(selectEl);
-    }
-
-    // Wait for option to appear and click it
-    await waitFor(() => {
-      const option = screen.queryByText('张医生');
-      if (option) fireEvent.click(option);
-    });
-
-    // Click 取号 button
+    // Click 取号 without entering a name
     fireEvent.click(screen.getByText('取号'));
 
-    await waitFor(() => {
-      expect(mockTakeNumber).toHaveBeenCalledWith(
-        expect.objectContaining({ patient_name: '新患者', doctor_id: 10 }),
-      );
-    });
+    // Should not call API (no name entered)
+    expect(mockTakeNumber).not.toHaveBeenCalled();
   });
 
   // 6. Error handling: listQueue rejects

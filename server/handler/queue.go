@@ -13,11 +13,12 @@ import (
 )
 
 type QueueHandler struct {
+	db  *gorm.DB
 	svc *service.QueueService
 }
 
 func NewQueueHandler(db *gorm.DB) *QueueHandler {
-	return &QueueHandler{svc: service.NewQueueService(db)}
+	return &QueueHandler{db: db, svc: service.NewQueueService(db)}
 }
 
 // List handles GET /queue?doctor_id=N
@@ -46,6 +47,7 @@ func (h *QueueHandler) List(c *gin.Context) {
 // TakeNumber handles POST /queue/take
 func (h *QueueHandler) TakeNumber(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
+	userID := middleware.GetUserID(c)
 
 	var req struct {
 		PatientName string `json:"patient_name" binding:"required"`
@@ -58,18 +60,30 @@ func (h *QueueHandler) TakeNumber(c *gin.Context) {
 		return
 	}
 
-	entry, err := h.svc.TakeNumber(uint(tenantID), req.PatientName, req.DoctorID, req.DoctorName, req.Room)
+	result, err := h.svc.TakeNumber(uint(tenantID), req.PatientName, req.DoctorID, req.DoctorName, req.Room, userID)
 	if err != nil {
+		if errors.Is(err, service.ErrDuplicatePatient) {
+			c.JSON(http.StatusConflict, gin.H{"code": 1, "message": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": err.Error()})
 		return
 	}
 
 	ws.DefaultHub.Broadcast(tenantID, ws.Message{
 		Type:    "queue_update",
-		Payload: gin.H{"action": "take", "entry": entry},
+		Payload: gin.H{"action": "take", "entry": result.Entry},
 	})
 
-	c.JSON(http.StatusOK, gin.H{"code": 0, "data": entry})
+	// If patient was auto-created, notify patient list to refresh
+	if result.CreatedPatient != nil {
+		ws.DefaultHub.Broadcast(tenantID, ws.Message{
+			Type:    "patient_created",
+			Payload: gin.H{"patient": result.CreatedPatient},
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": result.Entry})
 }
 
 // Call handles POST /queue/:id/call
@@ -173,6 +187,39 @@ func (h *QueueHandler) Clear(c *gin.Context) {
 	})
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"deleted": deleted}})
+}
+
+// Doctors handles GET /queue/doctors — lightweight user list for take-number dropdown.
+// Only requires queue:create, not user:manage.
+func (h *QueueHandler) Doctors(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+
+	var users []struct {
+		ID       uint64 `json:"id"`
+		RealName string `json:"real_name"`
+		Username string `json:"username"`
+	}
+	if err := h.db.Table("users").
+		Select("id, real_name, username").
+		Where("tenant_id = ? AND status = 1", tenantID).
+		Find(&users).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": err.Error()})
+		return
+	}
+
+	type doctorItem struct {
+		ID   uint64 `json:"id"`
+		Name string `json:"name"`
+	}
+	list := make([]doctorItem, 0, len(users))
+	for _, u := range users {
+		name := u.RealName
+		if name == "" {
+			name = u.Username
+		}
+		list = append(list, doctorItem{ID: u.ID, Name: name})
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": list}})
 }
 
 // Stats handles GET /queue/stats

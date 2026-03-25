@@ -43,3 +43,6 @@ export const clearQueue = () =>
 
 export const getQueueStats = () =>
   request.get('/queue/stats');
+
+export const listQueueDoctors = () =>
+  request.get('/queue/doctors');
