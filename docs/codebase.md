@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-03-16（MinIO 文件清理：删除/更新病历自动清理旧文件，孤立文件扫描清理 API）
+> 最后更新：2026-03-25（处方调配通知、租户级完整用户/角色管理、无障碍大字模式、打印中心、备份恢复 UI）
 
 ---
 
@@ -31,7 +31,7 @@ menzhen/
 │   ├── config/
 │   │   └── config.go                # Config 结构体 + Load()，全部读取环境变量
 │   ├── database/
-│   │   ├── database.go              # InitDB：连接 MySQL + AutoMigrate 全部 22 个模型（DisableForeignKeyConstraintWhenMigrating: true）
+│   │   ├── database.go              # InitDB：连接 MySQL + AutoMigrate 全部 25 个模型（DisableForeignKeyConstraintWhenMigrating: true）
 │   │   ├── seed.go                  # Seed：幂等写入 permissions/tenant/admin role/admin user
 │   │   └── hexagram_seed.json       # 64卦种子数据（卦名/卦辞/爻辞/传文/中医应用）
 │   ├── handler/
@@ -48,23 +48,27 @@ menzhen/
 │   │   ├── meridian_resource.go     # Get/Update（经络视频+出处，upsert模式）
 │   │   ├── wuyun_liuqi.go          # Get/QueryStream/Update/Delete（五运六气，SSE流式查询）
 │   │   ├── clinical_experience.go  # List/Detail/Create/Update/Delete/Categories（临床经验集）
-│   │   ├── inventory_drug.go      # List/Create/Update/Delete/StockIn/BatchStockIn（库存药物，租户隔离）
+│   │   ├── inventory_drug.go      # List/Create/Update/Delete/StockIn/StockOut/BatchStockIn/BatchStockOut（库存药物，租户隔离）
 │   │   ├── billing.go             # GetDetail/Create/DeductStock/ListByRecord/GetRecordBillingDetail/CreateRecordBilling（收费管理，租户隔离，支持处方收费和记录级收费）
-│   │   ├── statistics.go          # GetDashboard（统计仪表盘 API，读取 daily_stats）
+│   │   ├── statistics.go          # GetDashboard/RebuildStats（统计仪表盘 API，读取 daily_stats）
 │   │   ├── follow_up.go           # List/Create/Detail/Update/Delete/Stats（回访管理，租户隔离）
-│   │   ├── tenant_admin.go        # 租户级管理 HTTP 处理器（ListTenantUsers/UpdateTenantUser/DisableTenantUser/AssignTenantUserRoles/ListTenantRoles/CreateTenantRole/UpdateTenantRole/ListAssignablePermissions，ErrProtectedUser→403）
+│   │   ├── prescription_notification.go # List/PendingCount/Detail/MarkDone/BatchDone（调配通知，租户隔离）
+│   │   ├── tenant_admin.go        # 租户级管理 HTTP 处理器（ListUsers/CreateUser/UpdateUser/DeleteUser/AssignRoles/ResetPassword/ListRoles/CreateRole/UpdateRole/DeleteRole/ListTenantPermissions，ErrProtectedUser→403）
 │   │   ├── hexagram.go              # List/Detail/Create/Update/Delete/Trigrams（卦象管理）
-│   │   ├── ai_analysis.go           # Analyze（AI 辩证论治，含缓存）+ SaveCached + GetCached
-│   │   ├── config.go                # 系统配置 API handler（GetConfig/UpdateConfig，读取 .env 敏感字段掩码）
+│   │   ├── ai_analysis.go           # Analyze/AnalyzeStream（AI 辩证论治，含缓存）+ AnalyzeTongue/AnalyzeTongueStream + SaveCached + GetCached
+│   │   ├── config.go                # 系统配置 API handler（Get/Update/Restart，读取 .env 敏感字段掩码）
+│   │   ├── backup.go                # DockerStatus/TriggerBackup/TriggerRestore/GetTaskStatus/ListLocalFiles/ListCloudFiles（备份恢复管理）
+│   │   ├── ws.go                    # WebSocket Upgrade（JWT auth via query param or header）
 │   │   ├── oplog.go                 # ListOpLogs/DeleteOpLog/BatchDeleteOpLogs
-│   │   ├── user.go                  # List/Update/Delete/AssignRoles
-│   │   ├── role.go                  # List/Create/Update/ListPermissions
+│   │   ├── user.go                  # List/CreateUser/Update/Delete/AssignRoles/ResetPassword
+│   │   ├── role.go                  # List/Create/Update/Delete/ListPermissions
 │   │   ├── tenant.go                # List/Create/Update/Delete
 │   │   └── handler_test.go          # handler 测试
 │   ├── middleware/
 │   │   ├── auth.go                  # JWT 解析（含 TokenVersion），GenerateToken/TokenVersionMiddleware/GetTokenVersion
-│   │   ├── rbac.go                  # RequirePermission：检查用户是否拥有指定权限码
+│   │   ├── rbac.go                  # RequirePermission：检查用户是否拥有指定权限码（支持 OR 匹配）
 │   │   ├── tenant.go                # TenantScope：GORM scope，按 tenant_id 过滤
+│   │   ├── tenant_status.go         # TenantStatusMiddleware：校验租户状态（禁用租户拒绝访问）
 │   │   └── oplog.go                 # LogOperation：记录操作审计日志（best-effort）
 │   ├── model/                       # GORM 数据模型（见下方数据模型章节）
 │   ├── router/
@@ -80,13 +84,14 @@ menzhen/
 │   │   ├── meridian_resource.go     # 经络资源 GetByMeridianID/Upsert
 │   │   ├── wuyun_liuqi.go          # 五运六气 GetByYear/SaveFromAI/Update/Delete
 │   │   ├── clinical_experience.go  # 临床经验 Search/ListCategories/GetByID/Create/Update/DeleteByID
-│   │   ├── inventory_drug.go      # 库存药物 List/Create/Update/Delete/StockIn/BatchStockIn（租户隔离，BatchStockIn 批量查询+批量创建）
+│   │   ├── inventory_drug.go      # 库存药物 List/Create/Update/Delete/StockIn/StockOut/BatchStockIn/BatchStockOut（租户隔离）
 │   │   ├── billing.go              # 收费 GetBillingDetail/CreateBilling/DeductStockAndBill/ListBillingsByRecord/GetRecordBillingDetail/CreateRecordBilling（含实时价格计算：中药 元/500g→元/g 转换 + 中成药不乘付数 + 事务库存扣除 + 写时刷新daily_stats + 按处方药品名称定向查库存避免全表扫描）
 │   │   ├── statistics.go           # 统计服务 RefreshDailyStats/GetDashboard/RebuildAllDailyStats（每日汇总表聚合，批量查首诊日期替代N+1，范围查询替代DATE()函数确保索引生效）
 │   │   ├── storage_cleanup.go     # 孤立文件扫描清理服务 ScanOrphanFiles/CleanupOrphanFiles（比对 MinIO 对象与 DB 引用，找出并删除孤立文件）
 │   │   ├── db_cleanup.go          # 数据库孤立数据清理 ScanOrphanData/CleanupOrphanData（孤立处方/处方项/账单/用户角色/角色权限 + 过期软删除记录清理）
 │   │   ├── follow_up.go           # 回访 List/Create/Get/Update/Delete/Stats（租户隔离，含患者/记录名称关联+逾期状态自动标记，Stats单条聚合SQL替代4次COUNT）
-│   │   ├── tenant_admin.go         # 租户级用户/角色管理服务（ListTenantUsers 隐藏 user:manage 用户，UpdateUser/DisableUser/AssignRoles 返回 ErrProtectedUser）
+│   │   ├── tenant_admin.go         # 租户级用户/角色管理服务（ListUsers/CreateUser/UpdateUser/DeleteUser/AssignRoles/ResetPassword/ListRoles/CreateRole/UpdateRole/DeleteRole，隐藏 user:manage 用户，ErrProtectedUser）
+│   │   ├── backup.go                # 备份恢复服务（Docker exec 触发备份/恢复，异步任务状态跟踪，文件列表查询）
 │   │   ├── hexagram.go              # 卦象 Search/GetByID/Create/Update/DeleteByID/ListTrigrams
 │   │   ├── deepseek.go              # DeepSeek API 客户端（chat/chatLong/chatStream/QueryHerb/QueryFormula/QueryPulse/AnalyzeDiagnosis/AnalyzeTongue/QueryWuyunLiuqiStream）
 │   │   ├── deepseek_test.go         # DeepSeek 测试
@@ -104,7 +109,9 @@ menzhen/
 │       ├── App.tsx                  # 路由配置 + Layout（默认跳转 /patients）
 │       ├── index.css                # 全局样式 + 移动端 media query（< 768px）+ .current-user-row 高亮
 │       ├── hooks/
-│       │   └── useIsMobile.ts       # 基于 Grid.useBreakpoint()，< 768px 返回 true
+│       │   ├── useIsMobile.ts       # 基于 Grid.useBreakpoint()，< 768px 返回 true
+│       │   ├── useRowHighlight.ts   # 表格行高亮（当前用户行橙色标记）
+│       │   └── useSpeech.ts         # 语音输入 hook（Web Speech API）
 │       ├── api/                     # API 调用封装
 │       │   ├── auth.ts              # 登录/注册/登出/获取当前用户/修改密码/刷新Token
 │       │   ├── patient.ts           # 患者 CRUD
@@ -125,22 +132,42 @@ menzhen/
 │       │   ├── meridian.ts          # 经络资源获取/更新（视频+出处）
 │       │   ├── upload.ts            # 文件上传
 │       │   ├── oplog.ts             # 操作日志查询/删除
-│       │   ├── user.ts              # 用户管理
-│       │   ├── role.ts              # 角色管理
+│       │   ├── user.ts              # 用户管理（List/Create/Update/Delete/AssignRoles/ResetPassword）
+│       │   ├── role.ts              # 角色管理（List/Create/Update/Delete/ListPermissions）
 │       │   ├── tenant.ts            # 租户管理
-│       │   └── tenant-admin.ts      # 租户级管理前端 API（listTenantUsers/updateTenantUser/disableTenantUser/assignTenantUserRoles/listTenantRoles/createTenantRole/updateTenantRole/listAssignablePermissions）
+│       │   ├── tenant-admin.ts      # 租户级管理前端 API（listTenantUsers/createTenantUser/updateTenantUser/deleteTenantUser/assignTenantUserRoles/resetTenantUserPassword/listTenantRoles/createTenantRole/updateTenantRole/deleteTenantRole/listAssignablePermissions）
+│       │   ├── prescriptionNotification.ts # 调配通知 API（list/pendingCount/detail/markDone/batchDone）
+│       │   ├── backup.ts            # 备份恢复 API（dockerStatus/trigger/status/listLocal/listCloud/restore）
+│       │   └── dbCleanup.ts         # 数据库清理 API（cleanupOrphanData）
 │       ├── components/
-│       │   ├── Layout.tsx           # 侧边栏 + 顶部导航布局（移动端 Sider→Drawer + 汉堡按钮）
+│       │   ├── Layout.tsx           # 侧边栏 + 顶部导航布局（移动端 Sider→Drawer + 汉堡按钮，待配药 Badge 显示）
 │       │   ├── FileUpload.tsx       # 文件上传组件
 │       │   ├── PrescriptionModal.tsx  # 处方弹窗（开方/编辑，草药+中成药双区域，含药物详情查看，医嘱预填分行，按方开药自动追加方剂备注，选方后横排展示功效/主治/备注，编辑模式自动根据方剂名加载详情，开方时显示库存提示，中成药自动查询方剂功效/主治和库存）
 │       │   ├── HerbDetailModal.tsx   # 通用中药详情弹窗（方剂/处方复用）
 │       │   ├── PrescriptionPrint.tsx  # 处方打印（草药每10味一列多列并排，中成药单独一段，医嘱分行）
 │       │   ├── BillingDrawer.tsx    # 收费明细抽屉（处方收费+记录级收费，药品价格表+诊疗费编辑+实收+扣库存+打印，移动端卡片布局优化）
 │       │   ├── BillingPrint.tsx     # 收费单打印（window.open+window.print，中药含付数×，中成药仅数量）
+│       │   ├── DispenseDetail.tsx   # 调配通知详情组件（处方药物明细展示）
+│       │   ├── DispensePrint.tsx    # 调配单打印（患者/方剂/药物明细打印布局）
+│       │   ├── DispenseNotification.tsx # 调配通知消息组件
+│       │   ├── PrintCenterDrawer.tsx # 打印中心抽屉（调配队列管理，批量完成，打印调配单）
+│       │   ├── FollowUpPanel.tsx    # 回访管理侧边栏
+│       │   ├── SpeechButton.tsx     # 语音输入按钮
+│       │   ├── AuthMedia.tsx        # 认证媒体播放器（附加 JWT 的音视频播放）
+│       │   ├── HiddenColumnsHint.tsx # 表格隐藏列提示
+│       │   ├── ShelfTag.tsx         # 货架号标签显示组件
+│       │   ├── AccessibilityFab.tsx # 无障碍浮动按钮
+│       │   ├── AccessibilitySettingsPanel.tsx # 无障碍模式设置面板
+│       │   ├── AccessibilityToggle.tsx # 无障碍模式切换
 │       │   └── __tests__/           # 组件测试
 │       ├── pages/
-│       │   ├── Login.tsx            # 登录页（登录后跳转患者管理，移动端标题/图标尺寸自适应）
-│       │   ├── Register.tsx         # 注册页（移动端标题/间距自适应）
+│       │   ├── Login.tsx            # 登录页路由入口
+│       │   ├── LoginClassic.tsx     # 经典登录 UI
+│       │   ├── LoginNew.tsx         # 新版登录 UI
+│       │   ├── LoginBackground.tsx  # 登录页背景动画
+│       │   ├── Register.tsx         # 注册页路由入口
+│       │   ├── RegisterClassic.tsx  # 经典注册 UI
+│       │   ├── RegisterNew.tsx      # 新版注册 UI
 │       │   ├── OpLogList.tsx        # 操作日志列表
 │       │   ├── patients/            # 患者管理
 │       │   │   ├── PatientList.tsx
@@ -196,17 +223,22 @@ menzhen/
 │       │   │   ├── StatsDashboard.tsx # 综合仪表盘（时间选择+渐变汇总卡片+ECharts双轴图/堆叠图/分组图，响应式布局）
 │       │   │   └── components/        # SummaryCards（4卡片含治愈率）/RevenueTrendChart/RevenueBreakdownChart/PatientChart
 │       │   └── settings/            # 系统设置
-│       │       ├── UserList.tsx     # 移动端卡片列表 + Modal 自适应，当前用户橙色高亮+"当前"标签
-│       │       ├── RoleList.tsx     # 移动端卡片列表 + Modal 自适应
-│       │       ├── TenantList.tsx   # 移动端卡片列表 + Modal 自适应
-│       │       └── SystemConfig.tsx # 软件配置页面（敏感字段掩码展示、保存风险提示、配置影响说明抽屉）
+│       │       ├── UserList.tsx     # 用户管理（卡片式布局+创建/编辑/角色分配/重置密码 Modal，当前用户高亮）
+│       │       ├── RoleList.tsx     # 角色管理（卡片式布局+创建/编辑/删除 Modal，权限勾选）
+│       │       ├── TenantList.tsx   # 租户管理（卡片式布局+创建/编辑/启用禁用 Modal）
+│       │       ├── SystemConfig.tsx # 软件配置页面（敏感字段掩码展示、保存风险提示、配置影响说明抽屉）
+│       │       └── BackupRestore.tsx # 备份恢复页面（Docker状态、触发备份/恢复、本地/云端文件列表）
 │       ├── store/
-│       │   └── auth.tsx             # 认证状态管理
+│       │   ├── auth.tsx             # 认证状态管理（登录/登出/权限检查/角色信息）
+│       │   ├── accessibility.tsx    # 无障碍模式状态管理（大字模式/高对比度）
+│       │   └── theme.tsx            # 主题选择状态管理
 │       ├── test/
 │       │   └── setup.ts             # 测试配置（polyfill ResizeObserver、matchMedia）
 │       └── utils/
 │           ├── request.ts           # axios 封装（自动附加 JWT、401 跳转登录、409 自动刷新 Token + 重载页面）
-│           └── sse.ts               # SSE 流式请求工具（fetch + ReadableStream，支持 abort）
+│           ├── sse.ts               # SSE 流式请求工具（fetch + ReadableStream，支持 abort）
+│           ├── format.ts            # 格式化工具（fmtTotal 金额格式化、chunkToRows 数组分行）
+│           └── followUpStyles.ts    # 回访样式工具
 ├── nginx/
 │   └── nginx.conf                   # Nginx 反向代理配置
 ├── scripts/
@@ -220,6 +252,11 @@ menzhen/
 │   └── Dockerfile.backup            # 备份容器镜像（alpine + mysql-client + mc + python3 + qiniu SDK）
 ├── docker-compose.yml               # 6 个服务：nginx、web、api、mysql、minio、backup
 ├── deploy.sh                        # 一键部署脚本（生成 .env + build + 启动 + 可选恢复）
+├── deploy-wizard.py                 # 交互式部署向导（裸机安装，Python 脚本，支持 macOS/Linux/Windows）
+├── start-wizard.command             # macOS 启动脚本（双击运行部署向导）
+├── start-wizard.bat                 # Windows 启动脚本
+├── tools/
+│   └── voice-input/                 # 语音输入工具
 ├── web/public/
 │   ├── meridian-calibrator.html     # 经络坐标校正工具（Three.js 独立页面，穴位支持拖拽编辑）
 │   └── calibrator-server.mjs        # 校正工具 Node.js 服务（静态文件 + POST /api/save-calibration 写入 TS 源码）
@@ -250,7 +287,7 @@ menzhen/
 | `name` | `varchar(50)` | 权限名称 |
 | `description` | `varchar(200)` | 描述 |
 
-**全部权限码（共 29 个）：** `patient:create`, `patient:read`, `patient:update`, `patient:delete`, `record:create`, `record:read`, `record:update`, `record:delete`, `oplog:read`, `user:manage`, `role:manage`, `herb:read`, `formula:read`, `pulse:read`, `prescription:create`, `prescription:read`, `tenant:manage`, `inventory:read`, `inventory:create`, `inventory:update`, `inventory:delete`, `billing:read`, `billing:create`, `tenant:user:manage`（诊所用户管理）, `tenant:role:manage`（诊所角色管理）, `followup:create`, `followup:read`, `followup:update`, `followup:delete`
+**全部权限码（共 29 个）：** `patient:create`, `patient:read`, `patient:update`, `patient:delete`, `record:create`, `record:read`, `record:update`, `record:delete`, `oplog:read`, `user:manage`, `role:manage`, `herb:read`, `formula:read`, `prescription:create`, `prescription:read`, `tenant:manage`, `inventory:read`, `inventory:create`, `inventory:update`, `inventory:delete`, `billing:read`, `billing:create`, `tenant:user:manage`（诊所用户管理）, `tenant:role:manage`（诊所角色管理）, `followup:create`, `followup:read`, `followup:update`, `followup:delete`, `statistics:read`（统计数据）
 
 #### `herbs` — 中药
 
@@ -574,6 +611,29 @@ menzhen/
 | `content` | `text` | 回访内容 |
 | `created_by` | `uint64` | 创建者 |
 
+#### `prescription_notifications` — 调配通知（租户隔离，无软删除，24h 临时数据）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | `uint64` | 主键 |
+| `tenant_id` | `uint64` | 租户 ID（复合索引 idx_pn_tenant_status_created） |
+| `prescription_id` | `uint64` | 处方 ID（唯一索引 idx_pn_tenant_prescription） |
+| `record_id` | `uint64` | 诊疗记录 ID |
+| `patient_name` | `varchar(50)` | 患者姓名 |
+| `doctor_name` | `varchar(50)` | 医生姓名 |
+| `formula_name` | `varchar(100)` | 方剂名称 |
+| `total_doses` | `int` | 剂数（默认 7） |
+| `herb_count` | `int` | 草药数量 |
+| `patent_count` | `int` | 中成药数量 |
+| `notes` | `varchar(500)` | 备注 |
+| `status` | `varchar(10)` | 状态：pending/done（复合索引） |
+| `done_at` | `datetime nullable` | 完成时间 |
+| `done_by` | `uint64` | 完成操作人 ID |
+| `done_by_name` | `varchar(50)` | 完成操作人姓名 |
+| `created_by` | `uint64` | 创建者（医生） |
+| `created_at` | `time.Time` | 创建时间（复合索引） |
+| `updated_at` | `time.Time` | 更新时间 |
+
 ---
 
 ## API 路由清单
@@ -584,7 +644,7 @@ menzhen/
 |------|------|------|
 | POST | `/api/v1/auth/login` | 登录 |
 | POST | `/api/v1/auth/register` | 注册 |
-| GET | `/api/v1/files/*key` | 文件下载（浏览器 img 标签无法带 Authorization） |
+| GET | `/api/v1/ws` | WebSocket 升级（自行处理 JWT auth） |
 
 ### 认证路由（需 JWT）
 
@@ -604,6 +664,7 @@ menzhen/
 | GET | `/api/v1/patients` | `patient:read` | 患者列表（分页） |
 | POST | `/api/v1/patients` | `patient:create` | 创建患者 |
 | GET | `/api/v1/patients/:id` | `patient:read` | 患者详情 |
+| GET | `/api/v1/patients/:id/page` | `patient:read` | 患者分页定位 |
 | PUT | `/api/v1/patients/:id` | `patient:update` | 更新患者 |
 | DELETE | `/api/v1/patients/:id` | `patient:delete` | 删除患者 |
 
@@ -614,21 +675,26 @@ menzhen/
 | GET | `/api/v1/records` | `record:read` | 记录列表（分页） |
 | POST | `/api/v1/records` | `record:create` | 创建记录 |
 | GET | `/api/v1/records/:id` | `record:read` | 记录详情 |
+| GET | `/api/v1/records/:id/page` | `record:read` | 记录分页定位 |
 | PUT | `/api/v1/records/:id` | `record:update` | 更新记录 |
 | DELETE | `/api/v1/records/:id` | `record:delete` | 删除记录 |
 
-#### 文件上传
+#### 文件管理
 
 | 方法 | 路径 | 权限 | 说明 |
 |------|------|------|------|
+| GET | `/api/v1/files/*key` | - | 文件下载（认证路由） |
 | POST | `/api/v1/upload` | - | 文件上传到 MinIO |
+| DELETE | `/api/v1/upload` | - | 删除已上传文件 |
 
 #### AI 分析
 
 | 方法 | 路径 | 权限 | 说明 |
 |------|------|------|------|
 | POST | `/api/v1/ai/analyze-diagnosis` | `record:read` | AI 辅助辩证论治分析（支持缓存，超时 120s） |
-| POST | `/api/v1/ai/analyze-tongue` | `record:read` | AI 舌象分析（输入描述返回 Markdown，结果缓存到 medical_records.tongue_analysis） |
+| POST | `/api/v1/ai/analyze-diagnosis-stream` | `record:read` | AI 辩证论治分析（SSE 流式） |
+| POST | `/api/v1/ai/analyze-tongue` | `record:read` | AI 舌象分析（输入描述返回 Markdown） |
+| POST | `/api/v1/ai/analyze-tongue-stream` | `record:read` | AI 舌象分析（SSE 流式） |
 | GET | `/api/v1/records/:id/ai-analysis` | `record:read` | 获取已缓存的 AI 分析结果 |
 | POST | `/api/v1/records/:id/ai-analysis` | `record:read` | 直接保存 AI 分析结果（用于新建记录保存后回写） |
 
@@ -639,7 +705,9 @@ menzhen/
 | GET | `/api/v1/herbs` | - | 搜索中药（DB + AI 回退），参数：`name`, `category`, `page`, `size` |
 | GET | `/api/v1/herbs/categories` | - | 获取中药分类列表（从已有数据中聚合） |
 | GET | `/api/v1/herbs/:id` | - | 中药详情 |
-| PUT | `/api/v1/herbs/:id` | `role:manage` | 更新中药（药名/别名/分类/性味/功效/主治/道地产区） |
+| GET | `/api/v1/herbs/:id/page` | - | 中药分页定位 |
+| POST | `/api/v1/herbs` | `role:manage` | 新增中药 |
+| PUT | `/api/v1/herbs/:id` | `role:manage` | 更新中药 |
 | POST | `/api/v1/herbs/:id/ai-refresh` | `role:manage` | AI重新查询中药信息并更新 |
 | DELETE | `/api/v1/herbs/:id` | `role:manage` | 删除中药 |
 
@@ -649,6 +717,8 @@ menzhen/
 |------|------|------|------|
 | GET | `/api/v1/formulas` | - | 搜索方剂（DB + AI 回退），参数：`name`, `page`, `size` |
 | GET | `/api/v1/formulas/:id` | - | 方剂详情 |
+| GET | `/api/v1/formulas/:id/page` | - | 方剂分页定位 |
+| POST | `/api/v1/formulas` | `role:manage` | 新增方剂 |
 | PUT | `/api/v1/formulas/:id/composition` | `role:manage` | 更新方剂药物组成 |
 | PUT | `/api/v1/formulas/:id/name` | `role:manage` | 更新方剂名称 |
 | PUT | `/api/v1/formulas/:id/notes` | `role:manage` | 更新方剂备注 |
@@ -679,6 +749,7 @@ menzhen/
 | GET | `/api/v1/clinical-experiences` | - | 搜索临床经验（分页+关键词/分类筛选） |
 | GET | `/api/v1/clinical-experiences/categories` | - | 临床经验分类列表 |
 | GET | `/api/v1/clinical-experiences/:id` | - | 临床经验详情 |
+| GET | `/api/v1/clinical-experiences/:id/page` | - | 临床经验分页定位 |
 | POST | `/api/v1/clinical-experiences` | `role:manage` | 新增临床经验 |
 | PUT | `/api/v1/clinical-experiences/:id` | `role:manage` | 更新临床经验 |
 | DELETE | `/api/v1/clinical-experiences/:id` | `role:manage` | 删除临床经验 |
@@ -735,9 +806,11 @@ menzhen/
 | 方法 | 路径 | 权限 | 说明 |
 |------|------|------|------|
 | GET | `/api/v1/users` | `user:manage` | 用户列表 |
+| POST | `/api/v1/users` | `user:manage` | 创建用户 |
 | PUT | `/api/v1/users/:id` | `user:manage` | 更新用户 |
 | DELETE | `/api/v1/users/:id` | `user:manage` | 删除用户 |
 | POST | `/api/v1/users/:id/roles` | `user:manage` | 为用户分配角色 |
+| POST | `/api/v1/users/:id/reset-password` | `user:manage` | 重置用户密码 |
 
 #### 角色管理
 
@@ -746,6 +819,7 @@ menzhen/
 | GET | `/api/v1/roles` | `role:manage` | 角色列表 |
 | POST | `/api/v1/roles` | `role:manage` | 创建角色 |
 | PUT | `/api/v1/roles/:id` | `role:manage` | 更新角色 |
+| DELETE | `/api/v1/roles/:id` | `role:manage` | 删除角色 |
 | GET | `/api/v1/permissions` | `role:manage` | 全部权限列表 |
 
 #### 租户/诊所管理
@@ -762,12 +836,15 @@ menzhen/
 | 方法 | 路径 | 权限 | 说明 |
 |------|------|------|------|
 | GET | `/api/v1/tenant/users` | `tenant:user:manage` 或 `user:manage` | 列出本诊所用户（分页） |
+| POST | `/api/v1/tenant/users` | `tenant:user:manage` 或 `user:manage` | 创建本诊所用户 |
 | PUT | `/api/v1/tenant/users/:id` | `tenant:user:manage` 或 `user:manage` | 编辑本诊所用户 |
-| DELETE | `/api/v1/tenant/users/:id` | `tenant:user:manage` 或 `user:manage` | 禁用本诊所用户 |
+| DELETE | `/api/v1/tenant/users/:id` | `tenant:user:manage` 或 `user:manage` | 禁用/删除本诊所用户 |
 | POST | `/api/v1/tenant/users/:id/roles` | `tenant:user:manage` 或 `user:manage` | 为本诊所用户分配角色 |
+| POST | `/api/v1/tenant/users/:id/reset-password` | `tenant:user:manage` 或 `user:manage` | 重置本诊所用户密码 |
 | GET | `/api/v1/tenant/roles` | `tenant:role:manage` 或 `role:manage` | 列出本诊所角色 |
 | POST | `/api/v1/tenant/roles` | `tenant:role:manage` 或 `role:manage` | 创建本诊所角色 |
 | PUT | `/api/v1/tenant/roles/:id` | `tenant:role:manage` 或 `role:manage` | 编辑本诊所角色 |
+| DELETE | `/api/v1/tenant/roles/:id` | `tenant:role:manage` 或 `role:manage` | 删除本诊所角色 |
 | GET | `/api/v1/tenant/permissions` | `tenant:role:manage` 或 `role:manage` | 列出可分配权限（排除全局管理权限） |
 
 #### 库存管理（租户隔离）
@@ -777,15 +854,29 @@ menzhen/
 | GET | `/api/v1/inventory/drugs` | `inventory:read` | 库存药物列表（分页，支持 name/category 筛选） |
 | POST | `/api/v1/inventory/drugs` | `inventory:create` | 新增库存药物 |
 | POST | `/api/v1/inventory/drugs/batch-stock-in` | `inventory:create` | 批量入库（已有药物累加库存，新药物自动创建） |
+| POST | `/api/v1/inventory/drugs/batch-stock-out` | `inventory:update` | 批量出库 |
 | POST | `/api/v1/inventory/drugs/:id/stock-in` | `inventory:update` | 单个药物入库（累加库存量） |
+| POST | `/api/v1/inventory/drugs/:id/stock-out` | `inventory:update` | 单个药物出库 |
+| GET | `/api/v1/inventory/drugs/:id/page` | `inventory:read` | 库存药物分页定位 |
 | PUT | `/api/v1/inventory/drugs/:id` | `inventory:update` | 更新库存药物 |
 | DELETE | `/api/v1/inventory/drugs/:id` | `inventory:delete` | 删除库存药物 |
 
-#### 统计（需 tenant:manage 权限）
+#### 调配通知（租户隔离）
 
 | 方法 | 路径 | 权限 | 说明 |
 |------|------|------|------|
-| GET | `/api/v1/statistics/dashboard` | `tenant:manage` | 统计仪表盘（参数：start_date, end_date）返回 summary（含 cure_rate/cure_rate_change_percent）、daily_trend、breakdown |
+| GET | `/api/v1/prescription-notifications` | `inventory:read` | 调配通知列表（待配药/已完成） |
+| GET | `/api/v1/prescription-notifications/pending-count` | - | 待配药数量（用于 Badge 显示） |
+| GET | `/api/v1/prescription-notifications/:id/detail` | `inventory:read` | 调配通知详情（含处方药物明细） |
+| POST | `/api/v1/prescription-notifications/:id/done` | `inventory:update` | 标记为已配药 |
+| POST | `/api/v1/prescription-notifications/batch-done` | `inventory:update` | 批量标记为已配药 |
+
+#### 统计
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| GET | `/api/v1/statistics/dashboard` | `statistics:read` | 统计仪表盘（参数：start_date, end_date）返回 summary（含 cure_rate/cure_rate_change_percent）、daily_trend、breakdown |
+| POST | `/api/v1/statistics/rebuild` | `tenant:manage` | 重建全部统计数据 |
 
 #### 回访管理（租户隔离）
 
@@ -794,6 +885,7 @@ menzhen/
 | GET | `/api/v1/follow-ups` | `followup:read` | 回访列表（分页，支持 patient_name/status/日期筛选） |
 | POST | `/api/v1/follow-ups` | `followup:create` | 新建回访 |
 | GET | `/api/v1/follow-ups/stats` | `followup:read` | 回访统计（待回访/逾期/今日/已完成） |
+| GET | `/api/v1/follow-ups/:id/page` | `followup:read` | 回访分页定位 |
 | GET | `/api/v1/follow-ups/:id` | `followup:read` | 回访详情 |
 | PUT | `/api/v1/follow-ups/:id` | `followup:update` | 编辑回访 |
 | DELETE | `/api/v1/follow-ups/:id` | `followup:delete` | 删除回访 |
@@ -804,12 +896,31 @@ menzhen/
 |------|------|------|------|
 | GET | `/api/v1/config` | `user:manage` | 读取系统配置（敏感字段掩码） |
 | PUT | `/api/v1/config` | `user:manage` | 更新系统配置（写入 .env） |
+| POST | `/api/v1/config/restart` | `user:manage` | 触发服务重启 |
 
 ### 存储管理
 
 | 方法 | 路径 | 权限 | 说明 |
 |------|------|------|------|
 | POST | `/api/v1/storage/cleanup?dry_run=true` | `user:manage` | 扫描孤立文件（dry_run=true 仅扫描，false 执行删除） |
+
+### 数据库清理
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| POST | `/api/v1/db/cleanup` | `user:manage` | 扫描/清理孤立数据（孤立处方/账单/用户角色等） |
+
+### 备份恢复
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| GET | `/api/v1/backup/docker-status` | `user:manage` | Docker 服务状态 |
+| POST | `/api/v1/backup/trigger` | `user:manage` | 触发备份 |
+| GET | `/api/v1/backup/status/:task_id` | `user:manage` | 备份任务状态 |
+| GET | `/api/v1/backup/list/local` | `user:manage` | 本地备份文件列表 |
+| GET | `/api/v1/backup/list/cloud` | `user:manage` | 云端备份文件列表 |
+| POST | `/api/v1/restore/trigger` | `user:manage` | 触发恢复 |
+| GET | `/api/v1/restore/status/:task_id` | `user:manage` | 恢复任务状态 |
 
 ---
 
@@ -975,6 +1086,10 @@ menzhen/
 2. **默认租户** — code=`default`, name=`默认诊所`
 3. **管理员角色** — 关联全部权限（已存在则同步权限集）
 4. **管理员用户** — username=`admin`, password=`admin123`
+5. **诊所运营角色** — 关联 `tenant:user:manage`, `tenant:role:manage`
+6. **24 节气** — 幂等写入（如已存在则跳过）
+7. **64 卦象** — 从 hexagram_seed.json 加载（如已存在则跳过）
+8. **空日统计回填** — 重建缺失的 daily_stats 记录
 
 ### 默认角色
 
