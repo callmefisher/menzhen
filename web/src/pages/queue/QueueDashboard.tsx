@@ -1,3 +1,744 @@
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { Button, Input, Select, Slider, Tabs, Tooltip, Modal, message } from 'antd';
+import { SoundOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
+import { listQueue, takeNumber, callNumber, completeVisit, clearQueue, type QueueEntry } from '../../api/queue';
+import { listUsers } from '../../api/user';
+import { useWebSocket } from '../../hooks/useWebSocket';
+import { useAuth } from '../../store/auth';
+import useIsMobile from '../../hooks/useIsMobile';
+import CallOverlay from '../../components/CallOverlay';
+
+const DOCTOR_COLORS = ['#52c41a', '#faad14', '#722ed1', '#cf1322', '#1677ff', '#13c2c2', '#eb2f96', '#fa541c'];
+
+interface DoctorGroup {
+  doctorId: number;
+  doctorName: string;
+  room: string;
+  entries: QueueEntry[];
+}
+
+interface CallOverlayState {
+  visible: boolean;
+  seq: number;
+  name: string;
+  room: string;
+  doctor: string;
+}
+
+interface DoctorOption {
+  id: number;
+  name: string;
+  room: string;
+}
+
 export default function QueueDashboard() {
-  return <div>排队叫号（开发中）</div>;
+  const { hasPermission } = useAuth();
+  const isMobile = useIsMobile();
+
+  const [entries, setEntries] = useState<QueueEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [speed, setSpeed] = useState(0);
+  const [takeNameValue, setTakeNameValue] = useState('');
+  const [takeDoctorId, setTakeDoctorId] = useState<number | undefined>();
+  const [takeLoading, setTakeLoading] = useState(false);
+  const [overlays, setOverlays] = useState<Record<number, CallOverlayState>>({});
+  const [doctors, setDoctors] = useState<DoctorOption[]>([]);
+
+  // Fetch queue data
+  const fetchQueue = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await listQueue();
+      const body = res as any;
+      const list: QueueEntry[] = body.data?.list || [];
+      setEntries(list);
+    } catch {
+      /* ignore */
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Fetch doctors (users with doctor-like role)
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await listUsers({ page: 1, size: 9999 });
+        const body = res as any;
+        const users = body.data?.list || [];
+        // All users can potentially be doctors for queue purposes
+        const docs: DoctorOption[] = users.map((u: any) => ({
+          id: u.id,
+          name: u.real_name || u.username,
+          room: '',
+        }));
+        setDoctors(docs);
+      } catch {
+        /* ignore - will derive from queue data */
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    fetchQueue();
+  }, [fetchQueue]);
+
+  // WebSocket listeners
+  useWebSocket('queue_update', useCallback(() => {
+    fetchQueue();
+  }, [fetchQueue]));
+
+  useWebSocket('queue_call', useCallback((msg: any) => {
+    const { doctor_id, seq, patient_name, room, doctor_name } = msg.payload || {};
+    if (doctor_id && seq) {
+      setOverlays(prev => ({
+        ...prev,
+        [doctor_id]: { visible: true, seq, name: patient_name, room, doctor: doctor_name },
+      }));
+    }
+  }, []));
+
+  useWebSocket('queue_clear', useCallback(() => {
+    setEntries([]);
+    setOverlays({});
+  }, []));
+
+  useWebSocket('_reconnect', useCallback(() => {
+    fetchQueue();
+  }, [fetchQueue]));
+
+  // Group entries by doctor
+  const doctorGroups: DoctorGroup[] = useMemo(() => {
+    const map = new Map<number, DoctorGroup>();
+    for (const e of entries) {
+      if (e.status === 'done' || e.status === 'missed') continue;
+      if (!map.has(e.doctor_id)) {
+        map.set(e.doctor_id, {
+          doctorId: e.doctor_id,
+          doctorName: e.doctor_name,
+          room: e.room,
+          entries: [],
+        });
+      }
+      map.get(e.doctor_id)!.entries.push(e);
+    }
+    return Array.from(map.values());
+  }, [entries]);
+
+  // Stats
+  const stats = useMemo(() => {
+    let waiting = 0, seeing = 0, done = 0;
+    for (const e of entries) {
+      if (e.status === 'waiting' || e.status === 'ready') waiting++;
+      else if (e.status === 'seeing') seeing++;
+      else if (e.status === 'done') done++;
+    }
+    return { waiting, seeing, done };
+  }, [entries]);
+
+  // Doctor options for take-number (merge from queue data + user list)
+  const doctorOptions = useMemo(() => {
+    const seen = new Set<number>();
+    const opts: DoctorOption[] = [];
+    // From queue data first
+    for (const g of doctorGroups) {
+      if (!seen.has(g.doctorId)) {
+        seen.add(g.doctorId);
+        opts.push({ id: g.doctorId, name: g.doctorName, room: g.room });
+      }
+    }
+    // From user list
+    for (const d of doctors) {
+      if (!seen.has(d.id)) {
+        seen.add(d.id);
+        opts.push(d);
+      }
+    }
+    return opts;
+  }, [doctorGroups, doctors]);
+
+  // Handle take number
+  const handleTakeNumber = async () => {
+    if (!takeNameValue.trim()) {
+      message.warning('请输入患者姓名');
+      return;
+    }
+    if (!takeDoctorId) {
+      message.warning('请选择医生');
+      return;
+    }
+    const doc = doctorOptions.find(d => d.id === takeDoctorId);
+    if (!doc) return;
+
+    try {
+      setTakeLoading(true);
+      const res = await takeNumber({
+        patient_name: takeNameValue.trim(),
+        doctor_id: takeDoctorId,
+        doctor_name: doc.name,
+        room: doc.room,
+      });
+      const body = res as any;
+      const entry = body.data;
+      message.success(`${takeNameValue.trim()} 取号成功 -> ${String(entry?.seq_number || '').padStart(2, '0')}号 - ${doc.name}`);
+      setTakeNameValue('');
+    } catch {
+      message.error('取号失败');
+    } finally {
+      setTakeLoading(false);
+    }
+  };
+
+  // Handle call
+  const handleCall = async (entry: QueueEntry) => {
+    try {
+      await callNumber(entry.id);
+    } catch {
+      message.error('叫号失败');
+    }
+  };
+
+  // Handle complete
+  const handleComplete = async (entry: QueueEntry) => {
+    try {
+      await completeVisit(entry.id);
+    } catch {
+      message.error('完成就诊失败');
+    }
+  };
+
+  // Handle clear
+  const handleClear = () => {
+    Modal.confirm({
+      title: '一键清空',
+      content: '确定要清空今日所有排队记录吗？此操作不可撤销。',
+      okText: '确定清空',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          await clearQueue();
+          message.success('已清空');
+        } catch {
+          message.error('清空失败');
+        }
+      },
+    });
+  };
+
+  // Close overlay for a doctor
+  const closeOverlay = useCallback((doctorId: number) => {
+    setOverlays(prev => ({
+      ...prev,
+      [doctorId]: { ...prev[doctorId], visible: false },
+    }));
+  }, []);
+
+  // Grid columns
+  const gridCols = useMemo(() => {
+    const count = doctorGroups.length;
+    if (count <= 1) return '1fr';
+    if (count === 2) return '1fr 1fr';
+    return 'repeat(2, 1fr)';
+  }, [doctorGroups.length]);
+
+  // Speed label
+  const speedLabel = useMemo(() => {
+    if (speed === 0) return '停';
+    if (speed <= 15) return '极慢';
+    if (speed <= 35) return '慢';
+    if (speed <= 55) return '中';
+    if (speed <= 75) return '快';
+    return '极快';
+  }, [speed]);
+
+  // Mobile: currently selected doctor tab
+  const [activeTabKey, setActiveTabKey] = useState<string>('');
+
+  // Keep active tab in sync when doctorGroups changes
+  useEffect(() => {
+    if (doctorGroups.length === 0) {
+      setActiveTabKey('');
+      return;
+    }
+    const ids = doctorGroups.map(g => String(g.doctorId));
+    if (!ids.includes(activeTabKey)) {
+      setActiveTabKey(ids[0]);
+    }
+  }, [doctorGroups, activeTabKey]);
+
+  // Stats row (shared between mobile and desktop)
+  const statsRow = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 8, flexWrap: 'wrap' }}>
+      <span style={{ fontSize: isMobile ? 15 : 18, fontWeight: 700 }}>排队叫号</span>
+      <StatBadge count={stats.waiting} label="候诊" color="#1677ff" bgFrom="#e6f7ff" bgTo="#f0f5ff" border="#d6e4ff" />
+      <StatBadge count={stats.seeing} label="就诊" color="#52c41a" bgFrom="#f6ffed" bgTo="#fcffe6" border="#d9f7be" />
+      <StatBadge count={stats.done} label="已完成" color="#8c8c8c" bgFrom="#f9f9f9" bgTo="#f5f5f5" border="#e8e8e8" />
+      {hasPermission('queue:write') && (
+        <Button
+          size="small"
+          danger
+          icon={<DeleteOutlined />}
+          onClick={handleClear}
+          style={{ marginLeft: 'auto' }}
+        >
+          一键清空
+        </Button>
+      )}
+    </div>
+  );
+
+  // Take-number bar (shared)
+  const takeNumberBar = hasPermission('queue:write') && (
+    <div style={{
+      display: 'flex', justifyContent: 'flex-end', alignItems: 'center',
+      gap: 8, marginTop: 10, flexShrink: 0, flexWrap: 'wrap',
+    }}>
+      <span style={{ fontSize: 13, fontWeight: 600, color: '#555' }}>现场取号</span>
+      <Input
+        placeholder="患者姓名"
+        value={takeNameValue}
+        onChange={e => setTakeNameValue(e.target.value)}
+        onPressEnter={handleTakeNumber}
+        style={{ width: isMobile ? 110 : 120 }}
+        size="middle"
+      />
+      <Select
+        placeholder="选择医生"
+        value={takeDoctorId}
+        onChange={setTakeDoctorId}
+        style={{ width: isMobile ? 110 : 120 }}
+        size="middle"
+        showSearch
+        optionFilterProp="label"
+        options={doctorOptions.map(d => ({ value: d.id, label: d.name }))}
+      />
+      <Button
+        type="primary"
+        icon={<PlusOutlined />}
+        loading={takeLoading}
+        onClick={handleTakeNumber}
+        size="middle"
+        style={{
+          background: 'linear-gradient(135deg, #73d13d, #52c41a)',
+          fontWeight: 700,
+          border: 'none',
+        }}
+      >
+        取号
+      </Button>
+    </div>
+  );
+
+  if (isMobile) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', minHeight: 400 }}>
+        {/* Stats row */}
+        <div style={{ marginBottom: 10, flexShrink: 0 }}>
+          {statsRow}
+        </div>
+
+        {/* Doctor Tabs */}
+        {doctorGroups.length === 0 && !loading ? (
+          <div style={{ textAlign: 'center', padding: 60, color: '#999' }}>
+            暂无排队数据
+          </div>
+        ) : (
+          <Tabs
+            activeKey={activeTabKey}
+            onChange={setActiveTabKey}
+            size="small"
+            style={{ flex: 1 }}
+            tabBarStyle={{ marginBottom: 8 }}
+            items={doctorGroups.map((group, idx) => {
+              const color = DOCTOR_COLORS[idx % DOCTOR_COLORS.length];
+              const waitingCount = group.entries.filter(e => e.status === 'waiting' || e.status === 'ready').length;
+              return {
+                key: String(group.doctorId),
+                label: (
+                  <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1.3, padding: '2px 0' }}>
+                    <span style={{ fontWeight: 700, fontSize: 12, color: activeTabKey === String(group.doctorId) ? color : undefined }}>
+                      {group.doctorName}
+                    </span>
+                    <span style={{ fontSize: 10, color: activeTabKey === String(group.doctorId) ? color : '#999' }}>
+                      等候{waitingCount}
+                    </span>
+                  </span>
+                ),
+                children: (
+                  <div style={{ position: 'relative' }}>
+                    <DoctorCard
+                      group={group}
+                      colorIndex={idx}
+                      speed={0}
+                      overlay={overlays[group.doctorId]}
+                      onCloseOverlay={() => closeOverlay(group.doctorId)}
+                      onCall={handleCall}
+                      onComplete={handleComplete}
+                      hasWritePermission={hasPermission('queue:write')}
+                    />
+                  </div>
+                ),
+              };
+            })}
+          />
+        )}
+
+        {/* Take number bar */}
+        {takeNumberBar}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 140px)', minHeight: 400 }}>
+      {/* Header stats */}
+      <div style={{ marginBottom: 10, flexShrink: 0 }}>
+        {statsRow}
+      </div>
+
+      {/* Speed slider */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexShrink: 0 }}>
+        <span style={{ fontSize: 12, color: '#999' }}>滚动速度</span>
+        <Slider
+          min={0} max={100} value={speed} onChange={setSpeed}
+          style={{ width: 120 }}
+          tooltip={{ formatter: () => speedLabel }}
+        />
+        <span style={{ fontSize: 12, color: '#52c41a', fontWeight: 600, minWidth: 28 }}>{speedLabel}</span>
+      </div>
+
+      {/* Doctor cards grid */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: gridCols,
+        gap: 10,
+        flex: 1,
+        minHeight: 0,
+        overflow: 'auto',
+      }}>
+        {doctorGroups.length === 0 && !loading && (
+          <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 60, color: '#999' }}>
+            暂无排队数据
+          </div>
+        )}
+        {doctorGroups.map((group, idx) => (
+          <DoctorCard
+            key={group.doctorId}
+            group={group}
+            colorIndex={idx}
+            speed={speed}
+            overlay={overlays[group.doctorId]}
+            onCloseOverlay={() => closeOverlay(group.doctorId)}
+            onCall={handleCall}
+            onComplete={handleComplete}
+            hasWritePermission={hasPermission('queue:write')}
+          />
+        ))}
+      </div>
+
+      {/* Take number bar */}
+      {takeNumberBar}
+    </div>
+  );
+}
+
+/* ============ Sub-components ============ */
+
+function StatBadge({ count, label, color, bgFrom, bgTo, border }: {
+  count: number; label: string; color: string; bgFrom: string; bgTo: string; border: string;
+}) {
+  return (
+    <div style={{
+      background: `linear-gradient(135deg, ${bgFrom}, ${bgTo})`,
+      padding: '4px 14px', borderRadius: 6,
+      border: `1px solid ${border}`, fontSize: 12,
+    }}>
+      <b style={{ color }}>{count}</b>{' '}
+      <span style={{ color }}>{label}</span>
+    </div>
+  );
+}
+
+function DoctorCard({ group, colorIndex, speed, overlay, onCloseOverlay, onCall, onComplete, hasWritePermission }: {
+  group: DoctorGroup;
+  colorIndex: number;
+  speed: number;
+  overlay?: CallOverlayState;
+  onCloseOverlay: () => void;
+  onCall: (e: QueueEntry) => void;
+  onComplete: (e: QueueEntry) => void;
+  hasWritePermission: boolean;
+}) {
+  const color = DOCTOR_COLORS[colorIndex % DOCTOR_COLORS.length];
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const hoveredRef = useRef(false);
+
+  // Auto scroll
+  useEffect(() => {
+    if (speed === 0) return;
+    // Map speed 1-100 to interval 150-15ms
+    let interval: number;
+    if (speed <= 15) interval = 150;
+    else if (speed <= 35) interval = 80;
+    else if (speed <= 55) interval = 50;
+    else if (speed <= 75) interval = 30;
+    else interval = 15;
+
+    let lastTick = 0;
+    let paused = false;
+    let rafId: number;
+
+    const tick = () => {
+      const now = performance.now();
+      const el = scrollRef.current;
+      if (el && !hoveredRef.current && !paused && now - lastTick >= interval) {
+        lastTick = now;
+        el.scrollTop += 1;
+        if (el.scrollTop >= el.scrollHeight - el.clientHeight - 1) {
+          paused = true;
+          setTimeout(() => { if (el) el.scrollTop = 0; paused = false; }, 2000);
+        }
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [speed]);
+
+  const waitingCount = group.entries.filter(e => e.status === 'waiting' || e.status === 'ready').length;
+
+  // Find the "seeing" entry and "next" (first waiting) entry
+  const seeingEntry = group.entries.find(e => e.status === 'seeing');
+  const waitingEntries = group.entries.filter(e => e.status === 'waiting' || e.status === 'ready');
+  const firstWaiting = waitingEntries[0];
+
+  // Handle call for first waiting in this doctor's queue
+  const handleCallDoctor = () => {
+    const target = seeingEntry || firstWaiting;
+    if (target) onCall(target);
+  };
+
+  return (
+    <div style={{
+      background: '#fff', borderRadius: 10,
+      border: '1px solid #f0f0f0',
+      boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+      overflow: 'hidden', display: 'flex', flexDirection: 'column',
+      position: 'relative', minHeight: 200,
+    }}>
+      {/* Card header */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '10px 12px',
+        borderBottom: '1px solid #f5f5f5',
+        background: `linear-gradient(90deg, ${color}10 0%, #fff 100%)`,
+        flexShrink: 0,
+      }}>
+        <div style={{
+          width: 32, height: 32,
+          background: `linear-gradient(135deg, ${color}, ${color}cc)`,
+          color: '#fff', borderRadius: 8,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 14, fontWeight: 700, flexShrink: 0,
+        }}>
+          {group.doctorName.charAt(0)}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: 13 }}>{group.doctorName}</div>
+          <div style={{ fontSize: 10, color: '#999' }}>{group.room || '诊室'}</div>
+        </div>
+        <div style={{
+          background: color, color: '#fff',
+          fontSize: 10, padding: '2px 8px', borderRadius: 10, fontWeight: 600,
+        }}>
+          等候 {waitingCount}
+        </div>
+        {hasWritePermission && (
+          <Button
+            type="text"
+            size="small"
+            icon={<SoundOutlined />}
+            onClick={handleCallDoctor}
+            style={{ color, fontWeight: 600, fontSize: 12 }}
+          >
+            叫号
+          </Button>
+        )}
+      </div>
+
+      {/* Queue list */}
+      <div
+        ref={scrollRef}
+        onMouseEnter={() => { hoveredRef.current = true; }}
+        onMouseLeave={() => { hoveredRef.current = false; }}
+        style={{
+          flex: 1, overflowY: 'auto', padding: '6px 8px', minHeight: 0,
+        }}
+        className="queue-scroll"
+      >
+        {/* Seeing entry */}
+        {seeingEntry && (
+          <QueueRow
+            entry={seeingEntry}
+            type="seeing"
+            position={0}
+            onCall={onCall}
+            onComplete={onComplete}
+            hasWritePermission={hasWritePermission}
+          />
+        )}
+        {/* Waiting entries */}
+        {waitingEntries.map((entry, i) => (
+          <QueueRow
+            key={entry.id}
+            entry={entry}
+            type={i === 0 ? 'next' : 'waiting'}
+            position={i}
+            onCall={onCall}
+            onComplete={onComplete}
+            hasWritePermission={hasWritePermission}
+          />
+        ))}
+      </div>
+
+      {/* Call overlay */}
+      {overlay && (
+        <CallOverlay
+          visible={overlay.visible}
+          seq={overlay.seq}
+          name={overlay.name}
+          room={overlay.room}
+          doctor={overlay.doctor}
+          onClose={onCloseOverlay}
+        />
+      )}
+
+      <style>{`
+        .queue-scroll::-webkit-scrollbar { width: 4px; }
+        .queue-scroll::-webkit-scrollbar-thumb { background: #e0e0e0; border-radius: 2px; }
+        .queue-scroll::-webkit-scrollbar-track { background: transparent; }
+      `}</style>
+    </div>
+  );
+}
+
+function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermission }: {
+  entry: QueueEntry;
+  type: 'seeing' | 'next' | 'waiting';
+  position: number;
+  onCall: (e: QueueEntry) => void;
+  onComplete: (e: QueueEntry) => void;
+  hasWritePermission: boolean;
+}) {
+  const seq = String(entry.seq_number).padStart(2, '0');
+
+  const config = {
+    seeing: {
+      borderColor: '#52c41a',
+      bg: '#fffff0',
+      numBg: 'linear-gradient(135deg, #52c41a, #389e0d)',
+      tagText: '就诊中',
+      tagColor: '#52c41a',
+      tagBorder: '#b7eb8f',
+      tagBg: '#f6ffed',
+      tooltip: '当前就诊',
+    },
+    next: {
+      borderColor: '#fa8c16',
+      bg: '#fff7e6',
+      numBg: 'linear-gradient(135deg, #ffa940, #fa8c16)',
+      tagText: '请准备',
+      tagColor: '#fa8c16',
+      tagBorder: '#ffd591',
+      tagBg: '#fff7e6',
+      tooltip: '下一位就诊',
+    },
+    waiting: {
+      borderColor: '#1677ff',
+      bg: '#f0f7ff',
+      numBg: 'linear-gradient(135deg, #4096ff, #1677ff)',
+      tagText: '候诊中',
+      tagColor: '#1677ff',
+      tagBorder: '#91caff',
+      tagBg: '#e6f4ff',
+      tooltip: `前方还有 ${position} 位`,
+    },
+  }[type];
+
+  return (
+    <Tooltip title={config.tooltip} placement="right" mouseEnterDelay={0.5}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 10,
+        padding: '8px 10px',
+        background: config.bg,
+        borderLeft: `3.5px solid ${config.borderColor}`,
+        borderRadius: '0 8px 8px 0',
+        marginBottom: 4,
+        cursor: 'default',
+        transition: 'background 0.2s',
+      }}>
+        {/* Seq badge */}
+        <div style={{
+          width: 32, height: 32,
+          background: config.numBg,
+          color: '#fff', borderRadius: 8,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 12, fontWeight: 800, flexShrink: 0,
+        }}>
+          {seq}
+        </div>
+
+        {/* Info */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ fontWeight: 700, fontSize: 14 }}>{entry.patient_name}</span>
+            <span style={{
+              fontSize: 10, color: config.tagColor,
+              border: `1.5px solid ${config.tagBorder}`,
+              background: config.tagBg,
+              padding: '0 6px', borderRadius: 3, fontWeight: 600,
+              ...(type === 'next' ? { animation: 'orangePulse 2s infinite' } : {}),
+            }}>
+              {config.tagText}
+            </span>
+          </div>
+          {entry.booked_time && (
+            <div style={{ fontSize: 10, color: '#999', marginTop: 1 }}>
+              约{entry.booked_time}
+            </div>
+          )}
+        </div>
+
+        {/* Action buttons */}
+        {hasWritePermission && type === 'seeing' && (
+          <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+            <Button
+              type="link"
+              size="small"
+              style={{ fontSize: 11, padding: '0 4px', color: '#52c41a' }}
+              onClick={(e) => { e.stopPropagation(); onCall(entry); }}
+            >
+              再次叫号
+            </Button>
+            <Button
+              type="link"
+              size="small"
+              style={{ fontSize: 11, padding: '0 4px', color: '#999' }}
+              onClick={(e) => { e.stopPropagation(); onComplete(entry); }}
+            >
+              完成
+            </Button>
+          </div>
+        )}
+      </div>
+
+      <style>{`
+        @keyframes orangePulse {
+          0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(250,140,22,0.4); }
+          50% { opacity: 0.85; box-shadow: 0 0 0 4px rgba(250,140,22,0); }
+        }
+      `}</style>
+    </Tooltip>
+  );
 }
