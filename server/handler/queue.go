@@ -13,11 +13,11 @@ import (
 )
 
 type QueueHandler struct {
-	db *gorm.DB
+	svc *service.QueueService
 }
 
 func NewQueueHandler(db *gorm.DB) *QueueHandler {
-	return &QueueHandler{db: db}
+	return &QueueHandler{svc: service.NewQueueService(db)}
 }
 
 // List handles GET /queue?doctor_id=N
@@ -35,8 +35,7 @@ func (h *QueueHandler) List(c *gin.Context) {
 		doctorID = &id
 	}
 
-	svc := service.NewQueueService(h.db)
-	entries, err := svc.ListToday(uint(tenantID), doctorID)
+	entries, err := h.svc.ListToday(uint(tenantID), doctorID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": err.Error()})
 		return
@@ -59,8 +58,7 @@ func (h *QueueHandler) TakeNumber(c *gin.Context) {
 		return
 	}
 
-	svc := service.NewQueueService(h.db)
-	entry, err := svc.TakeNumber(uint(tenantID), req.PatientName, req.DoctorID, req.DoctorName, req.Room)
+	entry, err := h.svc.TakeNumber(uint(tenantID), req.PatientName, req.DoctorID, req.DoctorName, req.Room)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": err.Error()})
 		return
@@ -83,8 +81,7 @@ func (h *QueueHandler) Call(c *gin.Context) {
 		return
 	}
 
-	svc := service.NewQueueService(h.db)
-	entry, err := svc.Call(uint(tenantID), uint(id))
+	entry, err := h.svc.Call(uint(tenantID), uint(id))
 	if err != nil {
 		if errors.Is(err, service.ErrQueueEntryNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": err.Error()})
@@ -125,8 +122,7 @@ func (h *QueueHandler) Complete(c *gin.Context) {
 		return
 	}
 
-	svc := service.NewQueueService(h.db)
-	completed, next, err := svc.Complete(uint(tenantID), uint(id))
+	completed, next, err := h.svc.Complete(uint(tenantID), uint(id))
 	if err != nil {
 		if errors.Is(err, service.ErrQueueEntryNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": err.Error()})
@@ -165,8 +161,7 @@ func (h *QueueHandler) Complete(c *gin.Context) {
 func (h *QueueHandler) Clear(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
 
-	svc := service.NewQueueService(h.db)
-	deleted, err := svc.Clear(uint(tenantID))
+	deleted, err := h.svc.Clear(uint(tenantID))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": err.Error()})
 		return
@@ -184,8 +179,7 @@ func (h *QueueHandler) Clear(c *gin.Context) {
 func (h *QueueHandler) Stats(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
 
-	svc := service.NewQueueService(h.db)
-	stats, err := svc.Stats(uint(tenantID))
+	stats, err := h.svc.Stats(uint(tenantID))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": err.Error()})
 		return

@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案C · 碧波琉璃 — 完整预览</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700;900&family=Noto+Sans+SC:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Noto Sans SC', sans-serif; background: #040810; color: #E8ECF4; }
+
+/* Toggle bar */
+.toggle-bar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+  display: flex; justify-content: center; gap: 12px; padding: 14px;
+  background: rgba(4,8,16,0.92);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(54,217,180,0.15);
+}
+.toggle-btn {
+  padding: 10px 28px; border-radius: 10px;
+  border: 1px solid rgba(54,217,180,0.2);
+  background: rgba(54,217,180,0.06); color: #36D9B4;
+  font-size: 14px; font-family: inherit; cursor: pointer; transition: all 0.3s;
+}
+.toggle-btn.active {
+  background: rgba(54,217,180,0.18); border-color: #36D9B4;
+  box-shadow: 0 0 24px rgba(54,217,180,0.12);
+}
+.toggle-info {
+  position: fixed; top: 60px; left: 50%; transform: translateX(-50%); z-index: 999;
+  font-size: 12px; color: #6B7A8D; text-align: center; padding: 8px 20px;
+  background: rgba(4,8,16,0.85); border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.05);
+}
+
+/* ====== Full-page login scene ====== */
+.lp-scene {
+  --accent: #36D9B4;
+  --glow: 54, 217, 180;
+  --purple: 50, 90, 180;
+  position: relative; min-height: 100vh;
+  overflow: hidden; padding-top: 56px;
+}
+
+/* Background mesh */
+.lp-scene .bg-mesh {
+  position: fixed; inset: 0; z-index: 0;
+  transition: background 0.6s ease;
+}
+.lp-scene .bg-mesh.full {
+  background:
+    radial-gradient(ellipse 85% 65% at 8% 20%, rgba(36,200,150,0.24) 0%, transparent 55%),
+    radial-gradient(ellipse 65% 75% at 85% 80%, rgba(50,90,180,0.16) 0%, transparent 50%),
+    radial-gradient(ellipse 55% 55% at 45% 45%, rgba(54,217,180,0.1) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 40% at 75% 15%, rgba(30,160,200,0.08) 0%, transparent 45%),
+    linear-gradient(165deg, #041210 0%, #082018 25%, #061828 55%, #04101C 100%);
+}
+/* Static mode: bake orb colors into mesh so it looks the same without blur elements */
+.lp-scene .bg-mesh.static {
+  background:
+    radial-gradient(ellipse 85% 65% at 8% 20%, rgba(36,200,150,0.24) 0%, transparent 55%),
+    radial-gradient(ellipse 65% 75% at 85% 80%, rgba(50,90,180,0.16) 0%, transparent 50%),
+    radial-gradient(ellipse 55% 55% at 45% 45%, rgba(54,217,180,0.1) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 40% at 75% 15%, rgba(30,160,200,0.08) 0%, transparent 45%),
+    /* Baked orb 1 (top-left green glow) */
+    radial-gradient(ellipse 55% 50% at 5% 8%, rgba(36,200,150,0.18) 0%, transparent 60%),
+    /* Baked orb 2 (bottom-right blue glow) */
+    radial-gradient(ellipse 45% 55% at 92% 88%, rgba(50,90,180,0.12) 0%, transparent 55%),
+    /* Baked orb 3 (center-right teal) */
+    radial-gradient(ellipse 30% 30% at 60% 40%, rgba(54,217,180,0.08) 0%, transparent 50%),
+    linear-gradient(165deg, #041210 0%, #082018 25%, #061828 55%, #04101C 100%);
+}
+
+/* Stars */
+.lp-scene .bg-stars {
+  position: fixed; inset: 0; z-index: 1; pointer-events: none;
+  background-image:
+    radial-gradient(1.5px 1.5px at 15% 25%, rgba(255,255,255,0.2), transparent),
+    radial-gradient(1px 1px at 35% 60%, rgba(255,255,255,0.15), transparent),
+    radial-gradient(1.5px 1.5px at 55% 15%, rgba(255,255,255,0.14), transparent),
+    radial-gradient(1px 1px at 75% 45%, rgba(255,255,255,0.18), transparent),
+    radial-gradient(1.5px 1.5px at 90% 80%, rgba(255,255,255,0.12), transparent),
+    radial-gradient(1px 1px at 25% 85%, rgba(255,255,255,0.15), transparent),
+    radial-gradient(1px 1px at 65% 75%, rgba(255,255,255,0.13), transparent),
+    radial-gradient(1px 1px at 45% 40%, rgba(255,255,255,0.18), transparent);
+  animation: twinkle 6s ease-in-out infinite alternate;
+}
+@keyframes twinkle { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
+
+/* Orbs — only in full mode */
+.lp-scene .orb {
+  position: fixed; border-radius: 50%; pointer-events: none; z-index: 1;
+  transition: opacity 0.5s;
+}
+.lp-scene .orb.o1 {
+  width: 480px; height: 480px; top: -12%; left: -6%;
+  background: radial-gradient(circle, rgba(36,200,150,0.32) 0%, rgba(54,217,180,0.1) 40%, transparent 70%);
+  filter: blur(50px); animation: orbFloat 15s ease-in-out infinite;
+}
+.lp-scene .orb.o2 {
+  width: 380px; height: 380px; bottom: -8%; right: -8%;
+  background: radial-gradient(circle, rgba(50,90,180,0.22) 0%, rgba(30,160,200,0.06) 50%, transparent 70%);
+  filter: blur(42px); animation: orbFloat 15s ease-in-out infinite -5s;
+}
+.lp-scene .orb.o3 {
+  width: 250px; height: 250px; top: 35%; left: 55%;
+  background: radial-gradient(circle, rgba(54,217,180,0.18) 0%, transparent 65%);
+  filter: blur(35px); animation: orbFloat 15s ease-in-out infinite -10s;
+}
+@keyframes orbFloat {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(30px, -40px) scale(1.06); }
+  66% { transform: translate(-20px, 25px) scale(0.95); }
+}
+
+/* Aurora */
+.lp-scene .aurora {
+  position: fixed; width: 200%; height: 200px; border-radius: 50%;
+  pointer-events: none; z-index: 1; opacity: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(36,200,150,0.28) 20%, rgba(54,217,180,0.2) 45%, rgba(50,90,180,0.15) 70%, transparent 95%);
+  top: -5%; left: -20%; filter: blur(55px);
+  animation: auroraPulse 8s ease-in-out infinite;
+}
+@keyframes auroraPulse {
+  0%, 100% { opacity: 0.25; transform: translateX(0) rotate(-6deg); }
+  50% { opacity: 0.55; transform: translateX(3%) rotate(-4deg); }
+}
+
+/* Ring */
+.lp-scene .ring {
+  position: fixed; border-radius: 50%; pointer-events: none; z-index: 1;
+  border: 1px solid rgba(54,217,180,0.12);
+  width: 450px; height: 450px; top: -8%; right: -6%;
+  animation: ringRot 30s linear infinite, ringPulse 6s ease-in-out infinite;
+}
+@keyframes ringRot { to { transform: rotate(360deg); } }
+@keyframes ringPulse { 0%, 100% { opacity: 0.25; } 50% { opacity: 0.55; } }
+
+/* TCM symbols */
+.lp-scene .tcm {
+  position: fixed; font-family: 'Noto Serif SC', serif;
+  color: #36D9B4; font-weight: 900; user-select: none;
+  pointer-events: none; z-index: 1; opacity: 0.06;
+  text-shadow: 0 0 50px rgba(54,217,180,0.25);
+}
+.lp-scene .tcm1 { font-size: 140px; top: 3%; left: 6%; animation: sym 25s ease-in-out infinite; }
+.lp-scene .tcm2 { font-size: 140px; bottom: 5%; right: 6%; animation: sym 30s ease-in-out infinite reverse; }
+@keyframes sym {
+  0%, 100% { transform: translate(0,0) rotate(0deg); }
+  25% { transform: translate(15px,-20px) rotate(3deg); }
+  50% { transform: translate(-10px,12px) rotate(-2deg); }
+  75% { transform: translate(18px,6px) rotate(1.5deg); }
+}
+
+/* Main layout */
+.lp-scene .wrapper {
+  position: relative; z-index: 10;
+  display: flex; justify-content: center; align-items: center;
+  min-height: calc(100vh - 56px); padding: 20px;
+}
+
+/* The card container */
+.lp-scene .container {
+  display: flex; width: 920px; max-width: 100%;
+  border-radius: 28px;
+  border: 1px solid rgba(54,217,180,0.15);
+  box-shadow:
+    0 0 80px rgba(54,217,180,0.06),
+    0 40px 80px rgba(0,0,0,0.45),
+    inset 0 1px 0 rgba(255,255,255,0.05),
+    inset 0 -1px 0 rgba(54,217,180,0.04);
+  transition: all 0.5s ease;
+}
+.lp-scene .container.blur-mode {
+  backdrop-filter: blur(50px) saturate(1.6);
+  -webkit-backdrop-filter: blur(50px) saturate(1.6);
+}
+.lp-scene .container.static-mode {
+  background:
+    radial-gradient(ellipse 85% 60% at 12% 18%, rgba(36,200,150,0.15) 0%, transparent 55%),
+    radial-gradient(ellipse 55% 70% at 88% 82%, rgba(50,90,180,0.1) 0%, transparent 50%),
+    radial-gradient(ellipse 45% 45% at 45% 45%, rgba(54,217,180,0.06) 0%, transparent 50%),
+    radial-gradient(ellipse 30% 30% at 70% 25%, rgba(30,160,200,0.04) 0%, transparent 40%),
+    linear-gradient(160deg, rgba(36,200,150,0.1) 0%, rgba(6,18,16,0.94) 35%, rgba(50,90,180,0.07) 70%, rgba(54,217,180,0.04) 100%);
+}
+
+/* Brand panel */
+.lp-scene .brand {
+  flex: 1; padding: 48px 40px;
+  display: flex; flex-direction: column; justify-content: center;
+  position: relative; overflow: hidden;
+  background: linear-gradient(160deg, rgba(54,217,180,0.08) 0%, rgba(54,217,180,0.01) 40%, transparent 70%);
+}
+.lp-scene .brand::before {
+  content: ''; position: absolute; right: 0; top: 8%; bottom: 8%; width: 1px;
+  background: linear-gradient(to bottom, transparent, rgba(54,217,180,0.18), transparent);
+}
+.lp-scene .brand::after {
+  content: ''; position: absolute; inset: 0;
+  background-image:
+    linear-gradient(rgba(54,217,180,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(54,217,180,0.025) 1px, transparent 1px);
+  background-size: 40px 40px; pointer-events: none;
+}
+.bicon {
+  width: 72px; height: 72px; border-radius: 20px;
+  background: linear-gradient(135deg, #36D9B4, #2DD4A8);
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 28px; box-shadow: 0 8px 32px rgba(54,217,180,0.35);
+  position: relative;
+}
+.bicon::after {
+  content: ''; position: absolute; inset: -5px; border-radius: 25px;
+  border: 1.5px solid rgba(54,217,180,0.3);
+  animation: iconPulse 3s ease-in-out infinite;
+}
+@keyframes iconPulse { 0%, 100% { transform: scale(1); opacity: 0.5; } 50% { transform: scale(1.1); opacity: 0; } }
+.bicon svg { width: 36px; height: 36px; fill: white; }
+.blabel {
+  font-family: 'Noto Serif SC', serif; font-size: 13px; font-weight: 600;
+  letter-spacing: 6px; color: #36D9B4; margin-bottom: 12px;
+}
+.btitle {
+  font-family: 'Noto Serif SC', serif; font-size: 32px; font-weight: 900;
+  line-height: 1.3; margin-bottom: 16px;
+  background: linear-gradient(135deg, #fff 0%, #36D9B4 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.bdesc { font-size: 14px; line-height: 1.8; color: #8A94A8; max-width: 300px; }
+.bfeats { margin-top: 36px; display: flex; flex-direction: column; gap: 14px; position: relative; z-index: 1; }
+.feat { display: flex; align-items: center; gap: 12px; font-size: 13px; color: #8A94A8; }
+.fdot { width: 7px; height: 7px; border-radius: 50%; background: #36D9B4; box-shadow: 0 0 10px rgba(54,217,180,0.5); flex-shrink: 0; }
+
+/* Form panel */
+.form-panel { width: 400px; padding: 48px 40px; display: flex; flex-direction: column; justify-content: center; }
+.fheader { margin-bottom: 36px; }
+.fheader h2 { font-family: 'Noto Serif SC', serif; font-size: 24px; font-weight: 700; margin-bottom: 8px; }
+.fheader p { font-size: 13px; color: #8A94A8; }
+.fg { margin-bottom: 22px; }
+.fl { display: block; font-size: 12px; font-weight: 500; color: #8A94A8; margin-bottom: 8px; letter-spacing: 1px; text-transform: uppercase; }
+.iw { position: relative; }
+.ii {
+  position: absolute; left: 16px; top: 50%; transform: translateY(-50%);
+  width: 18px; height: 18px; color: #8A94A8; pointer-events: none; z-index: 2;
+}
+.fi {
+  width: 100%; padding: 14px 16px 14px 46px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px; color: #E8ECF4;
+  font-size: 14px; font-family: inherit;
+  transition: all 0.3s; outline: none;
+}
+.fi::placeholder { color: rgba(138,148,168,0.5); }
+.fi:focus {
+  border-color: #36D9B4;
+  background: rgba(54,217,180,0.06);
+  box-shadow: 0 0 0 3px rgba(54,217,180,0.1), 0 0 20px rgba(54,217,180,0.06);
+}
+.fopts { display: flex; justify-content: space-between; align-items: center; margin-bottom: 28px; }
+.chk { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #8A94A8; cursor: pointer; }
+.chkbox {
+  width: 18px; height: 18px; border: 1.5px solid rgba(255,255,255,0.18);
+  border-radius: 5px; display: flex; align-items: center; justify-content: center;
+}
+.btn {
+  width: 100%; padding: 15px; border: none; border-radius: 12px;
+  font-size: 15px; font-weight: 600; font-family: inherit; cursor: pointer;
+  color: #0A0F1A;
+  background: linear-gradient(135deg, #24C896, #36D9B4);
+  box-shadow: 0 4px 28px rgba(54,217,180,0.35);
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative; overflow: hidden;
+}
+.btn::before {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(135deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%);
+  transform: translateX(-100%); transition: transform 0.6s;
+}
+.btn:hover { transform: translateY(-2px); box-shadow: 0 8px 50px rgba(54,217,180,0.4); }
+.btn:hover::before { transform: translateX(100%); }
+.ffooter { text-align: center; margin-top: 28px; font-size: 13px; color: #8A94A8; }
+.ffooter a { color: #36D9B4; text-decoration: none; font-weight: 500; }
+
+/* Footer */
+.pfooter { text-align: center; padding: 24px 0 20px; position: relative; z-index: 10; pointer-events: none; }
+.pfooter .ver { font-size: 11px; color: rgba(138,148,168,0.35); letter-spacing: 2px; margin-bottom: 4px; }
+.pfooter .cr { font-size: 10px; color: rgba(138,148,168,0.25); letter-spacing: 1px; }
+
+@media (max-width: 800px) {
+  .lp-scene .brand { display: none; }
+  .lp-scene .container { max-width: 420px; flex-direction: column; border-radius: 20px; }
+  .form-panel { width: 100%; padding: 28px 22px; }
+}
+</style>
+</head>
+<body>
+
+<div class="toggle-bar">
+  <button class="toggle-btn active" id="btn-full" onclick="setMode('full')">动画开启（毛玻璃 + orbs）</button>
+  <button class="toggle-btn" id="btn-static" onclick="setMode('static')">动画关闭（纯静态渐变）</button>
+</div>
+<div class="toggle-info" id="info">动画模式：毛玻璃 backdrop-filter + 动态光晕 — GPU 开销较高</div>
+
+<div class="lp-scene">
+  <div class="bg-mesh full" id="mesh"></div>
+  <div class="bg-stars"></div>
+
+  <!-- Dynamic elements (only in full mode) -->
+  <div id="dynamic-els">
+    <div class="orb o1"></div>
+    <div class="orb o2"></div>
+    <div class="orb o3"></div>
+    <div class="aurora"></div>
+    <div class="ring"></div>
+    <div class="tcm tcm1">医</div>
+    <div class="tcm tcm2">药</div>
+  </div>
+
+  <div class="wrapper">
+    <div class="container blur-mode" id="card">
+      <!-- Brand -->
+      <div class="brand">
+        <div class="bicon">
+          <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+        </div>
+        <div class="blabel">中医智慧 · 数字赋能</div>
+        <h1 class="btitle">惊蛰</h1>
+        <p class="bdesc">融汇传统医学智慧与现代数字技术，为临床诊疗提供全方位智能化支持。</p>
+        <div class="bfeats">
+          <div class="feat"><span class="fdot"></span>患者病历全生命周期管理</div>
+          <div class="feat"><span class="fdot"></span>中药方剂智能辅助开方</div>
+          <div class="feat"><span class="fdot"></span>五运六气 · 经络穴位查询</div>
+          <div class="feat"><span class="fdot"></span>多维度统计分析与报表</div>
+        </div>
+      </div>
+
+      <!-- Form -->
+      <div class="form-panel">
+        <div class="fheader">
+          <h2>欢迎回来</h2>
+          <p>请登录您的账户以继续</p>
+        </div>
+        <div class="fg">
+          <label class="fl">用户名</label>
+          <div class="iw">
+            <input class="fi" placeholder="请输入用户名">
+            <svg class="ii" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+              <circle cx="12" cy="7" r="4"/>
+            </svg>
+          </div>
+        </div>
+        <div class="fg">
+          <label class="fl">密码</label>
+          <div class="iw">
+            <input class="fi" type="password" placeholder="请输入密码">
+            <svg class="ii" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+          </div>
+        </div>
+        <div class="fopts">
+          <label class="chk">
+            <span class="chkbox"></span>
+            记住我
+          </label>
+        </div>
+        <button class="btn">登 录</button>
+        <div class="ffooter">
+          还没有账号？ <a href="#">立即注册</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pfooter">
+    <div class="ver">V 2.0 · DESIGNED WITH CARE</div>
+    <div class="cr">&copy; 2024-2026 空无 All Rights Reserved</div>
+  </div>
+</div>
+
+<script>
+function setMode(mode) {
+  const mesh = document.getElementById('mesh');
+  const card = document.getElementById('card');
+  const dynEls = document.getElementById('dynamic-els');
+  const info = document.getElementById('info');
+  const btnFull = document.getElementById('btn-full');
+  const btnStatic = document.getElementById('btn-static');
+
+  if (mode === 'full') {
+    mesh.className = 'bg-mesh full';
+    card.className = 'container blur-mode';
+    dynEls.style.display = '';
+    info.textContent = '动画模式：毛玻璃 backdrop-filter + 动态光晕 — GPU 开销较高';
+    btnFull.classList.add('active');
+    btnStatic.classList.remove('active');
+  } else {
+    mesh.className = 'bg-mesh static';
+    card.className = 'container static-mode';
+    dynEls.style.display = 'none';
+    info.textContent = '静态模式：纯 CSS 渐变模拟相同色彩 — 零 GPU 开销，iPad/手机流畅';
+    btnStatic.classList.add('active');
+    btnFull.classList.remove('active');
+  }
+}
+</script>
+</body>
+</html>

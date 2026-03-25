@@ -2,6 +2,13 @@ package model
 
 import "time"
 
+const (
+	QueueStatusWaiting = "waiting"
+	QueueStatusSeeing  = "seeing"
+	QueueStatusDone    = "done"
+	QueueStatusMissed  = "missed"
+)
+
 type QueueEntry struct {
 	ID          uint       `gorm:"primaryKey;autoIncrement" json:"id"`
 	TenantID    uint       `gorm:"column:tenant_id;not null;index:idx_queue_tenant_date_status,priority:1" json:"tenant_id"`

@@ -29,6 +29,7 @@ import useIsMobile from '../../hooks/useIsMobile';
 import useRowHighlight from '../../hooks/useRowHighlight';
 import { useAccessibleColumns, type AccessibleColumnsType } from '../../hooks/useAccessibleColumns';
 import HiddenColumnsHint from '../../components/HiddenColumnsHint';
+import QueueStrip, { useQueueStatusMap } from '../../components/QueueStrip';
 
 interface PatientItem {
   id: number;
@@ -67,6 +68,9 @@ export default function PatientList() {
   // Edit modal state
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editingPatient, setEditingPatient] = useState<PatientItem | null>(null);
+
+  // Queue status map for row highlighting
+  const queueStatusMap = useQueueStatusMap();
 
   const highlight = useRowHighlight({
     data,
@@ -153,7 +157,27 @@ export default function PatientList() {
       title: '姓名',
       dataIndex: 'name',
       key: 'name',
-      width: 120,
+      width: 160,
+      render: (name: string) => {
+        const status = queueStatusMap.get(name);
+        if (status === 'seeing') {
+          return (
+            <span>
+              <b>{name}</b>{' '}
+              <Tag color="success" style={{ fontSize: 10, marginLeft: 4, padding: '0 6px', lineHeight: '18px', borderRadius: 3 }}>就诊中</Tag>
+            </span>
+          );
+        }
+        if (status === 'ready') {
+          return (
+            <span>
+              <b>{name}</b>{' '}
+              <Tag color="warning" style={{ fontSize: 10, marginLeft: 4, padding: '0 6px', lineHeight: '18px', borderRadius: 3 }}>请准备</Tag>
+            </span>
+          );
+        }
+        return name;
+      },
     },
     {
       title: '性别',
@@ -235,17 +259,21 @@ export default function PatientList() {
       : patient.gender === 2
       ? <WomanOutlined style={{ color: '#FF85C0' }} />
       : null;
+    const queueStatus = queueStatusMap.get(patient.name);
+    const cardExtraClass = queueStatus === 'seeing' ? ' queue-card-seeing' : queueStatus === 'ready' ? ' queue-card-ready' : '';
     return (
       <div
         key={patient.id}
         id={`patient-row-${patient.id}`}
-        className={`warm-list-card${highlight.isHighlighted(patient.id) ? ' row-highlight' : ''}`}
+        className={`warm-list-card${highlight.isHighlighted(patient.id) ? ' row-highlight' : ''}${cardExtraClass}`}
         onClick={() => navigate(`/patients/${patient.id}`)}
       >
         {/* Row 1: name + gender/age */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontWeight: 600, fontSize: 16, color: '#5C4A32' }}>{patient.name}</span>
+            {queueStatus === 'seeing' && <Tag color="success" style={{ fontSize: 10, margin: 0, padding: '0 6px', lineHeight: '18px', borderRadius: 3 }}>就诊中</Tag>}
+            {queueStatus === 'ready' && <Tag color="warning" style={{ fontSize: 10, margin: 0, padding: '0 6px', lineHeight: '18px', borderRadius: 3 }}>请准备</Tag>}
             {genderIcon}
             <Tag className={patient.gender === 1 ? 'warm-tag-male' : patient.gender === 2 ? 'warm-tag-female' : ''} style={{ margin: 0 }}>
               {patient.age}岁
@@ -298,8 +326,19 @@ export default function PatientList() {
     </div>
   );
 
+  // Combined row className for highlight + queue status
+  const combinedRowClassName = (record: PatientItem) => {
+    const base = highlight.rowClassName(record);
+    const status = queueStatusMap.get(record.name);
+    if (status === 'seeing') return `${base} queue-row-seeing`;
+    if (status === 'ready') return `${base} queue-row-ready`;
+    return base;
+  };
+
   return (
-    <Card
+    <>
+      <QueueStrip />
+      <Card
       className="warm-card"
       styles={isMobile ? { body: { padding: 12 } } : undefined}
     >
@@ -390,7 +429,7 @@ export default function PatientList() {
           columns={columns}
           dataSource={data}
           loading={loading}
-          rowClassName={highlight.rowClassName}
+          rowClassName={combinedRowClassName}
           onRow={highlight.onRow}
           pagination={{
             current: params.page,
@@ -437,5 +476,6 @@ export default function PatientList() {
         }
       />
     </Card>
+    </>
   );
 }

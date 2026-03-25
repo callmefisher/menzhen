@@ -26,25 +26,26 @@ func today() string {
 }
 
 // NextSeq atomically increments and returns the sequence number for today.
-// Uses INSERT ON DUPLICATE KEY UPDATE to avoid race conditions.
+// Uses LAST_INSERT_ID() to avoid TOCTOU race conditions — each connection
+// gets its own LAST_INSERT_ID value, so concurrent calls never collide.
 func (s *QueueService) NextSeq(tenantID uint) (int, error) {
 	date := today()
 	err := s.DB.Exec(
 		`INSERT INTO queue_seqs (tenant_id, queue_date, last_seq)
-		 VALUES (?, ?, 1)
-		 ON DUPLICATE KEY UPDATE last_seq = last_seq + 1`,
+		 VALUES (?, ?, LAST_INSERT_ID(1))
+		 ON DUPLICATE KEY UPDATE last_seq = LAST_INSERT_ID(last_seq + 1)`,
 		tenantID, date,
 	).Error
 	if err != nil {
 		return 0, err
 	}
 
-	var seq model.QueueSeq
-	err = s.DB.Where("tenant_id = ? AND queue_date = ?", tenantID, date).First(&seq).Error
+	var seq int
+	err = s.DB.Raw("SELECT LAST_INSERT_ID()").Scan(&seq).Error
 	if err != nil {
 		return 0, err
 	}
-	return seq.LastSeq, nil
+	return seq, nil
 }
 
 // TakeNumber creates a new waiting queue entry with an auto-generated sequence number.
@@ -62,7 +63,7 @@ func (s *QueueService) TakeNumber(tenantID uint, patientName string, doctorID ui
 		DoctorName:  doctorName,
 		Room:        room,
 		SeqNumber:   seq,
-		Status:      "waiting",
+		Status:      model.QueueStatusWaiting,
 		Source:      "walk_in",
 		QueueDate:   today(),
 		ArrivalTime: &now,
@@ -98,20 +99,20 @@ func (s *QueueService) Call(tenantID, entryID uint) (*model.QueueEntry, error) {
 		return nil, err
 	}
 
-	if entry.Status != "waiting" {
+	if entry.Status != model.QueueStatusWaiting {
 		return nil, ErrInvalidStatus
 	}
 
 	now := time.Now()
 	result := s.DB.Model(&entry).Updates(map[string]interface{}{
-		"status":    "seeing",
+		"status":    model.QueueStatusSeeing,
 		"called_at": now,
 	})
 	if result.Error != nil {
 		return nil, result.Error
 	}
 
-	entry.Status = "seeing"
+	entry.Status = model.QueueStatusSeeing
 	entry.CalledAt = &now
 	return &entry, nil
 }
@@ -119,6 +120,7 @@ func (s *QueueService) Call(tenantID, entryID uint) (*model.QueueEntry, error) {
 // Complete changes a seeing entry to done and sets CompletedAt.
 // It also auto-calls the next waiting patient for the same doctor.
 // Returns (completed, nextCalled, error). nextCalled may be nil if no waiting patient exists.
+// The entire operation is wrapped in a transaction for atomicity.
 func (s *QueueService) Complete(tenantID, entryID uint) (*model.QueueEntry, *model.QueueEntry, error) {
 	var entry model.QueueEntry
 	err := s.DB.Where("id = ? AND tenant_id = ? AND queue_date = ?", entryID, tenantID, today()).First(&entry).Error
@@ -129,47 +131,57 @@ func (s *QueueService) Complete(tenantID, entryID uint) (*model.QueueEntry, *mod
 		return nil, nil, err
 	}
 
-	if entry.Status != "seeing" {
+	if entry.Status != model.QueueStatusSeeing {
 		return nil, nil, ErrInvalidStatus
 	}
 
-	now := time.Now()
-	result := s.DB.Model(&entry).Updates(map[string]interface{}{
-		"status":       "done",
-		"completed_at": now,
-	})
-	if result.Error != nil {
-		return nil, nil, result.Error
-	}
-	entry.Status = "done"
-	entry.CompletedAt = &now
+	var nextPtr *model.QueueEntry
 
-	// Auto-call next waiting patient for the same doctor
-	var next model.QueueEntry
-	err = s.DB.Where("tenant_id = ? AND queue_date = ? AND doctor_id = ? AND status = 'waiting'",
-		tenantID, today(), entry.DoctorID).
-		Order("seq_number ASC").
-		First(&next).Error
-
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			// No next patient, that's fine
-			return &entry, nil, nil
+	txErr := s.DB.Transaction(func(tx *gorm.DB) error {
+		now := time.Now()
+		result := tx.Model(&entry).Updates(map[string]interface{}{
+			"status":       model.QueueStatusDone,
+			"completed_at": now,
+		})
+		if result.Error != nil {
+			return result.Error
 		}
-		return &entry, nil, err
-	}
+		entry.Status = model.QueueStatusDone
+		entry.CompletedAt = &now
 
-	calledAt := time.Now()
-	callResult := s.DB.Model(&next).Updates(map[string]interface{}{
-		"status":    "seeing",
-		"called_at": calledAt,
+		// Auto-call next waiting patient for the same doctor
+		var next model.QueueEntry
+		err := tx.Where("tenant_id = ? AND queue_date = ? AND doctor_id = ? AND status = ?",
+			tenantID, today(), entry.DoctorID, model.QueueStatusWaiting).
+			Order("seq_number ASC").
+			First(&next).Error
+
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				// No next patient, that's fine
+				return nil
+			}
+			return err
+		}
+
+		calledAt := time.Now()
+		callResult := tx.Model(&next).Updates(map[string]interface{}{
+			"status":    model.QueueStatusSeeing,
+			"called_at": calledAt,
+		})
+		if callResult.Error != nil {
+			return callResult.Error
+		}
+		next.Status = model.QueueStatusSeeing
+		next.CalledAt = &calledAt
+		nextPtr = &next
+		return nil
 	})
-	if callResult.Error != nil {
-		return &entry, nil, callResult.Error
+
+	if txErr != nil {
+		return nil, nil, txErr
 	}
-	next.Status = "seeing"
-	next.CalledAt = &calledAt
-	return &entry, &next, nil
+	return &entry, nextPtr, nil
 }
 
 // Stats returns a count of today's entries grouped by status for a tenant.

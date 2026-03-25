@@ -43,7 +43,7 @@ export default function QueueStrip() {
   // Derive queue sections
   const { waitingEntries, readyEntry, seeingEntry, waitingCount } = useMemo(() => {
     const seeing = entries.find(e => e.status === 'seeing') || null;
-    const waitingAll = entries.filter(e => e.status === 'waiting' || e.status === 'ready');
+    const waitingAll = entries.filter(e => e.status === 'waiting');
     // "ready" is the first waiting entry (next to be seen)
     const ready = waitingAll.length > 0 ? waitingAll[0] : null;
     const waiting = waitingAll.slice(1);
@@ -378,7 +378,7 @@ export function useQueueStatusMap(): Map<string, 'seeing' | 'ready' | 'waiting'>
 
   return useMemo(() => {
     const map = new Map<string, 'seeing' | 'ready' | 'waiting'>();
-    const waitingAll = entries.filter(e => e.status === 'waiting' || e.status === 'ready');
+    const waitingAll = entries.filter(e => e.status === 'waiting');
     const seeing = entries.find(e => e.status === 'seeing');
 
     if (seeing) {

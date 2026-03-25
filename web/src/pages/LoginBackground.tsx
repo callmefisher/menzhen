@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 
 /* ============ Theme Definitions ============ */
 const THEMES = {
+  viridian:{ accent: '#36D9B4', dim: '#24C896', secondary: '#2DD4A8', glow: '54, 217, 180',   hue: 162, sat: 68,  purple: '50, 90, 180' },
   jade:    { accent: '#3DD68C', dim: '#2BA86A', secondary: '#2DD4A8', glow: '61, 214, 140',   hue: 155, sat: 70,  purple: '80, 60, 200' },
   amber:   { accent: '#D4A843', dim: '#B8922E', secondary: '#E8C45A', glow: '212, 168, 67',   hue: 42,  sat: 65,  purple: '180, 120, 60' },
   crimson: { accent: '#E84057', dim: '#C4293E', secondary: '#FF6B6B', glow: '232, 64, 87',    hue: 352, sat: 75,  purple: '160, 50, 180' },
@@ -10,13 +11,30 @@ const THEMES = {
 } as const;
 
 type ThemeName = keyof typeof THEMES;
-const VALID_THEMES: ThemeName[] = ['jade', 'amber', 'crimson', 'azure'];
+const VALID_THEMES: ThemeName[] = ['viridian', 'jade', 'amber', 'crimson', 'azure'];
 const STORAGE_KEY = 'login-page-config';
 
 const CONNECT_DIST = 160;
 const CONNECT_DIST2 = CONNECT_DIST * CONNECT_DIST;
 const MOUSE_DIST = 140;
 const MOUSE_DIST2 = MOUSE_DIST * MOUSE_DIST;
+
+/* ============ Performance Tier Detection ============ */
+type PerfTier = 'full' | 'lite' | 'minimal';
+function detectPerfTier(): PerfTier {
+  if (typeof navigator === 'undefined') return 'full';
+  const isTouchDevice = navigator.maxTouchPoints > 0;
+  if (!isTouchDevice) return 'full';
+  // iOS: iPadOS 13+ reports as MacIntel but has multi-touch
+  const isIOS = (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1
+    && window.screen.width <= 1366) || /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const minDim = Math.min(window.screen.width, window.screen.height);
+  if (isIOS) return minDim < 600 ? 'minimal' : 'lite';
+  // Android/other touch: use screen size (all touch devices capped at lite)
+  if (minDim < 600) return 'minimal';
+  return 'lite';
+}
+const _tier = detectPerfTier();
 
 interface Config { sysName: string; theme: ThemeName; animEnabled?: boolean }
 
@@ -57,10 +75,13 @@ const PAGE_CSS = `
 .lp-root .lp-bg-mesh {
   position: fixed; inset: 0; z-index: 0; pointer-events: none;
   background:
-    radial-gradient(ellipse 80% 60% at 10% 20%, rgba(var(--lp-glow), 0.18) 0%, transparent 60%),
-    radial-gradient(ellipse 60% 80% at 85% 75%, rgba(var(--lp-glow), 0.12) 0%, transparent 55%),
-    radial-gradient(ellipse 50% 50% at 50% 50%, rgba(var(--lp-purple), 0.08) 0%, transparent 60%),
-    linear-gradient(160deg, #060C1A 0%, #0C1628 30%, #0A1225 60%, #080E1E 100%);
+    radial-gradient(ellipse 85% 65% at 8% 20%, rgba(var(--lp-glow), 0.24) 0%, transparent 55%),
+    radial-gradient(ellipse 65% 75% at 85% 80%, rgba(var(--lp-purple), 0.16) 0%, transparent 50%),
+    radial-gradient(ellipse 55% 55% at 45% 45%, rgba(var(--lp-glow), 0.1) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 40% at 75% 15%, rgba(var(--lp-purple), 0.08) 0%, transparent 45%),
+    radial-gradient(ellipse 70% 50% at 20% 70%, rgba(var(--lp-glow), 0.14) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 40% at 55% 90%, rgba(var(--lp-glow), 0.1) 0%, transparent 50%),
+    linear-gradient(165deg, #041210 0%, #082018 25%, #061828 55%, #04101C 100%);
   animation: lp-meshShift 12s ease-in-out infinite alternate; will-change: filter;
 }
 @keyframes lp-meshShift {
@@ -77,7 +98,7 @@ const PAGE_CSS = `
   animation: lp-auroraPulse 8s ease-in-out infinite; will-change: opacity, transform;
 }
 .lp-root .lp-ab1 {
-  background: linear-gradient(90deg, transparent 0%, rgba(var(--lp-glow), 0.25) 30%, rgba(var(--lp-glow), 0.15) 50%, transparent 80%);
+  background: linear-gradient(90deg, transparent 0%, rgba(var(--lp-glow), 0.28) 20%, rgba(var(--lp-glow), 0.2) 45%, rgba(var(--lp-purple), 0.15) 70%, transparent 95%);
   top: -5%; left: -30%; transform: rotate(-8deg);
 }
 .lp-root .lp-ab2 {
@@ -118,9 +139,9 @@ const PAGE_CSS = `
   position: fixed; border-radius: 50%; pointer-events: none; z-index: 0;
   animation: lp-orbFloat 16s ease-in-out infinite; will-change: transform;
 }
-.lp-root .lp-orb1 { width: 700px; height: 700px; top: -20%; left: -10%; background: radial-gradient(circle, rgba(var(--lp-glow), 0.3) 0%, rgba(var(--lp-glow), 0.08) 40%, transparent 70%); filter: blur(60px); }
-.lp-root .lp-orb2 { width: 500px; height: 500px; bottom: -15%; right: -8%; background: radial-gradient(circle, rgba(var(--lp-glow), 0.22) 0%, rgba(var(--lp-purple), 0.06) 50%, transparent 70%); filter: blur(50px); animation-delay: -6s; }
-.lp-root .lp-orb3 { width: 350px; height: 350px; top: 40%; left: 55%; background: radial-gradient(circle, rgba(var(--lp-glow), 0.18) 0%, transparent 65%); filter: blur(40px); animation-delay: -11s; }
+.lp-root .lp-orb1 { width: 480px; height: 480px; top: -12%; left: -6%; background: radial-gradient(circle, rgba(var(--lp-glow), 0.32) 0%, rgba(var(--lp-glow), 0.1) 40%, transparent 70%); filter: blur(50px); }
+.lp-root .lp-orb2 { width: 380px; height: 380px; bottom: -8%; right: -8%; background: radial-gradient(circle, rgba(var(--lp-purple), 0.22) 0%, rgba(var(--lp-glow), 0.06) 50%, transparent 70%); filter: blur(42px); animation-delay: -5s; }
+.lp-root .lp-orb3 { width: 250px; height: 250px; top: 35%; left: 55%; background: radial-gradient(circle, rgba(var(--lp-glow), 0.18) 0%, transparent 65%); filter: blur(35px); animation-delay: -10s; }
 @keyframes lp-orbFloat {
   0%, 100% { transform: translate(0, 0) scale(1); }
   33% { transform: translate(40px, -50px) scale(1.08); }
@@ -214,6 +235,7 @@ const PAGE_CSS = `
 }
 .lp-root .lp-pill:hover { transform: scale(1.2); }
 .lp-root .lp-pill.active { border-color: #fff; box-shadow: 0 0 14px rgba(255,255,255,0.3); }
+.lp-root .lp-pill-viridian { background: linear-gradient(135deg, #36D9B4, #24C896); }
 .lp-root .lp-pill-jade    { background: linear-gradient(135deg, #3DD68C, #2DD4A8); }
 .lp-root .lp-pill-amber   { background: linear-gradient(135deg, #D4A843, #E8C45A); }
 .lp-root .lp-pill-crimson  { background: linear-gradient(135deg, #E84057, #FF6B6B); }
@@ -414,6 +436,82 @@ const PAGE_CSS = `
 /* Form error */
 .lp-root .lp-ferr { color: #E84057; font-size: 12px; margin-top: 4px; }
 
+/* ---- Lite tier: reduced effects for tablets ---- */
+.lp-root.lp-lite .lp-bg-mesh {
+  animation: none; will-change: auto; filter: none;
+}
+.lp-root.lp-lite .lp-container {
+  backdrop-filter: blur(12px) saturate(1.2); -webkit-backdrop-filter: blur(12px) saturate(1.2);
+}
+.lp-root.lp-lite .lp-aurora-band { filter: blur(25px); will-change: auto; }
+.lp-root.lp-lite .lp-orb { filter: none; will-change: auto; }
+.lp-root.lp-lite .lp-ring { will-change: auto; }
+.lp-root.lp-lite .lp-cbar,
+.lp-root.lp-lite .lp-atoggle,
+.lp-root.lp-lite .lp-toast {
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+
+/* ---- Minimal tier: no blur, baked gradient background ---- */
+.lp-root.lp-minimal .lp-bg-mesh {
+  animation: none; will-change: auto; filter: none;
+  background:
+    radial-gradient(ellipse 85% 65% at 8% 20%, rgba(var(--lp-glow), 0.24) 0%, transparent 55%),
+    radial-gradient(ellipse 65% 75% at 85% 80%, rgba(var(--lp-purple), 0.16) 0%, transparent 50%),
+    radial-gradient(ellipse 55% 55% at 45% 45%, rgba(var(--lp-glow), 0.1) 0%, transparent 55%),
+    radial-gradient(ellipse 70% 50% at 20% 70%, rgba(var(--lp-glow), 0.14) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 40% at 55% 90%, rgba(var(--lp-glow), 0.1) 0%, transparent 50%),
+    radial-gradient(ellipse 55% 50% at 5% 8%, rgba(var(--lp-glow), 0.18) 0%, transparent 60%),
+    radial-gradient(ellipse 45% 55% at 92% 88%, rgba(var(--lp-purple), 0.12) 0%, transparent 55%),
+    radial-gradient(ellipse 30% 30% at 60% 40%, rgba(var(--lp-glow), 0.08) 0%, transparent 50%),
+    linear-gradient(165deg, #041210 0%, #082018 25%, #061828 55%, #04101C 100%);
+}
+.lp-root.lp-minimal .lp-container {
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+  background:
+    radial-gradient(ellipse 85% 60% at 12% 18%, rgba(var(--lp-glow), 0.15) 0%, transparent 55%),
+    radial-gradient(ellipse 55% 70% at 88% 82%, rgba(var(--lp-purple), 0.1) 0%, transparent 50%),
+    radial-gradient(ellipse 45% 45% at 45% 45%, rgba(var(--lp-glow), 0.06) 0%, transparent 50%),
+    linear-gradient(160deg, rgba(var(--lp-glow), 0.1) 0%, rgba(6,18,16,0.94) 35%, rgba(var(--lp-purple), 0.07) 70%, rgba(var(--lp-glow), 0.04) 100%);
+}
+.lp-root.lp-minimal .lp-cbar,
+.lp-root.lp-minimal .lp-atoggle,
+.lp-root.lp-minimal .lp-toast {
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+  background: rgba(10, 18, 40, 0.9);
+}
+
+/* ---- Perf mode: animations completely off, baked orb gradient matches blur visual ---- */
+.lp-root.lp-perf .lp-bg-mesh {
+  animation: none; will-change: auto; filter: none;
+  background:
+    radial-gradient(ellipse 85% 65% at 8% 20%, rgba(var(--lp-glow), 0.24) 0%, transparent 55%),
+    radial-gradient(ellipse 65% 75% at 85% 80%, rgba(var(--lp-purple), 0.16) 0%, transparent 50%),
+    radial-gradient(ellipse 55% 55% at 45% 45%, rgba(var(--lp-glow), 0.1) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 40% at 75% 15%, rgba(var(--lp-purple), 0.08) 0%, transparent 45%),
+    radial-gradient(ellipse 70% 50% at 20% 70%, rgba(var(--lp-glow), 0.14) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 40% at 55% 90%, rgba(var(--lp-glow), 0.1) 0%, transparent 50%),
+    radial-gradient(ellipse 55% 50% at 5% 8%, rgba(var(--lp-glow), 0.18) 0%, transparent 60%),
+    radial-gradient(ellipse 45% 55% at 92% 88%, rgba(var(--lp-purple), 0.12) 0%, transparent 55%),
+    radial-gradient(ellipse 30% 30% at 60% 40%, rgba(var(--lp-glow), 0.08) 0%, transparent 50%),
+    linear-gradient(165deg, #041210 0%, #082018 25%, #061828 55%, #04101C 100%);
+}
+.lp-root.lp-perf .lp-container {
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+  background:
+    radial-gradient(ellipse 85% 60% at 12% 18%, rgba(var(--lp-glow), 0.15) 0%, transparent 55%),
+    radial-gradient(ellipse 55% 70% at 88% 82%, rgba(var(--lp-purple), 0.1) 0%, transparent 50%),
+    radial-gradient(ellipse 45% 45% at 45% 45%, rgba(var(--lp-glow), 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse 30% 30% at 70% 25%, rgba(var(--lp-purple), 0.04) 0%, transparent 40%),
+    linear-gradient(160deg, rgba(var(--lp-glow), 0.1) 0%, rgba(6,18,16,0.94) 35%, rgba(var(--lp-purple), 0.07) 70%, rgba(var(--lp-glow), 0.04) 100%);
+}
+.lp-root.lp-perf .lp-cbar,
+.lp-root.lp-perf .lp-atoggle,
+.lp-root.lp-perf .lp-toast {
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+  background: rgba(10, 18, 40, 0.9);
+}
+
 /* Mobile brand header (hidden on desktop) */
 .lp-root .lp-mb { display: none; }
 .lp-root .lp-mb-divider {
@@ -505,12 +603,15 @@ interface Props { children: ReactNode }
 export default function LoginBackground({ children }: Props) {
   const saved = useRef(loadConfig());
   const [theme, setTheme] = useState<ThemeName>(
-    saved.current?.theme && VALID_THEMES.includes(saved.current.theme) ? saved.current.theme : 'jade'
+    saved.current?.theme && VALID_THEMES.includes(saved.current.theme) ? saved.current.theme : 'viridian'
   );
   const [sysName, setSysName] = useState(saved.current?.sysName || '惊蛰');
   const [expanded, setExpanded] = useState(false);
   const [showToast, setShowToast] = useState(false);
-  const [animEnabled, setAnimEnabled] = useState(saved.current?.animEnabled !== false);
+  const [animEnabled, setAnimEnabled] = useState(() => {
+    if (saved.current?.animEnabled !== undefined) return saved.current.animEnabled;
+    return false; // All platforms default OFF — static gradient matches blur visual
+  });
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const particlesRef = useRef<Particle[]>([]);
@@ -546,14 +647,16 @@ export default function LoginBackground({ children }: Props) {
     document.head.appendChild(link);
   }, []);
 
-  // Particle system
+  // Particle system — tier-aware
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    if (_tier === 'minimal') return; // No canvas on phones
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const count = window.innerWidth <= 800 ? 40 : 100;
+    const count = _tier === 'lite' ? 20 : (window.innerWidth <= 800 ? 40 : 100);
+    const drawConnections = _tier === 'full'; // Skip O(n²) on tablets
 
     function resize() {
       const oldW = canvas!.width;
@@ -601,23 +704,28 @@ export default function LoginBackground({ children }: Props) {
         }
       }
 
-      // Draw connections
-      for (let i = 0; i < n; i++) {
-        const pi = ps[i];
-        for (let j = i + 1; j < n; j++) {
-          const pj = ps[j];
-          const dx = pi.x - pj.x, dy = pi.y - pj.y;
-          const d2 = dx * dx + dy * dy;
-          if (d2 < CONNECT_DIST2) {
-            ctx!.beginPath();
-            ctx!.moveTo(pi.x, pi.y);
-            ctx!.lineTo(pj.x, pj.y);
-            ctx!.strokeStyle = `rgba(${tm.glow},${(1 - Math.sqrt(d2) / CONNECT_DIST) * 0.18})`;
-            ctx!.lineWidth = 0.6;
-            ctx!.stroke();
+      // Draw connections (only on full tier — O(n²) is too expensive for tablets)
+      if (drawConnections) {
+        for (let i = 0; i < n; i++) {
+          const pi = ps[i];
+          for (let j = i + 1; j < n; j++) {
+            const pj = ps[j];
+            const dx = pi.x - pj.x, dy = pi.y - pj.y;
+            const d2 = dx * dx + dy * dy;
+            if (d2 < CONNECT_DIST2) {
+              ctx!.beginPath();
+              ctx!.moveTo(pi.x, pi.y);
+              ctx!.lineTo(pj.x, pj.y);
+              ctx!.strokeStyle = `rgba(${tm.glow},${(1 - Math.sqrt(d2) / CONNECT_DIST) * 0.18})`;
+              ctx!.lineWidth = 0.6;
+              ctx!.stroke();
+            }
           }
         }
-        // Draw particle
+      }
+      // Draw particles
+      for (let i = 0; i < n; i++) {
+        const pi = ps[i];
         ctx!.beginPath();
         ctx!.arc(pi.x, pi.y, pi.s, 0, Math.PI * 2);
         ctx!.fillStyle = `hsla(${tm.hue},${tm.sat}%,65%,${pi.o})`;
@@ -648,6 +756,8 @@ export default function LoginBackground({ children }: Props) {
 
     return () => {
       stop();
+      startRef.current = () => {};
+      stopRef.current = () => {};
       window.removeEventListener('resize', resize);
       document.removeEventListener('mousemove', onMouse);
       document.removeEventListener('visibilitychange', onVis);
@@ -669,7 +779,8 @@ export default function LoginBackground({ children }: Props) {
       const next = !prev;
       animRef.current = next;
       if (next) {
-        startRef.current();
+        // Delay start until after React commits display:none removal
+        requestAnimationFrame(() => startRef.current());
       } else {
         stopRef.current();
         const canvas = canvasRef.current;
@@ -718,42 +829,79 @@ export default function LoginBackground({ children }: Props) {
 
   const animOff = !animEnabled;
 
+  // Build root class: lp-perf (off) > lp-lite/lp-minimal (tier)
+  let rootCls = 'lp-root';
+  if (animOff) rootCls += ' lp-perf';
+  else if (_tier === 'lite') rootCls += ' lp-lite';
+  else if (_tier === 'minimal') rootCls += ' lp-minimal';
+
   return (
-    <div className="lp-root" style={cssVars}>
+    <div className={rootCls} style={cssVars}>
       <style>{PAGE_CSS}</style>
 
-      {/* Background elements */}
+      {/* Gradient mesh — always rendered, CSS controls animation per tier */}
       <div className="lp-bg-mesh" />
-      <div className="lp-stars" style={animOff ? { opacity: 0 } : undefined} />
-      <div className="lp-aurora" style={animOff ? { opacity: 0 } : undefined}>
-        <div className="lp-aurora-band lp-ab1" />
-        <div className="lp-aurora-band lp-ab2" />
-        <div className="lp-aurora-band lp-ab3" />
-      </div>
-      <div className="lp-ring lp-ring1" style={animOff ? { opacity: 0 } : undefined} />
-      <div className="lp-ring lp-ring2" style={animOff ? { opacity: 0 } : undefined} />
-      <div className="lp-ring lp-ring3" style={animOff ? { opacity: 0 } : undefined} />
-      <div className="lp-orb lp-orb1" style={animOff ? { animation: 'none' } : undefined} />
-      <div className="lp-orb lp-orb2" style={animOff ? { animation: 'none' } : undefined} />
-      <div className="lp-orb lp-orb3" style={animOff ? { animation: 'none' } : undefined} />
-      <div className="lp-tcm lp-tcm1" style={animOff ? { opacity: 0 } : undefined}>医</div>
-      <div className="lp-tcm lp-tcm2" style={animOff ? { opacity: 0 } : undefined}>药</div>
-      <div className="lp-tcm lp-tcm3" style={animOff ? { opacity: 0 } : undefined}>脉</div>
 
-      {/* Ink strokes */}
-      <div className="lp-ink lp-ink1" style={animOff ? { opacity: 0 } : undefined}>
-        <svg viewBox="0 0 400 220" fill="none">
-          <path d="M20 110 Q90 20, 200 80 T380 55" stroke={t.accent} strokeWidth="2.5" fill="none" strokeLinecap="round" opacity="0.5" />
-          <path d="M50 160 Q130 60, 240 130 T400 105" stroke={t.dim} strokeWidth="1.5" fill="none" strokeLinecap="round" opacity="0.35" />
-        </svg>
-      </div>
-      <div className="lp-ink lp-ink2" style={animOff ? { opacity: 0 } : undefined}>
-        <svg viewBox="0 0 320 200" fill="none">
-          <path d="M10 90 Q70 170, 160 100 T300 140" stroke={t.accent} strokeWidth="2.5" fill="none" strokeLinecap="round" opacity="0.5" />
-        </svg>
-      </div>
+      {/* Stars — cheap static background, shown on all tiers when animating */}
+      {!animOff && <div className="lp-stars" />}
 
-      <canvas ref={canvasRef} className="lp-canvas" style={animOff ? { opacity: 0 } : undefined} />
+      {/* Aurora — full: 3 bands, lite: 1 band, minimal/off: none */}
+      {!animOff && _tier !== 'minimal' && (
+        <div className="lp-aurora">
+          <div className="lp-aurora-band lp-ab1" />
+          {_tier === 'full' && <div className="lp-aurora-band lp-ab2" />}
+          {_tier === 'full' && <div className="lp-aurora-band lp-ab3" />}
+        </div>
+      )}
+
+      {/* Rings — full: 3, lite: 1, minimal/off: none */}
+      {!animOff && _tier !== 'minimal' && (
+        <>
+          <div className="lp-ring lp-ring1" />
+          {_tier === 'full' && <div className="lp-ring lp-ring2" />}
+          {_tier === 'full' && <div className="lp-ring lp-ring3" />}
+        </>
+      )}
+
+      {/* Orbs — full: 3 (with blur), lite: 1 (no blur via CSS), minimal/off: none */}
+      {!animOff && _tier !== 'minimal' && (
+        <>
+          <div className="lp-orb lp-orb1" />
+          {_tier === 'full' && <div className="lp-orb lp-orb2" />}
+          {_tier === 'full' && <div className="lp-orb lp-orb3" />}
+        </>
+      )}
+
+      {/* TCM symbols — full: 3, lite: 2, minimal: 1, off: none */}
+      {!animOff && (
+        <>
+          <div className="lp-tcm lp-tcm1">医</div>
+          {_tier !== 'minimal' && <div className="lp-tcm lp-tcm2">药</div>}
+          {_tier === 'full' && <div className="lp-tcm lp-tcm3">脉</div>}
+        </>
+      )}
+
+      {/* Ink strokes — full: 2, lite: 1, minimal/off: none */}
+      {!animOff && _tier !== 'minimal' && (
+        <>
+          <div className="lp-ink lp-ink1">
+            <svg viewBox="0 0 400 220" fill="none">
+              <path d="M20 110 Q90 20, 200 80 T380 55" stroke={t.accent} strokeWidth="2.5" fill="none" strokeLinecap="round" opacity="0.5" />
+              <path d="M50 160 Q130 60, 240 130 T400 105" stroke={t.dim} strokeWidth="1.5" fill="none" strokeLinecap="round" opacity="0.35" />
+            </svg>
+          </div>
+          {_tier === 'full' && (
+            <div className="lp-ink lp-ink2">
+              <svg viewBox="0 0 320 200" fill="none">
+                <path d="M10 90 Q70 170, 160 100 T300 140" stroke={t.accent} strokeWidth="2.5" fill="none" strokeLinecap="round" opacity="0.5" />
+              </svg>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Canvas — hidden when off or minimal tier */}
+      <canvas ref={canvasRef} className="lp-canvas" style={(animOff || _tier === 'minimal') ? { display: 'none' } : undefined} />
 
       {/* Customizer */}
       <div className={`lp-cbar${expanded ? ' expanded' : ''}`}>
@@ -784,11 +932,11 @@ export default function LoginBackground({ children }: Props) {
               <div
                 key={name}
                 className={`lp-pill lp-pill-${name}${theme === name ? ' active' : ''}`}
-                title={{ jade: '翡翠', amber: '琥珀', crimson: '朱砂', azure: '青瓷' }[name]}
+                title={{ viridian: '碧波', jade: '翡翠', amber: '琥珀', crimson: '朱砂', azure: '青瓷' }[name]}
                 tabIndex={0}
                 role="radio"
                 aria-checked={theme === name}
-                aria-label={{ jade: '翡翠', amber: '琥珀', crimson: '朱砂', azure: '青瓷' }[name]}
+                aria-label={{ viridian: '碧波', jade: '翡翠', amber: '琥珀', crimson: '朱砂', azure: '青瓷' }[name]}
                 onClick={() => pickTheme(name)}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickTheme(name); }}}
               />
@@ -798,7 +946,7 @@ export default function LoginBackground({ children }: Props) {
       </div>
       <div className={`lp-toast${showToast ? ' show' : ''}`}>已保存到本地</div>
 
-      {/* Animation toggle (desktop) */}
+      {/* Animation toggle */}
       <div
         className="lp-atoggle"
         role="button"

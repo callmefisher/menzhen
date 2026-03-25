@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录页渐变方案对比</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;900&family=Noto+Sans+SC:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Noto Sans SC', sans-serif;
+  background: #040810;
+  color: #E8ECF4;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Header */
+.page-header {
+  text-align: center;
+  padding: 48px 20px 16px;
+}
+.page-header h1 {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 28px;
+  font-weight: 900;
+  background: linear-gradient(135deg, #3DD68C, #2DD4A8, #4A90D9);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  margin-bottom: 8px;
+}
+.page-header p { color: #6B7A8D; font-size: 14px; }
+
+/* Toggle */
+.toggle-bar {
+  display: flex; justify-content: center; gap: 12px;
+  padding: 20px; position: sticky; top: 0; z-index: 100;
+  background: rgba(4, 8, 16, 0.9);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+}
+.toggle-btn {
+  padding: 10px 24px; border-radius: 10px; border: 1px solid rgba(61,214,140,0.25);
+  background: rgba(61,214,140,0.08); color: #3DD68C;
+  font-size: 14px; font-family: inherit; cursor: pointer; transition: all 0.3s;
+}
+.toggle-btn.active {
+  background: rgba(61,214,140,0.2); border-color: #3DD68C;
+  box-shadow: 0 0 20px rgba(61,214,140,0.15);
+}
+.toggle-btn:hover { background: rgba(61,214,140,0.15); }
+
+/* Grid */
+.schemes-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 32px;
+  padding: 24px 32px 60px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+@media (max-width: 900px) { .schemes-grid { grid-template-columns: 1fr; } }
+
+/* Scheme card */
+.scheme-card {
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.06);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+}
+.scheme-label {
+  padding: 16px 24px;
+  background: rgba(10,18,40,0.8);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.scheme-label h3 {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 18px; font-weight: 700;
+}
+.scheme-label span { font-size: 12px; color: #6B7A8D; }
+
+/* Scene */
+.scene {
+  position: relative;
+  height: 480px;
+  overflow: hidden;
+}
+
+/* Background layers */
+.bg-mesh {
+  position: absolute; inset: 0; z-index: 0;
+}
+.bg-orb {
+  position: absolute; border-radius: 50%; pointer-events: none; z-index: 1;
+}
+.bg-stars {
+  position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  background-image:
+    radial-gradient(1.5px 1.5px at 15% 25%, rgba(255,255,255,0.2), transparent),
+    radial-gradient(1px 1px at 55% 15%, rgba(255,255,255,0.15), transparent),
+    radial-gradient(1px 1px at 75% 45%, rgba(255,255,255,0.18), transparent),
+    radial-gradient(1.5px 1.5px at 90% 80%, rgba(255,255,255,0.12), transparent),
+    radial-gradient(1px 1px at 35% 70%, rgba(255,255,255,0.16), transparent),
+    radial-gradient(1px 1px at 50% 90%, rgba(255,255,255,0.14), transparent);
+  animation: twinkle 6s ease-in-out infinite alternate;
+}
+@keyframes twinkle { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
+
+/* Aurora */
+.bg-aurora {
+  position: absolute; width: 200%; height: 200px; border-radius: 50%;
+  opacity: 0; z-index: 1;
+  animation: auroraPulse 8s ease-in-out infinite;
+}
+@keyframes auroraPulse {
+  0%, 100% { opacity: 0.25; transform: translateX(0) rotate(-6deg); }
+  50% { opacity: 0.6; transform: translateX(3%) rotate(-4deg); }
+}
+
+/* Container (the card) */
+.card-container {
+  position: absolute; z-index: 10;
+  top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 85%; max-width: 600px;
+  border-radius: 24px;
+  padding: 36px 32px;
+  border: 1px solid rgba(61,214,140,0.15);
+  box-shadow:
+    0 0 80px rgba(61,214,140,0.06),
+    0 30px 60px rgba(0,0,0,0.4),
+    inset 0 1px 0 rgba(255,255,255,0.05);
+  transition: all 0.5s ease;
+}
+.card-container.blur-mode {
+  backdrop-filter: blur(50px) saturate(1.6);
+  -webkit-backdrop-filter: blur(50px) saturate(1.6);
+}
+
+/* Card content */
+.card-title {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 22px; font-weight: 900; margin-bottom: 6px;
+}
+.card-sub { font-size: 13px; color: #8A94A8; margin-bottom: 24px; }
+.card-input {
+  width: 100%; padding: 12px 16px 12px 42px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px; color: #E8ECF4;
+  font-size: 14px; font-family: inherit; outline: none;
+  margin-bottom: 14px; transition: all 0.3s;
+}
+.card-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(var(--glow-rgb), 0.12);
+}
+.card-input::placeholder { color: rgba(138,148,168,0.5); }
+.card-btn {
+  width: 100%; padding: 13px; border: none; border-radius: 10px;
+  font-size: 15px; font-weight: 600; font-family: inherit;
+  cursor: pointer; color: #0A0F1A;
+  transition: all 0.3s;
+}
+
+/* ====== SCHEME A: 翡翠深海 — Deep emerald + dark teal ====== */
+.scheme-a { --accent: #3DD68C; --glow-rgb: 61,214,140; --purple-rgb: 40,80,120; }
+.scheme-a .bg-mesh {
+  background:
+    radial-gradient(ellipse 90% 70% at 5% 15%, rgba(30,180,110,0.22) 0%, transparent 55%),
+    radial-gradient(ellipse 70% 80% at 90% 85%, rgba(20,120,80,0.18) 0%, transparent 50%),
+    radial-gradient(ellipse 50% 50% at 50% 50%, rgba(40,80,120,0.1) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at 30% 70%, rgba(45,212,168,0.08) 0%, transparent 50%),
+    linear-gradient(160deg, #04120A 0%, #081C14 30%, #0A1A20 60%, #060E18 100%);
+}
+.scheme-a .bg-orb.o1 {
+  width: 500px; height: 500px; top: -15%; left: -8%;
+  background: radial-gradient(circle, rgba(30,180,110,0.35) 0%, rgba(20,140,90,0.1) 40%, transparent 70%);
+  filter: blur(50px); animation: orbFloat 16s ease-in-out infinite;
+}
+.scheme-a .bg-orb.o2 {
+  width: 350px; height: 350px; bottom: -10%; right: -5%;
+  background: radial-gradient(circle, rgba(45,212,168,0.25) 0%, rgba(40,80,120,0.08) 50%, transparent 70%);
+  filter: blur(40px); animation: orbFloat 16s ease-in-out infinite -6s;
+}
+.scheme-a .bg-aurora {
+  background: linear-gradient(90deg, transparent 0%, rgba(30,180,110,0.3) 30%, rgba(45,212,168,0.15) 60%, transparent 85%);
+  top: -8%; left: -25%; filter: blur(60px);
+}
+.scheme-a .card-container.static-mode {
+  background:
+    radial-gradient(ellipse 90% 70% at 10% 15%, rgba(30,180,110,0.14) 0%, transparent 60%),
+    radial-gradient(ellipse 70% 80% at 90% 85%, rgba(45,212,168,0.08) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 50% at 50% 40%, rgba(40,80,120,0.06) 0%, transparent 55%),
+    linear-gradient(160deg, rgba(20,140,90,0.1) 0%, rgba(8,20,16,0.93) 45%, rgba(40,80,120,0.05) 100%);
+}
+.scheme-a .card-btn {
+  background: linear-gradient(135deg, #1EB46E, #2DD4A8);
+  box-shadow: 0 4px 24px rgba(30,180,110,0.4);
+}
+.scheme-a .card-title {
+  background: linear-gradient(135deg, #fff, #3DD68C);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+
+/* ====== SCHEME B: 青瓷玉光 — Celadon jade, soft warm green ====== */
+.scheme-b { --accent: #5CE0A0; --glow-rgb: 92,224,160; --purple-rgb: 60,100,140; }
+.scheme-b .bg-mesh {
+  background:
+    radial-gradient(ellipse 80% 60% at 15% 25%, rgba(70,200,130,0.2) 0%, transparent 55%),
+    radial-gradient(ellipse 60% 80% at 80% 70%, rgba(92,224,160,0.12) 0%, transparent 50%),
+    radial-gradient(ellipse 70% 50% at 50% 10%, rgba(60,100,140,0.1) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 60% at 70% 40%, rgba(80,220,150,0.06) 0%, transparent 45%),
+    linear-gradient(150deg, #06130D 0%, #0A1E16 25%, #081820 55%, #060E16 100%);
+}
+.scheme-b .bg-orb.o1 {
+  width: 550px; height: 550px; top: -18%; left: -12%;
+  background: radial-gradient(circle, rgba(70,200,130,0.3) 0%, rgba(92,224,160,0.08) 45%, transparent 70%);
+  filter: blur(55px); animation: orbFloat 18s ease-in-out infinite;
+}
+.scheme-b .bg-orb.o2 {
+  width: 400px; height: 400px; bottom: -12%; right: -10%;
+  background: radial-gradient(circle, rgba(92,224,160,0.2) 0%, rgba(60,100,140,0.06) 50%, transparent 70%);
+  filter: blur(45px); animation: orbFloat 18s ease-in-out infinite -7s;
+}
+.scheme-b .bg-aurora {
+  background: linear-gradient(90deg, transparent 0%, rgba(70,200,130,0.25) 25%, rgba(92,224,160,0.2) 50%, rgba(60,100,140,0.1) 75%, transparent 100%);
+  top: 5%; left: -30%; filter: blur(65px);
+}
+.scheme-b .card-container.static-mode {
+  background:
+    radial-gradient(ellipse 80% 60% at 10% 20%, rgba(70,200,130,0.12) 0%, transparent 55%),
+    radial-gradient(ellipse 60% 70% at 85% 80%, rgba(92,224,160,0.07) 0%, transparent 50%),
+    radial-gradient(ellipse 50% 40% at 50% 50%, rgba(60,100,140,0.05) 0%, transparent 50%),
+    linear-gradient(155deg, rgba(70,200,130,0.08) 0%, rgba(8,22,14,0.93) 40%, rgba(60,100,140,0.04) 100%);
+}
+.scheme-b .card-btn {
+  background: linear-gradient(135deg, #46C882, #5CE0A0);
+  box-shadow: 0 4px 24px rgba(70,200,130,0.4);
+}
+.scheme-b .card-title {
+  background: linear-gradient(135deg, #fff, #5CE0A0);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+
+/* ====== SCHEME C: 碧波琉璃 — Vibrant blue-green glass ====== */
+.scheme-c { --accent: #36D9B4; --glow-rgb: 54,217,180; --purple-rgb: 50,90,180; }
+.scheme-c .bg-mesh {
+  background:
+    radial-gradient(ellipse 85% 65% at 8% 20%, rgba(36,200,150,0.24) 0%, transparent 55%),
+    radial-gradient(ellipse 65% 75% at 85% 80%, rgba(50,90,180,0.16) 0%, transparent 50%),
+    radial-gradient(ellipse 55% 55% at 45% 45%, rgba(54,217,180,0.1) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 40% at 75% 15%, rgba(30,160,200,0.08) 0%, transparent 45%),
+    linear-gradient(165deg, #041210 0%, #082018 25%, #061828 55%, #04101C 100%);
+}
+.scheme-c .bg-orb.o1 {
+  width: 480px; height: 480px; top: -12%; left: -6%;
+  background: radial-gradient(circle, rgba(36,200,150,0.32) 0%, rgba(54,217,180,0.1) 40%, transparent 70%);
+  filter: blur(50px); animation: orbFloat 15s ease-in-out infinite;
+}
+.scheme-c .bg-orb.o2 {
+  width: 380px; height: 380px; bottom: -8%; right: -8%;
+  background: radial-gradient(circle, rgba(50,90,180,0.22) 0%, rgba(30,160,200,0.06) 50%, transparent 70%);
+  filter: blur(42px); animation: orbFloat 15s ease-in-out infinite -5s;
+}
+.scheme-c .bg-orb.o3 {
+  width: 250px; height: 250px; top: 35%; left: 55%;
+  background: radial-gradient(circle, rgba(54,217,180,0.18) 0%, transparent 65%);
+  filter: blur(35px); animation: orbFloat 15s ease-in-out infinite -10s;
+}
+.scheme-c .bg-aurora {
+  background: linear-gradient(90deg, transparent 0%, rgba(36,200,150,0.28) 20%, rgba(54,217,180,0.2) 45%, rgba(50,90,180,0.15) 70%, transparent 95%);
+  top: -5%; left: -20%; filter: blur(55px);
+}
+.scheme-c .card-container.static-mode {
+  background:
+    radial-gradient(ellipse 85% 60% at 12% 18%, rgba(36,200,150,0.15) 0%, transparent 55%),
+    radial-gradient(ellipse 55% 70% at 88% 82%, rgba(50,90,180,0.1) 0%, transparent 50%),
+    radial-gradient(ellipse 45% 45% at 45% 45%, rgba(54,217,180,0.06) 0%, transparent 50%),
+    linear-gradient(160deg, rgba(36,200,150,0.1) 0%, rgba(6,18,16,0.93) 35%, rgba(50,90,180,0.07) 70%, rgba(54,217,180,0.04) 100%);
+}
+.scheme-c .card-btn {
+  background: linear-gradient(135deg, #24C896, #36D9B4);
+  box-shadow: 0 4px 24px rgba(36,200,150,0.4);
+}
+.scheme-c .card-title {
+  background: linear-gradient(135deg, #fff, #36D9B4);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+
+/* ====== SCHEME D: 松石翠烟 — Turquoise mist, smoky jade layers ====== */
+.scheme-d { --accent: #4AD6A8; --glow-rgb: 74,214,168; --purple-rgb: 45,70,110; }
+.scheme-d .bg-mesh {
+  background:
+    radial-gradient(ellipse 100% 80% at 0% 10%, rgba(40,190,120,0.2) 0%, transparent 50%),
+    radial-gradient(ellipse 80% 90% at 95% 90%, rgba(74,214,168,0.14) 0%, transparent 50%),
+    radial-gradient(ellipse 60% 40% at 40% 60%, rgba(45,70,110,0.12) 0%, transparent 55%),
+    radial-gradient(ellipse 45% 55% at 65% 25%, rgba(50,200,140,0.07) 0%, transparent 45%),
+    radial-gradient(ellipse 30% 30% at 20% 80%, rgba(74,214,168,0.05) 0%, transparent 40%),
+    linear-gradient(170deg, #051410 0%, #0A2018 20%, #071A22 45%, #0C1A14 70%, #060E16 100%);
+}
+.scheme-d .bg-orb.o1 {
+  width: 600px; height: 600px; top: -20%; left: -10%;
+  background: radial-gradient(circle, rgba(40,190,120,0.28) 0%, rgba(74,214,168,0.08) 45%, transparent 70%);
+  filter: blur(55px); animation: orbFloat 20s ease-in-out infinite;
+}
+.scheme-d .bg-orb.o2 {
+  width: 420px; height: 420px; bottom: -15%; right: -6%;
+  background: radial-gradient(circle, rgba(74,214,168,0.22) 0%, rgba(45,70,110,0.06) 50%, transparent 70%);
+  filter: blur(48px); animation: orbFloat 20s ease-in-out infinite -8s;
+}
+.scheme-d .bg-aurora {
+  background: linear-gradient(90deg, transparent 0%, rgba(40,190,120,0.22) 20%, rgba(74,214,168,0.25) 45%, rgba(50,200,140,0.12) 70%, transparent 90%);
+  top: 0%; left: -25%; filter: blur(70px);
+  animation-duration: 10s;
+}
+.scheme-d .bg-aurora.a2 {
+  background: linear-gradient(90deg, transparent 10%, rgba(45,70,110,0.12) 40%, rgba(74,214,168,0.08) 70%, transparent 95%);
+  top: 55%; left: -15%; height: 160px; filter: blur(50px);
+  animation-delay: -4s; animation-duration: 12s;
+}
+.scheme-d .card-container.static-mode {
+  background:
+    radial-gradient(ellipse 90% 65% at 8% 15%, rgba(40,190,120,0.13) 0%, transparent 55%),
+    radial-gradient(ellipse 65% 75% at 92% 85%, rgba(74,214,168,0.09) 0%, transparent 50%),
+    radial-gradient(ellipse 50% 40% at 45% 50%, rgba(45,70,110,0.06) 0%, transparent 50%),
+    radial-gradient(ellipse 35% 35% at 70% 30%, rgba(50,200,140,0.04) 0%, transparent 40%),
+    linear-gradient(160deg, rgba(40,190,120,0.09) 0%, rgba(8,22,16,0.93) 35%, rgba(45,70,110,0.06) 60%, rgba(74,214,168,0.03) 100%);
+}
+.scheme-d .card-btn {
+  background: linear-gradient(135deg, #28BE78, #4AD6A8);
+  box-shadow: 0 4px 24px rgba(40,190,120,0.4);
+}
+.scheme-d .card-title {
+  background: linear-gradient(135deg, #fff, #4AD6A8);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+
+@keyframes orbFloat {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(30px, -40px) scale(1.06); }
+  66% { transform: translate(-20px, 25px) scale(0.95); }
+}
+
+/* Input icon placeholder */
+.input-wrap { position: relative; }
+.input-wrap::before {
+  content: ''; position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 1.5px solid #6B7A8D; z-index: 1;
+}
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>登录页渐变方案对比</h1>
+  <p>点击切换模式查看「动画开启 / 动画关闭」两种状态</p>
+</div>
+
+<div class="toggle-bar">
+  <button class="toggle-btn active" onclick="setMode('blur')" id="btn-blur">动画开启（毛玻璃）</button>
+  <button class="toggle-btn" onclick="setMode('static')" id="btn-static">动画关闭（静态渐变）</button>
+</div>
+
+<div class="schemes-grid" id="grid"></div>
+
+<script>
+const schemes = [
+  { cls: 'scheme-a', name: '方案A · 翡翠深海', desc: '深翡翠+暗青，绿色主导，深邃沉稳', orbs: 2, aurora2: false },
+  { cls: 'scheme-b', name: '方案B · 青瓷玉光', desc: '瓷器质感，温暖柔和的绿蓝过渡', orbs: 2, aurora2: false },
+  { cls: 'scheme-c', name: '方案C · 碧波琉璃', desc: '高饱和蓝绿交织，通透琉璃质感', orbs: 3, aurora2: false },
+  { cls: 'scheme-d', name: '方案D · 松石翠烟', desc: '多层翠色烟雾叠加，层次最丰富', orbs: 2, aurora2: true },
+];
+
+let mode = 'blur';
+
+function render() {
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  schemes.forEach(s => {
+    const orbsHTML = s.orbs >= 1 ? '<div class="bg-orb o1"></div>' : '';
+    const orb2HTML = s.orbs >= 2 ? '<div class="bg-orb o2"></div>' : '';
+    const orb3HTML = s.orbs >= 3 ? '<div class="bg-orb o3"></div>' : '';
+    const aurora2HTML = s.aurora2 ? '<div class="bg-aurora a2"></div>' : '';
+
+    const cardCls = mode === 'blur' ? 'card-container blur-mode' : 'card-container static-mode';
+
+    grid.innerHTML += `
+      <div class="scheme-card ${s.cls}">
+        <div class="scheme-label">
+          <h3>${s.name}</h3>
+          <span>${s.desc}</span>
+        </div>
+        <div class="scene">
+          <div class="bg-mesh"></div>
+          <div class="bg-stars"></div>
+          ${mode === 'blur' ? `
+            ${orbsHTML}${orb2HTML}${orb3HTML}
+            <div class="bg-aurora"></div>
+            ${aurora2HTML}
+          ` : ''}
+          <div class="${cardCls}">
+            <div class="card-title">欢迎回来</div>
+            <div class="card-sub">请登录您的账户以继续</div>
+            <div class="input-wrap">
+              <input class="card-input" placeholder="请输入用户名" readonly>
+            </div>
+            <div class="input-wrap">
+              <input class="card-input" placeholder="请输入密码" readonly>
+            </div>
+            <button class="card-btn">登 录</button>
+          </div>
+        </div>
+      </div>
+    `;
+  });
+}
+
+function setMode(m) {
+  mode = m;
+  document.getElementById('btn-blur').classList.toggle('active', m === 'blur');
+  document.getElementById('btn-static').classList.toggle('active', m === 'static');
+  render();
+}
+
+render();
+</script>
+</body>
+</html>
