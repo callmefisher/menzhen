@@ -40,7 +40,10 @@ func (h *QueueDoctorHandler) List(c *gin.Context) {
 			userIDs[i] = d.UserID
 		}
 		var users []model.User
-		h.db.Select("id, real_name, username").Where("id IN ? AND tenant_id = ?", userIDs, tenantID).Find(&users)
+		if err := h.db.Select("id, real_name, username").Where("id IN ? AND tenant_id = ?", userIDs, tenantID).Find(&users).Error; err != nil {
+			// Non-fatal: names just won't be populated
+			_ = err
+		}
 		nameMap := make(map[uint]string)
 		for _, u := range users {
 			name := u.RealName
@@ -62,19 +65,24 @@ func (h *QueueDoctorHandler) Create(c *gin.Context) {
 	tenantID := uint(middleware.GetTenantID(c))
 
 	var req struct {
-		UserID uint   `json:"user_id" binding:"required"`
-		Room   string `json:"room"`
+		UserID  uint   `json:"user_id" binding:"required"`
+		Room    string `json:"room"`
+		Enabled *bool  `json:"enabled"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": err.Error()})
 		return
 	}
 
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
 	doc := &model.QueueDoctor{
 		TenantID: tenantID,
 		UserID:   req.UserID,
 		Room:     req.Room,
-		Enabled:  true,
+		Enabled:  enabled,
 	}
 
 	if err := h.svc.Create(doc); err != nil {

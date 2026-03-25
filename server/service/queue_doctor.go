@@ -46,28 +46,30 @@ func (s *QueueDoctorService) ListEnabled(tenantID uint) ([]model.QueueDoctor, er
 // Duplicate (same tenant_id + user_id) is rejected.
 // sort_order is auto-assigned as max(sort_order)+1 within the tenant.
 func (s *QueueDoctorService) Create(doc *model.QueueDoctor) error {
-	// Duplicate check
-	var count int64
-	if err := s.DB.Model(&model.QueueDoctor{}).
-		Where("tenant_id = ? AND user_id = ?", doc.TenantID, doc.UserID).
-		Count(&count).Error; err != nil {
-		return err
-	}
-	if count > 0 {
-		return ErrQueueDoctorDuplicate
-	}
+	return s.DB.Transaction(func(tx *gorm.DB) error {
+		// Duplicate check
+		var count int64
+		if err := tx.Model(&model.QueueDoctor{}).
+			Where("tenant_id = ? AND user_id = ?", doc.TenantID, doc.UserID).
+			Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			return ErrQueueDoctorDuplicate
+		}
 
-	// Auto sort_order: max existing + 1
-	var maxOrder int
-	if err := s.DB.Model(&model.QueueDoctor{}).
-		Where("tenant_id = ?", doc.TenantID).
-		Select("COALESCE(MAX(sort_order), 0)").
-		Scan(&maxOrder).Error; err != nil {
-		return err
-	}
-	doc.SortOrder = maxOrder + 1
+		// Auto sort_order: max existing + 1
+		var maxOrder int
+		if err := tx.Model(&model.QueueDoctor{}).
+			Where("tenant_id = ?", doc.TenantID).
+			Select("COALESCE(MAX(sort_order), 0)").
+			Scan(&maxOrder).Error; err != nil {
+			return err
+		}
+		doc.SortOrder = maxOrder + 1
 
-	return s.DB.Create(doc).Error
+		return tx.Create(doc).Error
+	})
 }
 
 // Update edits the room and enabled status of a doctor entry belonging to the tenant.
