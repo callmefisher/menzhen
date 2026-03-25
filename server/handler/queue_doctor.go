@@ -40,7 +40,7 @@ func (h *QueueDoctorHandler) List(c *gin.Context) {
 			userIDs[i] = d.UserID
 		}
 		var users []model.User
-		h.db.Select("id, real_name, username").Where("id IN ?", userIDs).Find(&users)
+		h.db.Select("id, real_name, username").Where("id IN ? AND tenant_id = ?", userIDs, tenantID).Find(&users)
 		nameMap := make(map[uint]string)
 		for _, u := range users {
 			name := u.RealName

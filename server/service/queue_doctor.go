@@ -48,19 +48,23 @@ func (s *QueueDoctorService) ListEnabled(tenantID uint) ([]model.QueueDoctor, er
 func (s *QueueDoctorService) Create(doc *model.QueueDoctor) error {
 	// Duplicate check
 	var count int64
-	s.DB.Model(&model.QueueDoctor{}).
+	if err := s.DB.Model(&model.QueueDoctor{}).
 		Where("tenant_id = ? AND user_id = ?", doc.TenantID, doc.UserID).
-		Count(&count)
+		Count(&count).Error; err != nil {
+		return err
+	}
 	if count > 0 {
 		return ErrQueueDoctorDuplicate
 	}
 
 	// Auto sort_order: max existing + 1
 	var maxOrder int
-	s.DB.Model(&model.QueueDoctor{}).
+	if err := s.DB.Model(&model.QueueDoctor{}).
 		Where("tenant_id = ?", doc.TenantID).
 		Select("COALESCE(MAX(sort_order), 0)").
-		Scan(&maxOrder)
+		Scan(&maxOrder).Error; err != nil {
+		return err
+	}
 	doc.SortOrder = maxOrder + 1
 
 	return s.DB.Create(doc).Error

@@ -122,6 +122,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (body.data.user.tenant_name) {
       document.title = body.data.user.tenant_name;
     }
+    // Fetch actual queue toggle after login
+    try {
+      const qRes = await getQueueEnabled();
+      const qBody = qRes as any;
+      setState(prev => ({ ...prev, queueEnabled: qBody.data?.enabled ?? true }));
+    } catch { /* keep default true */ }
   }, []);
 
   const logout = useCallback(async () => {

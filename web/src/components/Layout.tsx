@@ -84,7 +84,7 @@ export default function AppLayout() {
   useEffect(() => {
     window.scrollTo(0, 0);
     fetchQueueEnabled();
-  }, []);
+  }, [fetchQueueEnabled]);
 
   useEffect(() => {
     if (!hasPermission('inventory:read')) return;
