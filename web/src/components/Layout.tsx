@@ -30,6 +30,7 @@ import {
   PhoneOutlined,
   FontSizeOutlined,
   BgColorsOutlined,
+  SoundOutlined,
 } from '@ant-design/icons';
 import type { MenuProps as AntMenuProps } from 'antd';
 import { useAuth } from '../store/auth';
@@ -40,6 +41,7 @@ import { listInventoryDrugs } from '../api/inventory';
 import type { InventoryDrug } from '../api/inventory';
 import { getFollowUpStats } from '../api/followUp';
 import { getPendingCount } from '../api/prescriptionNotification';
+import { getQueueStats } from '../api/queue';
 import useIsMobile from '../hooks/useIsMobile';
 import { useWebSocket } from '../hooks/useWebSocket';
 import AccessibilityToggle from './AccessibilityToggle';
@@ -69,6 +71,7 @@ export default function AppLayout() {
   const [alertCount, setAlertCount] = useState(0);
   const [followUpCount, setFollowUpCount] = useState(0);
   const [rxPendingCount, setRxPendingCount] = useState(0);
+  const [queueWaitingCount, setQueueWaitingCount] = useState(0);
 
   // Auto-collapse sidebar in large-font mode, auto-expand back in normal mode
   useEffect(() => {
@@ -190,12 +193,28 @@ export default function AppLayout() {
     if (user) fetchRxPendingCount();
   }, [fetchRxPendingCount, user]);
 
-  useWebSocket('_reconnect', () => { fetchRxPendingCount(); });
+  // --- Queue waiting badge ---
+  const fetchQueueWaiting = useCallback(async () => {
+    if (!hasPermission('queue:read')) return;
+    try {
+      const res = await getQueueStats();
+      const data = (res as any).data;
+      setQueueWaitingCount(typeof data?.waiting === 'number' ? data.waiting : 0);
+    } catch { /* ignore */ }
+  }, [hasPermission]);
+
+  useEffect(() => {
+    if (user) fetchQueueWaiting();
+  }, [fetchQueueWaiting, user]);
+
+  useWebSocket('_reconnect', () => { fetchRxPendingCount(); fetchQueueWaiting(); });
   useWebSocket('rx_notify', () => { setRxPendingCount((prev) => prev + 1); });
   useWebSocket('rx_done', (msg) => {
     if (msg.payload?.batch) fetchRxPendingCount();
     else setRxPendingCount((prev) => Math.max(0, prev - 1));
   });
+  useWebSocket('queue_update', () => { fetchQueueWaiting(); });
+  useWebSocket('queue_clear', () => { setQueueWaitingCount(0); });
 
   const menuItems = useMemo(() => {
     const items: MenuItem[] = [];
@@ -220,6 +239,20 @@ export default function AppLayout() {
       borderRadius: 8, padding: '0 4px', textAlign: 'center', fontWeight: 500,
     };
     const fmtBadge = (n: number) => n > 99 ? '99+' : String(n);
+
+    // Queue menu item
+    if (hasPermission('queue:read')) {
+      items.push({
+        key: '/queue',
+        icon: <SoundOutlined />,
+        label: queueWaitingCount > 0
+          ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              排队叫号
+              <span style={badgeStyle}>{fmtBadge(queueWaitingCount)}</span>
+            </span>
+          : '排队叫号',
+      });
+    }
 
     const showOps = hasPermission('inventory:read') || hasPermission('followup:read') || hasPermission('statistics:read');
     if (showOps) {
@@ -382,7 +415,7 @@ export default function AppLayout() {
     }
 
     return items;
-  }, [hasPermission, alertCount, followUpCount, rxPendingCount]);
+  }, [hasPermission, alertCount, followUpCount, rxPendingCount, queueWaitingCount]);
 
   // Determine selected keys from current path
   const selectedKeys = useMemo(() => {
@@ -393,6 +426,7 @@ export default function AppLayout() {
     if (path.startsWith('/settings/config')) return ['/settings/config'];
     if (path.startsWith('/settings/backup')) return ['/settings/backup'];
     if (path.startsWith('/patients')) return ['/patients'];
+    if (path.startsWith('/queue')) return ['/queue'];
     if (path.startsWith('/oplogs')) return ['/oplogs'];
     if (path.startsWith('/herbs')) return ['/herbs'];
     if (path.startsWith('/formulas')) return ['/formulas'];

@@ -34,6 +34,28 @@ vi.mock('../PatientForm', () => ({
   PatientFormModal: () => null,
 }));
 
+vi.mock('../../../api/queue', () => ({
+  listQueue: vi.fn().mockResolvedValue({ data: { list: [] } }),
+  completeVisit: vi.fn(),
+}));
+
+vi.mock('../../../store/auth', () => ({
+  useAuth: () => ({
+    user: { id: 1, username: 'test', real_name: 'Test', tenant_id: 1 },
+    permissions: [],
+    token: 'test-token',
+    loading: false,
+    login: vi.fn(),
+    logout: vi.fn(),
+    hasPermission: () => false,
+    isGlobalAdmin: false,
+  }),
+}));
+
+vi.mock('../../../hooks/useWebSocket', () => ({
+  useWebSocket: vi.fn(),
+}));
+
 describe('PatientList', () => {
   beforeEach(() => {
     vi.clearAllMocks();

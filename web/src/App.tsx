@@ -31,6 +31,7 @@ import YijingList from './pages/yijing/YijingList';
 import InventoryAlert from './pages/inventory/InventoryAlert';
 import FollowUpList from './pages/followup/FollowUpList';
 import StatsDashboard from './pages/statistics/StatsDashboard';
+import QueueDashboard from './pages/queue/QueueDashboard';
 import type { ReactNode } from 'react';
 
 const MeridianView = lazy(() => import('./pages/meridians/MeridianView'));
@@ -92,6 +93,7 @@ function AppRoutes() {
         <Route path="inventory/alerts" element={<InventoryAlert />} />
         <Route path="follow-ups" element={<FollowUpList />} />
         <Route path="statistics" element={<StatsDashboard />} />
+        <Route path="queue" element={<QueueDashboard />} />
         <Route path="oplogs" element={<OpLogList />} />
         <Route path="settings/users" element={<UserList />} />
         <Route path="settings/roles" element={<RoleList />} />

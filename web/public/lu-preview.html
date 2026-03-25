@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>LU 肺经路径校准</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, sans-serif; background: #1a1a2e; color: #e0e0e0; height: 100vh; overflow: hidden; }
+#viewport { width: 100%; height: 100%; cursor: grab; }
+#viewport.dragging { cursor: crosshair; }
+
+#panel {
+  position: fixed; top: 12px; left: 12px; z-index: 10;
+  background: rgba(22,33,62,0.97); border: 1px solid #0f3460; border-radius: 8px;
+  padding: 14px 16px; width: 290px; font-size: 13px; max-height: calc(100vh - 24px); overflow-y: auto;
+}
+#panel h2 { font-size: 15px; color: #7ec8e3; margin-bottom: 10px; }
+.row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+.row label { min-width: 50px; color: #999; font-size: 12px; }
+button {
+  padding: 5px 10px; border: 1px solid #0f3460; background: #16213e;
+  color: #e0e0e0; font-size: 11px; cursor: pointer; border-radius: 4px;
+}
+button:hover { background: #0f3460; border-color: #7ec8e3; }
+button.active { background: #0f3460; color: #7ec8e3; border-color: #7ec8e3; }
+button.green { background: #2ed573; border-color: #2ed573; color: #fff; font-weight: 600; }
+
+.point-list { max-height: 340px; overflow-y: auto; margin: 8px 0; border: 1px solid #0f3460; border-radius: 4px; }
+.pt {
+  display: flex; align-items: center; padding: 4px 8px; font-size: 11px; font-family: monospace;
+  cursor: pointer; border-bottom: 1px solid #0a1a30; transition: background 0.1s;
+}
+.pt:hover { background: #1a3a5c; }
+.pt.sel { background: #0f3460; color: #7ec8e3; }
+.pt .idx { width: 24px; color: #666; flex-shrink: 0; }
+.pt .coords { flex: 1; }
+.pt .del { color: #e74c3c; cursor: pointer; opacity: 0; padding: 0 4px; font-size: 14px; }
+.pt:hover .del { opacity: 0.7; }
+
+#coords-display {
+  background: #0a1a30; border-radius: 4px; padding: 8px; margin: 8px 0;
+  font-family: monospace; font-size: 12px; color: #7ec8e3; text-align: center;
+}
+#toast {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,0.85); color: #fff; padding: 8px 20px;
+  border-radius: 6px; font-size: 13px; display: none; z-index: 20;
+}
+.hint { font-size: 11px; color: #555; margin-top: 8px; line-height: 1.6; }
+.sel-badge {
+  position: fixed; top: 12px; right: 12px; z-index: 10;
+  background: #ff6b6b; color: #fff; padding: 8px 16px; border-radius: 8px;
+  font-size: 14px; font-weight: 600; display: none; pointer-events: none;
+}
+.acupoint-label {
+  position: absolute; z-index: 5; pointer-events: none;
+  background: rgba(255,255,255,0.92); color: #333; font-size: 11px; font-weight: 600;
+  padding: 2px 6px; border-radius: 4px; white-space: nowrap;
+  border: 1px solid #ddd; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  transform: translate(-50%, -130%);
+}
+.acupoint-label .cn { font-size: 10px; color: #888; font-weight: 400; margin-left: 3px; }
+</style>
+</head>
+<body>
+<div id="viewport"></div>
+<div id="panel">
+  <h2>🫁 LU 肺经路径校准</h2>
+  <div class="row">
+    <label>模型</label>
+    <button id="btn-female" class="active" onclick="switchModel('female')">女</button>
+    <button id="btn-male" onclick="switchModel('male')">男</button>
+  </div>
+  <div class="row">
+    <label>偏移</label>
+    <button onclick="setOffset(0.005)">0.005</button>
+    <button class="active" onclick="setOffset(0.008)">0.008</button>
+    <button onclick="setOffset(0.012)">0.012</button>
+  </div>
+  <div class="row">
+    <button onclick="addPointAtMiddle()">+ 插入点</button>
+    <button onclick="snapAllPoints()">全部贴合</button>
+    <button onclick="undoAction()">撤销</button>
+  </div>
+  <div id="coords-display">双击绿球选中 → 拖拽到皮肤上</div>
+  <div class="point-list" id="point-list"></div>
+  <div class="row" style="margin-top:8px">
+    <button class="green" onclick="exportCoords()" style="flex:1;padding:8px">📋 导出坐标</button>
+  </div>
+  <div class="hint">
+    双击绿球 → 选中（变红）→ 按住拖拽到皮肤上<br>
+    单击空白处 → 取消选中<br>
+    Delete 删除 | ↑↓ 切换 | Esc 取消选中
+  </div>
+</div>
+<div class="sel-badge" id="sel-badge">拖拽中：点 0</div>
+<div id="labels-container" style="position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:5;overflow:hidden;"></div>
+<div id="toast"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.8.3/src/index.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { MeshBVH } from 'three-mesh-bvh';
+
+/* ============================================================
+   穴位名称映射
+   ============================================================ */
+const ACUPOINTS = {
+  female: {
+    'LU1':  { pos: [-0.098,1.323,0.047], cn: '中府' },
+    'LU2':  { pos: [-0.103,1.345,0.025], cn: '云门' },
+    'LU3':  { pos: [-0.231,1.261,0.024], cn: '天府' },
+    'LU4':  { pos: [-0.251,1.238,0.017], cn: '侠白' },
+    'LU5':  { pos: [-0.360,1.158,0.012], cn: '尺泽' },
+    'LU6':  { pos: [-0.437,1.119,0.005], cn: '孔最' },
+    'LU7':  { pos: [-0.513,1.050,0.001], cn: '列缺' },
+    'LU8':  { pos: [-0.526,1.039,-0.003], cn: '经渠' },
+    'LU9':  { pos: [-0.541,1.028,-0.006], cn: '太渊' },
+    'LU10': { pos: [-0.567,1.016,0.015], cn: '鱼际' },
+    'LU11': { pos: [-0.608,0.998,0.053], cn: '少商' },
+  },
+  male: {
+    'LU1':  { pos: [-0.098,1.323,0.047], cn: '中府' },
+    'LU2':  { pos: [-0.103,1.345,0.025], cn: '云门' },
+    'LU3':  { pos: [-0.231,1.261,0.024], cn: '天府' },
+    'LU4':  { pos: [-0.256,1.245,0.017], cn: '侠白' },
+    'LU5':  { pos: [-0.360,1.158,0.012], cn: '尺泽' },
+    'LU6':  { pos: [-0.437,1.119,0.005], cn: '孔最' },
+    'LU7':  { pos: [-0.513,1.050,0.001], cn: '列缺' },
+    'LU8':  { pos: [-0.526,1.039,-0.003], cn: '经渠' },
+    'LU9':  { pos: [-0.541,1.028,-0.006], cn: '太渊' },
+    'LU10': { pos: [-0.567,1.016,0.015], cn: '鱼际' },
+    'LU11': { pos: [-0.608,0.998,0.053], cn: '少商' },
+  },
+};
+
+function matchAcupoint(pt) {
+  const acuMap = ACUPOINTS[currentModel];
+  for (const [code, info] of Object.entries(acuMap)) {
+    const dx = pt[0]-info.pos[0], dy = pt[1]-info.pos[1], dz = pt[2]-info.pos[2];
+    if (Math.sqrt(dx*dx+dy*dy+dz*dz) < 0.015) return { code, cn: info.cn };
+  }
+  return null;
+}
+
+let labelEls = [];
+
+function rebuildLabels() {
+  const container = document.getElementById('labels-container');
+  container.innerHTML = '';
+  labelEls = [];
+  for (let i = 0; i < points.length; i++) {
+    const acu = matchAcupoint(points[i]);
+    if (!acu) continue;
+    const div = document.createElement('div');
+    div.className = 'acupoint-label';
+    div.innerHTML = `${acu.code}<span class="cn">${acu.cn}</span>`;
+    container.appendChild(div);
+    labelEls.push({ el: div, idx: i });
+  }
+}
+
+function updateLabels() {
+  if (!camera || labelEls.length === 0) return;
+  const v = new THREE.Vector3();
+  for (const lb of labelEls) {
+    const p = points[lb.idx];
+    if (!p) { lb.el.style.display = 'none'; continue; }
+    v.set(p[0], p[1], p[2]).project(camera);
+    if (v.z > 1) { lb.el.style.display = 'none'; continue; }
+    lb.el.style.display = '';
+    lb.el.style.left = ((v.x + 1) / 2 * innerWidth) + 'px';
+    lb.el.style.top = ((-v.y + 1) / 2 * innerHeight) + 'px';
+  }
+}
+
+/* ============================================================
+   路径数据
+   ============================================================ */
+const PATHS = {
+  female: [
+    [-0.098,1.323,0.047],[-0.103,1.345,0.025],
+    [-0.135,1.335,0.028],[-0.168,1.310,0.026],[-0.200,1.286,0.025],
+    [-0.231,1.261,0.024],[-0.251,1.238,0.017],
+    [-0.280,1.218,0.015],[-0.310,1.198,0.014],[-0.335,1.178,0.013],
+    [-0.360,1.158,0.012],[-0.385,1.145,0.010],[-0.410,1.132,0.008],
+    [-0.437,1.119,0.005],[-0.458,1.105,0.004],[-0.478,1.090,0.003],
+    [-0.497,1.072,0.002],[-0.513,1.050,0.001],[-0.526,1.039,-0.003],
+    [-0.541,1.028,-0.006],[-0.550,1.022,0.002],[-0.558,1.019,0.008],
+    [-0.567,1.016,0.015],[-0.580,1.010,0.025],[-0.594,1.004,0.038],
+    [-0.608,0.998,0.053],
+  ],
+  male: [
+    [-0.098,1.323,0.047],[-0.103,1.345,0.025],
+    [-0.135,1.320,0.025],[-0.167,1.303,0.024],[-0.200,1.282,0.024],
+    [-0.231,1.261,0.024],[-0.243,1.253,0.021],[-0.256,1.245,0.017],
+    [-0.280,1.220,0.015],[-0.308,1.201,0.014],[-0.335,1.178,0.013],
+    [-0.360,1.158,0.012],[-0.385,1.145,0.010],[-0.410,1.132,0.008],
+    [-0.437,1.119,0.005],[-0.458,1.105,0.004],[-0.478,1.088,0.003],
+    [-0.497,1.070,0.002],[-0.513,1.050,0.001],[-0.519,1.044,-0.001],
+    [-0.526,1.039,-0.003],[-0.533,1.033,-0.004],[-0.541,1.028,-0.006],
+    [-0.554,1.022,0.005],[-0.567,1.016,0.015],[-0.587,1.007,0.034],
+    [-0.608,0.998,0.053],
+  ],
+};
+
+const MODELS = {
+  female: { url: '/models/sport-girl.glb', scale: 1.64 / 176.5, offsetY: 0 },
+  male:   { url: '/models/male.glb',       scale: 1.64 / 2.9342, offsetY: 1.4755 },
+};
+
+/* ============================================================
+   状态
+   ============================================================ */
+let currentModel = 'female';
+let normalOffset = 0.008;
+let points = [];
+let selectedIdx = -1;
+let undoStack = [];
+let isDragging = false; // 正在拖拽控制点
+
+let scene, camera, renderer, orbitControls;
+let modelGroup = null, mergedBVH = null;
+let skinMeshes = []; // 皮肤 mesh 列表，用于 raycast
+let tubeMesh = null, sphereGroup = null;
+let spheres = [];
+
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+const r3 = v => Math.round(v * 1000) / 1000;
+
+/* ============================================================
+   Three.js
+   ============================================================ */
+function initScene() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x1a1a2e);
+
+  camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.01, 100);
+  camera.position.set(-0.6, 1.25, 0.5);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.2;
+  document.getElementById('viewport').appendChild(renderer.domElement);
+
+  orbitControls = new OrbitControls(camera, renderer.domElement);
+  orbitControls.target.set(-0.35, 1.15, 0);
+  orbitControls.enableDamping = true;
+
+  scene.add(new THREE.AmbientLight(0xffeedd, 0.5));
+  const key = new THREE.DirectionalLight(0xffffff, 1.0);
+  key.position.set(1.5, 2.5, 2); scene.add(key);
+  scene.add(new THREE.DirectionalLight(0x8899bb, 0.4).position.set(-2, 1.5, -1));
+  scene.add(new THREE.DirectionalLight(0xffffff, 0.3).position.set(0, 2, -3));
+
+  addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+  });
+
+  setupInteraction();
+  animate();
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  orbitControls.update();
+  updateLabels();
+  renderer.render(scene, camera);
+}
+
+/* ============================================================
+   交互：双击选中 → 拖拽到皮肤
+   ============================================================ */
+function setupInteraction() {
+  const vp = document.getElementById('viewport');
+
+  // 双击绿球 → 选中
+  vp.addEventListener('dblclick', e => {
+    setMouse(e);
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(spheres, false);
+    if (hits.length > 0) {
+      const idx = spheres.indexOf(hits[0].object);
+      if (idx >= 0) { selectPoint(idx); toast(`已选中点 ${idx}，按住拖拽到皮肤上`); }
+    }
+  });
+
+  // 单击空白 → 取消选中
+  vp.addEventListener('click', e => {
+    if (isDragging) return;
+    setMouse(e);
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(spheres, false);
+    if (hits.length === 0 && selectedIdx >= 0) {
+      // 点了空白，但不立即取消，留给拖拽判断
+    }
+  });
+
+  // mousedown on selected sphere → 开始拖拽
+  vp.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || selectedIdx < 0) return;
+    setMouse(e);
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(spheres, false);
+    if (hits.length > 0 && spheres.indexOf(hits[0].object) === selectedIdx) {
+      isDragging = true;
+      orbitControls.enabled = false;
+      vp.classList.add('dragging');
+      pushUndo();
+      document.getElementById('sel-badge').style.display = 'block';
+      document.getElementById('sel-badge').textContent = `拖拽中：点 ${selectedIdx}`;
+    }
+  });
+
+  // mousemove → 实时移到皮肤表面
+  vp.addEventListener('pointermove', e => {
+    if (!isDragging || selectedIdx < 0) return;
+    setMouse(e);
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(skinMeshes, true);
+    if (hits.length > 0) {
+      const p = hits[0].point;
+      // 沿法线偏移
+      const n = hits[0].face?.normal;
+      if (n) {
+        const worldNormal = n.clone().transformDirection(hits[0].object.matrixWorld).normalize();
+        p.add(worldNormal.multiplyScalar(normalOffset));
+      }
+      points[selectedIdx] = [r3(p.x), r3(p.y), r3(p.z)];
+      spheres[selectedIdx].position.set(p.x, p.y, p.z);
+      updateCoordsDisplay();
+      rebuildTube();
+    }
+  });
+
+  // mouseup → 结束拖拽
+  vp.addEventListener('pointerup', () => {
+    if (!isDragging) return;
+    isDragging = false;
+    orbitControls.enabled = true;
+    vp.classList.remove('dragging');
+    document.getElementById('sel-badge').style.display = 'none';
+    // 最终贴合
+    if (selectedIdx >= 0) {
+      points[selectedIdx] = projectSingle(points[selectedIdx], normalOffset);
+      rebuildAll();
+      toast(`点 ${selectedIdx} 已放置`);
+    }
+  });
+
+  // 键盘
+  addEventListener('keydown', e => {
+    if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelected(); e.preventDefault(); }
+    if (e.key === 'ArrowUp') { selectPoint(Math.max(0, selectedIdx - 1)); e.preventDefault(); }
+    if (e.key === 'ArrowDown') { selectPoint(Math.min(points.length - 1, selectedIdx + 1)); e.preventDefault(); }
+    if (e.key === 'Escape') { selectPoint(-1); }
+  });
+}
+
+function setMouse(e) {
+  mouse.x = (e.clientX / innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+}
+
+/* ============================================================
+   模型加载 — 实体皮肤
+   ============================================================ */
+function loadModel(type) {
+  toast('加载模型...');
+  const cfg = MODELS[type];
+  new GLTFLoader().load(cfg.url, gltf => {
+    if (modelGroup) scene.remove(modelGroup);
+    skinMeshes = [];
+    modelGroup = new THREE.Group();
+    const s = cfg.scale;
+    const root = gltf.scene;
+    root.scale.set(s, s, s);
+    if (cfg.offsetY) root.position.y = cfg.offsetY * s;
+    modelGroup.add(root);
+    scene.add(modelGroup);
+
+    modelGroup.traverse(c => {
+      if (c.isMesh && c.material) {
+        c.material = new THREE.MeshStandardMaterial({
+          color: 0xd4a574, roughness: 0.65, metalness: 0.02,
+          side: THREE.FrontSide, transparent: false, depthWrite: true,
+        });
+        c.renderOrder = 0;
+        skinMeshes.push(c);
+      }
+    });
+
+    buildBVH();
+    points = JSON.parse(JSON.stringify(PATHS[currentModel]));
+    undoStack = [];
+    selectedIdx = -1;
+    rebuildAll();
+    toast('✅ 模型加载完成 — 双击绿球选中后拖拽');
+  }, undefined, err => toast('加载失败: ' + err.message));
+}
+
+/* ============================================================
+   BVH
+   ============================================================ */
+function buildBVH() {
+  if (!modelGroup) return;
+  modelGroup.updateMatrixWorld(true);
+  const allPos = [], allIdx = [];
+  let vOff = 0;
+  modelGroup.traverse(c => {
+    if (!c.isMesh || !c.geometry) return;
+    const posAttr = c.geometry.getAttribute('position');
+    if (!posAttr) return;
+    const wm = c.matrixWorld, v = new THREE.Vector3();
+    for (let i = 0; i < posAttr.count; i++) {
+      v.fromBufferAttribute(posAttr, i).applyMatrix4(wm);
+      allPos.push(v.x, v.y, v.z);
+    }
+    const idx = c.geometry.index;
+    if (idx) for (let i = 0; i < idx.count; i++) allIdx.push(idx.getX(i) + vOff);
+    else for (let i = 0; i < posAttr.count; i++) allIdx.push(i + vOff);
+    vOff += posAttr.count;
+  });
+  if (!allPos.length) return;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(allPos, 3));
+  geo.setIndex(allIdx);
+  geo.computeVertexNormals();
+  mergedBVH = { geometry: geo, bvh: new MeshBVH(geo) };
+}
+
+/* ============================================================
+   投影
+   ============================================================ */
+function projectSingle(pt, offset) {
+  if (!mergedBVH) return pt;
+  const q = new THREE.Vector3(pt[0], pt[1], pt[2]);
+  const target = { point: new THREE.Vector3(), distance: Infinity, faceIndex: 0 };
+  mergedBVH.bvh.closestPointToPoint(q, target);
+  if (!target.point || target.distance === Infinity) return pt;
+  const sp = target.point.clone();
+  const geo = mergedBVH.geometry;
+  const idxAttr = geo.index, posAttr = geo.getAttribute('position'), normalAttr = geo.getAttribute('normal');
+  let normal;
+  if (idxAttr && normalAttr && target.faceIndex >= 0) {
+    const fi = target.faceIndex;
+    const i0 = idxAttr.getX(fi*3), i1 = idxAttr.getX(fi*3+1), i2 = idxAttr.getX(fi*3+2);
+    const a = new THREE.Vector3().fromBufferAttribute(posAttr, i0);
+    const b = new THREE.Vector3().fromBufferAttribute(posAttr, i1);
+    const c = new THREE.Vector3().fromBufferAttribute(posAttr, i2);
+    const v0 = b.clone().sub(a), v1 = c.clone().sub(a), v2 = sp.clone().sub(a);
+    const d00=v0.dot(v0), d01=v0.dot(v1), d11=v1.dot(v1), d20=v2.dot(v0), d21=v2.dot(v1);
+    const den = d00*d11-d01*d01;
+    const bv = den?(d11*d20-d01*d21)/den:1/3, bw = den?(d00*d21-d01*d20)/den:1/3, bu = 1-bv-bw;
+    const na = new THREE.Vector3().fromBufferAttribute(normalAttr, i0);
+    const nb = new THREE.Vector3().fromBufferAttribute(normalAttr, i1);
+    const nc = new THREE.Vector3().fromBufferAttribute(normalAttr, i2);
+    normal = new THREE.Vector3(na.x*bu+nb.x*bv+nc.x*bw, na.y*bu+nb.y*bv+nc.y*bw, na.z*bu+nb.z*bv+nc.z*bw).normalize();
+  } else {
+    normal = q.clone().sub(sp).normalize();
+  }
+  if (normal.lengthSq() < 0.01) normal = q.clone().sub(sp).normalize();
+  if (normal.lengthSq() < 0.0001) normal.set(0,1,0);
+  const proj = sp.add(normal.multiplyScalar(offset));
+  return [r3(proj.x), r3(proj.y), r3(proj.z)];
+}
+
+function projectPath(pts, offset) {
+  const p1 = pts.map(p => projectSingle(p, offset));
+  const valid = p1.filter(p => Number.isFinite(p[0]));
+  if (valid.length < 2) return p1;
+  const vecs = valid.map(p => new THREE.Vector3(p[0], p[1], p[2]));
+  const curve = new THREE.CatmullRomCurve3(vecs, false, 'centripetal', 0.5);
+  const n = Math.max(valid.length * 5, 80);
+  return curve.getPoints(n - 1).map(p => projectSingle([p.x, p.y, p.z], offset));
+}
+
+/* ============================================================
+   渲染
+   ============================================================ */
+function rebuildAll() { rebuildTube(); rebuildSpheres(); rebuildLabels(); renderPointList(); updateCoordsDisplay(); }
+
+function rebuildTube() {
+  if (tubeMesh) { scene.remove(tubeMesh); tubeMesh.geometry.dispose(); tubeMesh = null; }
+  if (points.length < 2) return;
+  // 直接穿过控制点画管道，不做投影（校准工具里由用户手动放置）
+  const vecs = points.map(p => new THREE.Vector3(p[0], p[1], p[2]));
+  const curve = new THREE.CatmullRomCurve3(vecs, false, 'centripetal', 0.5);
+  const geo = new THREE.TubeGeometry(curve, Math.min(200, Math.max(20, vecs.length * 8)), 0.003, 8, false);
+  tubeMesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+    color: 0x2ed573, emissive: 0x2ed573, emissiveIntensity: 0.4,
+    roughness: 0.3, depthTest: false,
+  }));
+  tubeMesh.renderOrder = 1;
+  scene.add(tubeMesh);
+}
+
+function rebuildSpheres() {
+  if (sphereGroup) scene.remove(sphereGroup);
+  sphereGroup = new THREE.Group();
+  spheres = [];
+  const sGeo = new THREE.SphereGeometry(0.006, 12, 12);
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    const isSel = i === selectedIdx;
+    const color = isSel ? 0xff6b6b : 0x2ed573;
+    const mat = new THREE.MeshStandardMaterial({
+      color, emissive: color, emissiveIntensity: 0.6, depthTest: false,
+    });
+    const mesh = new THREE.Mesh(isSel ? new THREE.SphereGeometry(0.008, 12, 12) : sGeo, mat);
+    mesh.position.set(p[0], p[1], p[2]);
+    mesh.renderOrder = 2;
+    sphereGroup.add(mesh);
+    spheres.push(mesh);
+  }
+  scene.add(sphereGroup);
+}
+
+/* ============================================================
+   选中
+   ============================================================ */
+function selectPoint(idx) {
+  selectedIdx = idx;
+  rebuildSpheres();
+  renderPointList();
+  updateCoordsDisplay();
+}
+
+/* ============================================================
+   操作
+   ============================================================ */
+function pushUndo() { undoStack.push(JSON.parse(JSON.stringify(points))); if (undoStack.length > 50) undoStack.shift(); }
+
+window.undoAction = () => {
+  if (!undoStack.length) { toast('无可撤销'); return; }
+  points = undoStack.pop();
+  selectedIdx = Math.min(selectedIdx, points.length - 1);
+  rebuildAll();
+  toast('已撤销');
+};
+
+window.snapAllPoints = () => {
+  pushUndo();
+  for (let i = 0; i < points.length; i++) points[i] = projectSingle(points[i], normalOffset);
+  rebuildAll();
+  toast('全部贴合完成');
+};
+
+window.addPointAtMiddle = () => {
+  if (selectedIdx < 0 || selectedIdx >= points.length - 1) { toast('选中一个非末尾点'); return; }
+  pushUndo();
+  const a = points[selectedIdx], b = points[selectedIdx + 1];
+  const mid = projectSingle([r3((a[0]+b[0])/2), r3((a[1]+b[1])/2), r3((a[2]+b[2])/2)], normalOffset);
+  points.splice(selectedIdx + 1, 0, mid);
+  selectedIdx++;
+  rebuildAll();
+  toast(`已在 ${selectedIdx} 插入新点`);
+};
+
+function deleteSelected() {
+  if (selectedIdx < 0 || points.length <= 2) { toast('至少保留2个点'); return; }
+  pushUndo();
+  points.splice(selectedIdx, 1);
+  selectedIdx = Math.min(selectedIdx, points.length - 1);
+  rebuildAll();
+}
+
+/* ============================================================
+   导出
+   ============================================================ */
+window.exportCoords = () => {
+  const text = points.map(p => `      [${p[0]}, ${p[1]}, ${p[2]}],`).join('\n');
+  navigator.clipboard.writeText(text).then(
+    () => toast(`✅ 已复制 ${points.length} 个点`),
+    () => { const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); toast('已复制'); }
+  );
+};
+
+/* ============================================================
+   UI
+   ============================================================ */
+function renderPointList() {
+  const el = document.getElementById('point-list');
+  el.innerHTML = points.map((p, i) => {
+    const acu = matchAcupoint(p);
+    const acuTag = acu ? `<span style="color:#ff6b6b;font-weight:600;margin-left:4px;font-size:10px">${acu.code}</span>` : '';
+    return `<div class="pt ${i===selectedIdx?'sel':''}" onclick="window._sel(${i})">
+      <span class="idx">${i}</span>
+      <span class="coords">[${p[0]}, ${p[1]}, ${p[2]}]</span>${acuTag}
+      <span class="del" onclick="event.stopPropagation();window._del(${i})">×</span>
+    </div>`;
+  }).join('');
+  if (selectedIdx >= 0 && el.children[selectedIdx]) el.children[selectedIdx].scrollIntoView({ block: 'nearest' });
+}
+window._sel = i => selectPoint(i);
+window._del = i => { selectedIdx = i; deleteSelected(); };
+
+function updateCoordsDisplay() {
+  const el = document.getElementById('coords-display');
+  if (selectedIdx >= 0 && points[selectedIdx]) {
+    const p = points[selectedIdx];
+    el.innerHTML = `<b style="color:#ff6b6b">点 ${selectedIdx}</b>: [${p[0]}, ${p[1]}, ${p[2]}]`;
+  } else {
+    el.textContent = '双击绿球选中 → 拖拽到皮肤上';
+  }
+}
+
+window.switchModel = type => {
+  currentModel = type;
+  document.getElementById('btn-female').classList.toggle('active', type === 'female');
+  document.getElementById('btn-male').classList.toggle('active', type === 'male');
+  loadModel(type);
+};
+
+window.setOffset = val => {
+  normalOffset = val;
+  document.querySelectorAll('[onclick^="setOffset"]').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+  rebuildTube();
+};
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.style.display = 'block';
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => el.style.display = 'none', 3000);
+}
+
+/* ============================================================
+   启动
+   ============================================================ */
+initScene();
+loadModel(currentModel);
+</script>
+</body>
+</html>

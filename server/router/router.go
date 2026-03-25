@@ -58,6 +58,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	configHandler := handler.NewConfigHandler(db)
 	wsHandler := handler.NewWSHandler(cfg.JWTSecret)
 	pnHandler := handler.NewPrescriptionNotificationHandler(db)
+	queueHandler := handler.NewQueueHandler(db)
 
 	// ---------- Route groups ----------
 
@@ -318,6 +319,17 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			pn.GET("/:id/detail", middleware.RequirePermission(db, "inventory:read"), pnHandler.Detail)
 			pn.POST("/:id/done", middleware.RequirePermission(db, "inventory:update"), pnHandler.MarkDone)
 			pn.POST("/batch-done", middleware.RequirePermission(db, "inventory:update"), pnHandler.BatchDone)
+		}
+
+		// Queue (virtual number / waiting list) routes (tenant-scoped).
+		queue := authenticated.Group("/queue")
+		{
+			queue.GET("", middleware.RequirePermission(db, "queue:read"), queueHandler.List)
+			queue.POST("/take", middleware.RequirePermission(db, "queue:create"), queueHandler.TakeNumber)
+			queue.POST("/:id/call", middleware.RequirePermission(db, "queue:update"), queueHandler.Call)
+			queue.POST("/:id/complete", middleware.RequirePermission(db, "queue:update"), queueHandler.Complete)
+			queue.POST("/clear", middleware.RequirePermission(db, "queue:clear"), queueHandler.Clear)
+			queue.GET("/stats", middleware.RequirePermission(db, "queue:read"), queueHandler.Stats)
 		}
 
 		// Follow-up routes (tenant-scoped).

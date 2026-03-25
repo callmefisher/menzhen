@@ -149,14 +149,14 @@ export default function ClinicalExperienceList() {
       title: '出处',
       dataIndex: 'source',
       key: 'source',
-      width: 150,
+      width: 100,
       ellipsis: true,
     },
     {
       title: '药物',
       dataIndex: 'herbs',
       key: 'herbs',
-      width: 150,
+      width: 100,
       ellipsis: true,
       responsive: ['lg'] as any,
     },
@@ -164,7 +164,7 @@ export default function ClinicalExperienceList() {
       title: '方剂',
       dataIndex: 'formula',
       key: 'formula',
-      width: 150,
+      width: 100,
       ellipsis: true,
       responsive: ['lg'] as any,
     },
@@ -172,7 +172,7 @@ export default function ClinicalExperienceList() {
       title: '使用经验',
       dataIndex: 'experience',
       key: 'experience',
-      width: 280,
+      width: 160,
       ellipsis: true,
     },
     ...(hasPermission('role:manage')
@@ -180,11 +180,11 @@ export default function ClinicalExperienceList() {
           {
             title: '操作',
             key: 'action',
-            width: 110,
+            width: 85,
             render: (_: unknown, record: ClinicalExperienceItem) => (
-              <Space size={4}>
+              <Space size={0}>
                 <Button
-                  type="text"
+                  type="link"
                   size="small"
                   icon={<EditOutlined />}
                   onClick={() => openEditModal(record)}
@@ -197,7 +197,7 @@ export default function ClinicalExperienceList() {
                   okText="删除"
                   cancelText="取消"
                 >
-                  <Button type="text" danger size="small" icon={<DeleteOutlined />}>
+                  <Button type="text" danger size="small" icon={<DeleteOutlined />} style={{ marginLeft: -8 }}>
                     删除
                   </Button>
                 </Popconfirm>
@@ -253,7 +253,7 @@ export default function ClinicalExperienceList() {
                     {hasPermission('role:manage') && (
                       <Space size="small">
                         <Button
-                          type="text"
+                          type="link"
                           size="small"
                           icon={<EditOutlined />}
                           onClick={() => openEditModal(item)}
@@ -313,6 +313,7 @@ export default function ClinicalExperienceList() {
         dataSource={items}
         rowKey="id"
         loading={loading}
+        tableLayout="fixed"
         rowClassName={highlight.rowClassName}
         onRow={highlight.onRow}
         pagination={{
@@ -324,6 +325,7 @@ export default function ClinicalExperienceList() {
         }}
         onChange={handleTableChange}
         expandable={{
+          columnWidth: 28,
           expandedRowRender: (record) => (
             <div style={{ padding: '8px 0' }}>
               <p><strong>出处：</strong>{record.source || '无'}</p>

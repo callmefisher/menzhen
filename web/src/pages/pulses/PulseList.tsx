@@ -180,7 +180,7 @@ export default function PulseList() {
             render: (_: unknown, record: PulseItem) => (
               <Space size="small">
                 <Button
-                  type="text"
+                  type="link"
                   size="small"
                   icon={<EditOutlined />}
                   onClick={() => startEdit(record)}
@@ -254,7 +254,7 @@ export default function PulseList() {
                     <span style={{ fontWeight: 'bold', fontSize: 15 }}>{record.name}</span>
                     {hasPermission('role:manage') && (
                       <Space size="small">
-                        <Button type="text" size="small" icon={<EditOutlined />} onClick={() => startEdit(record)}>编辑</Button>
+                        <Button type="link" size="small" icon={<EditOutlined />} onClick={() => startEdit(record)}>编辑</Button>
                         <Popconfirm title="确定删除此脉象？" onConfirm={() => handleDelete(record.id)} okText="删除" cancelText="取消">
                           <Button type="text" danger size="small" icon={<DeleteOutlined />}>删除</Button>
                         </Popconfirm>

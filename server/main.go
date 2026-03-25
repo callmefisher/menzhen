@@ -38,6 +38,25 @@ func main() {
 		}
 	}()
 
+	// Queue cross-day cleanup: delete previous-day entries, runs every hour
+	go func() {
+		svc := service.NewQueueService(db)
+		if deleted, err := svc.CrossDayCleanup(); err != nil {
+			log.Printf("queue cleanup error: %v", err)
+		} else if deleted > 0 {
+			log.Printf("queue cleanup: deleted %d old entries", deleted)
+		}
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			if deleted, err := svc.CrossDayCleanup(); err != nil {
+				log.Printf("queue cleanup error: %v", err)
+			} else if deleted > 0 {
+				log.Printf("queue cleanup: deleted %d old entries", deleted)
+			}
+		}
+	}()
+
 	// Start server
 	log.Printf("Server starting on port %s", cfg.ServerPort)
 	if err := r.Run(":" + cfg.ServerPort); err != nil {

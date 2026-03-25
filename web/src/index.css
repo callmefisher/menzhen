@@ -212,6 +212,24 @@ div.row-highlight {
   animation: row-flash 15s ease-in-out;
 }
 
+/* ===== Queue status row highlights ===== */
+tr.queue-row-seeing > td {
+  background: linear-gradient(90deg, #f6ffed, #fffff8) !important;
+  border-bottom-color: #d9f7be !important;
+}
+tr.queue-row-ready > td {
+  background: linear-gradient(90deg, #fff7e6, #fffef8) !important;
+  border-bottom-color: #ffe7ba !important;
+}
+.warm-list-card.queue-card-seeing {
+  background: linear-gradient(90deg, #f6ffed, #fffff8) !important;
+  border-left: 3px solid #52c41a !important;
+}
+.warm-list-card.queue-card-ready {
+  background: linear-gradient(90deg, #fff7e6, #fffef8) !important;
+  border-left: 3px solid #fa8c16 !important;
+}
+
 /* ===== PrescriptionModal: Duplicate drug highlight (orange) ===== */
 @keyframes duplicate-flash {
   0%   { background-color: #fff7e6; box-shadow: 0 0 0 3px rgba(250,173,20,0.3); }

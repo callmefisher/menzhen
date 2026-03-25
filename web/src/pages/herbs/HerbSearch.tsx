@@ -233,7 +233,7 @@ export default function HerbSearch() {
             render: (_: unknown, record: HerbItem) => (
               <Space size="small">
                 <Button
-                  type="text"
+                  type="link"
                   size="small"
                   icon={<EditOutlined />}
                   onClick={() => startEdit(record)}
@@ -325,7 +325,7 @@ export default function HerbSearch() {
                       )}
                       {hasPermission('role:manage') && (
                         <>
-                          <Button type="text" size="small" icon={<EditOutlined />} onClick={() => startEdit(herb)} />
+                          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => startEdit(herb)} />
                           <Popconfirm
                             title="确定删除此中药？"
                             onConfirm={() => handleDelete(herb.id)}
