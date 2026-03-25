@@ -7,6 +7,7 @@ import {
 } from 'react';
 import type { ReactNode } from 'react';
 import { login as loginApi, getMe, logout as logoutApi } from '../api/auth';
+import { getQueueEnabled } from '../api/queue-doctor';
 
 interface User {
   id: number;
@@ -21,6 +22,7 @@ interface AuthState {
   permissions: string[];
   token: string | null;
   loading: boolean;
+  queueEnabled: boolean;
 }
 
 interface AuthContextValue extends AuthState {
@@ -29,6 +31,7 @@ interface AuthContextValue extends AuthState {
   hasPermission: (code: string) => boolean;
   /** True when user has user:manage permission (system-level admin). */
   isGlobalAdmin: boolean;
+  fetchQueueEnabled: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -48,7 +51,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     permissions: [],
     token: getStoredToken(),
     loading: true,
+    queueEnabled: true,
   });
+
+  const fetchQueueEnabled = useCallback(async () => {
+    try {
+      const res = await getQueueEnabled();
+      const body = res as any;
+      setState(prev => ({ ...prev, queueEnabled: body.data?.enabled ?? true }));
+    } catch {
+      setState(prev => ({ ...prev, queueEnabled: true }));
+    }
+  }, []);
 
   // Restore session on mount
   useEffect(() => {
@@ -67,6 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (body.data.user.tenant_name) {
             document.title = body.data.user.tenant_name;
           }
+          fetchQueueEnabled();
         })
         .catch(() => {
           clearStoredToken();
@@ -75,6 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             permissions: [],
             token: null,
             loading: false,
+            queueEnabled: true,
           });
         });
     } else {
@@ -101,6 +117,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       permissions: body.data.permissions || [],
       token: body.data.token,
       loading: false,
+      queueEnabled: true,
     });
     if (body.data.user.tenant_name) {
       document.title = body.data.user.tenant_name;
@@ -117,6 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         permissions: [],
         token: null,
         loading: false,
+        queueEnabled: true,
       });
     }
   }, []);
@@ -138,6 +156,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         logout,
         hasPermission,
         isGlobalAdmin,
+        fetchQueueEnabled,
       }}
     >
       {children}
