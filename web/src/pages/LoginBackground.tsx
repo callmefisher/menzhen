@@ -75,13 +75,13 @@ const PAGE_CSS = `
 .lp-root .lp-bg-mesh {
   position: fixed; inset: 0; z-index: 0; pointer-events: none;
   background:
-    radial-gradient(ellipse 85% 65% at 8% 20%, rgba(var(--lp-glow), 0.24) 0%, transparent 55%),
-    radial-gradient(ellipse 65% 75% at 85% 80%, rgba(var(--lp-purple), 0.16) 0%, transparent 50%),
-    radial-gradient(ellipse 55% 55% at 45% 45%, rgba(var(--lp-glow), 0.1) 0%, transparent 55%),
-    radial-gradient(ellipse 50% 40% at 75% 15%, rgba(var(--lp-purple), 0.08) 0%, transparent 45%),
-    radial-gradient(ellipse 70% 50% at 20% 70%, rgba(var(--lp-glow), 0.14) 0%, transparent 55%),
-    radial-gradient(ellipse 50% 40% at 55% 90%, rgba(var(--lp-glow), 0.1) 0%, transparent 50%),
-    linear-gradient(165deg, #041210 0%, #082018 25%, #061828 55%, #04101C 100%);
+    radial-gradient(ellipse 85% 65% at 8% 20%, rgba(var(--lp-glow), 0.20) 0%, transparent 55%),
+    radial-gradient(ellipse 80% 70% at 78% 12%, rgba(var(--lp-glow), 0.26) 0%, transparent 55%),
+    radial-gradient(ellipse 70% 70% at 50% 48%, rgba(var(--lp-glow), 0.18) 0%, transparent 55%),
+    radial-gradient(ellipse 55% 75% at 85% 80%, rgba(var(--lp-purple), 0.10) 0%, transparent 50%),
+    radial-gradient(ellipse 80% 55% at 15% 75%, rgba(var(--lp-glow), 0.18) 0%, transparent 55%),
+    radial-gradient(ellipse 60% 45% at 55% 92%, rgba(var(--lp-glow), 0.14) 0%, transparent 50%),
+    linear-gradient(165deg, #061A14 0%, #0C3222 25%, #092C24 55%, #061A20 100%);
   animation: lp-meshShift 12s ease-in-out infinite alternate; will-change: filter;
 }
 @keyframes lp-meshShift {
@@ -261,7 +261,13 @@ const PAGE_CSS = `
 .lp-root .lp-container {
   display: flex; width: 920px; max-width: 100%;
   border-radius: 28px;
-  backdrop-filter: blur(50px) saturate(1.6); -webkit-backdrop-filter: blur(50px) saturate(1.6);
+  background:
+    radial-gradient(ellipse 90% 70% at 10% 15%, rgba(var(--lp-glow), 0.22) 0%, transparent 60%),
+    radial-gradient(ellipse 90% 70% at 90% 10%, rgba(var(--lp-glow), 0.18) 0%, transparent 55%),
+    radial-gradient(ellipse 80% 80% at 50% 50%, rgba(var(--lp-glow), 0.14) 0%, transparent 60%),
+    radial-gradient(ellipse 70% 60% at 80% 70%, rgba(var(--lp-glow), 0.10) 0%, transparent 55%),
+    linear-gradient(160deg, rgba(var(--lp-glow), 0.12) 0%, rgba(var(--lp-glow), 0.06) 50%, rgba(var(--lp-glow), 0.10) 100%),
+    linear-gradient(160deg, #0A1E1A 0%, #081A16 50%, #0A1E1A 100%);
   border: 1px solid rgba(var(--lp-glow), 0.18);
   box-shadow:
     0 0 100px rgba(var(--lp-glow), 0.08),
@@ -440,9 +446,6 @@ const PAGE_CSS = `
 .lp-root.lp-lite .lp-bg-mesh {
   animation: none; will-change: auto; filter: none;
 }
-.lp-root.lp-lite .lp-container {
-  backdrop-filter: blur(12px) saturate(1.2); -webkit-backdrop-filter: blur(12px) saturate(1.2);
-}
 .lp-root.lp-lite .lp-aurora-band { filter: blur(25px); will-change: auto; }
 .lp-root.lp-lite .lp-orb { filter: none; will-change: auto; }
 .lp-root.lp-lite .lp-ring { will-change: auto; }
@@ -456,23 +459,15 @@ const PAGE_CSS = `
 .lp-root.lp-minimal .lp-bg-mesh {
   animation: none; will-change: auto; filter: none;
   background:
-    radial-gradient(ellipse 85% 65% at 8% 20%, rgba(var(--lp-glow), 0.24) 0%, transparent 55%),
-    radial-gradient(ellipse 65% 75% at 85% 80%, rgba(var(--lp-purple), 0.16) 0%, transparent 50%),
-    radial-gradient(ellipse 55% 55% at 45% 45%, rgba(var(--lp-glow), 0.1) 0%, transparent 55%),
-    radial-gradient(ellipse 70% 50% at 20% 70%, rgba(var(--lp-glow), 0.14) 0%, transparent 55%),
-    radial-gradient(ellipse 50% 40% at 55% 90%, rgba(var(--lp-glow), 0.1) 0%, transparent 50%),
+    radial-gradient(ellipse 85% 65% at 8% 20%, rgba(var(--lp-glow), 0.28) 0%, transparent 55%),
+    radial-gradient(ellipse 80% 70% at 78% 12%, rgba(var(--lp-glow), 0.38) 0%, transparent 55%),
+    radial-gradient(ellipse 70% 70% at 50% 48%, rgba(var(--lp-glow), 0.30) 0%, transparent 55%),
+    radial-gradient(ellipse 65% 75% at 85% 80%, rgba(var(--lp-purple), 0.12) 0%, transparent 50%),
+    radial-gradient(ellipse 80% 55% at 15% 75%, rgba(var(--lp-glow), 0.22) 0%, transparent 55%),
+    radial-gradient(ellipse 60% 45% at 55% 92%, rgba(var(--lp-glow), 0.16) 0%, transparent 50%),
     radial-gradient(ellipse 55% 50% at 5% 8%, rgba(var(--lp-glow), 0.18) 0%, transparent 60%),
     radial-gradient(ellipse 45% 55% at 92% 88%, rgba(var(--lp-purple), 0.12) 0%, transparent 55%),
-    radial-gradient(ellipse 30% 30% at 60% 40%, rgba(var(--lp-glow), 0.08) 0%, transparent 50%),
-    linear-gradient(165deg, #041210 0%, #082018 25%, #061828 55%, #04101C 100%);
-}
-.lp-root.lp-minimal .lp-container {
-  backdrop-filter: none; -webkit-backdrop-filter: none;
-  background:
-    radial-gradient(ellipse 85% 60% at 12% 18%, rgba(var(--lp-glow), 0.15) 0%, transparent 55%),
-    radial-gradient(ellipse 55% 70% at 88% 82%, rgba(var(--lp-purple), 0.1) 0%, transparent 50%),
-    radial-gradient(ellipse 45% 45% at 45% 45%, rgba(var(--lp-glow), 0.06) 0%, transparent 50%),
-    linear-gradient(160deg, rgba(var(--lp-glow), 0.1) 0%, rgba(6,18,16,0.94) 35%, rgba(var(--lp-purple), 0.07) 70%, rgba(var(--lp-glow), 0.04) 100%);
+    linear-gradient(165deg, #061A14 0%, #0C3020 25%, #082820 55%, #061A20 100%);
 }
 .lp-root.lp-minimal .lp-cbar,
 .lp-root.lp-minimal .lp-atoggle,
@@ -485,25 +480,22 @@ const PAGE_CSS = `
 .lp-root.lp-perf .lp-bg-mesh {
   animation: none; will-change: auto; filter: none;
   background:
-    radial-gradient(ellipse 85% 65% at 8% 20%, rgba(var(--lp-glow), 0.24) 0%, transparent 55%),
+    radial-gradient(ellipse 85% 65% at 8% 20%, rgba(var(--lp-glow), 0.28) 0%, transparent 55%),
+    radial-gradient(ellipse 80% 70% at 78% 12%, rgba(var(--lp-glow), 0.24) 0%, transparent 55%),
+    radial-gradient(ellipse 70% 70% at 50% 48%, rgba(var(--lp-glow), 0.28) 0%, transparent 55%),
     radial-gradient(ellipse 65% 75% at 85% 80%, rgba(var(--lp-purple), 0.16) 0%, transparent 50%),
-    radial-gradient(ellipse 55% 55% at 45% 45%, rgba(var(--lp-glow), 0.1) 0%, transparent 55%),
-    radial-gradient(ellipse 50% 40% at 75% 15%, rgba(var(--lp-purple), 0.08) 0%, transparent 45%),
-    radial-gradient(ellipse 70% 50% at 20% 70%, rgba(var(--lp-glow), 0.14) 0%, transparent 55%),
-    radial-gradient(ellipse 50% 40% at 55% 90%, rgba(var(--lp-glow), 0.1) 0%, transparent 50%),
+    radial-gradient(ellipse 80% 55% at 15% 75%, rgba(var(--lp-glow), 0.22) 0%, transparent 55%),
+    radial-gradient(ellipse 60% 45% at 55% 92%, rgba(var(--lp-glow), 0.16) 0%, transparent 50%),
     radial-gradient(ellipse 55% 50% at 5% 8%, rgba(var(--lp-glow), 0.18) 0%, transparent 60%),
     radial-gradient(ellipse 45% 55% at 92% 88%, rgba(var(--lp-purple), 0.12) 0%, transparent 55%),
-    radial-gradient(ellipse 30% 30% at 60% 40%, rgba(var(--lp-glow), 0.08) 0%, transparent 50%),
-    linear-gradient(165deg, #041210 0%, #082018 25%, #061828 55%, #04101C 100%);
+    linear-gradient(165deg, #061A14 0%, #0E3A26 25%, #0A3028 55%, #061A20 100%);
 }
-.lp-root.lp-perf .lp-container {
-  backdrop-filter: none; -webkit-backdrop-filter: none;
-  background:
-    radial-gradient(ellipse 85% 60% at 12% 18%, rgba(var(--lp-glow), 0.15) 0%, transparent 55%),
-    radial-gradient(ellipse 55% 70% at 88% 82%, rgba(var(--lp-purple), 0.1) 0%, transparent 50%),
-    radial-gradient(ellipse 45% 45% at 45% 45%, rgba(var(--lp-glow), 0.06) 0%, transparent 50%),
-    radial-gradient(ellipse 30% 30% at 70% 25%, rgba(var(--lp-purple), 0.04) 0%, transparent 40%),
-    linear-gradient(160deg, rgba(var(--lp-glow), 0.1) 0%, rgba(6,18,16,0.94) 35%, rgba(var(--lp-purple), 0.07) 70%, rgba(var(--lp-glow), 0.04) 100%);
+.lp-root .lp-form-panel {
+  background: linear-gradient(170deg,
+    rgba(var(--lp-glow), 0.18) 0%,
+    rgba(var(--lp-glow), 0.10) 35%,
+    rgba(var(--lp-glow), 0.14) 70%,
+    rgba(var(--lp-glow), 0.12) 100%);
 }
 .lp-root.lp-perf .lp-cbar,
 .lp-root.lp-perf .lp-atoggle,
@@ -517,7 +509,7 @@ const PAGE_CSS = `
 .lp-root .lp-mb-divider {
   display: none;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(var(--lp-glow), 0.15), transparent);
+  background: linear-gradient(90deg, transparent, rgba(var(--lp-glow), 0.25), transparent);
 }
 
 /* Responsive */
@@ -529,6 +521,7 @@ const PAGE_CSS = `
   }
   .lp-root .lp-mb {
     display: flex; padding: 28px 22px 0; gap: 16px; align-items: center;
+    background: linear-gradient(180deg, rgba(var(--lp-glow), 0.08) 0%, transparent 100%);
   }
   .lp-root .lp-mb-icon {
     width: 52px; height: 52px; border-radius: 14px; flex-shrink: 0;
@@ -554,7 +547,7 @@ const PAGE_CSS = `
     background: linear-gradient(135deg, #fff 0%, var(--lp-accent) 100%);
     -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
   }
-  .lp-root .lp-mb-tagline { font-size: 11px; color: #8A94A8; margin-top: 4px; line-height: 1.4; }
+  .lp-root .lp-mb-tagline { font-size: 11px; color: rgba(var(--lp-glow), 0.55); margin-top: 4px; line-height: 1.4; }
   .lp-root .lp-mb-divider { display: block; margin: 16px 22px 0; }
   .lp-root .lp-form-panel { width: 100%; padding: 20px 22px 28px; }
   .lp-root .lp-fheader { margin-bottom: 20px; }
@@ -623,6 +616,7 @@ export default function LoginBackground({ children }: Props) {
   const stopRef = useRef<() => void>(() => {});
   const collapseTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const toggleRafRef = useRef(0);
 
   const t = THEMES[theme];
 
@@ -634,6 +628,24 @@ export default function LoginBackground({ children }: Props) {
     return () => {
       clearTimeout(collapseTimerRef.current);
       clearTimeout(toastTimerRef.current);
+      if (toggleRafRef.current) {
+        cancelAnimationFrame(toggleRafRef.current);
+        toggleRafRef.current = 0;
+      }
+    };
+  }, []);
+
+  // Inject page CSS once (avoid re-parse on every render)
+  useEffect(() => {
+    const id = 'lp-page-css';
+    if (document.getElementById(id)) return;
+    const style = document.createElement('style');
+    style.id = id;
+    style.textContent = PAGE_CSS;
+    document.head.appendChild(style);
+    return () => {
+      const el = document.getElementById(id);
+      if (el) el.parentNode?.removeChild(el);
     };
   }, []);
 
@@ -780,8 +792,15 @@ export default function LoginBackground({ children }: Props) {
       animRef.current = next;
       if (next) {
         // Delay start until after React commits display:none removal
-        requestAnimationFrame(() => startRef.current());
+        toggleRafRef.current = requestAnimationFrame(() => {
+          toggleRafRef.current = 0;
+          startRef.current();
+        });
       } else {
+        if (toggleRafRef.current) {
+          cancelAnimationFrame(toggleRafRef.current);
+          toggleRafRef.current = 0;
+        }
         stopRef.current();
         const canvas = canvasRef.current;
         if (canvas) {
@@ -800,13 +819,12 @@ export default function LoginBackground({ children }: Props) {
     setShowToast(true);
     clearTimeout(toastTimerRef.current);
     toastTimerRef.current = setTimeout(() => setShowToast(false), 1500);
-  }, []);
+  }, [persistConfig]);
 
   // Theme switch
   const pickTheme = useCallback((name: ThemeName) => {
     if (name === theme) return;
     setTheme(name);
-    themeRef.current = name;
     doSave(sysName, name);
     setExpanded(false);
   }, [theme, sysName, doSave]);
@@ -837,7 +855,6 @@ export default function LoginBackground({ children }: Props) {
 
   return (
     <div className={rootCls} style={cssVars}>
-      <style>{PAGE_CSS}</style>
 
       {/* Gradient mesh — always rendered, CSS controls animation per tier */}
       <div className="lp-bg-mesh" />

@@ -149,14 +149,14 @@ export default function ClinicalExperienceList() {
       title: '出处',
       dataIndex: 'source',
       key: 'source',
-      width: 120,
+      width: 100,
       ellipsis: true,
     },
     {
       title: '药物',
       dataIndex: 'herbs',
       key: 'herbs',
-      width: 120,
+      width: 100,
       ellipsis: true,
       responsive: ['lg'] as any,
     },
@@ -164,7 +164,7 @@ export default function ClinicalExperienceList() {
       title: '方剂',
       dataIndex: 'formula',
       key: 'formula',
-      width: 120,
+      width: 100,
       ellipsis: true,
       responsive: ['lg'] as any,
     },
@@ -172,7 +172,7 @@ export default function ClinicalExperienceList() {
       title: '使用经验',
       dataIndex: 'experience',
       key: 'experience',
-      width: 200,
+      width: 160,
       ellipsis: true,
     },
     ...(hasPermission('role:manage')
@@ -184,7 +184,7 @@ export default function ClinicalExperienceList() {
             render: (_: unknown, record: ClinicalExperienceItem) => (
               <Space size={0}>
                 <Button
-                  type="text"
+                  type="link"
                   size="small"
                   icon={<EditOutlined />}
                   onClick={() => openEditModal(record)}
@@ -197,7 +197,7 @@ export default function ClinicalExperienceList() {
                   okText="删除"
                   cancelText="取消"
                 >
-                  <Button type="text" danger size="small" icon={<DeleteOutlined />}>
+                  <Button type="text" danger size="small" icon={<DeleteOutlined />} style={{ marginLeft: -8 }}>
                     删除
                   </Button>
                 </Popconfirm>
@@ -253,7 +253,7 @@ export default function ClinicalExperienceList() {
                     {hasPermission('role:manage') && (
                       <Space size="small">
                         <Button
-                          type="text"
+                          type="link"
                           size="small"
                           icon={<EditOutlined />}
                           onClick={() => openEditModal(item)}

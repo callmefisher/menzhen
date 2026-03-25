@@ -274,7 +274,7 @@ export default function QueueDashboard() {
       <StatBadge count={stats.waiting} label="候诊" color="#1677ff" bgFrom="#e6f7ff" bgTo="#f0f5ff" border="#d6e4ff" />
       <StatBadge count={stats.seeing} label="就诊" color="#52c41a" bgFrom="#f6ffed" bgTo="#fcffe6" border="#d9f7be" />
       <StatBadge count={stats.done} label="已完成" color="#8c8c8c" bgFrom="#f9f9f9" bgTo="#f5f5f5" border="#e8e8e8" />
-      {hasPermission('queue:write') && (
+      {hasPermission('queue:clear') && (
         <Button
           size="small"
           danger
@@ -289,7 +289,7 @@ export default function QueueDashboard() {
   );
 
   // Take-number bar (shared)
-  const takeNumberBar = hasPermission('queue:write') && (
+  const takeNumberBar = hasPermission('queue:create') && (
     <div style={{
       display: 'flex', justifyContent: 'flex-end', alignItems: 'center',
       gap: 8, marginTop: 10, flexShrink: 0, flexWrap: 'wrap',
@@ -375,7 +375,7 @@ export default function QueueDashboard() {
                       onCloseOverlay={() => closeOverlay(group.doctorId)}
                       onCall={handleCall}
                       onComplete={handleComplete}
-                      hasWritePermission={hasPermission('queue:write')}
+                      hasWritePermission={hasPermission('queue:update')}
                     />
                   </div>
                 ),
@@ -432,7 +432,7 @@ export default function QueueDashboard() {
             onCloseOverlay={() => closeOverlay(group.doctorId)}
             onCall={handleCall}
             onComplete={handleComplete}
-            hasWritePermission={hasPermission('queue:write')}
+            hasWritePermission={hasPermission('queue:update')}
           />
         ))}
       </div>
