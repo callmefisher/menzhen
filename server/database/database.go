@@ -60,6 +60,8 @@ func InitDB(cfg *config.Config) *gorm.DB {
 		&model.DailyStats{},
 		&model.FollowUp{},
 		&model.PrescriptionNotification{},
+		&model.QueueEntry{},
+		&model.QueueSeq{},
 	)
 	if err != nil {
 		log.Panicf("failed to auto-migrate database: %v", err)
