@@ -16,6 +16,10 @@ vi.mock('../../../hooks/useIsMobile', () => ({
   default: () => false,
 }));
 
+vi.mock('../../../store/auth', () => ({
+  useAuth: () => ({ isGlobalAdmin: true, user: { tenant_id: 1, role: 'admin' } }),
+}));
+
 vi.mock('antd', async () => {
   const actual = await vi.importActual('antd');
   return { ...actual, message: { error: vi.fn(), success: vi.fn(), warning: vi.fn() } };

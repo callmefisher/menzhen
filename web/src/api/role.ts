@@ -1,7 +1,7 @@
 import request from '../utils/request';
 
-export function listRoles() {
-  return request.get('/roles');
+export function listRoles(params?: { tenant_id?: number }) {
+  return request.get('/roles', { params });
 }
 
 export function createRole(data: { name: string; description?: string; permission_ids?: number[] }) {

@@ -32,7 +32,7 @@ func setupTenantAdminRouter(db *gorm.DB) *gin.Engine {
 			{
 				users.GET("", h.ListUsers)
 				users.PUT("/:id", h.UpdateUser)
-				users.DELETE("/:id", h.DisableUser)
+				users.DELETE("/:id", h.DeleteUser)
 				users.POST("/:id/roles", h.AssignRoles)
 			}
 			roles := tenant.Group("/roles")

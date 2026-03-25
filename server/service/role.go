@@ -8,9 +8,12 @@ import (
 )
 
 var (
-	ErrRoleNotFound = errors.New("role not found")
-	ErrRoleInUse    = errors.New("role is still assigned to users")
+	ErrRoleNotFound    = errors.New("role not found")
+	ErrRoleInUse       = errors.New("role is still assigned to users")
+	ErrRoleIsAdmin     = errors.New("管理员角色不可修改或删除")
 )
+
+const AdminRoleName = "管理员"
 
 // CreateRoleRequest is the input for creating a new role.
 type CreateRoleRequest struct {
@@ -89,6 +92,11 @@ func (s *RoleService) UpdateRole(tenantID, id uint64, req *UpdateRoleRequest) (*
 		return nil, err
 	}
 
+	// Protect admin role from modification.
+	if role.Name == AdminRoleName {
+		return nil, ErrRoleIsAdmin
+	}
+
 	// Build update map from non-nil fields.
 	updates := make(map[string]interface{})
 	if req.Name != nil {
@@ -142,6 +150,11 @@ func (s *RoleService) DeleteRole(tenantID, id uint64) error {
 			return ErrRoleNotFound
 		}
 		return err
+	}
+
+	// Protect admin role from deletion.
+	if role.Name == AdminRoleName {
+		return ErrRoleIsAdmin
 	}
 
 	// Check if any users still have this role.

@@ -23,7 +23,6 @@ import {
   WomanOutlined,
   TeamOutlined,
 } from '@ant-design/icons';
-import dayjs from 'dayjs';
 import { listPatients, deletePatient, findPatientPage } from '../../api/patient';
 import { PatientFormModal } from './PatientForm';
 import useIsMobile from '../../hooks/useIsMobile';
@@ -173,30 +172,11 @@ export default function PatientList() {
       width: 80,
     },
     {
-      title: '出生日期',
-      dataIndex: 'birthday',
-      key: 'birthday',
-      width: 120,
-      responsive: ['md'],
-      a11yPriority: 2,
-      render: (val: string) => val ? dayjs(val).format('YYYY-MM-DD') : '-',
-    },
-    {
       title: '联系电话',
       dataIndex: 'phone',
       key: 'phone',
       width: 140,
       responsive: ['md'],
-      render: (val: string) => val || '-',
-    },
-    {
-      title: '现居住地',
-      dataIndex: 'address',
-      key: 'address',
-      width: 150,
-      ellipsis: true,
-      responsive: ['md'],
-      a11yPriority: 2,
       render: (val: string) => val || '-',
     },
     {

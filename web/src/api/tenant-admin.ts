@@ -16,6 +16,14 @@ export function assignTenantUserRoles(userId: number, roleIds: number[]) {
   return request.post(`/tenant/users/${userId}/roles`, { role_ids: roleIds });
 }
 
+export function resetTenantUserPassword(id: number, data: { new_password: string }) {
+  return request.post(`/tenant/users/${id}/reset-password`, data);
+}
+
+export function createTenantUser(data: { username: string; password: string; real_name: string; phone?: string }) {
+  return request.post('/tenant/users', data);
+}
+
 export function listTenantRoles() {
   return request.get('/tenant/roles');
 }

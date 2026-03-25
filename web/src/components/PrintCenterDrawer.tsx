@@ -283,6 +283,21 @@ const PRINT_STYLES = `
   .print-separator { border: none; border-top: 2px dashed #999; margin: 24px 0; }
 `;
 
+/* Inject @media print style to hide app and show portal (shared with DispensePrint) */
+const PORTAL_STYLE_ID = 'shared-print-portal-style';
+function ensurePortalPrintStyle() {
+  if (document.getElementById(PORTAL_STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = PORTAL_STYLE_ID;
+  style.textContent = `
+    @media print {
+      body > *:not(.print-portal) { display: none !important; }
+      .print-portal { display: block !important; }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 /* ---------- component ---------- */
 export default function PrintCenterDrawer({
   open,
@@ -304,6 +319,8 @@ export default function PrintCenterDrawer({
   const [consultationFee, setConsultationFee] = useState(100);
   const [actualPaid, setActualPaid] = useState(0);
   const actualPaidManualRef = useRef(false);
+
+  useEffect(() => { ensurePortalPrintStyle(); }, []);
 
   const loadBilling = useCallback(async () => {
     if (!prescriptionId) return;
@@ -335,7 +352,7 @@ export default function PrintCenterDrawer({
   const drugCostTotal = billingDetail?.drug_cost_total ?? 0;
   const totalAmount = drugCostTotal + consultationFee;
 
-  /* ---------- print handler ---------- */
+  /* ---------- print handler (mobile-compatible, no window.open) ---------- */
   const handlePrint = () => {
     const timeStr = getCurrentBeijingTime();
     let body = '';
@@ -348,15 +365,36 @@ export default function PrintCenterDrawer({
     if ((mode === 'billing' || mode === 'combined') && billingDetail) {
       body += buildBillingHtml(billingDetail, consultationFee, actualPaid, patientName, patientAge, doctorName, timeStr, clinicName);
     }
-    const win = window.open('', '_blank');
-    if (!win) {
-      message.error('打印窗口被浏览器拦截，请允许弹出窗口后重试');
-      return;
+    if (isMobile) {
+      /* Remove any stale center print portals */
+      document.querySelectorAll('.center-print-portal').forEach(el => el.remove());
+      /* Mobile: inject DOM directly + @media print (no React timing issues) */
+      const div = document.createElement('div');
+      div.className = 'center-print-portal';
+      div.innerHTML = `<style>${PRINT_STYLES}</style>${body}`;
+      document.body.appendChild(div);
+      setTimeout(() => {
+        window.print();
+        const cleanup = () => {
+          if (div.parentNode) document.body.removeChild(div);
+          window.removeEventListener('afterprint', cleanup);
+        };
+        window.addEventListener('afterprint', cleanup);
+        // fallback cleanup after 10s in case afterprint doesn't fire
+        setTimeout(cleanup, 10000);
+      }, 50);
+    } else {
+      /* Desktop: window.open (more reliable print preview) */
+      const win = window.open('', '_blank');
+      if (!win) {
+        message.error('打印窗口被浏览器拦截，请允许弹出窗口后重试');
+        return;
+      }
+      win.document.write(`<html><head><title>${mode === 'prescription' ? '处方笺' : mode === 'billing' ? '收费单' : '处方笺 + 收费单'}</title><style>${PRINT_STYLES}</style></head><body>${body}</body></html>`);
+      win.document.close();
+      win.print();
+      win.close();
     }
-    win.document.write(`<html><head><title>${mode === 'prescription' ? '处方笺' : mode === 'billing' ? '收费单' : '处方笺 + 收费单'}</title><style>${PRINT_STYLES}</style></head><body>${body}</body></html>`);
-    win.document.close();
-    win.print();
-    win.close();
   };
 
   /* ---------- preview helpers ---------- */
@@ -395,6 +433,7 @@ export default function PrintCenterDrawer({
   const showPrescriptionSection = mode === 'prescription' || mode === 'combined';
 
   return (
+    <>
     <Drawer
       title={
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -678,5 +717,6 @@ export default function PrintCenterDrawer({
         )}
       </Spin>
     </Drawer>
+    </>
   );
 }

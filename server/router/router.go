@@ -56,6 +56,8 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	hexagramHandler := handler.NewHexagramHandler(db)
 	followUpHandler := handler.NewFollowUpHandler(db)
 	configHandler := handler.NewConfigHandler(db)
+	wsHandler := handler.NewWSHandler(cfg.JWTSecret)
+	pnHandler := handler.NewPrescriptionNotificationHandler(db)
 
 	// ---------- Route groups ----------
 
@@ -67,6 +69,9 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		auth.POST("/login", authHandler.Login)
 		auth.POST("/register", authHandler.Register)
 	}
+
+	// WebSocket upgrade (handles its own JWT auth via query param or header).
+	v1.GET("/ws", wsHandler.Upgrade)
 
 	// Auth-only routes (JWT validated, but no token_version check).
 	// The refresh endpoint must bypass TokenVersionMiddleware so that
@@ -139,9 +144,11 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		users := authenticated.Group("/users")
 		{
 			users.GET("", middleware.RequirePermission(db, "user:manage"), userHandler.List)
+			users.POST("", middleware.RequirePermission(db, "user:manage"), userHandler.CreateUser)
 			users.PUT("/:id", middleware.RequirePermission(db, "user:manage"), userHandler.Update)
 			users.DELETE("/:id", middleware.RequirePermission(db, "user:manage"), userHandler.Delete)
 			users.POST("/:id/roles", middleware.RequirePermission(db, "user:manage"), userHandler.AssignRoles)
+			users.POST("/:id/reset-password", middleware.RequirePermission(db, "user:manage"), userHandler.ResetPassword)
 		}
 
 		// Role management routes.
@@ -172,9 +179,11 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			tenantUsers.Use(middleware.RequirePermission(db, "tenant:user:manage", "user:manage"))
 			{
 				tenantUsers.GET("", tenantAdminHandler.ListUsers)
+				tenantUsers.POST("", tenantAdminHandler.CreateUser)
 				tenantUsers.PUT("/:id", tenantAdminHandler.UpdateUser)
-				tenantUsers.DELETE("/:id", tenantAdminHandler.DisableUser)
+				tenantUsers.DELETE("/:id", tenantAdminHandler.DeleteUser)
 				tenantUsers.POST("/:id/roles", tenantAdminHandler.AssignRoles)
+				tenantUsers.POST("/:id/reset-password", tenantAdminHandler.ResetPassword)
 			}
 			tenantRoles := tenantAdmin.Group("/roles")
 			tenantRoles.Use(middleware.RequirePermission(db, "tenant:role:manage", "role:manage"))
@@ -299,6 +308,16 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			inventoryDrugs.GET("/:id/page", middleware.RequirePermission(db, "inventory:read"), inventoryDrugHandler.FindPage)
 			inventoryDrugs.PUT("/:id", middleware.RequirePermission(db, "inventory:update"), inventoryDrugHandler.Update)
 			inventoryDrugs.DELETE("/:id", middleware.RequirePermission(db, "inventory:delete"), inventoryDrugHandler.Delete)
+		}
+
+		// Prescription notification routes (tenant-scoped, dispense workflow).
+		pn := authenticated.Group("/prescription-notifications")
+		{
+			pn.GET("", middleware.RequirePermission(db, "inventory:read"), pnHandler.List)
+			pn.GET("/pending-count", pnHandler.PendingCount)
+			pn.GET("/:id/detail", middleware.RequirePermission(db, "inventory:read"), pnHandler.Detail)
+			pn.POST("/:id/done", middleware.RequirePermission(db, "inventory:update"), pnHandler.MarkDone)
+			pn.POST("/batch-done", middleware.RequirePermission(db, "inventory:update"), pnHandler.BatchDone)
 		}
 
 		// Follow-up routes (tenant-scoped).

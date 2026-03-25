@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>姓氏字体方案对比</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@500;700;900&family=Noto+Serif+SC:wght@700;900&family=ZCOOL+QingKe+HuangYou&family=Ma+Shan+Zheng&display=swap');
+
+  :root {
+    --theme: #8B7355;
+    --cream: #FFFEF9;
+    --warm-gray: #F5F0EA;
+    --text-primary: #3D3428;
+    --text-muted: #8C7E6E;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--warm-gray);
+    font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    color: var(--text-primary);
+    padding: 36px 24px 60px;
+  }
+
+  h1 {
+    text-align: center;
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--theme);
+    margin-bottom: 8px;
+    letter-spacing: 2px;
+  }
+
+  .subtitle {
+    text-align: center;
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 40px;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+    max-width: 840px;
+    margin: 0 auto;
+  }
+
+  @media (max-width: 700px) {
+    .grid { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  .card {
+    background: var(--cream);
+    border-radius: 12px;
+    padding: 28px 20px;
+    box-shadow: 0 2px 12px rgba(61,52,40,0.08);
+    text-align: center;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    position: relative;
+  }
+
+  .card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 24px rgba(61,52,40,0.13);
+  }
+
+  .card.selected {
+    outline: 2.5px solid var(--theme);
+  }
+
+  .card.selected::after {
+    content: '✓';
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    background: var(--theme);
+    color: #fff;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* --- Size groups --- */
+  .size-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    margin: 20px 0 16px;
+  }
+
+  .avatar {
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: var(--theme);
+  }
+
+  .av-sm { width: 28px; height: 28px; }
+  .av-md { width: 40px; height: 40px; }
+  .av-lg { width: 56px; height: 56px; }
+
+  .size-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-top: 4px;
+    text-align: center;
+  }
+
+  .opt-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+  }
+
+  .opt-desc {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    line-height: 1.6;
+  }
+
+  /* --- Header simulation bar --- */
+  .header-sim {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    background: var(--cream);
+    border: 1px solid rgba(139,115,85,0.12);
+    border-radius: 8px;
+    padding: 8px 14px;
+    margin-bottom: 16px;
+  }
+
+  .header-sim .user-name {
+    font-size: 13px;
+    color: var(--text-primary);
+  }
+
+  /* ==================== Font Styles ==================== */
+
+  /* A: 粗黑体 — System heavy sans */
+  .font-a {
+    font-family: 'PingFang SC', 'Microsoft YaHei', 'Heiti SC', sans-serif;
+    font-weight: 900;
+    color: #fff;
+    -webkit-font-smoothing: antialiased;
+  }
+  .font-a.av-sm { font-size: 15px; }
+  .font-a.av-md { font-size: 21px; }
+  .font-a.av-lg { font-size: 30px; }
+
+  /* B: 思源黑体超粗 — Noto Sans SC Black */
+  .font-b {
+    font-family: 'Noto Sans SC', sans-serif;
+    font-weight: 900;
+    color: #fff;
+    -webkit-font-smoothing: antialiased;
+  }
+  .font-b.av-sm { font-size: 15px; }
+  .font-b.av-md { font-size: 21px; }
+  .font-b.av-lg { font-size: 30px; }
+
+  /* C: 描边增强 — White text + text-stroke */
+  .font-c {
+    font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    font-weight: 700;
+    color: #fff;
+    -webkit-text-stroke: 0.5px rgba(255,255,255,0.6);
+    text-shadow: 0 1px 2px rgba(0,0,0,0.25);
+    -webkit-font-smoothing: antialiased;
+  }
+  .font-c.av-sm { font-size: 15px; }
+  .font-c.av-md { font-size: 21px; }
+  .font-c.av-lg { font-size: 30px; }
+
+  /* D: 衬线加粗 — Noto Serif SC Bold */
+  .font-d {
+    font-family: 'Noto Serif SC', 'Songti SC', serif;
+    font-weight: 900;
+    color: #fff;
+    -webkit-font-smoothing: antialiased;
+  }
+  .font-d.av-sm { font-size: 15px; }
+  .font-d.av-md { font-size: 21px; }
+  .font-d.av-lg { font-size: 30px; }
+
+  /* E: 手写楷体 — Ma Shan Zheng */
+  .font-e {
+    font-family: 'Ma Shan Zheng', 'Kaiti SC', cursive;
+    font-weight: 400;
+    color: #fff;
+    -webkit-font-smoothing: antialiased;
+  }
+  .font-e.av-sm { font-size: 17px; }
+  .font-e.av-md { font-size: 24px; }
+  .font-e.av-lg { font-size: 34px; }
+
+  /* F: 高对比描边 — Dark stroke on white for max contrast */
+  .font-f {
+    font-family: 'Noto Sans SC', 'PingFang SC', sans-serif;
+    font-weight: 900;
+    color: #fff;
+    text-shadow:
+      0 0 1px rgba(0,0,0,0.4),
+      0 1px 2px rgba(0,0,0,0.2);
+    -webkit-font-smoothing: antialiased;
+  }
+  .font-f.av-sm { font-size: 16px; }
+  .font-f.av-md { font-size: 22px; }
+  .font-f.av-lg { font-size: 32px; }
+</style>
+</head>
+<body>
+
+<h1>姓氏字体 · 清晰度对比</h1>
+<p class="subtitle">同一背景色，6 种字体渲染方式 — 点击选中偏好方案</p>
+
+<div class="grid">
+
+  <!-- A -->
+  <div class="card" onclick="sel(this)">
+    <div class="header-sim">
+      <div class="avatar av-sm font-a">夏</div>
+      <span class="user-name">夏老三</span>
+    </div>
+    <div class="size-row">
+      <div><div class="avatar av-sm font-a">夏</div><div class="size-label">28px</div></div>
+      <div><div class="avatar av-md font-a">夏</div><div class="size-label">40px</div></div>
+      <div><div class="avatar av-lg font-a">夏</div><div class="size-label">56px</div></div>
+    </div>
+    <div class="opt-name">A · 系统粗黑体</div>
+    <div class="opt-desc">PingFang SC Black<br>系统原生，渲染最锐利</div>
+  </div>
+
+  <!-- B -->
+  <div class="card" onclick="sel(this)">
+    <div class="header-sim">
+      <div class="avatar av-sm font-b">夏</div>
+      <span class="user-name">夏老三</span>
+    </div>
+    <div class="size-row">
+      <div><div class="avatar av-sm font-b">夏</div><div class="size-label">28px</div></div>
+      <div><div class="avatar av-md font-b">夏</div><div class="size-label">40px</div></div>
+      <div><div class="avatar av-lg font-b">夏</div><div class="size-label">56px</div></div>
+    </div>
+    <div class="opt-name">B · 思源黑体超粗</div>
+    <div class="opt-desc">Noto Sans SC 900<br>笔画饱满，小尺寸也清晰</div>
+  </div>
+
+  <!-- C -->
+  <div class="card" onclick="sel(this)">
+    <div class="header-sim">
+      <div class="avatar av-sm font-c">夏</div>
+      <span class="user-name">夏老三</span>
+    </div>
+    <div class="size-row">
+      <div><div class="avatar av-sm font-c">夏</div><div class="size-label">28px</div></div>
+      <div><div class="avatar av-md font-c">夏</div><div class="size-label">40px</div></div>
+      <div><div class="avatar av-lg font-c">夏</div><div class="size-label">56px</div></div>
+    </div>
+    <div class="opt-name">C · 描边增强</div>
+    <div class="opt-desc">白色描边 + 文字阴影<br>边缘更锐，发光感</div>
+  </div>
+
+  <!-- D -->
+  <div class="card" onclick="sel(this)">
+    <div class="header-sim">
+      <div class="avatar av-sm font-d">夏</div>
+      <span class="user-name">夏老三</span>
+    </div>
+    <div class="size-row">
+      <div><div class="avatar av-sm font-d">夏</div><div class="size-label">28px</div></div>
+      <div><div class="avatar av-md font-d">夏</div><div class="size-label">40px</div></div>
+      <div><div class="avatar av-lg font-d">夏</div><div class="size-label">56px</div></div>
+    </div>
+    <div class="opt-name">D · 衬线加粗</div>
+    <div class="opt-desc">Noto Serif SC 900<br>有笔锋，医疗系统更正式</div>
+  </div>
+
+  <!-- E -->
+  <div class="card" onclick="sel(this)">
+    <div class="header-sim">
+      <div class="avatar av-sm font-e">夏</div>
+      <span class="user-name">夏老三</span>
+    </div>
+    <div class="size-row">
+      <div><div class="avatar av-sm font-e">夏</div><div class="size-label">28px</div></div>
+      <div><div class="avatar av-md font-e">夏</div><div class="size-label">40px</div></div>
+      <div><div class="avatar av-lg font-e">夏</div><div class="size-label">56px</div></div>
+    </div>
+    <div class="opt-name">E · 手写楷书</div>
+    <div class="opt-desc">Ma Shan Zheng<br>中医气质，字号更大补偿笔画</div>
+  </div>
+
+  <!-- F -->
+  <div class="card" onclick="sel(this)">
+    <div class="header-sim">
+      <div class="avatar av-sm font-f">夏</div>
+      <span class="user-name">夏老三</span>
+    </div>
+    <div class="size-row">
+      <div><div class="avatar av-sm font-f">夏</div><div class="size-label">28px</div></div>
+      <div><div class="avatar av-md font-f">夏</div><div class="size-label">40px</div></div>
+      <div><div class="avatar av-lg font-f">夏</div><div class="size-label">56px</div></div>
+    </div>
+    <div class="opt-name">F · 高对比阴影</div>
+    <div class="opt-desc">Noto Sans 900 + 双层阴影<br>字号最大，极限清晰</div>
+  </div>
+
+</div>
+
+<script>
+function sel(card) {
+  document.querySelectorAll('.card').forEach(c => c.classList.remove('selected'));
+  card.classList.add('selected');
+}
+</script>
+</body>
+</html>

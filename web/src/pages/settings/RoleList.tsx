@@ -29,6 +29,7 @@ import {
 } from '../../api/tenant-admin';
 import { useAuth } from '../../store/auth';
 import useIsMobile from '../../hooks/useIsMobile';
+import useRowHighlight from '../../hooks/useRowHighlight';
 
 interface PermissionItem {
   id: number;
@@ -91,8 +92,17 @@ export default function RoleList() {
   const [data, setData] = useState<RoleItem[]>([]);
   const [loading, setLoading] = useState(false);
   const isMobile = useIsMobile();
-  const { hasPermission } = useAuth();
-  const isGlobalAdmin = hasPermission('role:manage');
+  const { hasPermission, isGlobalAdmin } = useAuth();
+  const canManageRoles = hasPermission('role:manage');
+
+  const highlight = useRowHighlight({
+    data,
+    page: 1,
+    pageSize: 9999,
+    loading,
+    onPageChange: () => {},
+    idPrefix: 'role',
+  });
 
   // All permissions from the backend
   const [allPermissions, setAllPermissions] = useState<PermissionItem[]>([]);
@@ -107,7 +117,7 @@ export default function RoleList() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = isGlobalAdmin ? await listRoles() : await listTenantRoles();
+      const res = canManageRoles ? await listRoles() : await listTenantRoles();
       const body = res as unknown as { data: RoleItem[] };
       setData(body.data || []);
     } catch {
@@ -115,17 +125,17 @@ export default function RoleList() {
     } finally {
       setLoading(false);
     }
-  }, [isGlobalAdmin]);
+  }, [canManageRoles]);
 
   const fetchPermissions = useCallback(async () => {
     try {
-      const res = isGlobalAdmin ? await listPermissions() : await listTenantPermissions();
+      const res = canManageRoles ? await listPermissions() : await listTenantPermissions();
       const body = res as unknown as { data: PermissionItem[] };
       setAllPermissions(body.data || []);
     } catch {
       // Error already handled by request interceptor
     }
-  }, [isGlobalAdmin]);
+  }, [canManageRoles]);
 
   useEffect(() => {
     fetchData();
@@ -169,7 +179,7 @@ export default function RoleList() {
       const values = await form.validateFields();
       setSubmitLoading(true);
       if (editingRole) {
-        if (isGlobalAdmin) {
+        if (canManageRoles) {
           await updateRole(editingRole.id, {
             name: values.name,
             description: values.description,
@@ -183,8 +193,13 @@ export default function RoleList() {
           });
         }
         message.success('更新成功');
+        const editedId = editingRole.id;
+        handleModalCancel();
+        fetchData();
+        highlight.setHighlightId(editedId);
+        return;
       } else {
-        if (isGlobalAdmin) {
+        if (canManageRoles) {
           await createRole({
             name: values.name,
             description: values.description,
@@ -211,7 +226,7 @@ export default function RoleList() {
   // --- Delete role ---
   const handleDelete = async (id: number) => {
     try {
-      if (isGlobalAdmin) {
+      if (canManageRoles) {
         await deleteRole(id);
       } else {
         await deleteTenantRole(id);
@@ -273,28 +288,34 @@ export default function RoleList() {
       title: '操作',
       key: 'action',
       width: 160,
-      render: (_, record) => (
-        <Space size="small">
-          <Button
-            type="link"
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => handleEdit(record)}
-          >
-            编辑
-          </Button>
-          <Popconfirm
-            title="确定删除此角色？"
-            onConfirm={() => handleDelete(record.id)}
-            okText="确定"
-            cancelText="取消"
-          >
-            <Button type="link" size="small" danger icon={<DeleteOutlined />}>
-              删除
+      render: (_, record) => {
+        const isAdminRole = record.name === '管理员';
+        const canEdit = isGlobalAdmin || !isAdminRole;
+        const canDelete = !isAdminRole; // 管理员角色任何人都不能删
+        return (
+          <Space size="small">
+            <Button
+              type="link"
+              size="small"
+              icon={<EditOutlined />}
+              onClick={() => handleEdit(record)}
+            >
+              {canEdit ? '编辑' : '查看'}
             </Button>
-          </Popconfirm>
-        </Space>
-      ),
+            <Popconfirm
+              title="确定删除此角色？"
+              onConfirm={() => handleDelete(record.id)}
+              okText="确定"
+              cancelText="取消"
+              disabled={!canDelete}
+            >
+              <Button type="link" size="small" danger icon={<DeleteOutlined />} disabled={!canDelete}>
+                删除
+              </Button>
+            </Popconfirm>
+          </Space>
+        );
+      },
     },
   ];
 
@@ -318,9 +339,15 @@ export default function RoleList() {
         ) : data.length === 0 ? (
           <Empty description="暂无角色记录" />
         ) : (
-          data.map((record) => (
+          data.map((record) => {
+            const isAdminRole = record.name === '管理员';
+            const canEdit = isGlobalAdmin || !isAdminRole;
+            const canDelete = !isAdminRole;
+            return (
             <div
               key={record.id}
+              id={`role-row-${record.id}`}
+              className={highlight.isHighlighted(record.id) ? 'row-highlight' : ''}
               style={{
                 background: '#fafafa',
                 borderRadius: 8,
@@ -334,13 +361,14 @@ export default function RoleList() {
               </div>
               {record.description && <div style={{ color: '#666', fontSize: 13, marginBottom: 8 }}>{record.description}</div>}
               <div style={{ display: 'flex', gap: 8 }}>
-                <Button type="link" size="small" style={{ padding: 0 }} icon={<EditOutlined />} onClick={() => handleEdit(record)}>编辑</Button>
-                <Popconfirm title="确定删除此角色？" onConfirm={() => handleDelete(record.id)} okText="确定" cancelText="取消">
-                  <Button type="link" size="small" style={{ padding: 0 }} danger icon={<DeleteOutlined />}>删除</Button>
+                <Button type="link" size="small" style={{ padding: 0 }} icon={<EditOutlined />} onClick={() => handleEdit(record)}>{canEdit ? '编辑' : '查看'}</Button>
+                <Popconfirm title="确定删除此角色？" onConfirm={() => handleDelete(record.id)} okText="确定" cancelText="取消" disabled={!canDelete}>
+                  <Button type="link" size="small" style={{ padding: 0 }} danger icon={<DeleteOutlined />} disabled={!canDelete}>删除</Button>
                 </Popconfirm>
               </div>
             </div>
-          ))
+            );
+          })
         )
       ) : (
         <Table<RoleItem>
@@ -349,6 +377,8 @@ export default function RoleList() {
           dataSource={data}
           loading={loading}
           pagination={false}
+          rowClassName={highlight.rowClassName}
+          onRow={highlight.onRow}
           locale={{
             emptyText: '暂无角色记录',
           }}
@@ -357,37 +387,45 @@ export default function RoleList() {
 
       {/* Add / Edit role modal */}
       <Modal
-        title={editingRole ? '编辑角色' : '新增角色'}
+        title={editingRole
+          ? (isGlobalAdmin || editingRole.name !== '管理员' ? '编辑角色' : '查看角色')
+          : '新增角色'}
         open={modalVisible}
         onOk={handleSubmit}
         onCancel={handleModalCancel}
         confirmLoading={submitLoading}
         okText="保存"
         cancelText="取消"
+        okButtonProps={{
+          style: editingRole && !isGlobalAdmin && editingRole.name === '管理员' ? { display: 'none' } : undefined,
+        }}
         width={isMobile ? 'calc(100vw - 32px)' : 600}
       >
+        {(() => {
+          const isReadOnly = !!editingRole && !isGlobalAdmin && editingRole.name === '管理员';
+          return (<>
         <Form form={form} layout="vertical">
           <Form.Item
             name="name"
             label="角色名称"
             rules={[{ required: true, message: '请输入角色名称' }]}
           >
-            <Input placeholder="请输入角色名称" />
+            <Input placeholder="请输入角色名称" disabled={isReadOnly} />
           </Form.Item>
           <Form.Item name="description" label="角色描述">
-            <Input placeholder="请输入角色描述" />
+            <Input placeholder="请输入角色描述" disabled={isReadOnly} />
           </Form.Item>
         </Form>
 
         <div style={{ marginBottom: 8 }}>
           <span style={{ fontWeight: 'bold', marginRight: 12 }}>权限分配</span>
-          <Button
+          {!isReadOnly && <Button
             type="link"
             size="small"
             onClick={isAllSelected ? handleDeselectAll : handleSelectAll}
           >
             {isAllSelected ? '取消全选' : '全选'}
-          </Button>
+          </Button>}
         </div>
 
         {PERMISSION_GROUPS.map((group) => {
@@ -411,6 +449,7 @@ export default function RoleList() {
                 onChange={(vals) =>
                   handleGroupChange(groupPermIds, vals as number[])
                 }
+                disabled={isReadOnly}
               >
                 <Space wrap>
                   {group.codes.map((code) => {
@@ -427,6 +466,8 @@ export default function RoleList() {
             </div>
           );
         })}
+        </>);
+        })()}
       </Modal>
     </Card>
   );

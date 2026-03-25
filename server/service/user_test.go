@@ -7,6 +7,7 @@ import (
 	"github.com/callmefisher/menzhen/server/service"
 	"github.com/callmefisher/menzhen/server/testutil"
 	"github.com/stretchr/testify/assert"
+	"gorm.io/gorm"
 )
 
 func TestListUsers_WithPreloads(t *testing.T) {
@@ -66,14 +67,14 @@ func TestDeleteUser_Success(t *testing.T) {
 	user, _ := testutil.SeedTestUser(t, db, tenant.ID, "tobedeleted", "pass123", nil)
 
 	svc := service.NewUserService(db)
-	err := svc.DeleteUser(tenant.ID, user.ID)
+	deletedUser, err := svc.DeleteUser(tenant.ID, user.ID)
 	assert.NoError(t, err)
+	assert.Equal(t, user.Username, deletedUser.Username)
 
-	// Verify status is set to 0, not actually deleted.
+	// Verify record is actually deleted (hard delete).
 	var found model.User
 	err = db.First(&found, user.ID).Error
-	assert.NoError(t, err)
-	assert.Equal(t, int8(0), found.Status)
+	assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
 }
 
 func TestDeleteUser_NotFound(t *testing.T) {
@@ -81,7 +82,7 @@ func TestDeleteUser_NotFound(t *testing.T) {
 	tenant := testutil.SeedTestTenant(t, db, "诊所", "del-user-nf")
 
 	svc := service.NewUserService(db)
-	err := svc.DeleteUser(tenant.ID, 99999)
+	_, err := svc.DeleteUser(tenant.ID, 99999)
 	assert.ErrorIs(t, err, service.ErrUserNotFound)
 }
 

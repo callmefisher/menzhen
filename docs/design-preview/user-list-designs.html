@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>用户管理表格 - 设计方案对比</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap');
+
+  :root {
+    --bg: #f0f2f5;
+    --card: #ffffff;
+    --border: #e8e8e8;
+    --text: #1a1a2e;
+    --text-secondary: #666;
+    --green: #52c41a;
+    --green-bg: #f6ffed;
+    --green-border: #b7eb8f;
+    --red: #ff4d4f;
+    --red-bg: #fff2f0;
+    --red-border: #ffccc7;
+    --blue: #1677ff;
+    --blue-bg: #e6f4ff;
+    --blue-border: #91caff;
+    --orange: #fa8c16;
+    --orange-bg: #fff7e6;
+    --shadow: 0 1px 2px rgba(0,0,0,.03), 0 2px 6px rgba(0,0,0,.04);
+    --shadow-hover: 0 2px 8px rgba(0,0,0,.08);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 32px 24px;
+  }
+
+  .page-header {
+    text-align: center;
+    margin-bottom: 48px;
+    position: relative;
+  }
+  .page-header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, #1677ff, #722ed1);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .page-header p {
+    color: var(--text-secondary);
+    font-size: 14px;
+  }
+
+  .design-section {
+    max-width: 1100px;
+    margin: 0 auto 48px;
+    background: var(--card);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    transition: box-shadow .2s;
+  }
+  .design-section:hover {
+    box-shadow: var(--shadow-hover);
+  }
+
+  .section-header {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .section-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: 16px;
+    color: #fff;
+    flex-shrink: 0;
+  }
+  .badge-a { background: linear-gradient(135deg, #1677ff, #4096ff); }
+  .badge-b { background: linear-gradient(135deg, #52c41a, #73d13d); }
+  .badge-c { background: linear-gradient(135deg, #722ed1, #9254de); }
+  .badge-d { background: linear-gradient(135deg, #fa8c16, #ffa940); }
+
+  .section-header h2 {
+    font-size: 17px;
+    font-weight: 600;
+  }
+  .section-header .desc {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-left: auto;
+  }
+
+  /* ── Table base ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  th {
+    background: #fafafa;
+    font-weight: 500;
+    text-align: left;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  td {
+    padding: 14px 16px;
+    border-bottom: 1px solid #f5f5f5;
+    vertical-align: middle;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #fafafa; }
+
+  /* ── Tags ── */
+  .tag {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    line-height: 20px;
+    font-weight: 400;
+  }
+  .tag-blue {
+    color: #1677ff;
+    background: var(--blue-bg);
+    border: 1px solid var(--blue-border);
+  }
+  .tag-green {
+    color: var(--green);
+    background: var(--green-bg);
+    border: 1px solid var(--green-border);
+  }
+  .tag-red {
+    color: var(--red);
+    background: var(--red-bg);
+    border: 1px solid var(--red-border);
+  }
+  .tag-orange {
+    color: var(--orange);
+    background: var(--orange-bg);
+    border: 1px solid #ffe7ba;
+  }
+
+  /* ── Action buttons ── */
+  .actions { display: flex; gap: 4px; align-items: center; }
+  .btn-link {
+    background: none;
+    border: none;
+    color: var(--blue);
+    cursor: pointer;
+    font-size: 13px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: background .15s;
+    font-family: inherit;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+  }
+  .btn-link:hover { background: var(--blue-bg); }
+  .btn-link.danger { color: var(--red); }
+  .btn-link.danger:hover { background: var(--red-bg); }
+  .btn-link .icon { font-size: 14px; }
+  .divider {
+    width: 1px;
+    height: 16px;
+    background: var(--border);
+    margin: 0 2px;
+  }
+
+  /* ── Design A: colored dot + text ── */
+  .username-a {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .dot-enabled { background: var(--green); box-shadow: 0 0 0 3px rgba(82,196,26,.15); }
+  .dot-disabled { background: var(--red); box-shadow: 0 0 0 3px rgba(255,77,79,.12); }
+  .username-text {
+    font-weight: 500;
+  }
+  .text-enabled { color: var(--text); }
+  .text-disabled { color: var(--red); opacity: 0.7; }
+  .disabled-label {
+    font-size: 11px;
+    color: var(--red);
+    background: var(--red-bg);
+    padding: 0 5px;
+    border-radius: 3px;
+    margin-left: 4px;
+    font-weight: 400;
+  }
+
+  /* ── Design B: left border accent ── */
+  .row-b-enabled td:first-child {
+    border-left: 3px solid var(--green);
+  }
+  .row-b-disabled td:first-child {
+    border-left: 3px solid var(--red);
+  }
+  .row-b-disabled {
+    background: #fafafa;
+  }
+  .row-b-disabled .username-text {
+    color: #999;
+    text-decoration: line-through;
+    text-decoration-color: rgba(255,77,79,.3);
+  }
+
+  /* ── Design C: inline micro-badge ── */
+  .username-c {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .micro-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 0 5px;
+    border-radius: 3px;
+    line-height: 18px;
+    letter-spacing: 0.3px;
+  }
+  .micro-enabled {
+    color: var(--green);
+    background: var(--green-bg);
+    border: 1px solid var(--green-border);
+  }
+  .micro-disabled {
+    color: var(--red);
+    background: var(--red-bg);
+    border: 1px solid var(--red-border);
+  }
+
+  /* ── Design D: row tint + icon ── */
+  .row-d-disabled td {
+    background: rgba(255,77,79,.03);
+  }
+  .username-d {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .status-icon {
+    font-size: 14px;
+    line-height: 1;
+  }
+  .status-icon.enabled { color: var(--green); }
+  .status-icon.disabled { color: var(--red); }
+  .username-d .name {
+    font-weight: 500;
+  }
+  .row-d-disabled .username-d .name {
+    color: var(--red);
+    opacity: 0.65;
+  }
+
+  /* current user highlight */
+  .current-user td { background: var(--orange-bg) !important; }
+
+  /* role tags compact */
+  .roles { display: flex; gap: 4px; flex-wrap: wrap; }
+
+  /* footer note */
+  .note {
+    text-align: center;
+    color: #999;
+    font-size: 12px;
+    margin-top: 40px;
+    padding-bottom: 20px;
+  }
+
+  /* Recommended ribbon */
+  .recommended {
+    position: relative;
+  }
+  .recommended::after {
+    content: 'RECOMMENDED';
+    position: absolute;
+    top: 16px;
+    right: -32px;
+    background: linear-gradient(135deg, #1677ff, #4096ff);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 36px;
+    transform: rotate(45deg);
+    letter-spacing: 1px;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>用户管理 - 表格设计方案对比</h1>
+  <p>状态列删除，合并进用户名列 | 角色列收窄 | 增加删除按钮</p>
+</div>
+
+<!-- ═══════════ DESIGN A ═══════════ -->
+<div class="design-section recommended" style="overflow:hidden">
+  <div class="section-header">
+    <span class="section-badge badge-a">A</span>
+    <div>
+      <h2>状态圆点 + 禁用标签</h2>
+      <div style="font-size:13px;color:#999;margin-top:2px">绿色圆点=启用，红色圆点+「已禁用」标签=禁用</div>
+    </div>
+    <span class="desc">推荐方案</span>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:180px">用户名</th>
+        <th style="width:100px">真实姓名</th>
+        <th style="width:120px">手机号</th>
+        <th style="width:80px">备注</th>
+        <th style="width:120px">角色</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="current-user">
+        <td>
+          <div class="username-a">
+            <span class="status-dot dot-enabled"></span>
+            <span class="username-text text-enabled">admin</span>
+            <span class="tag tag-orange" style="font-size:11px;padding:0 5px;">当前</span>
+          </div>
+        </td>
+        <td>张管理</td>
+        <td>138****1234</td>
+        <td>-</td>
+        <td><div class="roles"><span class="tag tag-blue">超级管理员</span></div></td>
+        <td>
+          <div class="actions">
+            <button class="btn-link"><span class="icon">&#9998;</span> 编辑</button>
+            <span class="divider"></span>
+            <button class="btn-link"><span class="icon">&#128101;</span> 分配角色</button>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td>
+          <div class="username-a">
+            <span class="status-dot dot-enabled"></span>
+            <span class="username-text text-enabled">doctor_wang</span>
+          </div>
+        </td>
+        <td>王大夫</td>
+        <td>139****5678</td>
+        <td>坐诊医师</td>
+        <td><div class="roles"><span class="tag tag-blue">医师</span></div></td>
+        <td>
+          <div class="actions">
+            <button class="btn-link"><span class="icon">&#9998;</span> 编辑</button>
+            <span class="divider"></span>
+            <button class="btn-link"><span class="icon">&#128101;</span> 分配角色</button>
+            <span class="divider"></span>
+            <button class="btn-link danger"><span class="icon">&#128465;</span> 删除</button>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td>
+          <div class="username-a">
+            <span class="status-dot dot-disabled"></span>
+            <span class="username-text text-disabled">nurse_li</span>
+            <span class="disabled-label">已禁用</span>
+          </div>
+        </td>
+        <td>李护士</td>
+        <td>137****9012</td>
+        <td>-</td>
+        <td><div class="roles"><span class="tag tag-blue">药房</span></div></td>
+        <td>
+          <div class="actions">
+            <button class="btn-link"><span class="icon">&#9998;</span> 编辑</button>
+            <span class="divider"></span>
+            <button class="btn-link"><span class="icon">&#128101;</span> 分配角色</button>
+            <span class="divider"></span>
+            <button class="btn-link danger"><span class="icon">&#128465;</span> 删除</button>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td>
+          <div class="username-a">
+            <span class="status-dot dot-enabled"></span>
+            <span class="username-text text-enabled">pharmacy_zhao</span>
+          </div>
+        </td>
+        <td>赵药师</td>
+        <td>136****3456</td>
+        <td>-</td>
+        <td><div class="roles"><span class="tag tag-blue">药房</span><span class="tag tag-blue">前台</span></div></td>
+        <td>
+          <div class="actions">
+            <button class="btn-link"><span class="icon">&#9998;</span> 编辑</button>
+            <span class="divider"></span>
+            <button class="btn-link"><span class="icon">&#128101;</span> 分配角色</button>
+            <span class="divider"></span>
+            <button class="btn-link danger"><span class="icon">&#128465;</span> 删除</button>
+          </div>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══════════ DESIGN B ═══════════ -->
+<div class="design-section">
+  <div class="section-header">
+    <span class="section-badge badge-b">B</span>
+    <div>
+      <h2>左侧色带 + 删除线</h2>
+      <div style="font-size:13px;color:#999;margin-top:2px">行左侧绿/红色边框标识状态，禁用行灰底+用户名删除线</div>
+    </div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:160px">用户名</th>
+        <th style="width:100px">真实姓名</th>
+        <th style="width:120px">手机号</th>
+        <th style="width:80px">备注</th>
+        <th style="width:120px">角色</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="row-b-enabled current-user">
+        <td>
+          <span class="username-text" style="font-weight:500">admin</span>
+          <span class="tag tag-orange" style="font-size:11px;padding:0 5px;margin-left:4px">当前</span>
+        </td>
+        <td>张管理</td>
+        <td>138****1234</td>
+        <td>-</td>
+        <td><div class="roles"><span class="tag tag-blue">超级管理员</span></div></td>
+        <td>
+          <div class="actions">
+            <button class="btn-link"><span class="icon">&#9998;</span> 编辑</button>
+            <span class="divider"></span>
+            <button class="btn-link"><span class="icon">&#128101;</span> 分配角色</button>
+          </div>
+        </td>
+      </tr>
+      <tr class="row-b-enabled">
+        <td><span class="username-text" style="font-weight:500">doctor_wang</span></td>
+        <td>王大夫</td>
+        <td>139****5678</td>
+        <td>坐诊医师</td>
+        <td><div class="roles"><span class="tag tag-blue">医师</span></div></td>
+        <td>
+          <div class="actions">
+            <button class="btn-link"><span class="icon">&#9998;</span> 编辑</button>
+            <span class="divider"></span>
+            <button class="btn-link"><span class="icon">&#128101;</span> 分配角色</button>
+            <span class="divider"></span>
+            <button class="btn-link danger"><span class="icon">&#128465;</span> 删除</button>
+          </div>
+        </td>
+      </tr>
+      <tr class="row-b-disabled">
+        <td><span class="username-text" style="font-weight:500">nurse_li</span></td>
+        <td style="color:#999">李护士</td>
+        <td style="color:#999">137****9012</td>
+        <td style="color:#999">-</td>
+        <td><div class="roles"><span class="tag tag-blue" style="opacity:.5">药房</span></div></td>
+        <td>
+          <div class="actions">
+            <button class="btn-link"><span class="icon">&#9998;</span> 编辑</button>
+            <span class="divider"></span>
+            <button class="btn-link"><span class="icon">&#128101;</span> 分配角色</button>
+            <span class="divider"></span>
+            <button class="btn-link danger"><span class="icon">&#128465;</span> 删除</button>
+          </div>
+        </td>
+      </tr>
+      <tr class="row-b-enabled">
+        <td><span class="username-text" style="font-weight:500">pharmacy_zhao</span></td>
+        <td>赵药师</td>
+        <td>136****3456</td>
+        <td>-</td>
+        <td><div class="roles"><span class="tag tag-blue">药房</span><span class="tag tag-blue">前台</span></div></td>
+        <td>
+          <div class="actions">
+            <button class="btn-link"><span class="icon">&#9998;</span> 编辑</button>
+            <span class="divider"></span>
+            <button class="btn-link"><span class="icon">&#128101;</span> 分配角色</button>
+            <span class="divider"></span>
+            <button class="btn-link danger"><span class="icon">&#128465;</span> 删除</button>
+          </div>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══════════ DESIGN C ═══════════ -->
+<div class="design-section">
+  <div class="section-header">
+    <span class="section-badge badge-c">C</span>
+    <div>
+      <h2>内联微标签</h2>
+      <div style="font-size:13px;color:#999;margin-top:2px">用户名后跟「启用/禁用」小标签，紧凑直观</div>
+    </div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:200px">用户名</th>
+        <th style="width:100px">真实姓名</th>
+        <th style="width:120px">手机号</th>
+        <th style="width:80px">备注</th>
+        <th style="width:120px">角色</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="current-user">
+        <td>
+          <div class="username-c">
+            <span class="username-text" style="font-weight:500">admin</span>
+            <span class="micro-badge micro-enabled">启用</span>
+            <span class="tag tag-orange" style="font-size:11px;padding:0 5px;">当前</span>
+          </div>
+        </td>
+        <td>张管理</td>
+        <td>138****1234</td>
+        <td>-</td>
+        <td><div class="roles"><span class="tag tag-blue">超级管理员</span></div></td>
+        <td>
+          <div class="actions">
+            <button class="btn-link"><span class="icon">&#9998;</span> 编辑</button>
+            <span class="divider"></span>
+            <button class="btn-link"><span class="icon">&#128101;</span> 分配角色</button>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td>
+          <div class="username-c">
+            <span class="username-text" style="font-weight:500">doctor_wang</span>
+            <span class="micro-badge micro-enabled">启用</span>
+          </div>
+        </td>
+        <td>王大夫</td>
+        <td>139****5678</td>
+        <td>坐诊医师</td>
+        <td><div class="roles"><span class="tag tag-blue">医师</span></div></td>
+        <td>
+          <div class="actions">
+            <button class="btn-link"><span class="icon">&#9998;</span> 编辑</button>
+            <span class="divider"></span>
+            <button class="btn-link"><span class="icon">&#128101;</span> 分配角色</button>
+            <span class="divider"></span>
+            <button class="btn-link danger"><span class="icon">&#128465;</span> 删除</button>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td>
+          <div class="username-c">
+            <span class="username-text text-disabled" style="font-weight:500">nurse_li</span>
+            <span class="micro-badge micro-disabled">禁用</span>
+          </div>
+        </td>
+        <td>李护士</td>
+        <td>137****9012</td>
+        <td>-</td>
+        <td><div class="roles"><span class="tag tag-blue">药房</span></div></td>
+        <td>
+          <div class="actions">
+            <button class="btn-link"><span class="icon">&#9998;</span> 编辑</button>
+            <span class="divider"></span>
+            <button class="btn-link"><span class="icon">&#128101;</span> 分配角色</button>
+            <span class="divider"></span>
+            <button class="btn-link danger"><span class="icon">&#128465;</span> 删除</button>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td>
+          <div class="username-c">
+            <span class="username-text" style="font-weight:500">pharmacy_zhao</span>
+            <span class="micro-badge micro-enabled">启用</span>
+          </div>
+        </td>
+        <td>赵药师</td>
+        <td>136****3456</td>
+        <td>-</td>
+        <td><div class="roles"><span class="tag tag-blue">药房</span><span class="tag tag-blue">前台</span></div></td>
+        <td>
+          <div class="actions">
+            <button class="btn-link"><span class="icon">&#9998;</span> 编辑</button>
+            <span class="divider"></span>
+            <button class="btn-link"><span class="icon">&#128101;</span> 分配角色</button>
+            <span class="divider"></span>
+            <button class="btn-link danger"><span class="icon">&#128465;</span> 删除</button>
+          </div>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══════════ DESIGN D ═══════════ -->
+<div class="design-section">
+  <div class="section-header">
+    <span class="section-badge badge-d">D</span>
+    <div>
+      <h2>行底色 + 彩色用户名</h2>
+      <div style="font-size:13px;color:#999;margin-top:2px">启用=正常字色，禁用=红色用户名+浅红行底色，最简洁</div>
+    </div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:160px">用户名</th>
+        <th style="width:100px">真实姓名</th>
+        <th style="width:120px">手机号</th>
+        <th style="width:80px">备注</th>
+        <th style="width:120px">角色</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="current-user">
+        <td>
+          <div class="username-d">
+            <span class="status-icon enabled">&#10003;</span>
+            <span class="name">admin</span>
+            <span class="tag tag-orange" style="font-size:11px;padding:0 5px;">当前</span>
+          </div>
+        </td>
+        <td>张管理</td>
+        <td>138****1234</td>
+        <td>-</td>
+        <td><div class="roles"><span class="tag tag-blue">超级管理员</span></div></td>
+        <td>
+          <div class="actions">
+            <button class="btn-link"><span class="icon">&#9998;</span> 编辑</button>
+            <span class="divider"></span>
+            <button class="btn-link"><span class="icon">&#128101;</span> 分配角色</button>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td>
+          <div class="username-d">
+            <span class="status-icon enabled">&#10003;</span>
+            <span class="name">doctor_wang</span>
+          </div>
+        </td>
+        <td>王大夫</td>
+        <td>139****5678</td>
+        <td>坐诊医师</td>
+        <td><div class="roles"><span class="tag tag-blue">医师</span></div></td>
+        <td>
+          <div class="actions">
+            <button class="btn-link"><span class="icon">&#9998;</span> 编辑</button>
+            <span class="divider"></span>
+            <button class="btn-link"><span class="icon">&#128101;</span> 分配角色</button>
+            <span class="divider"></span>
+            <button class="btn-link danger"><span class="icon">&#128465;</span> 删除</button>
+          </div>
+        </td>
+      </tr>
+      <tr class="row-d-disabled">
+        <td>
+          <div class="username-d">
+            <span class="status-icon disabled">&#10007;</span>
+            <span class="name">nurse_li</span>
+          </div>
+        </td>
+        <td style="color:#999">李护士</td>
+        <td style="color:#999">137****9012</td>
+        <td style="color:#999">-</td>
+        <td><div class="roles"><span class="tag tag-blue" style="opacity:.5">药房</span></div></td>
+        <td>
+          <div class="actions">
+            <button class="btn-link"><span class="icon">&#9998;</span> 编辑</button>
+            <span class="divider"></span>
+            <button class="btn-link"><span class="icon">&#128101;</span> 分配角色</button>
+            <span class="divider"></span>
+            <button class="btn-link danger"><span class="icon">&#128465;</span> 删除</button>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td>
+          <div class="username-d">
+            <span class="status-icon enabled">&#10003;</span>
+            <span class="name">pharmacy_zhao</span>
+          </div>
+        </td>
+        <td>赵药师</td>
+        <td>136****3456</td>
+        <td>-</td>
+        <td><div class="roles"><span class="tag tag-blue">药房</span><span class="tag tag-blue">前台</span></div></td>
+        <td>
+          <div class="actions">
+            <button class="btn-link"><span class="icon">&#9998;</span> 编辑</button>
+            <span class="divider"></span>
+            <button class="btn-link"><span class="icon">&#128101;</span> 分配角色</button>
+            <span class="divider"></span>
+            <button class="btn-link danger"><span class="icon">&#128465;</span> 删除</button>
+          </div>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<p class="note">
+  所有方案均已：删除独立状态列 &middot; 角色列宽度从 200px 收窄至 120px &middot; 增加删除按钮（当前用户不显示删除）<br>
+  请选择一个方案，我将直接实现到 UserList.tsx 中
+</p>
+
+</body>
+</html>

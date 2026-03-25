@@ -20,18 +20,25 @@ import {
 import {
   EditOutlined,
   UserSwitchOutlined,
+  DeleteOutlined,
+  KeyOutlined,
+  PlusOutlined,
 } from '@ant-design/icons';
-import { listUsers, updateUser, assignRoles } from '../../api/user';
+import { listUsers, updateUser, deleteUser, resetUserPassword, createUser, assignRoles } from '../../api/user';
 import { listRoles } from '../../api/role';
 import { listTenants } from '../../api/tenant';
 import {
   listTenantUsers,
   updateTenantUser,
+  deleteTenantUser,
+  resetTenantUserPassword,
+  createTenantUser,
   assignTenantUserRoles,
   listTenantRoles,
 } from '../../api/tenant-admin';
 import { useAuth } from '../../store/auth';
 import useIsMobile from '../../hooks/useIsMobile';
+import useRowHighlight from '../../hooks/useRowHighlight';
 import { useAccessibleColumns, type AccessibleColumnsType } from '../../hooks/useAccessibleColumns';
 import HiddenColumnsHint from '../../components/HiddenColumnsHint';
 
@@ -69,8 +76,16 @@ export default function UserList() {
   const [total, setTotal] = useState(0);
   const [params, setParams] = useState<ListParams>({ page: 1, size: 20 });
   const isMobile = useIsMobile();
-  const { hasPermission, user: currentUser } = useAuth();
-  const isGlobalAdmin = hasPermission('user:manage');
+  const { user: currentUser, isGlobalAdmin } = useAuth();
+
+  const highlight = useRowHighlight({
+    data,
+    page: params.page,
+    pageSize: params.size,
+    loading,
+    onPageChange: (page) => setParams(prev => ({ ...prev, page })),
+    idPrefix: 'user',
+  });
 
   // Edit modal state
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -85,6 +100,18 @@ export default function UserList() {
   const [allRoles, setAllRoles] = useState<RoleItem[]>([]);
   const [selectedRoleIds, setSelectedRoleIds] = useState<number[]>([]);
   const [roleLoading, setRoleLoading] = useState(false);
+
+  // Reset password modal state
+  const [resetPwdVisible, setResetPwdVisible] = useState(false);
+  const [resetPwdTarget, setResetPwdTarget] = useState<UserItem | null>(null);
+  const [resetPwdForm] = Form.useForm();
+  const [resetPwdLoading, setResetPwdLoading] = useState(false);
+
+  // Create user modal state
+  const [createModalVisible, setCreateModalVisible] = useState(false);
+  const [createForm] = Form.useForm();
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createTenants, setCreateTenants] = useState<TenantItem[]>([]);
 
   const fetchData = useCallback(async (query: ListParams) => {
     setLoading(true);
@@ -137,27 +164,31 @@ export default function UserList() {
   const handleEditSubmit = async () => {
     try {
       const values = await editForm.validateFields();
+      if (!editingUser) return;
+      const isSelf = editingUser.id === currentUser?.id;
       setEditLoading(true);
       if (isGlobalAdmin) {
-        await updateUser(editingUser!.id, {
+        await updateUser(editingUser.id, {
           real_name: values.real_name,
           phone: values.phone,
-          status: values.status,
+          ...(!isSelf && values.status !== undefined ? { status: values.status } : {}),
           tenant_id: values.tenant_id,
           notes: values.notes,
         });
       } else {
-        await updateTenantUser(editingUser!.id, {
+        await updateTenantUser(editingUser.id, {
           real_name: values.real_name,
           phone: values.phone,
-          status: values.status,
+          ...(!isSelf && values.status !== undefined ? { status: values.status } : {}),
           notes: values.notes,
         });
       }
       message.success('更新成功');
+      const editedId = editingUser.id;
       setEditModalVisible(false);
       setEditingUser(null);
       editForm.resetFields();
+      highlight.setHighlightId(editedId);
       fetchData(params);
     } catch {
       // Validation or request error
@@ -176,9 +207,99 @@ export default function UserList() {
         await updateTenantUser(record.id, { status: newStatus });
       }
       message.success(newStatus === 1 ? '已启用' : '已禁用');
+      highlight.setHighlightId(record.id);
       fetchData(params);
     } catch {
       // Error already handled by request interceptor
+    }
+  };
+
+  // --- Delete user ---
+  const handleDelete = async (record: UserItem) => {
+    try {
+      if (isGlobalAdmin) {
+        await deleteUser(record.id);
+      } else {
+        await deleteTenantUser(record.id);
+      }
+      message.success('已删除');
+      fetchData(params);
+    } catch {
+      // Error already handled by request interceptor
+    }
+  };
+
+  // --- Reset password ---
+  const handleOpenResetPwd = (record: UserItem) => {
+    setResetPwdTarget(record);
+    resetPwdForm.resetFields();
+    setResetPwdVisible(true);
+  };
+
+  const handleResetPwdSubmit = async () => {
+    if (!resetPwdTarget) return;
+    try {
+      const values = await resetPwdForm.validateFields();
+      setResetPwdLoading(true);
+      if (isGlobalAdmin) {
+        await resetUserPassword(resetPwdTarget.id, { new_password: values.new_password });
+      } else {
+        await resetTenantUserPassword(resetPwdTarget.id, { new_password: values.new_password });
+      }
+      message.success(`已重置 ${resetPwdTarget.username} 的密码`);
+      setResetPwdVisible(false);
+      setResetPwdTarget(null);
+      resetPwdForm.resetFields();
+    } catch {
+      // Validation or request error
+    } finally {
+      setResetPwdLoading(false);
+    }
+  };
+
+  // --- Create user ---
+  const handleOpenCreate = async () => {
+    createForm.resetFields();
+    setCreateModalVisible(true);
+    if (isGlobalAdmin) {
+      try {
+        const res = await listTenants({ page: 1, size: 100 });
+        const body = res as unknown as { data: { list: TenantItem[] } };
+        setCreateTenants(body.data.list || []);
+      } catch {
+        // handled
+      }
+    }
+  };
+
+  const handleCreateSubmit = async () => {
+    try {
+      const values = await createForm.validateFields();
+      setCreateLoading(true);
+      if (isGlobalAdmin) {
+        await createUser({
+          tenant_id: values.tenant_id,
+          username: values.username,
+          password: values.password,
+          real_name: values.real_name,
+          phone: values.phone,
+        });
+      } else {
+        await createTenantUser({
+          username: values.username,
+          password: values.password,
+          real_name: values.real_name,
+          phone: values.phone,
+        });
+      }
+      message.success('用户创建成功');
+      setCreateModalVisible(false);
+      createForm.resetFields();
+      fetchData(params);
+    } catch {
+      // Validation or request error
+    } finally {
+      setCreateLoading(false);
     }
   };
 
@@ -189,7 +310,9 @@ export default function UserList() {
     setRoleModalVisible(true);
     // Fetch all roles
     try {
-      const res = isGlobalAdmin ? await listRoles() : await listTenantRoles();
+      const res = isGlobalAdmin
+        ? await listRoles({ tenant_id: record.tenant_id })
+        : await listTenantRoles();
       const body = res as unknown as { data: RoleItem[] };
       setAllRoles(body.data || []);
     } catch {
@@ -207,8 +330,10 @@ export default function UserList() {
         await assignTenantUserRoles(roleTargetUser.id, selectedRoleIds);
       }
       message.success('角色分配成功');
+      const assignedId = roleTargetUser.id;
       setRoleModalVisible(false);
       setRoleTargetUser(null);
+      highlight.setHighlightId(assignedId);
       fetchData(params);
     } catch {
       // Error already handled by request interceptor
@@ -222,15 +347,61 @@ export default function UserList() {
       title: '用户名',
       dataIndex: 'username',
       key: 'username',
-      width: 140,
-      render: (val: string, record: UserItem) => (
-        <span>
-          {val}
-          {record.id === currentUser?.id && (
-            <Tag color="orange" style={{ marginLeft: 6, fontSize: 11 }}>当前</Tag>
-          )}
-        </span>
-      ),
+      width: 180,
+      render: (val: string, record: UserItem) => {
+        const isCurrentUser = record.id === currentUser?.id;
+        const isProtectedAdmin = record.username === 'admin' && (record.roles || []).some(r => r.name === '管理员');
+        const dotDisabled = isCurrentUser || (!isCurrentUser && isProtectedAdmin);
+        const isDisabled = record.status !== 1;
+        return (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <Popconfirm
+              title={isDisabled ? '确定启用此用户？' : '确定禁用此用户？'}
+              onConfirm={() => handleToggleStatus(record)}
+              okText="确定"
+              cancelText="取消"
+              disabled={dotDisabled}
+            >
+              <span
+                style={{
+                  display: 'inline-block',
+                  width: 7,
+                  height: 7,
+                  borderRadius: '50%',
+                  background: isDisabled ? '#ff4d4f' : '#52c41a',
+                  boxShadow: isDisabled
+                    ? '0 0 0 3px rgba(255,77,79,.12)'
+                    : '0 0 0 3px rgba(82,196,26,.15)',
+                  cursor: dotDisabled ? 'default' : 'pointer',
+                  flexShrink: 0,
+                }}
+                title={isCurrentUser ? '当前用户' : isDisabled ? '点击启用' : '点击禁用'}
+              />
+            </Popconfirm>
+            <span style={{
+              fontWeight: 500,
+              color: isDisabled ? '#ff4d4f' : undefined,
+              opacity: isDisabled ? 0.7 : 1,
+            }}>
+              {val}
+            </span>
+            {isDisabled && (
+              <span style={{
+                fontSize: 11,
+                color: '#ff4d4f',
+                background: '#fff2f0',
+                padding: '0 5px',
+                borderRadius: 3,
+              }}>
+                已禁用
+              </span>
+            )}
+            {isCurrentUser && (
+              <Tag color="orange" style={{ marginLeft: 0, fontSize: 11 }}>当前</Tag>
+            )}
+          </span>
+        );
+      },
     },
     {
       title: '真实姓名',
@@ -267,7 +438,7 @@ export default function UserList() {
       title: '角色',
       dataIndex: 'roles',
       key: 'roles',
-      width: 200,
+      width: 120,
       render: (roles: RoleItem[]) => {
         if (!roles || roles.length === 0) return '-';
         return (
@@ -282,55 +453,64 @@ export default function UserList() {
       },
     },
     {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
-      width: 80,
-      render: (status: number) =>
-        status === 1 ? (
-          <Tag color="green">启用</Tag>
-        ) : (
-          <Tag color="red">禁用</Tag>
-        ),
-    },
-    {
       title: '操作',
       key: 'action',
-      width: 240,
-      render: (_, record) => (
-        <Space size="small">
-          <Button
-            type="link"
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => handleEdit(record)}
-          >
-            编辑
-          </Button>
-          <Button
-            type="link"
-            size="small"
-            icon={<UserSwitchOutlined />}
-            onClick={() => handleOpenRoleModal(record)}
-          >
-            分配角色
-          </Button>
-          <Popconfirm
-            title={record.status === 1 ? '确定禁用此用户？' : '确定启用此用户？'}
-            onConfirm={() => handleToggleStatus(record)}
-            okText="确定"
-            cancelText="取消"
-          >
+      width: 300,
+      render: (_, record) => {
+        const isCurrentUser = record.id === currentUser?.id;
+        const isProtectedAdmin = record.username === 'admin' && (record.roles || []).some(r => r.name === '管理员');
+        const isReadOnly = !isCurrentUser && isProtectedAdmin;
+        return (
+          <Space size="small">
             <Button
               type="link"
               size="small"
-              danger={record.status === 1}
+              icon={<EditOutlined />}
+              onClick={() => handleEdit(record)}
+              disabled={isReadOnly}
             >
-              {record.status === 1 ? '禁用' : '启用'}
+              编辑
             </Button>
-          </Popconfirm>
-        </Space>
-      ),
+            <Button
+              type="link"
+              size="small"
+              icon={<UserSwitchOutlined />}
+              onClick={() => handleOpenRoleModal(record)}
+              disabled={isCurrentUser || isReadOnly}
+            >
+              分配角色
+            </Button>
+            {!isCurrentUser && !isReadOnly && (
+              <Button
+                type="link"
+                size="small"
+                icon={<KeyOutlined />}
+                onClick={() => handleOpenResetPwd(record)}
+              >
+                重置密码
+              </Button>
+            )}
+            {!isCurrentUser && !isReadOnly && (
+              <Popconfirm
+                title="确定删除此用户？删除后将无法恢复。"
+                onConfirm={() => handleDelete(record)}
+                okText="确定"
+                cancelText="取消"
+                okButtonProps={{ danger: true }}
+              >
+                <Button
+                  type="link"
+                  size="small"
+                  danger
+                  icon={<DeleteOutlined />}
+                >
+                  删除
+                </Button>
+              </Popconfirm>
+            )}
+          </Space>
+        );
+      },
     },
   ];
 
@@ -338,6 +518,11 @@ export default function UserList() {
 
   return (
     <Card>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+        <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>
+          新增用户
+        </Button>
+      </div>
       {isMobile ? (
         loading ? (
           <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
@@ -347,9 +532,16 @@ export default function UserList() {
           <>
             {data.map((record) => {
               const isCurrentUser = record.id === currentUser?.id;
+              const isProtectedAdmin = record.username === 'admin' && (record.roles || []).some(r => r.name === '管理员');
+              const isReadOnly = !isCurrentUser && isProtectedAdmin;
+              const dotDisabled = isCurrentUser || isReadOnly;
+              const isDisabled = record.status !== 1;
+              const isHL = highlight.isHighlighted(record.id);
               return (
               <div
                 key={record.id}
+                id={`user-row-${record.id}`}
+                className={isHL ? 'row-highlight' : ''}
                 style={{
                   background: isCurrentUser ? '#fff7e6' : '#fafafa',
                   borderRadius: 8,
@@ -359,12 +551,51 @@ export default function UserList() {
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                  <div>
-                    <span style={{ fontWeight: 600, fontSize: 15 }}>{record.username}</span>
-                    {isCurrentUser && <Tag color="orange" style={{ marginLeft: 6, fontSize: 11 }}>当前</Tag>}
-                    {record.real_name && <span style={{ color: '#666', marginLeft: 8, fontSize: 13 }}>{record.real_name}</span>}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Popconfirm
+                      title={isDisabled ? '确定启用此用户？' : '确定禁用此用户？'}
+                      onConfirm={() => handleToggleStatus(record)}
+                      okText="确定"
+                      cancelText="取消"
+                      disabled={dotDisabled}
+                    >
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          width: 7,
+                          height: 7,
+                          borderRadius: '50%',
+                          background: isDisabled ? '#ff4d4f' : '#52c41a',
+                          boxShadow: isDisabled
+                            ? '0 0 0 3px rgba(255,77,79,.12)'
+                            : '0 0 0 3px rgba(82,196,26,.15)',
+                          cursor: dotDisabled ? 'default' : 'pointer',
+                          flexShrink: 0,
+                        }}
+                      />
+                    </Popconfirm>
+                    <span style={{
+                      fontWeight: 600,
+                      fontSize: 15,
+                      color: isDisabled ? '#ff4d4f' : undefined,
+                      opacity: isDisabled ? 0.7 : 1,
+                    }}>
+                      {record.username}
+                    </span>
+                    {isDisabled && (
+                      <span style={{
+                        fontSize: 11,
+                        color: '#ff4d4f',
+                        background: '#fff2f0',
+                        padding: '0 5px',
+                        borderRadius: 3,
+                      }}>
+                        已禁用
+                      </span>
+                    )}
+                    {isCurrentUser && <Tag color="orange" style={{ marginLeft: 0, fontSize: 11 }}>当前</Tag>}
+                    {record.real_name && <span style={{ color: '#666', marginLeft: 2, fontSize: 13 }}>{record.real_name}</span>}
                   </div>
-                  {record.status === 1 ? <Tag color="green">启用</Tag> : <Tag color="red">禁用</Tag>}
                 </div>
                 {record.phone && <div style={{ color: '#666', fontSize: 13 }}>{record.phone}</div>}
                 {record.roles && record.roles.length > 0 && (
@@ -375,18 +606,22 @@ export default function UserList() {
                   </div>
                 )}
                 <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                  <Button type="link" size="small" style={{ padding: 0 }} icon={<EditOutlined />} onClick={() => handleEdit(record)}>编辑</Button>
-                  <Button type="link" size="small" style={{ padding: 0 }} icon={<UserSwitchOutlined />} onClick={() => handleOpenRoleModal(record)}>分配角色</Button>
-                  <Popconfirm
-                    title={record.status === 1 ? '确定禁用此用户？' : '确定启用此用户？'}
-                    onConfirm={() => handleToggleStatus(record)}
-                    okText="确定"
-                    cancelText="取消"
-                  >
-                    <Button type="link" size="small" style={{ padding: 0 }} danger={record.status === 1}>
-                      {record.status === 1 ? '禁用' : '启用'}
-                    </Button>
-                  </Popconfirm>
+                  <Button type="link" size="small" style={{ padding: 0 }} icon={<EditOutlined />} onClick={() => handleEdit(record)} disabled={isReadOnly}>编辑</Button>
+                  <Button type="link" size="small" style={{ padding: 0 }} icon={<UserSwitchOutlined />} onClick={() => handleOpenRoleModal(record)} disabled={isCurrentUser || isReadOnly}>分配角色</Button>
+                  {!isCurrentUser && !isReadOnly && (
+                    <Button type="link" size="small" style={{ padding: 0 }} icon={<KeyOutlined />} onClick={() => handleOpenResetPwd(record)}>重置密码</Button>
+                  )}
+                  {!isCurrentUser && !isReadOnly && (
+                    <Popconfirm
+                      title="确定删除此用户？删除后将无法恢复。"
+                      onConfirm={() => handleDelete(record)}
+                      okText="确定"
+                      cancelText="取消"
+                      okButtonProps={{ danger: true }}
+                    >
+                      <Button type="link" size="small" style={{ padding: 0 }} danger icon={<DeleteOutlined />}>删除</Button>
+                    </Popconfirm>
+                  )}
                 </div>
               </div>
               );
@@ -412,9 +647,14 @@ export default function UserList() {
           columns={columns}
           dataSource={data}
           loading={loading}
-          rowClassName={(record) =>
-            record.id === currentUser?.id ? 'current-user-row' : ''
-          }
+          rowClassName={(record) => {
+            const classes: string[] = [];
+            if (record.id === currentUser?.id) classes.push('current-user-row');
+            const hlClass = highlight.rowClassName(record);
+            if (hlClass) classes.push(hlClass);
+            return classes.join(' ');
+          }}
+          onRow={highlight.onRow}
           pagination={{
             current: params.page,
             pageSize: params.size,
@@ -422,6 +662,7 @@ export default function UserList() {
             showSizeChanger: true,
             showTotal: (t) => `共 ${t} 条记录`,
             onChange: (page, pageSize) => {
+              highlight.setHighlightId(null);
               setParams({ page, size: pageSize });
             },
           }}
@@ -447,6 +688,7 @@ export default function UserList() {
         okText="保存"
         cancelText="取消"
         width={isMobile ? 'calc(100vw - 32px)' : undefined}
+        destroyOnClose
       >
         <Form form={editForm} layout="vertical">
           <Form.Item
@@ -473,12 +715,14 @@ export default function UserList() {
           <Form.Item name="notes" label="备注">
             <Input.TextArea rows={2} placeholder="请输入备注" />
           </Form.Item>
-          <Form.Item name="status" label="状态">
-            <Radio.Group>
-              <Radio value={1}>启用</Radio>
-              <Radio value={0}>禁用</Radio>
-            </Radio.Group>
-          </Form.Item>
+          {editingUser?.id !== currentUser?.id && (
+            <Form.Item name="status" label="状态">
+              <Radio.Group>
+                <Radio value={1}>启用</Radio>
+                <Radio value={0}>禁用</Radio>
+              </Radio.Group>
+            </Form.Item>
+          )}
         </Form>
       </Modal>
 
@@ -502,15 +746,143 @@ export default function UserList() {
           onChange={(vals) => setSelectedRoleIds(vals as number[])}
           style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
         >
-          {allRoles.map((role) => (
-            <Checkbox key={role.id} value={role.id}>
-              {role.name}
-            </Checkbox>
-          ))}
+          {allRoles.map((role) => {
+            const isAdminRole = role.name === '管理员';
+            const canAssignAdmin = isGlobalAdmin && currentUser?.username === 'admin';
+            const disabled = isAdminRole && !canAssignAdmin;
+            if (isAdminRole && !canAssignAdmin && !isGlobalAdmin) return null;
+            return (
+              <Checkbox key={role.id} value={role.id} disabled={disabled}>
+                {role.name}{disabled ? '（仅 admin 可分配）' : ''}
+              </Checkbox>
+            );
+          })}
         </Checkbox.Group>
-        {allRoles.length === 0 && (
+        {allRoles.filter((r) => {
+          const isAdminRole = r.name === '管理员';
+          const canAssignAdmin = isGlobalAdmin && currentUser?.username === 'admin';
+          return !isAdminRole || canAssignAdmin || isGlobalAdmin;
+        }).length === 0 && (
           <div style={{ color: '#999' }}>暂无可分配角色</div>
         )}
+      </Modal>
+
+      {/* Reset password modal */}
+      <Modal
+        title={`重置密码 - ${resetPwdTarget?.username || ''}`}
+        open={resetPwdVisible}
+        onOk={handleResetPwdSubmit}
+        onCancel={() => {
+          setResetPwdVisible(false);
+          setResetPwdTarget(null);
+          resetPwdForm.resetFields();
+        }}
+        confirmLoading={resetPwdLoading}
+        okText="确定重置"
+        cancelText="取消"
+        width={isMobile ? 'calc(100vw - 32px)' : 400}
+        destroyOnClose
+      >
+        <Form form={resetPwdForm} layout="vertical">
+          <Form.Item
+            name="new_password"
+            label="新密码"
+            rules={[
+              { required: true, message: '请输入新密码' },
+              { min: 6, message: '密码至少 6 个字符' },
+              { max: 50, message: '密码最多 50 个字符' },
+            ]}
+          >
+            <Input.Password placeholder="请输入新密码（6-50 个字符）" />
+          </Form.Item>
+          <Form.Item
+            name="confirm_password"
+            label="确认密码"
+            dependencies={['new_password']}
+            rules={[
+              { required: true, message: '请确认密码' },
+              ({ getFieldValue }) => ({
+                validator(_, value) {
+                  if (!value || getFieldValue('new_password') === value) {
+                    return Promise.resolve();
+                  }
+                  return Promise.reject(new Error('两次输入的密码不一致'));
+                },
+              }),
+            ]}
+          >
+            <Input.Password placeholder="请再次输入新密码" />
+          </Form.Item>
+        </Form>
+        <div style={{ color: '#999', fontSize: 12 }}>
+          重置后该用户需要使用新密码重新登录
+        </div>
+      </Modal>
+
+      {/* Create user modal */}
+      <Modal
+        title="新增用户"
+        open={createModalVisible}
+        onOk={handleCreateSubmit}
+        onCancel={() => {
+          setCreateModalVisible(false);
+          createForm.resetFields();
+        }}
+        confirmLoading={createLoading}
+        okText="创建"
+        cancelText="取消"
+        width={isMobile ? 'calc(100vw - 32px)' : 450}
+        destroyOnClose
+      >
+        <Form form={createForm} layout="vertical">
+          {isGlobalAdmin && (
+            <Form.Item
+              name="tenant_id"
+              label="所属诊所"
+              rules={[{ required: true, message: '请选择所属诊所' }]}
+            >
+              <Select
+                placeholder="请选择诊所"
+                options={createTenants.map((t) => ({
+                  value: t.id,
+                  label: t.name,
+                }))}
+              />
+            </Form.Item>
+          )}
+          <Form.Item
+            name="username"
+            label="用户名"
+            rules={[
+              { required: true, message: '请输入用户名' },
+              { min: 2, message: '用户名至少 2 个字符' },
+              { max: 50, message: '用户名最多 50 个字符' },
+            ]}
+          >
+            <Input placeholder="请输入用户名" />
+          </Form.Item>
+          <Form.Item
+            name="password"
+            label="密码"
+            rules={[
+              { required: true, message: '请输入密码' },
+              { min: 6, message: '密码至少 6 个字符' },
+              { max: 50, message: '密码最多 50 个字符' },
+            ]}
+          >
+            <Input.Password placeholder="请输入密码（6-50 个字符）" />
+          </Form.Item>
+          <Form.Item
+            name="real_name"
+            label="真实姓名"
+            rules={[{ required: true, message: '请输入真实姓名' }]}
+          >
+            <Input placeholder="请输入真实姓名" />
+          </Form.Item>
+          <Form.Item name="phone" label="手机号">
+            <Input placeholder="请输入手机号（可选）" />
+          </Form.Item>
+        </Form>
       </Modal>
     </Card>
   );

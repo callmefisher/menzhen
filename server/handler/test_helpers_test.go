@@ -151,7 +151,7 @@ func setupTestRouter(db *gorm.DB) *gin.Engine {
 	tenantUsers.Use(middleware.RequirePermission(db, "tenant:user:manage", "user:manage"))
 	tenantUsers.GET("", tenantAdminHandler.ListUsers)
 	tenantUsers.PUT("/:id", tenantAdminHandler.UpdateUser)
-	tenantUsers.DELETE("/:id", tenantAdminHandler.DisableUser)
+	tenantUsers.DELETE("/:id", tenantAdminHandler.DeleteUser)
 	tenantUsers.POST("/:id/roles", tenantAdminHandler.AssignRoles)
 	tenantRoles := tenantAdmin.Group("/roles")
 	tenantRoles.Use(middleware.RequirePermission(db, "tenant:role:manage", "role:manage"))

@@ -85,8 +85,8 @@ func TestTenantAdminService_DeleteUser_CrossTenant_Fails(t *testing.T) {
 	role2 := testutil.SeedTestRole(t, db, t2.ID, "护士")
 	user2, _ := testutil.SeedTestUser(t, db, t2.ID, "nurse2", "pass", role2)
 
-	// Tenant1 tries to disable tenant2's user — must fail.
-	err := svc.DisableUser(t1.ID, user2.ID)
+	// Tenant1 tries to delete tenant2's user — must fail.
+	_, err := svc.DeleteUser(t1.ID, user2.ID)
 	assert.ErrorIs(t, err, service.ErrUserNotFound)
 }
 

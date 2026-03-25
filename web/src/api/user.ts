@@ -15,3 +15,11 @@ export function deleteUser(id: number) {
 export function assignRoles(userId: number, roleIds: number[]) {
   return request.post(`/users/${userId}/roles`, { role_ids: roleIds });
 }
+
+export function resetUserPassword(id: number, data: { new_password: string }) {
+  return request.post(`/users/${id}/reset-password`, data);
+}
+
+export function createUser(data: { tenant_id: number; username: string; password: string; real_name: string; phone?: string }) {
+  return request.post('/users', data);
+}

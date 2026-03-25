@@ -285,6 +285,17 @@ export default function RecordForm() {
     return () => timers.forEach(clearTimeout);
   }, [lastSavedPrescriptionId, prescriptions]);
 
+  // Highlight prescription from URL query param (e.g. ?highlight=123), once only
+  const highlightAppliedRef = useRef(false);
+  useEffect(() => {
+    if (highlightAppliedRef.current) return;
+    const highlightId = searchParams.get('highlight');
+    if (highlightId && prescriptions.length > 0) {
+      highlightAppliedRef.current = true;
+      setLastSavedPrescriptionId(Number(highlightId));
+    }
+  }, [searchParams, prescriptions]);
+
   // Load shelf maps once when prescriptions first load
   const shelfMapsLoadedRef = useRef(false);
   useEffect(() => {

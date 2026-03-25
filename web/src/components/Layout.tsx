@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Layout as AntLayout, Menu, Button, theme, Dropdown, Modal, Form, Input, message, Drawer, Popover } from 'antd';
 import {
@@ -28,6 +28,8 @@ import {
   BarChartOutlined,
   ToolOutlined,
   PhoneOutlined,
+  FontSizeOutlined,
+  BgColorsOutlined,
 } from '@ant-design/icons';
 import type { MenuProps as AntMenuProps } from 'antd';
 import { useAuth } from '../store/auth';
@@ -37,8 +39,11 @@ import { changePassword } from '../api/auth';
 import { listInventoryDrugs } from '../api/inventory';
 import type { InventoryDrug } from '../api/inventory';
 import { getFollowUpStats } from '../api/followUp';
+import { getPendingCount } from '../api/prescriptionNotification';
 import useIsMobile from '../hooks/useIsMobile';
+import { useWebSocket } from '../hooks/useWebSocket';
 import AccessibilityToggle from './AccessibilityToggle';
+import { modeLabels } from './AccessibilitySettingsPanel';
 import { useAccessibility } from '../store/accessibility';
 
 const { Header, Sider, Content } = AntLayout;
@@ -56,13 +61,14 @@ export default function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const isMobile = useIsMobile();
-  const { mode: a11yMode } = useAccessibility();
+  const { mode: a11yMode, cycleMode } = useAccessibility();
   const {
     token: { borderRadiusLG },
   } = theme.useToken();
 
   const [alertCount, setAlertCount] = useState(0);
   const [followUpCount, setFollowUpCount] = useState(0);
+  const [rxPendingCount, setRxPendingCount] = useState(0);
 
   // Auto-collapse sidebar in large-font mode, auto-expand back in normal mode
   useEffect(() => {
@@ -171,6 +177,26 @@ export default function AppLayout() {
     };
   }, [hasPermission]);
 
+  // --- Prescription notification badge (rx) ---
+  const fetchRxPendingCount = useCallback(async () => {
+    try {
+      const res = await getPendingCount();
+      const data = (res as any).data;
+      setRxPendingCount(typeof data?.count === 'number' ? data.count : 0);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    if (user) fetchRxPendingCount();
+  }, [fetchRxPendingCount, user]);
+
+  useWebSocket('_reconnect', () => { fetchRxPendingCount(); });
+  useWebSocket('rx_notify', () => { setRxPendingCount((prev) => prev + 1); });
+  useWebSocket('rx_done', (msg) => {
+    if (msg.payload?.batch) fetchRxPendingCount();
+    else setRxPendingCount((prev) => Math.max(0, prev - 1));
+  });
+
   const menuItems = useMemo(() => {
     const items: MenuItem[] = [];
 
@@ -187,6 +213,67 @@ export default function AppLayout() {
       icon: <MedicineBoxOutlined />,
       label: '病历列表',
     });
+
+    const badgeStyle: React.CSSProperties = {
+      background: '#ff4d4f', color: '#fff', fontSize: 11,
+      lineHeight: '16px', minWidth: 16, height: 16,
+      borderRadius: 8, padding: '0 4px', textAlign: 'center', fontWeight: 500,
+    };
+    const fmtBadge = (n: number) => n > 99 ? '99+' : String(n);
+
+    const showOps = hasPermission('inventory:read') || hasPermission('followup:read') || hasPermission('statistics:read');
+    if (showOps) {
+      const totalBadge = alertCount + followUpCount + rxPendingCount;
+      items.push({
+        key: '/ops',
+        icon: <ShopOutlined />,
+        label: totalBadge > 0
+          ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              运营
+              <span style={badgeStyle}>{fmtBadge(totalBadge)}</span>
+            </span>
+          : '运营',
+        children: [
+          ...(hasPermission('inventory:read') ? [
+            {
+              key: '/inventory/drugs',
+              icon: <MedicineBoxOutlined />,
+              label: rxPendingCount > 0
+                ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    库存药物
+                    <span style={badgeStyle}>{fmtBadge(rxPendingCount)}</span>
+                  </span>
+                : '库存药物',
+            },
+            {
+              key: '/inventory/alerts',
+              icon: <AlertOutlined />,
+              label: alertCount > 0
+                ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    库存预警
+                    <span style={badgeStyle}>{fmtBadge(alertCount)}</span>
+                  </span>
+                : '库存预警',
+            },
+          ] : []),
+          ...(hasPermission('followup:read') ? [{
+            key: '/follow-ups',
+            icon: <PhoneOutlined />,
+            label: followUpCount > 0
+              ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  回访
+                  <span style={badgeStyle}>{fmtBadge(followUpCount)}</span>
+                </span>
+              : '回访',
+          }] : []),
+          ...(hasPermission('statistics:read') ? [{
+            key: '/statistics',
+            icon: <BarChartOutlined />,
+            label: '统计概览',
+          }] : []),
+        ],
+      });
+    }
 
     // TCM menu group - accessible to all authenticated users
     const tcmChildren: MenuItem[] = [
@@ -237,62 +324,6 @@ export default function AppLayout() {
       label: '中医药',
       children: tcmChildren,
     });
-
-    const badgeStyle: React.CSSProperties = {
-      background: '#ff4d4f', color: '#fff', fontSize: 11,
-      lineHeight: '16px', minWidth: 16, height: 16,
-      borderRadius: 8, padding: '0 4px', textAlign: 'center', fontWeight: 500,
-    };
-    const fmtBadge = (n: number) => n > 99 ? '99+' : String(n);
-
-    const showOps = hasPermission('inventory:read') || hasPermission('followup:read') || hasPermission('statistics:read');
-    if (showOps) {
-      const totalBadge = alertCount + followUpCount;
-      items.push({
-        key: '/ops',
-        icon: <ShopOutlined />,
-        label: totalBadge > 0
-          ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              运营
-              <span style={badgeStyle}>{fmtBadge(totalBadge)}</span>
-            </span>
-          : '运营',
-        children: [
-          ...(hasPermission('inventory:read') ? [
-            {
-              key: '/inventory/drugs',
-              icon: <MedicineBoxOutlined />,
-              label: '库存药物',
-            },
-            {
-              key: '/inventory/alerts',
-              icon: <AlertOutlined />,
-              label: alertCount > 0
-                ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    库存预警
-                    <span style={badgeStyle}>{fmtBadge(alertCount)}</span>
-                  </span>
-                : '库存预警',
-            },
-          ] : []),
-          ...(hasPermission('followup:read') ? [{
-            key: '/follow-ups',
-            icon: <PhoneOutlined />,
-            label: followUpCount > 0
-              ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  回访
-                  <span style={badgeStyle}>{fmtBadge(followUpCount)}</span>
-                </span>
-              : '回访',
-          }] : []),
-          ...(hasPermission('statistics:read') ? [{
-            key: '/statistics',
-            icon: <BarChartOutlined />,
-            label: '统计概览',
-          }] : []),
-        ],
-      });
-    }
 
     const canManageUsers = hasPermission('user:manage') || hasPermission('tenant:user:manage');
     const canManageRoles = hasPermission('role:manage') || hasPermission('tenant:role:manage');
@@ -351,7 +382,7 @@ export default function AppLayout() {
     }
 
     return items;
-  }, [hasPermission, alertCount, followUpCount]);
+  }, [hasPermission, alertCount, followUpCount, rxPendingCount]);
 
   // Determine selected keys from current path
   const selectedKeys = useMemo(() => {
@@ -416,6 +447,35 @@ export default function AppLayout() {
   };
 
   const userMenuItems: AntMenuProps['items'] = [
+    ...(isMobile ? [
+      {
+        key: 'font-size',
+        icon: <FontSizeOutlined />,
+        label: `字号：${modeLabels[a11yMode]}`,
+        onClick: cycleMode,
+      },
+      {
+        key: 'theme-picker',
+        icon: <BgColorsOutlined />,
+        label: '主题色',
+        children: Object.values(sidebarThemes).map((t) => ({
+          key: `theme-${t.key}`,
+          label: (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <span style={{
+                width: 16, height: 16, borderRadius: '50%',
+                background: t.sidebarBg, display: 'inline-block',
+                border: themeKey === t.key ? '2px solid #52C41A' : '2px solid transparent',
+              }} />
+              {t.label}
+              {themeKey === t.key && <span style={{ color: '#52C41A', fontSize: 12 }}>✓</span>}
+            </span>
+          ),
+          onClick: () => setTheme(t.key),
+        })),
+      },
+      { type: 'divider' as const },
+    ] : []),
     {
       key: 'change-password',
       icon: <KeyOutlined />,
@@ -533,8 +593,8 @@ export default function AppLayout() {
             style={{ fontSize: 16, width: 48, height: 48 }}
           />
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <AccessibilityToggle />
-            <Popover content={themePickerContent} trigger="click" placement="bottomRight">
+            {!isMobile && <AccessibilityToggle />}
+            {!isMobile && <Popover content={themePickerContent} trigger="click" placement="bottomRight">
               <div style={{
                 width: 22,
                 height: 22,
@@ -548,9 +608,29 @@ export default function AppLayout() {
               }}>
                 <span style={{ width: 9, height: 9, borderRadius: '50%', background: themeConfig.titleColor, display: 'block' }} />
               </div>
-            </Popover>
+            </Popover>}
             <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
-              <Button type="text" icon={<UserOutlined />}>
+              <Button type="text" icon={
+                (user?.real_name || user?.username) ? (
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: 32,
+                    height: 32,
+                    borderRadius: '50%',
+                    background: themeConfig.titleColor || '#1890ff',
+                    color: '#fff',
+                    fontSize: 18,
+                    fontWeight: 900,
+                    fontFamily: "'Noto Sans SC', 'PingFang SC', sans-serif",
+                    textShadow: '0 0 1px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.2)',
+                    WebkitFontSmoothing: 'antialiased',
+                  }}>
+                    {(user?.real_name || user?.username || '').charAt(0)}
+                  </span>
+                ) : <UserOutlined />
+              }>
                 {user?.real_name || user?.username || '用户'}
               </Button>
             </Dropdown>

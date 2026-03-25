@@ -27,6 +27,8 @@ interface AuthContextValue extends AuthState {
   login: (username: string, password: string, remember?: boolean) => Promise<void>;
   logout: () => Promise<void>;
   hasPermission: (code: string) => boolean;
+  /** True when user has user:manage permission (system-level admin). */
+  isGlobalAdmin: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -126,6 +128,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [state.permissions]
   );
 
+  const isGlobalAdmin = state.permissions.includes('user:manage');
+
   return (
     <AuthContext.Provider
       value={{
@@ -133,6 +137,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         logout,
         hasPermission,
+        isGlobalAdmin,
       }}
     >
       {children}

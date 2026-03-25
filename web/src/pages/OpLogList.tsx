@@ -76,6 +76,13 @@ function getResourceDisplayName(record: OpLogItem): string | undefined {
   if (record.resource_type === 'system') return data.tenant_name || undefined;
   // patient resource: name is a direct field
   if (record.resource_type === 'patient') return data.name || undefined;
+  // user resource: show username / real_name
+  if (record.resource_type === 'user') {
+    const username = data.username;
+    const realName = data.real_name;
+    if (username && realName) return `${username} / ${realName}`;
+    return username || realName || undefined;
+  }
   // inventory_drug: drug name is a direct field
   if (record.resource_type === 'inventory_drug') return data.name || undefined;
   if (!PATIENT_RELATED.has(record.resource_type)) return undefined;

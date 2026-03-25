@@ -238,6 +238,10 @@ describe('PrintCenterDrawer', () => {
   });
 
   it('opens print window on print button click', async () => {
+    // Override isMobile to false for desktop print path (window.open)
+    const useIsMobileMod = await import('../../hooks/useIsMobile');
+    vi.spyOn(useIsMobileMod, 'default').mockReturnValue(false);
+
     const mockOpen = vi.fn().mockReturnValue({
       document: { write: vi.fn(), close: vi.fn() },
       print: vi.fn(),
