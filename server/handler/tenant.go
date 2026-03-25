@@ -139,6 +139,13 @@ func (h *TenantHandler) Update(c *gin.Context) {
 			})
 			return
 		}
+		if errors.Is(err, service.ErrTenantHasAdmin) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"code":    403,
+				"message": err.Error(),
+			})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
 			"message": "failed to update tenant",
@@ -170,6 +177,13 @@ func (h *TenantHandler) Delete(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{
 				"code":    404,
 				"message": "tenant not found",
+			})
+			return
+		}
+		if errors.Is(err, service.ErrTenantHasAdmin) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"code":    403,
+				"message": err.Error(),
 			})
 			return
 		}

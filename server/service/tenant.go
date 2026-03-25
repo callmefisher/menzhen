@@ -2,6 +2,8 @@ package service
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 
 	"github.com/callmefisher/menzhen/server/model"
 	"gorm.io/gorm"
@@ -11,7 +13,31 @@ var (
 	ErrTenantNotFound  = errors.New("tenant not found")
 	ErrTenantCodeExist = errors.New("tenant code already exists")
 	ErrTenantNameExist = errors.New("tenant name already exists")
+	ErrTenantHasAdmin  = errors.New("tenant has admin")
 )
+
+// tenantAdminUsernames returns the usernames of admin users in the given tenant.
+func tenantAdminUsernames(db *gorm.DB, tenantID uint64) []string {
+	var usernames []string
+	db.Raw(`
+		SELECT DISTINCT u.username
+		FROM users u
+		JOIN user_roles ur ON ur.user_id = u.id
+		JOIN role_permissions rp ON rp.role_id = ur.role_id
+		JOIN permissions p ON p.id = rp.permission_id
+		WHERE u.tenant_id = ? AND p.code = ?
+	`, tenantID, "user:manage").Scan(&usernames)
+	return usernames
+}
+
+// checkTenantHasAdmin returns a descriptive error if the tenant has admin users, nil otherwise.
+func checkTenantHasAdmin(db *gorm.DB, tenantID uint64) error {
+	names := tenantAdminUsernames(db, tenantID)
+	if len(names) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%w: 关联管理员账号 [%s]", ErrTenantHasAdmin, strings.Join(names, ", "))
+}
 
 // CreateTenantRequest is the input for creating a new tenant.
 type CreateTenantRequest struct {
@@ -123,6 +149,12 @@ func (s *TenantService) UpdateTenant(id uint64, req *UpdateTenantRequest) (*mode
 		updates["code"] = *req.Code
 	}
 	if req.Status != nil {
+		// Prevent disabling tenant that has admin users.
+		if *req.Status == 0 {
+			if err := checkTenantHasAdmin(s.DB, id); err != nil {
+				return nil, err
+			}
+		}
 		updates["status"] = *req.Status
 	}
 
@@ -140,12 +172,18 @@ func (s *TenantService) UpdateTenant(id uint64, req *UpdateTenantRequest) (*mode
 }
 
 // DeleteTenant deletes a tenant by ID.
+// Returns ErrTenantHasAdmin if the tenant has admin users.
 func (s *TenantService) DeleteTenant(id uint64) error {
 	var tenant model.Tenant
 	if err := s.DB.First(&tenant, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrTenantNotFound
 		}
+		return err
+	}
+
+	// Prevent deleting tenant that has admin users.
+	if err := checkTenantHasAdmin(s.DB, id); err != nil {
 		return err
 	}
 

@@ -23,6 +23,54 @@ func NewTenantAdminHandler(db *gorm.DB) *TenantAdminHandler {
 	return &TenantAdminHandler{db: db}
 }
 
+// CreateUser handles POST /tenant/users.
+// Tenant admin can create a user under their own tenant.
+func (h *TenantAdminHandler) CreateUser(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+
+	var req struct {
+		Username string `json:"username" binding:"required,min=2,max=50"`
+		Password string `json:"password" binding:"required,min=6,max=50"`
+		RealName string `json:"real_name" binding:"required"`
+		Phone    string `json:"phone"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "请求参数错误: " + err.Error(),
+		})
+		return
+	}
+
+	authSvc := service.NewAuthService(h.db)
+	user, err := authSvc.Register(tenantID, req.Username, req.Password, req.RealName, req.Phone)
+	if err != nil {
+		if errors.Is(err, service.ErrUsernameExists) {
+			c.JSON(http.StatusConflict, gin.H{
+				"code":    409,
+				"message": "该用户名已存在",
+			})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "创建用户失败",
+		})
+		return
+	}
+
+	middleware.LogOperation(h.db, c, "create", "user", user.ID, nil, map[string]string{
+		"username":  user.Username,
+		"real_name": user.RealName,
+	})
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "创建成功",
+		"data":    user,
+	})
+}
+
 // ListUsers handles GET /tenant/users?page=1&size=20.
 // Returns a paginated list of users belonging to the caller's tenant.
 func (h *TenantAdminHandler) ListUsers(c *gin.Context) {
@@ -84,6 +132,16 @@ func (h *TenantAdminHandler) UpdateUser(c *gin.Context) {
 		return
 	}
 
+	// Prevent self-disable.
+	currentUserID := middleware.GetUserID(c)
+	if currentUserID == id && req.Status != nil && *req.Status == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "不能禁用自己的账号",
+		})
+		return
+	}
+
 	svc := service.NewTenantAdminService(h.db)
 	user, err := svc.UpdateUser(tenantID, id, &req)
 	if err != nil {
@@ -115,9 +173,9 @@ func (h *TenantAdminHandler) UpdateUser(c *gin.Context) {
 	})
 }
 
-// DisableUser handles DELETE /tenant/users/:id.
-// Sets the user's status to 0 (disabled). Returns 404 for cross-tenant attempts.
-func (h *TenantAdminHandler) DisableUser(c *gin.Context) {
+// DeleteUser handles DELETE /tenant/users/:id.
+// Permanently removes the user within the caller's tenant.
+func (h *TenantAdminHandler) DeleteUser(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
 
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -129,12 +187,23 @@ func (h *TenantAdminHandler) DisableUser(c *gin.Context) {
 		return
 	}
 
+	// Prevent self-deletion.
+	currentUserID := middleware.GetUserID(c)
+	if currentUserID == id {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "不能删除自己的账号",
+		})
+		return
+	}
+
 	svc := service.NewTenantAdminService(h.db)
-	if err := svc.DisableUser(tenantID, id); err != nil {
+	deletedUser, err := svc.DeleteUser(tenantID, id)
+	if err != nil {
 		if errors.Is(err, service.ErrProtectedUser) {
 			c.JSON(http.StatusForbidden, gin.H{
 				"code":    403,
-				"message": "无法禁用系统管理员账号",
+				"message": "无法删除系统管理员账号",
 			})
 			return
 		}
@@ -147,14 +216,78 @@ func (h *TenantAdminHandler) DisableUser(c *gin.Context) {
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
-			"message": "failed to disable user",
+			"message": "failed to delete user",
 		})
 		return
 	}
 
+	middleware.LogOperation(h.db, c, "delete", "user", id, map[string]string{
+		"username":  deletedUser.Username,
+		"real_name": deletedUser.RealName,
+	}, nil)
+
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"message": "success",
+	})
+}
+
+// ResetPassword handles POST /tenant/users/:id/reset-password.
+func (h *TenantAdminHandler) ResetPassword(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "invalid user id",
+		})
+		return
+	}
+
+	currentUserID := middleware.GetUserID(c)
+	if currentUserID == id {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "不能重置自己的密码，请使用修改密码功能",
+		})
+		return
+	}
+
+	var req struct {
+		NewPassword string `json:"new_password" binding:"required,min=6,max=50"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "密码长度需 6-50 个字符",
+		})
+		return
+	}
+
+	svc := service.NewTenantAdminService(h.db)
+	if err := svc.ResetPassword(tenantID, id, req.NewPassword); err != nil {
+		if errors.Is(err, service.ErrUserNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"code":    404,
+				"message": "user not found",
+			})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "failed to reset password",
+		})
+		return
+	}
+
+	middleware.LogOperation(h.db, c, "update", "user", id, nil, map[string]string{
+		"action": "reset_password",
+	})
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "密码重置成功",
 	})
 }
 
@@ -298,6 +431,13 @@ func (h *TenantAdminHandler) UpdateRole(c *gin.Context) {
 			})
 			return
 		}
+		if errors.Is(err, service.ErrRoleIsAdmin) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"code":    403,
+				"message": "无法修改管理员角色",
+			})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
 			"message": "failed to update role",
@@ -330,6 +470,13 @@ func (h *TenantAdminHandler) DeleteRole(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{
 				"code":    404,
 				"message": "角色不存在",
+			})
+			return
+		}
+		if errors.Is(err, service.ErrRoleIsAdmin) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"code":    403,
+				"message": "无法删除管理员角色",
 			})
 			return
 		}

@@ -144,9 +144,11 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		users := authenticated.Group("/users")
 		{
 			users.GET("", middleware.RequirePermission(db, "user:manage"), userHandler.List)
+			users.POST("", middleware.RequirePermission(db, "user:manage"), userHandler.CreateUser)
 			users.PUT("/:id", middleware.RequirePermission(db, "user:manage"), userHandler.Update)
 			users.DELETE("/:id", middleware.RequirePermission(db, "user:manage"), userHandler.Delete)
 			users.POST("/:id/roles", middleware.RequirePermission(db, "user:manage"), userHandler.AssignRoles)
+			users.POST("/:id/reset-password", middleware.RequirePermission(db, "user:manage"), userHandler.ResetPassword)
 		}
 
 		// Role management routes.
@@ -177,9 +179,11 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			tenantUsers.Use(middleware.RequirePermission(db, "tenant:user:manage", "user:manage"))
 			{
 				tenantUsers.GET("", tenantAdminHandler.ListUsers)
+				tenantUsers.POST("", tenantAdminHandler.CreateUser)
 				tenantUsers.PUT("/:id", tenantAdminHandler.UpdateUser)
-				tenantUsers.DELETE("/:id", tenantAdminHandler.DisableUser)
+				tenantUsers.DELETE("/:id", tenantAdminHandler.DeleteUser)
 				tenantUsers.POST("/:id/roles", tenantAdminHandler.AssignRoles)
+				tenantUsers.POST("/:id/reset-password", tenantAdminHandler.ResetPassword)
 			}
 			tenantRoles := tenantAdmin.Group("/roles")
 			tenantRoles.Use(middleware.RequirePermission(db, "tenant:role:manage", "role:manage"))

@@ -6,7 +6,6 @@ import {
   Popconfirm,
   message,
   Card,
-  Tag,
   Modal,
   Form,
   Input,
@@ -22,6 +21,8 @@ import {
 } from '@ant-design/icons';
 import { listTenants, createTenant, updateTenant, deleteTenant } from '../../api/tenant';
 import useIsMobile from '../../hooks/useIsMobile';
+import useRowHighlight from '../../hooks/useRowHighlight';
+import { useAuth } from '../../store/auth';
 import { useAccessibleColumns, type AccessibleColumnsType } from '../../hooks/useAccessibleColumns';
 import HiddenColumnsHint from '../../components/HiddenColumnsHint';
 
@@ -44,6 +45,16 @@ export default function TenantList() {
   const [total, setTotal] = useState(0);
   const [params, setParams] = useState<ListParams>({ page: 1, size: 20 });
   const isMobile = useIsMobile();
+  const { isGlobalAdmin } = useAuth();
+
+  const highlight = useRowHighlight({
+    data,
+    page: params.page,
+    pageSize: params.size,
+    loading,
+    onPageChange: (page) => setParams(prev => ({ ...prev, page })),
+    idPrefix: 'tenant',
+  });
 
   // Modal state
   const [modalVisible, setModalVisible] = useState(false);
@@ -106,18 +117,23 @@ export default function TenantList() {
           status: values.status,
         });
         message.success('更新成功');
+        const editedId = editingTenant.id;
+        setModalVisible(false);
+        setEditingTenant(null);
+        form.resetFields();
+        fetchData(params);
+        highlight.setHighlightId(editedId);
       } else {
         await createTenant({
           name: values.name,
           code: values.code,
         });
         message.success('创建成功');
+        setModalVisible(false);
+        setEditingTenant(null);
+        form.resetFields();
+        fetchData(params);
       }
-
-      setModalVisible(false);
-      setEditingTenant(null);
-      form.resetFields();
-      fetchData(params);
     } catch {
       // 409 errors handled by request interceptor with Chinese message mapping
     } finally {
@@ -140,45 +156,63 @@ export default function TenantList() {
       title: 'ID',
       dataIndex: 'id',
       key: 'id',
-      width: 60,
+      width: 50,
       a11yPriority: 2,
     },
     {
       title: '诊所名称',
       dataIndex: 'name',
       key: 'name',
-      width: 200,
+      render: (val: string, record: TenantItem) => {
+        const isDisabled = record.status !== 1;
+        return (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <span
+              style={{
+                display: 'inline-block',
+                width: 7,
+                height: 7,
+                borderRadius: '50%',
+                background: isDisabled ? '#ff4d4f' : '#52c41a',
+                boxShadow: isDisabled
+                  ? '0 0 0 3px rgba(255,77,79,.12)'
+                  : '0 0 0 3px rgba(82,196,26,.15)',
+                flexShrink: 0,
+              }}
+            />
+            <span style={{
+              fontWeight: 500,
+              color: isDisabled ? '#ff4d4f' : undefined,
+              opacity: isDisabled ? 0.7 : 1,
+            }}>
+              {val}
+            </span>
+            {isDisabled && (
+              <span style={{
+                fontSize: 11,
+                color: '#ff4d4f',
+                background: '#fff2f0',
+                padding: '0 5px',
+                borderRadius: 3,
+              }}>
+                已禁用
+              </span>
+            )}
+          </span>
+        );
+      },
     },
     {
       title: '编码',
       dataIndex: 'code',
       key: 'code',
-      width: 120,
+      width: 100,
       a11yPriority: 2,
-    },
-    {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
-      width: 80,
-      render: (status: number) =>
-        status === 1 ? (
-          <Tag color="green">启用</Tag>
-        ) : (
-          <Tag color="red">禁用</Tag>
-        ),
-    },
-    {
-      title: '创建时间',
-      dataIndex: 'created_at',
-      key: 'created_at',
-      width: 180,
-      render: (val: string) => val?.slice(0, 19).replace('T', ' ') || '-',
     },
     {
       title: '操作',
       key: 'action',
-      width: 200,
+      width: 140,
       render: (_, record) => (
         <Space size="small">
           <Button
@@ -194,8 +228,9 @@ export default function TenantList() {
             onConfirm={() => handleDelete(record.id)}
             okText="确定"
             cancelText="取消"
+            disabled={!isGlobalAdmin}
           >
-            <Button type="link" size="small" danger icon={<DeleteOutlined />}>
+            <Button type="link" size="small" danger icon={<DeleteOutlined />} disabled={!isGlobalAdmin}>
               删除
             </Button>
           </Popconfirm>
@@ -231,9 +266,13 @@ export default function TenantList() {
           <Empty description="暂无诊所记录" />
         ) : (
           <>
-            {data.map((record) => (
+            {data.map((record) => {
+              const isDisabled = record.status !== 1;
+              return (
               <div
                 key={record.id}
+                id={`tenant-row-${record.id}`}
+                className={highlight.isHighlighted(record.id) ? 'row-highlight' : ''}
                 style={{
                   background: '#fafafa',
                   borderRadius: 8,
@@ -241,21 +280,52 @@ export default function TenantList() {
                   marginBottom: 8,
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                  <span style={{ fontWeight: 600, fontSize: 15 }}>{record.name}</span>
-                  {record.status === 1 ? <Tag color="green">启用</Tag> : <Tag color="red">禁用</Tag>}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      width: 7,
+                      height: 7,
+                      borderRadius: '50%',
+                      background: isDisabled ? '#ff4d4f' : '#52c41a',
+                      boxShadow: isDisabled
+                        ? '0 0 0 3px rgba(255,77,79,.12)'
+                        : '0 0 0 3px rgba(82,196,26,.15)',
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span style={{
+                    fontWeight: 600,
+                    fontSize: 15,
+                    color: isDisabled ? '#ff4d4f' : undefined,
+                    opacity: isDisabled ? 0.7 : 1,
+                  }}>
+                    {record.name}
+                  </span>
+                  {isDisabled && (
+                    <span style={{
+                      fontSize: 11,
+                      color: '#ff4d4f',
+                      background: '#fff2f0',
+                      padding: '0 5px',
+                      borderRadius: 3,
+                    }}>
+                      已禁用
+                    </span>
+                  )}
                 </div>
                 <div style={{ color: '#666', fontSize: 13, marginBottom: 8 }}>
                   编码：{record.code}
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <Button type="link" size="small" style={{ padding: 0 }} icon={<EditOutlined />} onClick={() => handleOpenModal(record)}>编辑</Button>
-                  <Popconfirm title="确定删除此诊所？" onConfirm={() => handleDelete(record.id)} okText="确定" cancelText="取消">
-                    <Button type="link" size="small" style={{ padding: 0 }} danger icon={<DeleteOutlined />}>删除</Button>
+                  <Popconfirm title="确定删除此诊所？" onConfirm={() => handleDelete(record.id)} okText="确定" cancelText="取消" disabled={!isGlobalAdmin}>
+                    <Button type="link" size="small" style={{ padding: 0 }} danger icon={<DeleteOutlined />} disabled={!isGlobalAdmin}>删除</Button>
                   </Popconfirm>
                 </div>
               </div>
-            ))}
+              );
+            })}
             {total > 0 && (
               <div style={{ textAlign: 'center', marginTop: 12 }}>
                 <Pagination
@@ -264,7 +334,10 @@ export default function TenantList() {
                   current={params.page}
                   pageSize={params.size}
                   total={total}
-                  onChange={(page) => setParams({ page, size: params.size })}
+                  onChange={(page) => {
+                    highlight.setHighlightId(null);
+                    setParams({ page, size: params.size });
+                  }}
                 />
               </div>
             )}
@@ -277,6 +350,8 @@ export default function TenantList() {
           columns={columns}
           dataSource={data}
           loading={loading}
+          rowClassName={highlight.rowClassName}
+          onRow={highlight.onRow}
           pagination={{
             current: params.page,
             pageSize: params.size,
@@ -284,6 +359,7 @@ export default function TenantList() {
             showSizeChanger: true,
             showTotal: (t) => `共 ${t} 条记录`,
             onChange: (page, pageSize) => {
+              highlight.setHighlightId(null);
               setParams({ page, size: pageSize });
             },
           }}
@@ -336,6 +412,11 @@ export default function TenantList() {
                 <Radio value={0}>禁用</Radio>
               </Radio.Group>
             </Form.Item>
+          )}
+          {isEdit && editingTenant?.created_at && (
+            <div style={{ color: '#999', fontSize: 13, marginTop: -8 }}>
+              创建时间：{editingTenant.created_at.slice(0, 19).replace('T', ' ')}
+            </div>
           )}
         </Form>
       </Modal>

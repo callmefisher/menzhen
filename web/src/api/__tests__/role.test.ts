@@ -17,7 +17,7 @@ describe('role API', () => {
 
   it('listRoles calls GET /roles', async () => {
     await listRoles();
-    expect(request.get).toHaveBeenCalledWith('/roles');
+    expect(request.get).toHaveBeenCalledWith('/roles', { params: undefined });
   });
 
   it('createRole calls POST /roles with data', async () => {

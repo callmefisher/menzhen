@@ -207,7 +207,8 @@ tr.row-highlight > td {
 }
 /* Mobile card highlight after edit */
 .ant-card.row-highlight,
-.warm-list-card.row-highlight {
+.warm-list-card.row-highlight,
+div.row-highlight {
   animation: row-flash 15s ease-in-out;
 }
 

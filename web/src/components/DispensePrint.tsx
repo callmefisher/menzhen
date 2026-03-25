@@ -1,5 +1,6 @@
 import { useEffect, useImperativeHandle, forwardRef } from 'react';
 import type { DispenseDetail, DispenseDetailItem } from '../api/prescriptionNotification';
+import { fmtTotal, chunkToRows } from '../utils/format';
 
 export interface DispensePrintHandle {
   print: () => void;
@@ -35,8 +36,8 @@ function ensurePrintStyle() {
   style.id = PRINT_STYLE_ID;
   style.textContent = `
     @media print {
-      body > *:not(.print-portal) { display: none !important; }
-      .print-portal { display: block !important; }
+      body > *:not(.dispense-print-portal):not(.center-print-portal) { display: none !important; }
+      .dispense-print-portal, .center-print-portal { display: block !important; }
     }
   `;
   document.head.appendChild(style);
@@ -55,14 +56,15 @@ const DISPENSE_PRINT_STYLES = `
   .dp-cols { display: table; table-layout: fixed; width: 100%; }
   .dp-col { display: table-cell; width: 50%; vertical-align: top; padding: 0 4px; }
   .dp-col + .dp-col { border-left: 1px dashed #ccc; }
-  .dp-row { display: table; table-layout: fixed; width: 100%; font-size: 12px; border-bottom: 1px dotted #eee; }
-  .dp-row > span { display: table-cell; padding: 2px 0; vertical-align: baseline; }
-  .dp-sh { width: 15%; font-weight: 700; }
-  .dp-nm { width: 35%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .dp-ca { width: 25%; color: #666; font-size: 11px; text-align: right; }
-  .dp-to { width: 25%; font-weight: 700; text-align: right; }
-  .dp-pn { width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .dp-pq { width: 25%; font-weight: 700; text-align: right; }
+  .dp-row-sep { border-top: 1px dashed #ccc; }
+  .dp-row { display: table; table-layout: auto; width: 100%; font-size: 12px; border-bottom: 1px dotted #eee; }
+  .dp-row > span { display: table-cell; padding: 2px 4px; vertical-align: baseline; white-space: nowrap; }
+  .dp-sh { width: 50px; font-weight: 700; }
+  .dp-nm { white-space: normal !important; word-break: break-all; }
+  .dp-ca { width: 70px; color: #666; font-size: 11px; }
+  .dp-to { width: 60px; font-weight: 700; text-align: right; }
+  .dp-pn { white-space: normal !important; word-break: break-all; }
+  .dp-pq { width: 50px; font-weight: 700; text-align: right; }
   .dp-sum { padding: 6px 20px; font-size: 12px; font-weight: 600; border-top: 2px solid #666; text-align: right; }
   .dp-notes { padding: 8px 20px; font-size: 11px; border-top: 1px dashed #ccc; }
   .dp-footer { display: flex; justify-content: space-between; padding: 10px 20px; font-size: 11px; color: #666; border-top: 1px dashed #ccc; }
@@ -79,7 +81,7 @@ function buildHerbRows(items: DispenseDetailItem[], totalDoses: number): string 
       `<span class="dp-sh">${escapeHtml(item.shelf_no || '--')}</span>` +
       `<span class="dp-nm">${nameDisplay}</span>` +
       `<span class="dp-ca">${escapeHtml(item.dosage)}g×${totalDoses}</span>` +
-      `<span class="dp-to">${total}g</span>` +
+      `<span class="dp-to">${fmtTotal(total)}g</span>` +
       `</div>`;
   }).join('');
 }
@@ -91,6 +93,37 @@ function buildPatentRows(items: DispenseDetailItem[]): string {
       `<span class="dp-pn">${escapeHtml(item.herb_name)}</span>` +
       `<span class="dp-pq">×${escapeHtml(item.dosage)}</span>` +
       `</div>`;
+  }).join('');
+}
+
+function buildChunkedHerbs(herbs: DispenseDetailItem[], totalDoses: number): string {
+  if (herbs.length < 10) {
+    // Single column at 50% width
+    return `<div style="width:50%">${buildHerbRows(herbs, totalDoses)}</div>`;
+  }
+  const rows = chunkToRows(herbs, 10);
+  return rows.map((rowCols, rowIdx) => {
+    const sep = rowIdx > 0 ? ' dp-row-sep' : '';
+    let h = `<div class="dp-cols${sep}">`;
+    h += `<div class="dp-col">${buildHerbRows(rowCols[0], totalDoses)}</div>`;
+    h += `<div class="dp-col">${rowCols[1] ? buildHerbRows(rowCols[1], totalDoses) : ''}</div>`;
+    h += `</div>`;
+    return h;
+  }).join('');
+}
+
+function buildChunkedPatents(patents: DispenseDetailItem[]): string {
+  if (patents.length < 5) {
+    return `<div style="width:50%">${buildPatentRows(patents)}</div>`;
+  }
+  const rows = chunkToRows(patents, 5);
+  return rows.map((rowCols, rowIdx) => {
+    const sep = rowIdx > 0 ? ' dp-row-sep' : '';
+    let h = `<div class="dp-cols${sep}">`;
+    h += `<div class="dp-col">${buildPatentRows(rowCols[0])}</div>`;
+    h += `<div class="dp-col">${rowCols[1] ? buildPatentRows(rowCols[1]) : ''}</div>`;
+    h += `</div>`;
+    return h;
   }).join('');
 }
 
@@ -119,20 +152,14 @@ function buildDispenseHtml(
 
   if (herbs.length > 0) {
     html += `<div class="dp-section">中药明细（${herbs.length}味）</div>`;
-    const mid = Math.ceil(herbs.length / 2);
-    html += `<div class="dp-cols"><div class="dp-col">${buildHerbRows(herbs.slice(0, mid), totalDoses)}</div>`;
-    if (herbs.length > mid) html += `<div class="dp-col">${buildHerbRows(herbs.slice(mid), totalDoses)}</div>`;
-    html += `</div>`;
+    html += buildChunkedHerbs(herbs, totalDoses);
     html += `<div class="dp-sum">总付数：${totalDoses} 付</div>`;
   }
 
   if (patents.length > 0) {
     html += `<div class="dp-section">中成药明细（${patents.length}种）</div>`;
-    const mid = Math.ceil(patents.length / 2);
     const totalQty = patents.reduce((s, p) => s + (parseFloat(p.dosage) || 0), 0);
-    html += `<div class="dp-cols"><div class="dp-col">${buildPatentRows(patents.slice(0, mid))}</div>`;
-    if (patents.length > mid) html += `<div class="dp-col">${buildPatentRows(patents.slice(mid))}</div>`;
-    html += `</div>`;
+    html += buildChunkedPatents(patents);
     html += `<div class="dp-sum">合计：${totalQty} 盒</div>`;
   }
 
@@ -156,9 +183,12 @@ const DispensePrint = forwardRef<DispensePrintHandle, DispensePrintProps>(
       print: () => {
         const html = buildDispenseHtml(detail, clinicName, operatorName);
 
+        /* Remove any stale dispense print portals */
+        document.querySelectorAll('.dispense-print-portal').forEach(el => el.remove());
+
         /* Direct DOM injection — no React timing issues */
         const div = document.createElement('div');
-        div.className = 'print-portal';
+        div.className = 'dispense-print-portal';
         div.innerHTML = `<style>${DISPENSE_PRINT_STYLES}</style>${html}`;
         document.body.appendChild(div);
 

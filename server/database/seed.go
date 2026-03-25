@@ -177,33 +177,22 @@ func seedAdminUser(db *gorm.DB, tenantID uint64, roleID uint64) {
 	log.Println("Admin user seeded successfully")
 }
 
-// seedClinicOpsRole creates or syncs the "诊所运营" role with tenant-scoped management permissions.
+// seedClinicOpsRole creates the "诊所运营" role if it does not exist.
+// Unlike admin role, this role is NOT synced on restart — users may customize its permissions.
 func seedClinicOpsRole(db *gorm.DB, tenantID uint64) {
+	// Check if the role already exists in the default tenant.
+	var role model.Role
+	result := db.Where("name = ? AND tenant_id = ?", "诊所运营", tenantID).First(&role)
+	if result.Error == nil {
+		log.Println("Clinic ops role already exists, skipping (user may have customized permissions)")
+		return
+	}
+
 	clinicOpsPermCodes := []string{"tenant:user:manage", "tenant:role:manage", "statistics:read"}
 
 	var perms []model.Permission
 	if err := db.Where("code IN ?", clinicOpsPermCodes).Find(&perms).Error; err != nil {
 		log.Printf("Warning: failed to fetch permissions for clinic ops role: %v", err)
-		return
-	}
-
-	// Sync all existing "诊所运营" roles across all tenants.
-	var opsRoles []model.Role
-	if err := db.Where("name = ?", "诊所运营").Find(&opsRoles).Error; err == nil {
-		for _, r := range opsRoles {
-			if err := db.Model(&r).Association("Permissions").Replace(perms); err != nil {
-				log.Printf("Warning: failed to sync clinic ops role (id=%d) permissions: %v", r.ID, err)
-			}
-		}
-		if len(opsRoles) > 0 {
-			log.Printf("Clinic ops role permissions synced for %d tenants", len(opsRoles))
-		}
-	}
-
-	// Ensure default tenant has a clinic ops role.
-	var role model.Role
-	result := db.Where("name = ? AND tenant_id = ?", "诊所运营", tenantID).First(&role)
-	if result.Error == nil {
 		return
 	}
 

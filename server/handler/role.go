@@ -25,6 +25,13 @@ func NewRoleHandler(db *gorm.DB) *RoleHandler {
 func (h *RoleHandler) List(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
 
+	// Allow admin to query roles for a specific tenant (cross-tenant).
+	if tid := c.Query("tenant_id"); tid != "" {
+		if parsed, err := strconv.ParseUint(tid, 10, 64); err == nil && parsed > 0 {
+			tenantID = parsed
+		}
+	}
+
 	svc := service.NewRoleService(h.db)
 	roles, err := svc.ListRoles(tenantID)
 	if err != nil {
@@ -103,6 +110,13 @@ func (h *RoleHandler) Update(c *gin.Context) {
 			})
 			return
 		}
+		if errors.Is(err, service.ErrRoleIsAdmin) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"code":    403,
+				"message": err.Error(),
+			})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
 			"message": "failed to update role",
@@ -161,6 +175,13 @@ func (h *RoleHandler) Delete(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{
 				"code":    409,
 				"message": "该角色仍有用户使用，无法删除",
+			})
+			return
+		}
+		if errors.Is(err, service.ErrRoleIsAdmin) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"code":    403,
+				"message": err.Error(),
 			})
 			return
 		}

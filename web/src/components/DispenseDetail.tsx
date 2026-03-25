@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Modal, Button, Spin, message } from 'antd';
 import { PrinterOutlined, CheckOutlined, ArrowLeftOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import { getNotificationDetail, markDone as apiMarkDone } from '../api/prescriptionNotification';
 import type { DispenseDetail as DispenseDetailData, DispenseDetailItem } from '../api/prescriptionNotification';
 import useIsMobile from '../hooks/useIsMobile';
 import { useAuth } from '../store/auth';
+import { fmtTotal, chunkToRows } from '../utils/format';
 import DispensePrint from './DispensePrint';
 
 interface DispenseDetailProps {
@@ -28,10 +30,19 @@ const patentShelfStyle: React.CSSProperties = {
   background: '#f9f0ff', color: '#722ed1', border: '1px solid #d3adf7',
 };
 
+const herbColGroup = (
+  <colgroup><col style={{ width: '13%' }} /><col /><col style={{ width: '22%' }} /><col style={{ width: '13%' }} /></colgroup>
+);
+
+const patentColGroup = (
+  <colgroup><col style={{ width: '15%' }} /><col /><col style={{ width: '15%' }} /></colgroup>
+);
+
 /* ---------- component ---------- */
 
 export default function DispenseDetail({ notificationId, open, onClose, onDone }: DispenseDetailProps) {
   const isMobile = useIsMobile();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [data, setData] = useState<DispenseDetailData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -73,44 +84,42 @@ export default function DispenseDetail({ notificationId, open, onClose, onDone }
   const isPending = noti?.status === 'pending';
   const totalDoses = noti?.total_doses || 0;
 
-  /* Multi-column split */
-  const useHerbCols = herbs.length > 10;
-  const herbMid = Math.ceil(herbs.length / 2);
-  const herbCol1 = useHerbCols ? herbs.slice(0, herbMid) : herbs;
-  const herbCol2 = useHerbCols ? herbs.slice(herbMid) : [];
-
-  const usePatentCols = patents.length > 5;
-  const patentMid = Math.ceil(patents.length / 2);
-  const patentCol1 = usePatentCols ? patents.slice(0, patentMid) : patents;
-  const patentCol2 = usePatentCols ? patents.slice(patentMid) : [];
+  /* Chunked layout: herbs per 10, patents per 5 */
+  const herbRows = chunkToRows(herbs, 10);
+  const patentRowChunks = chunkToRows(patents, 5);
+  const isSingleHerb = herbs.length < 10;
+  const isSinglePatent = patents.length < 5;
 
   /* --- Desktop table renderers --- */
-  const renderHerbTable = (items: DispenseDetailItem[]) => (
-    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-      <thead>
-        <tr>
-          {['货架', '药物', '单付×总付', '总量'].map(h => (
-            <th key={h} style={{
-              background: '#f5f3ec', padding: '6px 8px', fontSize: 11,
-              fontWeight: 600, color: '#999', textAlign: h === '总量' ? 'right' : 'left',
-              borderBottom: '2px solid #e8e5d8', whiteSpace: 'nowrap',
-              paddingRight: h === '总量' ? 12 : 8,
-            }}>
-              {h}
-            </th>
-          ))}
-        </tr>
-      </thead>
+  const renderHerbTable = (items: DispenseDetailItem[], showHeader: boolean, tableWidth: string) => (
+    <table style={{ width: tableWidth, borderCollapse: 'collapse' }}>
+      {herbColGroup}
+      {showHeader && (
+        <thead>
+          <tr>
+            {['货架', '药物', '单付×总付', '总量'].map(h => (
+              <th key={h} style={{
+                background: '#f5f3ec', padding: '4px 10px', fontSize: 11,
+                fontWeight: 600, color: '#999',
+                textAlign: h === '总量' ? 'right' : 'left',
+                borderBottom: '2px solid #e8e5d8', whiteSpace: 'nowrap',
+              }}>
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+      )}
       <tbody>
         {items.map((item, idx) => {
           const dosageNum = parseFloat(item.dosage) || 0;
           const total = dosageNum * totalDoses;
           return (
             <tr key={idx} style={{ borderBottom: '1px solid #f5f3ec' }}>
-              <td style={{ padding: '5px 8px' }}>
+              <td style={{ padding: '4px 10px', whiteSpace: 'nowrap' }}>
                 <span style={shelfTagStyle}>{item.shelf_no || '--'}</span>
               </td>
-              <td style={{ padding: '5px 8px', fontSize: 13 }}>
+              <td style={{ padding: '4px 10px', fontSize: 13 }}>
                 {item.herb_name}
                 {item.notes && (
                   <span style={{
@@ -121,14 +130,14 @@ export default function DispenseDetail({ notificationId, open, onClose, onDone }
                   </span>
                 )}
               </td>
-              <td style={{ padding: '5px 8px', fontSize: 12, color: '#666', textAlign: 'center', whiteSpace: 'nowrap' }}>
+              <td style={{ padding: '4px 10px', fontSize: 12, color: '#666', whiteSpace: 'nowrap' }}>
                 {item.dosage}g<span style={{ color: '#999', margin: '0 1px' }}>×</span>{totalDoses}
               </td>
               <td style={{
-                padding: '5px 8px', paddingRight: 12, fontSize: 13,
+                padding: '4px 10px', fontSize: 13,
                 fontWeight: 700, color: '#52c41a', textAlign: 'right', whiteSpace: 'nowrap',
               }}>
-                {total}g
+                {fmtTotal(total)}g
               </td>
             </tr>
           );
@@ -137,31 +146,33 @@ export default function DispenseDetail({ notificationId, open, onClose, onDone }
     </table>
   );
 
-  const renderPatentTable = (items: DispenseDetailItem[]) => (
-    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-      <thead>
-        <tr>
-          {['货架', '药品', '数量'].map(h => (
-            <th key={h} style={{
-              background: '#f5f0ff', padding: '6px 8px', fontSize: 11,
-              fontWeight: 600, color: '#999', textAlign: h === '数量' ? 'right' : 'left',
-              borderBottom: '2px solid #e8d9f7', whiteSpace: 'nowrap',
-              paddingRight: h === '数量' ? 12 : 8,
-            }}>
-              {h}
-            </th>
-          ))}
-        </tr>
-      </thead>
+  const renderPatentTable = (items: DispenseDetailItem[], showHeader: boolean, tableWidth: string) => (
+    <table style={{ width: tableWidth, borderCollapse: 'collapse' }}>
+      {patentColGroup}
+      {showHeader && (
+        <thead>
+          <tr>
+            {['货架', '药品', '数量'].map(h => (
+              <th key={h} style={{
+                background: '#f5f0ff', padding: '4px 10px', fontSize: 11,
+                fontWeight: 600, color: '#999', textAlign: h === '数量' ? 'right' : 'left',
+                borderBottom: '2px solid #e8d9f7', whiteSpace: 'nowrap',
+              }}>
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+      )}
       <tbody>
         {items.map((item, idx) => (
           <tr key={idx} style={{ borderBottom: '1px solid #f5f3ec' }}>
-            <td style={{ padding: '5px 8px' }}>
+            <td style={{ padding: '4px 10px', whiteSpace: 'nowrap' }}>
               <span style={patentShelfStyle}>{item.shelf_no || '--'}</span>
             </td>
-            <td style={{ padding: '5px 8px', fontSize: 13 }}>{item.herb_name}</td>
+            <td style={{ padding: '4px 10px', fontSize: 13 }}>{item.herb_name}</td>
             <td style={{
-              padding: '5px 8px', paddingRight: 12, fontSize: 14,
+              padding: '4px 10px', fontSize: 14,
               fontWeight: 800, color: '#722ed1', textAlign: 'right',
             }}>
               ×{item.dosage}
@@ -171,6 +182,45 @@ export default function DispenseDetail({ notificationId, open, onClose, onDone }
       </tbody>
     </table>
   );
+
+  /* --- Desktop herb/patent section renderers --- */
+  const renderDesktopHerbs = () => {
+    if (isSingleHerb) {
+      return renderHerbTable(herbs, true, '50%');
+    }
+    return herbRows.map((rowCols, rowIdx) => (
+      <div key={rowIdx} style={{
+        display: 'flex', gap: 0,
+        borderTop: rowIdx > 0 ? '2px dashed #e8e5d8' : undefined,
+      }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {renderHerbTable(rowCols[0], rowIdx === 0, '100%')}
+        </div>
+        <div style={{ flex: 1, minWidth: 0, borderLeft: rowCols[1] ? '2px solid #e8e5d8' : undefined }}>
+          {rowCols[1] ? renderHerbTable(rowCols[1], rowIdx === 0, '100%') : null}
+        </div>
+      </div>
+    ));
+  };
+
+  const renderDesktopPatents = () => {
+    if (isSinglePatent) {
+      return renderPatentTable(patents, true, '50%');
+    }
+    return patentRowChunks.map((rowCols, rowIdx) => (
+      <div key={rowIdx} style={{
+        display: 'flex', gap: 0,
+        borderTop: rowIdx > 0 ? '2px dashed #e8e5d8' : undefined,
+      }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {renderPatentTable(rowCols[0], rowIdx === 0, '100%')}
+        </div>
+        <div style={{ flex: 1, minWidth: 0, borderLeft: rowCols[1] ? '2px solid #e8e5d8' : undefined }}>
+          {rowCols[1] ? renderPatentTable(rowCols[1], rowIdx === 0, '100%') : null}
+        </div>
+      </div>
+    ));
+  };
 
   /* --- Mobile compact row renderers --- */
   const renderMobileHerbRow = (item: DispenseDetailItem, idx: number) => {
@@ -194,7 +244,7 @@ export default function DispenseDetail({ notificationId, open, onClose, onDone }
           {item.dosage}g×{totalDoses}
         </span>
         <span style={{ fontWeight: 700, color: '#52c41a', fontSize: 11, minWidth: 30, textAlign: 'right' }}>
-          {total}g
+          {fmtTotal(total)}g
         </span>
       </div>
     );
@@ -214,6 +264,14 @@ export default function DispenseDetail({ notificationId, open, onClose, onDone }
       </span>
     </div>
   );
+
+  /* Mobile uses simple mid-split for compact display */
+  const herbMid = Math.ceil(herbs.length / 2);
+  const herbMCol1 = herbs.length >= 10 ? herbs.slice(0, herbMid) : herbs;
+  const herbMCol2 = herbs.length >= 10 ? herbs.slice(herbMid) : [];
+  const patentMid = Math.ceil(patents.length / 2);
+  const patMCol1 = patents.length >= 5 ? patents.slice(0, patentMid) : patents;
+  const patMCol2 = patents.length >= 5 ? patents.slice(patentMid) : [];
 
   /* --- time display --- */
   const formatDateTime = (iso?: string) => {
@@ -319,28 +377,19 @@ export default function DispenseDetail({ notificationId, open, onClose, onDone }
                 </div>
 
                 {isMobile ? (
-                  /* Mobile: compact rows, two columns, no headers */
                   <div style={{ display: 'flex', gap: 0 }}>
-                    <div style={{ flex: 1, borderRight: useHerbCols ? '1px solid #e8e5d8' : 'none' }}>
-                      {herbCol1.map((item, idx) => renderMobileHerbRow(item, idx))}
+                    <div style={{ flex: 1, borderRight: herbMCol2.length > 0 ? '1px solid #e8e5d8' : 'none' }}>
+                      {herbMCol1.map((item, idx) => renderMobileHerbRow(item, idx))}
                     </div>
-                    {useHerbCols && (
+                    {herbMCol2.length > 0 && (
                       <div style={{ flex: 1 }}>
-                        {herbCol2.map((item, idx) => renderMobileHerbRow(item, idx))}
+                        {herbMCol2.map((item, idx) => renderMobileHerbRow(item, idx))}
                       </div>
                     )}
                   </div>
                 ) : (
-                  /* Desktop: table with headers, two columns */
-                  <div style={{ display: 'flex', gap: 0, width: '100%' }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      {renderHerbTable(herbCol1)}
-                    </div>
-                    {useHerbCols && (
-                      <div style={{ flex: 1, minWidth: 0, borderLeft: '2px solid #e8e5d8' }}>
-                        {renderHerbTable(herbCol2)}
-                      </div>
-                    )}
+                  <div style={{ padding: '0 20px' }}>
+                    {renderDesktopHerbs()}
                   </div>
                 )}
 
@@ -375,25 +424,18 @@ export default function DispenseDetail({ notificationId, open, onClose, onDone }
 
                 {isMobile ? (
                   <div style={{ display: 'flex', gap: 0 }}>
-                    <div style={{ flex: 1, borderRight: usePatentCols ? '1px solid #e8e5d8' : 'none' }}>
-                      {patentCol1.map((item, idx) => renderMobilePatentRow(item, idx))}
+                    <div style={{ flex: 1, borderRight: patMCol2.length > 0 ? '1px solid #e8e5d8' : 'none' }}>
+                      {patMCol1.map((item, idx) => renderMobilePatentRow(item, idx))}
                     </div>
-                    {usePatentCols && (
+                    {patMCol2.length > 0 && (
                       <div style={{ flex: 1 }}>
-                        {patentCol2.map((item, idx) => renderMobilePatentRow(item, idx))}
+                        {patMCol2.map((item, idx) => renderMobilePatentRow(item, idx))}
                       </div>
                     )}
                   </div>
                 ) : (
-                  <div style={{ display: 'flex', gap: 0, width: '100%' }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      {renderPatentTable(patentCol1)}
-                    </div>
-                    {usePatentCols && (
-                      <div style={{ flex: 1, minWidth: 0, borderLeft: '2px solid #e8e5d8' }}>
-                        {renderPatentTable(patentCol2)}
-                      </div>
-                    )}
+                  <div style={{ padding: '0 20px' }}>
+                    {renderDesktopPatents()}
                   </div>
                 )}
 
@@ -432,7 +474,21 @@ export default function DispenseDetail({ notificationId, open, onClose, onDone }
               borderTop: '1px solid #e8e5d8',
             }}>
               <span>核对人：<b style={{ color: '#333' }}>{isPending ? (user?.real_name || user?.username || '--') : (noti?.done_by_name || '--')}</b></span>
-              <span>处方号：RX-{noti?.id}</span>
+              <span
+                onClick={() => {
+                  if (noti?.record_id) {
+                    onClose();
+                    navigate(`/records/${noti.record_id}?highlight=${noti.prescription_id}`);
+                  }
+                }}
+                style={{
+                  cursor: noti?.record_id ? 'pointer' : 'default',
+                  color: noti?.record_id ? '#1890ff' : '#999',
+                  textDecoration: noti?.record_id ? 'underline' : 'none',
+                }}
+              >
+                处方号：RX-{noti?.id}
+              </span>
             </div>
 
             {/* Footer */}

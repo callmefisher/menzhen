@@ -214,56 +214,6 @@ export default function AppLayout() {
       label: '病历列表',
     });
 
-    // TCM menu group - accessible to all authenticated users
-    const tcmChildren: MenuItem[] = [
-      {
-        key: '/herbs',
-        icon: <ExperimentOutlined />,
-        label: '中药查询',
-      },
-      {
-        key: '/formulas',
-        icon: <ReadOutlined />,
-        label: '方剂查询',
-      },
-      {
-        key: '/meridians',
-        icon: <ApartmentOutlined />,
-        label: '经络穴位',
-      },
-      {
-        key: '/pulses',
-        icon: <HeartOutlined />,
-        label: '脉象',
-      },
-      {
-        key: '/wuyun',
-        icon: <CloudOutlined />,
-        label: '五运六气',
-      },
-      {
-        key: '/clinical-experience',
-        icon: <BookOutlined />,
-        label: '临床经验集',
-      },
-      {
-        key: '/solar-terms',
-        icon: <CalendarOutlined />,
-        label: '节气',
-      },
-      {
-        key: '/yijing',
-        icon: <FileTextOutlined />,
-        label: '易理',
-      },
-    ];
-    items.push({
-      key: '/tcm',
-      icon: <ExperimentOutlined />,
-      label: '中医药',
-      children: tcmChildren,
-    });
-
     const badgeStyle: React.CSSProperties = {
       background: '#ff4d4f', color: '#fff', fontSize: 11,
       lineHeight: '16px', minWidth: 16, height: 16,
@@ -324,6 +274,56 @@ export default function AppLayout() {
         ],
       });
     }
+
+    // TCM menu group - accessible to all authenticated users
+    const tcmChildren: MenuItem[] = [
+      {
+        key: '/herbs',
+        icon: <ExperimentOutlined />,
+        label: '中药查询',
+      },
+      {
+        key: '/formulas',
+        icon: <ReadOutlined />,
+        label: '方剂查询',
+      },
+      {
+        key: '/meridians',
+        icon: <ApartmentOutlined />,
+        label: '经络穴位',
+      },
+      {
+        key: '/pulses',
+        icon: <HeartOutlined />,
+        label: '脉象',
+      },
+      {
+        key: '/wuyun',
+        icon: <CloudOutlined />,
+        label: '五运六气',
+      },
+      {
+        key: '/clinical-experience',
+        icon: <BookOutlined />,
+        label: '临床经验集',
+      },
+      {
+        key: '/solar-terms',
+        icon: <CalendarOutlined />,
+        label: '节气',
+      },
+      {
+        key: '/yijing',
+        icon: <FileTextOutlined />,
+        label: '易理',
+      },
+    ];
+    items.push({
+      key: '/tcm',
+      icon: <ExperimentOutlined />,
+      label: '中医药',
+      children: tcmChildren,
+    });
 
     const canManageUsers = hasPermission('user:manage') || hasPermission('tenant:user:manage');
     const canManageRoles = hasPermission('role:manage') || hasPermission('tenant:role:manage');

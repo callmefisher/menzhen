@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"github.com/callmefisher/menzhen/server/model"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -127,22 +128,31 @@ func (s *TenantAdminService) UpdateUser(tenantID, userID uint64, req *TenantUpda
 	return &user, nil
 }
 
-// DisableUser sets a user's status to 0 (disabled).
+// DeleteUser permanently removes a user from the database within the tenant scope.
 // Returns ErrUserNotFound if the user does not belong to this tenant.
 // Returns ErrProtectedUser if the target user has user:manage permission.
-func (s *TenantAdminService) DisableUser(tenantID, userID uint64) error {
+func (s *TenantAdminService) DeleteUser(tenantID, userID uint64) (*model.User, error) {
 	if isAdminUser(s.db, userID) {
-		return ErrProtectedUser
+		return nil, ErrProtectedUser
 	}
 	var user model.User
 	if err := s.db.Where("tenant_id = ? AND id = ?", tenantID, userID).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrUserNotFound
+			return nil, ErrUserNotFound
 		}
-		return err
+		return nil, err
 	}
 
-	return s.db.Model(&user).Update("status", 0).Error
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&user).Association("Roles").Clear(); err != nil {
+			return err
+		}
+		return tx.Delete(&user).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
 }
 
 // AssignRoles replaces the roles for a user within the same tenant.
@@ -232,6 +242,11 @@ func (s *TenantAdminService) UpdateRole(tenantID, roleID uint64, req *TenantUpda
 		return nil, err
 	}
 
+	// Tenant admin cannot modify the "管理员" role.
+	if role.Name == AdminRoleName {
+		return nil, ErrRoleIsAdmin
+	}
+
 	updates := make(map[string]interface{})
 	if req.Name != nil {
 		updates["name"] = *req.Name
@@ -278,7 +293,36 @@ func (s *TenantAdminService) ListTenantPermissions() ([]model.Permission, error)
 }
 
 // DeleteRole deletes a role if it belongs to the given tenant and is not assigned to any users.
+// Tenant admin cannot delete the "管理员" role.
 func (s *TenantAdminService) DeleteRole(tenantID, roleID uint64) error {
+	// Check if it's the admin role.
+	var role model.Role
+	if err := s.db.Where("tenant_id = ? AND id = ?", tenantID, roleID).First(&role).Error; err == nil {
+		if role.Name == AdminRoleName {
+			return ErrRoleIsAdmin
+		}
+	}
 	svc := NewRoleService(s.db)
 	return svc.DeleteRole(tenantID, roleID)
+}
+
+// ResetPassword sets a new password for a user within the given tenant.
+func (s *TenantAdminService) ResetPassword(tenantID, userID uint64, newPassword string) error {
+	var user model.User
+	if err := s.db.Where("tenant_id = ? AND id = ?", tenantID, userID).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrUserNotFound
+		}
+		return err
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+
+	return s.db.Model(&user).Updates(map[string]interface{}{
+		"password_hash": string(hash),
+		"token_version": gorm.Expr("token_version + 1"),
+	}).Error
 }

@@ -1,0 +1,261 @@
+<h2>排队叫号 — 速度控制 + 取号入队</h2>
+<p class="subtitle">滑块调节滚动速度，取号后新患者自动入队并高亮闪烁</p>
+
+<div class="cards">
+  <div class="card" data-choice="final" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div id="app" style="font-size:12px;padding:0;background:#f5f5f5;border-radius:8px;overflow:hidden">
+        <div style="display:flex;height:720px">
+          <!-- Sidebar -->
+          <div style="width:150px;background:#1A2E1A;flex-shrink:0;padding:12px 0;font-size:11px">
+            <div style="padding:8px 14px;color:#95DE64;font-weight:700;font-size:12px;margin-bottom:8px">🏥 门诊管理系统</div>
+            <div style="padding:6px 14px;color:#ffffffa6">👤 患者管理</div>
+            <div style="padding:6px 14px;color:#ffffffa6">📋 病历列表</div>
+            <div style="padding:6px 14px;color:#fff;background:#52c41a20;border-right:3px solid #52c41a;font-weight:600">📢 排队叫号 <span id="sideBadge" style="background:#ff4d4f;color:#fff;font-size:9px;padding:0 5px;border-radius:8px;margin-left:2px">58</span></div>
+            <div style="padding:6px 14px;color:#ffffffa6">🌿 中医药 ▾</div>
+            <div style="padding:6px 14px;color:#ffffffa6">📦 运营 ▾</div>
+            <div style="padding:6px 14px;color:#ffffffa6">⚙️ 系统设置 ▾</div>
+          </div>
+          <!-- Content -->
+          <div style="flex:1;padding:14px;background:#FFFEF9;display:flex;flex-direction:column;overflow:hidden">
+            <!-- Header -->
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;flex-shrink:0">
+              <span style="font-size:15px;font-weight:700">排队叫号</span>
+              <div id="statWait" style="background:linear-gradient(135deg,#e6f7ff,#f0f5ff);padding:4px 14px;border-radius:6px;border:1px solid #d6e4ff;font-size:11px"><b style="color:#1677ff">58</b> <span style="color:#4096ff">候诊</span></div>
+              <div id="statSee" style="background:linear-gradient(135deg,#f6ffed,#fcffe6);padding:4px 14px;border-radius:6px;border:1px solid #d9f7be;font-size:11px"><b style="color:#52c41a">2</b> <span style="color:#73d13d">就诊</span></div>
+              <div style="background:linear-gradient(135deg,#f9f9f9,#f5f5f5);padding:4px 14px;border-radius:6px;border:1px solid #e8e8e8;font-size:11px"><b style="color:#8c8c8c">4</b> <span style="color:#bfbfbf">已完成</span></div>
+              <div style="margin-left:auto;background:#fff;border:1.5px solid #ff4d4f;color:#ff4d4f;padding:3px 12px;border-radius:6px;font-size:10px;font-weight:600;cursor:pointer">🗑 一键清空</div>
+            </div>
+
+            <!-- Speed Control -->
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-shrink:0">
+              <span style="font-size:11px;color:#999">滚动速度</span>
+              <input type="range" id="speedSlider" min="0" max="100" value="0" style="width:120px;accent-color:#52c41a;height:4px">
+              <span id="speedLabel" style="font-size:11px;color:#52c41a;font-weight:600;min-width:28px">慢</span>
+            </div>
+
+            <!-- Doctor Cards -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;flex:1;min-height:0">
+              <!-- 张明德 -->
+              <div style="background:#fff;border-radius:10px;border:1px solid #f0f0f0;box-shadow:0 1px 4px rgba(0,0,0,.04);overflow:hidden;display:flex;flex-direction:column">
+                <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid #f5f5f5;background:linear-gradient(90deg,#f6ffed 0%,#fff 100%);flex-shrink:0">
+                  <div style="width:28px;height:28px;background:linear-gradient(135deg,#52c41a,#389e0d);color:#fff;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">张</div>
+                  <div><div style="font-weight:700;font-size:12px">张明德</div><div style="font-size:9px;color:#999">中医内科 · 诊室1</div></div>
+                  <div id="badge1" style="margin-left:auto;background:#52c41a;color:#fff;font-size:9px;padding:2px 8px;border-radius:10px;font-weight:600">等候 29</div>
+                </div>
+                <div id="scroll1" class="queue-scroll" style="flex:1;overflow-y:auto;padding:6px 8px;min-height:0"></div>
+              </div>
+              <!-- 李秀芳 -->
+              <div style="background:#fff;border-radius:10px;border:1px solid #f0f0f0;box-shadow:0 1px 4px rgba(0,0,0,.04);overflow:hidden;display:flex;flex-direction:column">
+                <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid #f5f5f5;background:linear-gradient(90deg,#fff7e6 0%,#fff 100%);flex-shrink:0">
+                  <div style="width:28px;height:28px;background:linear-gradient(135deg,#faad14,#d48806);color:#fff;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">李</div>
+                  <div><div style="font-weight:700;font-size:12px">李秀芳</div><div style="font-size:9px;color:#999">针灸推拿 · 诊室2</div></div>
+                  <div id="badge2" style="margin-left:auto;background:#faad14;color:#fff;font-size:9px;padding:2px 8px;border-radius:10px;font-weight:600">等候 29</div>
+                </div>
+                <div id="scroll2" class="queue-scroll" style="flex:1;overflow-y:auto;padding:6px 8px;min-height:0"></div>
+              </div>
+            </div>
+
+            <!-- Take Number Bar -->
+            <div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:10px;flex-shrink:0">
+              <span style="font-size:12px;font-weight:600;color:#555">现场取号</span>
+              <input id="nameInput" style="border:1px solid #d9d9d9;padding:5px 10px;border-radius:6px;font-size:12px;width:100px;outline:none" placeholder="患者姓名">
+              <select id="docSelect" style="border:1px solid #d9d9d9;padding:5px 8px;border-radius:6px;font-size:12px;background:#fff;outline:none;width:90px"><option value="1">张明德</option><option value="2">李秀芳</option></select>
+              <div id="takeBtn" onclick="doTakeNumber()" style="background:linear-gradient(135deg,#73d13d,#52c41a);color:#fff;padding:7px 20px;border-radius:8px;font-size:14px;font-weight:800;cursor:pointer;box-shadow:0 2px 8px rgba(82,196,26,.3);transition:transform .1s">📋 取号</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Toast -->
+      <div id="toast" style="position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:999;background:#fff;border-radius:8px;padding:10px 20px;box-shadow:0 6px 20px rgba(0,0,0,.12);display:none;font-size:13px;align-items:center;gap:8px;border-left:4px solid #52c41a">
+        <span style="color:#52c41a;font-weight:700">✓</span>
+        <span id="toastText"></span>
+      </div>
+
+      <style>
+        .queue-scroll::-webkit-scrollbar{width:4px}
+        .queue-scroll::-webkit-scrollbar-thumb{background:#e0e0e0;border-radius:2px}
+        .queue-scroll::-webkit-scrollbar-thumb:hover{background:#bbb}
+        .queue-scroll::-webkit-scrollbar-track{background:transparent}
+        .q-row{position:relative;cursor:default}
+        .q-row:hover .q-tip{opacity:1;transform:translateY(0)}
+        .q-tip{position:absolute;right:8px;top:50%;transform:translateY(4px);margin-top:-11px;background:#333;color:#fff;font-size:10px;padding:3px 10px;border-radius:4px;white-space:nowrap;opacity:0;transition:all .2s;pointer-events:none;z-index:5}
+        @keyframes newRow{
+          0%{background:#fffbe6;transform:translateX(20px);opacity:0}
+          30%{transform:translateX(0);opacity:1}
+          50%{background:#fffbe6}
+          100%{background:#f0f7ff}
+        }
+        .new-item{animation:newRow 1.5s ease-out}
+        @keyframes orangePulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(250,140,22,.4)}50%{opacity:.85;box-shadow:0 0 0 4px rgba(250,140,22,0)}}
+        @keyframes flashBadge{
+          0%,100%{transform:scale(1)}
+          50%{transform:scale(1.3)}
+        }
+        .flash-badge{animation:flashBadge .4s ease 2}
+      </style>
+
+      <script>
+        const surnames=['刘','赵','孙','周','钱','吴','郑','王','黄','林','陈','何','张','罗','马','高','谢','邓','杨','曹','唐','韩','冯','许','沈','彭','宋','程','丁','魏'];
+        const given=['小明','美兰','志强','雪梅','大海','丽华','国栋','秋月','建民','美玲','大勇','晓燕','玉珍','小红','文静','志远','国华','文杰','春花','德明','婷婷','浩然','淑芬','伟强','翠花','明辉','秀英','建平','慧芳','立新'];
+        function genName(i){return surnames[i%surnames.length]+given[i%given.length]}
+        function pad2(n){return String(n).padStart(2,'0')}
+        function genTime(base,i){const h=Math.floor(base/60)+Math.floor(i*15/60);const m=(base%60+i*15)%60;return pad2(h)+':'+pad2(m)}
+        function genArrival(bk,off){const[h,m]=bk.split(':').map(Number);const t=h*60+m+off;return pad2(Math.floor(t/60))+':'+pad2(t%60)}
+
+        let nextSeq=61; // next sequence number
+        let q1Count=29, q2Count=29; // waiting counts
+
+        function makeRow(seq,name,booked,arrival,isSee,isNew,pos){
+          const isNext=!isSee&&pos===0;
+          const cls='q-row'+(isNew?' new-item':'');
+          const tip=isSee?'当前就诊':isNext?'下一位就诊':`前方还有 ${pos} 位`;
+          if(isSee){
+            return `<div class="${cls}" style="display:flex;align-items:center;gap:10px;padding:9px 10px;background:#fffff0;border-left:3.5px solid #52c41a;border-radius:0 8px 8px 0;margin-bottom:5px">
+              <div style="width:34px;height:34px;background:linear-gradient(135deg,#52c41a,#389e0d);color:#fff;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0">${pad2(seq)}</div>
+              <div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:5px"><span style="font-weight:700;font-size:14px">${name}</span><span style="font-size:10px;color:#52c41a;border:1.5px solid #b7eb8f;background:#f6ffed;padding:0 6px;border-radius:3px;font-weight:600">就诊中</span></div><div style="font-size:10px;color:#999;margin-top:1px">约${booked} · 到${arrival}</div></div>
+              <div class="q-tip">${tip}</div>
+            </div>`;
+          }
+          if(isNext){
+            return `<div class="${cls}" style="display:flex;align-items:center;gap:10px;padding:9px 10px;background:#fff7e6;border-left:3.5px solid #fa8c16;border-radius:0 8px 8px 0;margin-bottom:5px">
+              <div style="width:34px;height:34px;background:linear-gradient(135deg,#ffa940,#fa8c16);color:#fff;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0">${pad2(seq)}</div>
+              <div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:5px"><span style="font-weight:700;font-size:14px">${name}</span><span style="font-size:10px;color:#fa8c16;border:1.5px solid #ffd591;background:#fff7e6;padding:0 6px;border-radius:3px;font-weight:600;animation:orangePulse 2s infinite">请准备</span></div><div style="font-size:10px;color:#999;margin-top:1px">约${booked} · 到${arrival}</div></div>
+              <div class="q-tip">${tip}</div>
+            </div>`;
+          }
+          return `<div class="${cls}" style="display:flex;align-items:center;gap:10px;padding:9px 10px;background:#f0f7ff;border-left:3.5px solid #1677ff;border-radius:0 8px 8px 0;margin-bottom:5px">
+            <div style="width:34px;height:34px;background:linear-gradient(135deg,#4096ff,#1677ff);color:#fff;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0">${pad2(seq)}</div>
+            <div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:5px"><span style="font-weight:700;font-size:14px">${name}</span><span style="font-size:10px;color:#52c41a;border:1.5px solid #b7eb8f;background:#f6ffed;padding:0 6px;border-radius:3px;font-weight:600">候诊中</span></div><div style="font-size:10px;color:#999;margin-top:1px">约${booked} · 到${arrival}</div></div>
+            <div class="q-tip">${tip}</div>
+          </div>`;
+        }
+
+        function renderQueue(cid,start,count){
+          const el=document.getElementById(cid);
+          let h='';
+          for(let i=0;i<count;i++){
+            h+=makeRow(start+i,genName(start+i-1),genTime(8*60+30,i),genArrival(genTime(8*60+30,i),-Math.floor(Math.random()*10+1)),i===0,false,i===0?0:i-1);
+          }
+          el.innerHTML=h;
+        }
+        renderQueue('scroll1',1,30);
+        renderQueue('scroll2',31,30);
+
+        // === Speed Control ===
+        let scrollInterval=50;
+        let globalPaused=false;
+        const slider=document.getElementById('speedSlider');
+        const speedLabel=document.getElementById('speedLabel');
+
+        const speedMap=[
+          {max:0,label:'停',interval:0},
+          {max:15,label:'极慢',interval:150},
+          {max:35,label:'慢',interval:80},
+          {max:55,label:'中',interval:50},
+          {max:75,label:'快',interval:30},
+          {max:100,label:'极快',interval:15},
+        ];
+
+        slider.addEventListener('input',()=>{
+          const v=+slider.value;
+          for(const s of speedMap){
+            if(v<=s.max){scrollInterval=s.interval;speedLabel.textContent=s.label;break;}
+          }
+          if(v===0){globalPaused=true}
+          else if(globalPaused&&v>0){globalPaused=false}
+        });
+        slider.dispatchEvent(new Event('input'));
+
+        // === Auto Scroll ===
+        function autoScroll(id){
+          const el=document.getElementById(id);
+          let hovered=false;
+          el.addEventListener('mouseenter',()=>hovered=true);
+          el.addEventListener('mouseleave',()=>hovered=false);
+          let lastTick=0;
+          function tick(){
+            const now=performance.now();
+            if(!hovered&&!globalPaused&&scrollInterval>0&&now-lastTick>=scrollInterval){
+              lastTick=now;
+              el.scrollTop+=1;
+              if(el.scrollTop>=el.scrollHeight-el.clientHeight-1){
+                globalPaused=true;
+                setTimeout(()=>{el.scrollTop=0;globalPaused=false},2000);
+              }
+            }
+            requestAnimationFrame(tick);
+          }
+          requestAnimationFrame(tick);
+        }
+        autoScroll('scroll1');
+        autoScroll('scroll2');
+
+        // === Take Number ===
+        function showToast(msg){
+          const t=document.getElementById('toast');
+          document.getElementById('toastText').textContent=msg;
+          t.style.display='inline-flex';
+          clearTimeout(t._t);
+          t._t=setTimeout(()=>t.style.display='none',2500);
+        }
+
+        function doTakeNumber(){
+          const nameEl=document.getElementById('nameInput');
+          const docEl=document.getElementById('docSelect');
+          const name=nameEl.value.trim();
+          if(!name){nameEl.style.borderColor='#ff4d4f';nameEl.focus();setTimeout(()=>nameEl.style.borderColor='#d9d9d9',1500);return}
+
+          const docId=docEl.value; // "1" or "2"
+          const scrollEl=document.getElementById(docId==='1'?'scroll1':'scroll2');
+          const badgeEl=document.getElementById(docId==='1'?'badge1':'badge2');
+          const docName=docId==='1'?'张明德':'李秀芳';
+          const seq=nextSeq++;
+          const now=new Date();
+          const timeStr=pad2(now.getHours())+':'+pad2(now.getMinutes());
+
+          // Create new row HTML — position = current waiting count (before increment)
+          const pos=docId==='1'?q1Count:q2Count;
+          const newHtml=makeRow(seq,name,timeStr,timeStr,false,true,pos);
+
+          // Append to queue
+          scrollEl.insertAdjacentHTML('beforeend',newHtml);
+
+          // Scroll to bottom to show new entry
+          scrollEl.scrollTo({top:scrollEl.scrollHeight,behavior:'smooth'});
+
+          // Update badge
+          if(docId==='1')q1Count++;else q2Count++;
+          badgeEl.textContent='等候 '+(docId==='1'?q1Count:q2Count);
+          badgeEl.classList.remove('flash-badge');
+          void badgeEl.offsetWidth; // force reflow
+          badgeEl.classList.add('flash-badge');
+
+          // Update header stats
+          const totalWait=q1Count+q2Count;
+          document.getElementById('statWait').innerHTML=`<b style="color:#1677ff">${totalWait}</b> <span style="color:#4096ff">候诊</span>`;
+          document.getElementById('sideBadge').textContent=totalWait;
+
+          // Button feedback
+          const btn=document.getElementById('takeBtn');
+          btn.style.transform='scale(0.95)';
+          setTimeout(()=>btn.style.transform='',150);
+
+          // Toast
+          showToast(`${name} 取号成功 → ${pad2(seq)}号 · ${docName}`);
+
+          // Clear input
+          nameEl.value='';
+        }
+
+        // Enter key to take number
+        document.getElementById('nameInput').addEventListener('keydown',e=>{if(e.key==='Enter')doTakeNumber()});
+      </script>
+    </div>
+    <div class="card-body">
+      <h3>速度控制 + 取号入队</h3>
+      <p>拖动滑块调整滚动速度（停/极慢/慢/中/快/极快），暂停按钮。输入姓名点取号后：新患者滑入队尾 + 高亮动画 + 角标弹跳 + toast提示。</p>
+    </div>
+  </div>
+</div>

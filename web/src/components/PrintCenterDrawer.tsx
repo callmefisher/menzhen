@@ -366,9 +366,11 @@ export default function PrintCenterDrawer({
       body += buildBillingHtml(billingDetail, consultationFee, actualPaid, patientName, patientAge, doctorName, timeStr, clinicName);
     }
     if (isMobile) {
+      /* Remove any stale center print portals */
+      document.querySelectorAll('.center-print-portal').forEach(el => el.remove());
       /* Mobile: inject DOM directly + @media print (no React timing issues) */
       const div = document.createElement('div');
-      div.className = 'print-portal';
+      div.className = 'center-print-portal';
       div.innerHTML = `<style>${PRINT_STYLES}</style>${body}`;
       document.body.appendChild(div);
       setTimeout(() => {
