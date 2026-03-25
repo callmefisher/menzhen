@@ -153,7 +153,7 @@ describe('UserList', () => {
     });
 
     // doctor1 (non-protected) should have reset password and delete buttons
-    const resetBtns = screen.getAllByText('重置密码');
+    const resetBtns = screen.getAllByText('密码');
     expect(resetBtns.length).toBeGreaterThan(0);
 
     const deleteBtns = screen.getAllByText('删除');
