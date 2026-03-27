@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-03-25（处方调配通知、租户级完整用户/角色管理、无障碍大字模式、打印中心、备份恢复 UI）
+> 最后更新：2026-03-27（排队叫号系统优化、页面可见性检测优化、移动端叫号通知固定定位）
 
 ---
 
@@ -159,6 +159,8 @@ menzhen/
 │       │   ├── AccessibilityFab.tsx # 无障碍浮动按钮
 │       │   ├── AccessibilitySettingsPanel.tsx # 无障碍模式设置面板
 │       │   ├── AccessibilityToggle.tsx # 无障碍模式切换
+│       │   ├── QueueStrip.tsx         # 排队条（患者列表页顶部，显示当前医生队列：等候池+候诊chips+下一位+就诊中，最多显示8个候诊，WebSocket实时更新）
+│       │   ├── CallOverlay.tsx        # 叫号通知弹窗（桌面端absolute定位，移动端fixed定位固定屏幕顶部，15秒自动关闭+进度条）
 │       │   └── __tests__/           # 组件测试
 │       ├── pages/
 │       │   ├── Login.tsx            # 登录页路由入口
@@ -219,6 +221,8 @@ menzhen/
 │       │   │   └── InventoryAlert.tsx # 库存预警（前端定时扫描，屏蔽/全局阈值配置，存localStorage，显示货架号便于定位补货）
 │       │   ├── followup/              # 回访管理
 │       │   │   └── FollowUpList.tsx  # 回访列表（统计卡片+搜索+Table/Card响应式，CRUD Modal，含康复标签）
+│       │   ├── queue/                 # 排队叫号
+│       │   │   └── QueueDashboard.tsx # 叫号大屏（医生卡片网格+队列滚动+取号+叫号+完成+WebSocket实时更新+页面可见性检测暂停滚动+移动端叫号通知fixed定位）
 │       │   ├── statistics/            # 统计仪表盘
 │       │   │   ├── StatsDashboard.tsx # 综合仪表盘（时间选择+渐变汇总卡片+ECharts双轴图/堆叠图/分组图，响应式布局）
 │       │   │   └── components/        # SummaryCards（4卡片含治愈率）/RevenueTrendChart/RevenueBreakdownChart/PatientChart

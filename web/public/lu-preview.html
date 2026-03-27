@@ -241,7 +241,7 @@ const PATHS = {
     [-0.612, 0.996, 0.049],  // 24 LU11 少商
   ],
   male: [
-    [-0.138, 1.296, 0.089],  // 0  LU1 中府
+    [-0.138, 1.296, 0.089],  // 0  LU1 中府  ← 已校准，重新标注后替换
     [-0.141, 1.33, 0.075],   // 1  LU2 云门
     [-0.178, 1.312, 0.071],  // 2
     [-0.193, 1.299, 0.069],  // 3
@@ -505,7 +505,12 @@ function buildBVH() {
   geo.setAttribute('position', new THREE.Float32BufferAttribute(allPos, 3));
   geo.setIndex(allIdx);
   geo.computeVertexNormals();
-  mergedBVH = { geometry: geo, bvh: new MeshBVH(geo) };
+  // 与生产代码 surfaceProjection.ts 保持一致：检测是否需要 Y↔Z 互换
+  const bbox = new THREE.Box3().setFromBufferAttribute(geo.getAttribute('position'));
+  const yRange = bbox.max.y - bbox.min.y;
+  const zRange = Math.abs(bbox.max.z - bbox.min.z);
+  const needSwapYZ = zRange > 1.0 && yRange < 0.5;
+  mergedBVH = { geometry: geo, bvh: new MeshBVH(geo), needSwapYZ };
 }
 
 /* ============================================================
@@ -513,12 +518,19 @@ function buildBVH() {
    ============================================================ */
 function projectSingle(pt, offset) {
   if (!mergedBVH) return pt;
-  const q = new THREE.Vector3(pt[0], pt[1], pt[2]);
+  const { bvh, geometry, needSwapYZ } = mergedBVH;
+  // 与生产代码一致：needSwapYZ 时转换坐标轴
+  let q;
+  if (needSwapYZ) {
+    q = new THREE.Vector3(pt[0], pt[2], -pt[1]);
+  } else {
+    q = new THREE.Vector3(pt[0], pt[1], pt[2]);
+  }
   const target = { point: new THREE.Vector3(), distance: Infinity, faceIndex: 0 };
-  mergedBVH.bvh.closestPointToPoint(q, target);
+  bvh.closestPointToPoint(q, target);
   if (!target.point || target.distance === Infinity) return pt;
   const sp = target.point.clone();
-  const geo = mergedBVH.geometry;
+  const geo = geometry;
   const idxAttr = geo.index, posAttr = geo.getAttribute('position'), normalAttr = geo.getAttribute('normal');
   let normal;
   if (idxAttr && normalAttr && target.faceIndex >= 0) {
@@ -541,6 +553,10 @@ function projectSingle(pt, offset) {
   if (normal.lengthSq() < 0.01) normal = q.clone().sub(sp).normalize();
   if (normal.lengthSq() < 0.0001) normal.set(0,1,0);
   const proj = sp.add(normal.multiplyScalar(offset));
+  // 与生产代码一致：转回渲染坐标系
+  if (needSwapYZ) {
+    return [r3(proj.x), r3(-proj.z), r3(proj.y)];
+  }
   return [r3(proj.x), r3(proj.y), r3(proj.z)];
 }
 

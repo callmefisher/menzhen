@@ -27,20 +27,23 @@ func today() string {
 }
 
 // NextSeq atomically increments and returns the sequence number for today.
-// Uses LAST_INSERT_ID() to avoid TOCTOU race conditions — each connection
-// gets its own LAST_INSERT_ID value, so concurrent calls never collide.
+// Uses MySQL's LAST_INSERT_ID() mechanism to ensure atomic increment.
 func (s *QueueService) NextSeq(tenantID uint) (int, error) {
 	date := today()
-	err := s.DB.Exec(
-		`INSERT INTO queue_seqs (tenant_id, queue_date, last_seq)
-		 VALUES (?, ?, LAST_INSERT_ID(1))
-		 ON DUPLICATE KEY UPDATE last_seq = LAST_INSERT_ID(last_seq + 1)`,
-		tenantID, date,
-	).Error
+
+	// Use LAST_INSERT_ID() to ensure atomic increment:
+	// - If row doesn't exist: INSERT with LAST_INSERT_ID(1) sets LAST_INSERT_ID to 1
+	// - If row exists: UPDATE with LAST_INSERT_ID(last_seq + 1) atomically increments
+	err := s.DB.Exec(`
+		INSERT INTO queue_seqs (tenant_id, queue_date, last_seq)
+		VALUES (?, ?, LAST_INSERT_ID(1))
+		ON DUPLICATE KEY UPDATE last_seq = LAST_INSERT_ID(last_seq + 1)
+	`, tenantID, date).Error
 	if err != nil {
 		return 0, err
 	}
 
+	// Get the last inserted/updated value
 	var seq int
 	err = s.DB.Raw("SELECT LAST_INSERT_ID()").Scan(&seq).Error
 	if err != nil {

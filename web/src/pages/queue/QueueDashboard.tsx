@@ -8,6 +8,7 @@ import { useWebSocket } from '../../hooks/useWebSocket';
 import { useAuth } from '../../store/auth';
 import useIsMobile from '../../hooks/useIsMobile';
 import CallOverlay from '../../components/CallOverlay';
+import { formatRoom } from '../../utils/format';
 
 const DOCTOR_COLORS = ['#52c41a', '#faad14', '#722ed1', '#cf1322', '#1677ff', '#13c2c2', '#eb2f96', '#fa541c'];
 
@@ -45,6 +46,24 @@ export default function QueueDashboard() {
   const [takeLoading, setTakeLoading] = useState(false);
   const [overlays, setOverlays] = useState<Record<number, CallOverlayState>>({});
   const [doctors, setDoctors] = useState<DoctorOption[]>([]);
+  const [pageVisible, setPageVisible] = useState(() => {
+    // SSR compatibility: check if document is available
+    if (typeof document !== 'undefined') {
+      return !document.hidden;
+    }
+    return true;
+  });
+
+  // Page visibility detection (single listener at parent level)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      setPageVisible(!document.hidden);
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
 
   // Fetch queue data
   const fetchQueue = useCallback(async () => {
@@ -54,6 +73,24 @@ export default function QueueDashboard() {
       const body = res as any;
       const list: QueueEntry[] = body.data?.list || [];
       setEntries(list);
+      // Clear stale overlays for doctors with no active (seeing/waiting) entries.
+      // This prevents a dismissed doctor's call overlay from re-appearing when a new
+      // patient is registered for the same doctor after the queue was emptied.
+      const activeDoctorIds = new Set(
+        list
+          .filter(e => e.status !== 'done' && e.status !== 'missed')
+          .map(e => e.doctor_id)
+      );
+      setOverlays(prev => {
+        const cleaned: Record<number, CallOverlayState> = {};
+        for (const [key, val] of Object.entries(prev)) {
+          const doctorId = Number(key);
+          if (activeDoctorIds.has(doctorId)) {
+            cleaned[doctorId] = val;
+          }
+        }
+        return cleaned;
+      });
     } catch {
       /* ignore */
     } finally {
@@ -124,6 +161,10 @@ export default function QueueDashboard() {
         });
       }
       map.get(e.doctor_id)!.entries.push(e);
+    }
+    // Sort each doctor's entries by seq_number
+    for (const group of map.values()) {
+      group.entries.sort((a, b) => a.seq_number - b.seq_number);
     }
     return Array.from(map.values());
   }, [entries]);
@@ -372,6 +413,8 @@ export default function QueueDashboard() {
                 onCall={handleCall}
                 onComplete={handleComplete}
                 hasWritePermission={hasPermission('queue:update')}
+                isMobile={isMobile}
+                pageVisible={pageVisible}
               />
             ))
           )}
@@ -435,6 +478,8 @@ export default function QueueDashboard() {
             onCall={handleCall}
             onComplete={handleComplete}
             hasWritePermission={hasPermission('queue:update')}
+            isMobile={isMobile}
+            pageVisible={pageVisible}
           />
         ))}
       </div>
@@ -462,7 +507,7 @@ function StatBadge({ count, label, color, bgFrom, bgTo, border }: {
   );
 }
 
-function DoctorCard({ group, colorIndex, speed, overlay, onCloseOverlay, onCall, onComplete, hasWritePermission }: {
+function DoctorCard({ group, colorIndex, speed, overlay, onCloseOverlay, onCall, onComplete, hasWritePermission, isMobile, pageVisible = true }: {
   group: DoctorGroup;
   colorIndex: number;
   speed: number;
@@ -471,6 +516,8 @@ function DoctorCard({ group, colorIndex, speed, overlay, onCloseOverlay, onCall,
   onCall: (e: QueueEntry) => void;
   onComplete: (e: QueueEntry) => void;
   hasWritePermission: boolean;
+  isMobile?: boolean;
+  pageVisible?: boolean;
 }) {
   const color = DOCTOR_COLORS[colorIndex % DOCTOR_COLORS.length];
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -494,7 +541,7 @@ function DoctorCard({ group, colorIndex, speed, overlay, onCloseOverlay, onCall,
     const tick = () => {
       const now = performance.now();
       const el = scrollRef.current;
-      if (el && !hoveredRef.current && !paused && now - lastTick >= interval) {
+      if (el && !hoveredRef.current && !paused && pageVisible && now - lastTick >= interval) {
         lastTick = now;
         el.scrollTop += 1;
         if (el.scrollTop >= el.scrollHeight - el.clientHeight - 1) {
@@ -506,7 +553,7 @@ function DoctorCard({ group, colorIndex, speed, overlay, onCloseOverlay, onCall,
     };
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
-  }, [speed]);
+  }, [speed, pageVisible]);
 
   const waitingCount = group.entries.filter(e => e.status === 'waiting' || e.status === 'ready').length;
 
@@ -548,7 +595,7 @@ function DoctorCard({ group, colorIndex, speed, overlay, onCloseOverlay, onCall,
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 700, fontSize: 16 }}>{group.doctorName}</div>
-          <div style={{ fontSize: 12, color: '#999' }}>{group.room || '诊室'}</div>
+          <div style={{ fontSize: 12, color: '#999' }}>{formatRoom(group.room)}</div>
         </div>
         <div style={{
           background: color, color: '#fff',
@@ -588,6 +635,7 @@ function DoctorCard({ group, colorIndex, speed, overlay, onCloseOverlay, onCall,
             onCall={onCall}
             onComplete={onComplete}
             hasWritePermission={hasWritePermission}
+            isMobile={isMobile}
           />
         )}
         {/* Waiting entries */}
@@ -600,6 +648,7 @@ function DoctorCard({ group, colorIndex, speed, overlay, onCloseOverlay, onCall,
             onCall={onCall}
             onComplete={onComplete}
             hasWritePermission={hasWritePermission}
+            isMobile={isMobile}
           />
         ))}
       </div>
@@ -613,6 +662,7 @@ function DoctorCard({ group, colorIndex, speed, overlay, onCloseOverlay, onCall,
           room={overlay.room}
           doctor={overlay.doctor}
           onClose={onCloseOverlay}
+          isMobile={isMobile}
         />
       )}
 
@@ -625,13 +675,14 @@ function DoctorCard({ group, colorIndex, speed, overlay, onCloseOverlay, onCall,
   );
 }
 
-function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermission }: {
+function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermission, isMobile }: {
   entry: QueueEntry;
   type: 'seeing' | 'next' | 'waiting';
   position: number;
   onCall: (e: QueueEntry) => void;
   onComplete: (e: QueueEntry) => void;
   hasWritePermission: boolean;
+  isMobile?: boolean;
 }) {
   const seq = String(entry.seq_number).padStart(2, '0');
 
@@ -650,7 +701,7 @@ function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermissio
       borderColor: '#fa8c16',
       bg: '#fff7e6',
       numBg: 'linear-gradient(135deg, #ffa940, #fa8c16)',
-      tagText: '请准备',
+      tagText: '下一位',
       tagColor: '#fa8c16',
       tagBorder: '#ffd591',
       tagBg: '#fff7e6',
@@ -669,7 +720,7 @@ function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermissio
   }[type];
 
   return (
-    <Tooltip title={config.tooltip} placement="right" mouseEnterDelay={0.5}>
+    <Tooltip title={config.tooltip} placement={isMobile ? 'top' : 'right'} mouseEnterDelay={0.5}>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 10,
         padding: '8px 10px',

@@ -49,7 +49,8 @@ export default function QueueStrip() {
     const waitingAll = sorted.filter(e => e.status === 'waiting');
     // "ready" is the first waiting entry (next to be seen)
     const ready = waitingAll.length > 0 ? waitingAll[0] : null;
-    const waiting = waitingAll.slice(1);
+    // Limit waiting entries to max 8 (excluding ready entry)
+    const waiting = waitingAll.slice(1, 9);
     return {
       seeingEntry: seeing,
       readyEntry: ready,
@@ -154,11 +155,11 @@ export default function QueueStrip() {
           overflowX: 'auto',
           background: 'linear-gradient(180deg, #fafbfc, #fff)',
         }} className="queue-strip-pipe">
-          {/* Waiting chips (reverse order so nearest to front is on the right) */}
-          {waitingEntries.map((entry, i) => {
-            // Chips get slightly darker as they approach the front (lower index = closer to front)
-            const depth = waitingEntries.length - 1 - i; // 0 = farthest, len-1 = closest
-            const opacity = Math.min(0.4 + (depth / Math.max(waitingEntries.length - 1, 1)) * 0.6, 1);
+          {/* Waiting chips: newest (highest seq) on the LEFT, closest-to-front (2nd in line) on the RIGHT */}
+          {[...waitingEntries].reverse().map((entry, i, arr) => {
+            // i=0: newest patient (back of queue, leftmost) → low opacity
+            // i=len-1: 2nd in line (front of queue, rightmost) → high opacity
+            const opacity = Math.min(0.4 + (i / Math.max(arr.length - 1, 1)) * 0.6, 1);
             return (
               <div key={entry.id} style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
                 {i > 0 && (
@@ -216,10 +217,10 @@ export default function QueueStrip() {
                 position: 'absolute',
                 top: -9,
                 left: 6,
-                fontSize: 10,
+                fontSize: 12,
                 padding: '1px 6px',
-                height: 16,
-                lineHeight: '14px',
+                height: 18,
+                lineHeight: '16px',
                 borderRadius: 3,
                 background: 'linear-gradient(135deg, #ffa940, #fa8c16)',
                 color: '#fff',
@@ -227,7 +228,7 @@ export default function QueueStrip() {
                 letterSpacing: 0.5,
                 animation: 'qsOrangePulse 2s infinite',
               }}>
-                请准备
+                下一位
               </span>
               <div style={{
                 width: 30, height: 30,
@@ -274,7 +275,7 @@ export default function QueueStrip() {
             </div>
           )}
 
-          {/* Seeing chip (inline in pipe, not separated to the right) */}
+          {/* Seeing chip — mirrors ready chip structure with "就诊中" badge at top-left */}
           {seeingEntry && (
             <div style={{
               display: 'flex',
@@ -287,8 +288,27 @@ export default function QueueStrip() {
               borderRadius: 8,
               whiteSpace: 'nowrap',
               flexShrink: 0,
+              position: 'relative',
               boxShadow: '0 0 0 3px rgba(82,196,26,0.08)',
             }}>
+              {/* "就诊中" badge — same absolute top-left position as "请准备" */}
+              <span style={{
+                position: 'absolute',
+                top: -9,
+                left: 6,
+                fontSize: 12,
+                padding: '1px 6px',
+                height: 18,
+                lineHeight: '16px',
+                borderRadius: 3,
+                background: 'linear-gradient(135deg, #52c41a, #389e0d)',
+                color: '#fff',
+                fontWeight: 700,
+                letterSpacing: 0.5,
+                animation: 'qsGreenPulse 2s infinite',
+              }}>
+                就诊中
+              </span>
               <div style={{
                 width: isMobile ? 30 : 32, height: isMobile ? 30 : 32,
                 background: 'linear-gradient(135deg, #52c41a, #389e0d)',
@@ -300,47 +320,49 @@ export default function QueueStrip() {
               }}>
                 {seq(seeingEntry.seq_number)}
               </div>
-              <div>
-                <div style={{ fontWeight: 800, fontSize: isMobile ? 14 : 15, color: '#135200' }}>
-                  {seeingEntry.patient_name}
-                </div>
-                <div style={{ fontSize: 10, color: '#52c41a', fontWeight: 600 }}>
-                  就诊中 {seeingEntry.room ? `· ${seeingEntry.room}` : ''}
-                </div>
+              <span style={{ fontWeight: 700, fontSize: isMobile ? 13 : 15, color: '#135200' }}>
+                {seeingEntry.patient_name}
+              </span>
+              {/* Stacked buttons so chip width matches the ready chip */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <Button
+                  size="small"
+                  icon={<SoundOutlined />}
+                  onClick={() => handleCall(seeingEntry.id)}
+                  style={{
+                    color: '#52c41a',
+                    border: '1px solid #b7eb8f',
+                    background: '#f6ffed',
+                    fontWeight: 700,
+                    fontSize: isMobile ? 11 : 12,
+                    borderRadius: 6,
+                    whiteSpace: 'nowrap',
+                    lineHeight: 1,
+                    height: 20,
+                  }}
+                >
+                  再叫
+                </Button>
+                <Button
+                  size="small"
+                  icon={<CheckOutlined />}
+                  onClick={() => handleComplete(seeingEntry.id)}
+                  style={{
+                    background: 'linear-gradient(135deg, #52c41a, #389e0d)',
+                    color: '#fff',
+                    border: 'none',
+                    fontWeight: 700,
+                    fontSize: isMobile ? 11 : 12,
+                    borderRadius: 6,
+                    boxShadow: '0 2px 6px rgba(82,196,26,0.3)',
+                    whiteSpace: 'nowrap',
+                    lineHeight: 1,
+                    height: 20,
+                  }}
+                >
+                  完成
+                </Button>
               </div>
-              <Button
-                size="small"
-                icon={<SoundOutlined />}
-                onClick={() => handleCall(seeingEntry.id)}
-                style={{
-                  color: '#52c41a',
-                  border: '1px solid #b7eb8f',
-                  background: '#f6ffed',
-                  fontWeight: 700,
-                  fontSize: isMobile ? 11 : 12,
-                  borderRadius: 6,
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                再叫
-              </Button>
-              <Button
-                size="small"
-                icon={<CheckOutlined />}
-                onClick={() => handleComplete(seeingEntry.id)}
-                style={{
-                  background: 'linear-gradient(135deg, #52c41a, #389e0d)',
-                  color: '#fff',
-                  border: 'none',
-                  fontWeight: 700,
-                  fontSize: isMobile ? 12 : 13,
-                  borderRadius: 6,
-                  boxShadow: '0 2px 6px rgba(82,196,26,0.3)',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                完成
-              </Button>
             </div>
           )}
         </div>
@@ -348,6 +370,10 @@ export default function QueueStrip() {
 
       <style>{`
         @keyframes qsOrangePulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.6; }
+        }
+        @keyframes qsGreenPulse {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.6; }
         }

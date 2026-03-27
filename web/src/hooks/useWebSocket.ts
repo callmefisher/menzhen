@@ -34,6 +34,7 @@ function connect() {
   socket.onmessage = (e) => {
     try {
       const msg: WSMessage = JSON.parse(e.data);
+      console.log('[WebSocket] Received message:', msg.type, msg.payload);
       listeners.get(msg.type)?.forEach(fn => fn(msg));
     } catch { /* ignore malformed messages */ }
   };

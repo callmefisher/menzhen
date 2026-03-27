@@ -1,25 +1,35 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import AcupointInfoCard from './AcupointInfoCard';
 import type { AcupointData } from './data/types';
+import type { MergedBVH } from './utils/meridianProjection';
+import { projectMeridianPath } from './utils/meridianProjection';
 
 interface AcupointMarkerProps {
   data: AcupointData;
   color: string;
   isFocused: boolean;
   onClick: (acupoint: AcupointData | null) => void;
+  mergedBVH?: MergedBVH | null;
 }
 
-export default function AcupointMarker({ data, color, isFocused, onClick }: AcupointMarkerProps) {
+export default function AcupointMarker({ data, color, isFocused, onClick, mergedBVH }: AcupointMarkerProps) {
   const [hovered, setHovered] = useState(false);
   const [showCard, setShowCard] = useState(false);
   const meshRef = useRef<THREE.Mesh>(null);
 
-  // Skip rendering if position is invalid
-  if (!data.position || !Number.isFinite(data.position[0]) || !Number.isFinite(data.position[1]) || !Number.isFinite(data.position[2])) {
-    return null;
-  }
+  // 投影穴位位置到模型表面（必须在条件检查之前调用Hook）
+  const projectedPosition = useMemo(() => {
+    // 如果位置无效，返回原始位置
+    if (!data.position || !Number.isFinite(data.position[0]) || !Number.isFinite(data.position[1]) || !Number.isFinite(data.position[2])) {
+      return data.position;
+    }
+    if (!mergedBVH) return data.position;
+    // 单点投影，使用路径投影函数处理单个点
+    const projected = projectMeridianPath([data.position], mergedBVH, 0.008);
+    return projected[0] || data.position;
+  }, [data.position, mergedBVH]);
 
   // Smooth scale on hover (no pulse, no exaggerated scaling)
   useFrame((_, delta) => {
@@ -29,6 +39,11 @@ export default function AcupointMarker({ data, color, isFocused, onClick }: Acup
     const newScale = THREE.MathUtils.lerp(current, targetScale, delta * 8);
     meshRef.current.scale.setScalar(newScale);
   });
+
+  // Skip rendering if position is invalid（在Hook调用之后检查）
+  if (!data.position || !Number.isFinite(data.position[0]) || !Number.isFinite(data.position[1]) || !Number.isFinite(data.position[2])) {
+    return null;
+  }
 
   const handleClick = () => {
     if (showCard) {
@@ -44,7 +59,7 @@ export default function AcupointMarker({ data, color, isFocused, onClick }: Acup
   const cardVisible = showCard || isFocused;
 
   return (
-    <group position={data.position}>
+    <group position={projectedPosition}>
       {/* Acupoint dot */}
       <mesh
         ref={meshRef}

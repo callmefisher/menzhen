@@ -12,6 +12,7 @@ import useIsMobile from '../../hooks/useIsMobile';
 export default function MeridianView() {
   const [selectedMeridians, setSelectedMeridians] = useState<string[]>([]);
   const [focusedAcupoint, setFocusedAcupoint] = useState<AcupointData | null>(null);
+  const [selectedAcupoint, setSelectedAcupoint] = useState<AcupointData | null>(null); // 点击选中的单个穴位
   const [panelDrawerOpen, setPanelDrawerOpen] = useState(false);
   const [detailMeridian, setDetailMeridian] = useState<MeridianData | null>(null);
   const [modelType, setModelType] = useState<ModelType>('female');
@@ -21,18 +22,26 @@ export default function MeridianView() {
     setSelectedMeridians(prev =>
       prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]
     );
+    // 切换经络时清除选中的单个穴位
+    setSelectedAcupoint(null);
   }, []);
 
   const handleAcupointSearch = useCallback((acupoint: AcupointData | null) => {
     setFocusedAcupoint(acupoint);
-    if (acupoint && !selectedMeridians.includes(acupoint.meridianId)) {
-      setSelectedMeridians(prev => [...prev, acupoint.meridianId]);
+    if (acupoint) {
+      // 点击穴位后只显示该穴位，隐藏其他所有穴位（包括同经络的其他穴位）
+      setSelectedMeridians([acupoint.meridianId]);
+      setSelectedAcupoint(acupoint);
+    } else {
+      setSelectedAcupoint(null);
     }
     if (isMobile) setPanelDrawerOpen(false);
-  }, [selectedMeridians, isMobile]);
+  }, [isMobile]);
 
   const handleCloseDetail = useCallback(() => {
     setFocusedAcupoint(null);
+    // 关闭详情时也清除选中的单个穴位，恢复显示整个经络
+    setSelectedAcupoint(null);
   }, []);
 
   const handleMeridianInfoClick = useCallback((meridian: MeridianData) => {
@@ -41,11 +50,10 @@ export default function MeridianView() {
 
   const handleDrawerAcupointNavigate = useCallback((acupoint: AcupointData) => {
     setFocusedAcupoint(acupoint);
-    if (!selectedMeridians.includes(acupoint.meridianId)) {
-      setSelectedMeridians(prev => [...prev, acupoint.meridianId]);
-    }
-    setDetailMeridian(null);
-  }, [selectedMeridians]);
+    setSelectedMeridians([acupoint.meridianId]);
+    setSelectedAcupoint(acupoint);
+    // 不关闭drawer，保持勾选状态可见
+  }, []);
 
   const panelContent = (
     <MeridianPanel
@@ -106,6 +114,7 @@ export default function MeridianView() {
         <MeridianScene
           selectedMeridians={selectedMeridians}
           focusedAcupoint={focusedAcupoint}
+          selectedAcupoint={selectedAcupoint}
           onAcupointClick={setFocusedAcupoint}
           modelType={modelType}
         />

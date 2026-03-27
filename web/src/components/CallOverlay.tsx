@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from 'antd';
+import { formatRoom } from '../utils/format';
 
 interface CallOverlayProps {
   visible: boolean;
@@ -9,6 +10,7 @@ interface CallOverlayProps {
   doctor: string;
   onClose: () => void;
   duration?: number; // ms, default 15000
+  isMobile?: boolean;
 }
 
 export default function CallOverlay({
@@ -19,10 +21,13 @@ export default function CallOverlay({
   doctor,
   onClose,
   duration = 15000,
+  isMobile = false,
 }: CallOverlayProps) {
   const [progress, setProgress] = useState(100);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startRef = useRef(0);
+
+  const displayRoom = formatRoom(room);
 
   useEffect(() => {
     if (!visible) {
@@ -47,13 +52,36 @@ export default function CallOverlay({
 
   if (!visible) return null;
 
+  // Mobile: fixed position at top of screen
+  // Desktop: absolute position within DoctorCard
+  const overlayStyle = isMobile ? {
+    position: 'fixed' as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1000,
+    background: 'rgba(255,255,255,0.97)',
+    display: 'flex',
+    flexDirection: 'column' as const,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  } : {
+    position: 'absolute' as const,
+    inset: 0,
+    zIndex: 10,
+    background: 'rgba(255,255,255,0.97)',
+    display: 'flex',
+    flexDirection: 'column' as const,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    overflow: 'hidden',
+  };
+
   return (
-    <div style={{
-      position: 'absolute', inset: 0, zIndex: 10,
-      background: 'rgba(255,255,255,0.97)',
-      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      borderRadius: 10, overflow: 'hidden',
-    }}>
+    <div style={overlayStyle}>
       {/* Shimmer top bar */}
       <div style={{
         position: 'absolute', top: 0, left: 0, right: 0, height: 3,
@@ -63,7 +91,7 @@ export default function CallOverlay({
       }} />
 
       <div style={{ fontSize: 14, color: '#999', marginBottom: 8 }}>
-        请到{room || '诊室'}就诊
+        请到{displayRoom}就诊
       </div>
 
       {/* Large seq number */}
@@ -78,7 +106,7 @@ export default function CallOverlay({
       </div>
 
       <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 2 }}>{name}</div>
-      <div style={{ fontSize: 12, color: '#999', marginBottom: 16 }}>{doctor} - {room || '诊室'}</div>
+      <div style={{ fontSize: 12, color: '#999', marginBottom: 16 }}>{doctor} - {displayRoom}</div>
 
       <Button type="primary" onClick={onClose} style={{ minWidth: 100 }}>
         确定

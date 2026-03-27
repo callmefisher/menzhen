@@ -117,6 +117,7 @@ func (h *QueueHandler) Call(c *gin.Context) {
 			"patient_name": entry.PatientName,
 			"room":         entry.Room,
 			"doctor_name":  entry.DoctorName,
+			"manual":       true,
 		},
 	})
 	ws.DefaultHub.Broadcast(tenantID, ws.Message{
@@ -164,6 +165,7 @@ func (h *QueueHandler) Complete(c *gin.Context) {
 				"patient_name": next.PatientName,
 				"room":         next.Room,
 				"doctor_name":  next.DoctorName,
+				"manual":       false,
 			},
 		})
 	}

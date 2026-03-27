@@ -185,14 +185,14 @@ export default function PatientList() {
             size="small"
             icon={<SoundOutlined />}
             onClick={(e) => { e.stopPropagation(); handleQueueCall(info); }}
-            style={{ fontSize: 11, padding: '0 4px', marginLeft: 2 }}
+            style={{ fontSize: 14, padding: '0 6px', marginLeft: 4 }}
           />
         );
         if (info.status === 'seeing') {
           return (
             <span>
               <b>{name}</b>{' '}
-              <Tag color="success" style={{ fontSize: 10, marginLeft: 4, padding: '0 6px', lineHeight: '18px', borderRadius: 3 }}>就诊中</Tag>
+              <Tag color="success" style={{ fontSize: 12, marginLeft: 6, padding: '0 8px', lineHeight: '20px', borderRadius: 4 }}>就诊中</Tag>
               {callBtn}
             </span>
           );
@@ -201,7 +201,7 @@ export default function PatientList() {
           return (
             <span>
               <b>{name}</b>{' '}
-              <Tag color="warning" style={{ fontSize: 10, marginLeft: 4, padding: '0 6px', lineHeight: '18px', borderRadius: 3 }}>请准备</Tag>
+              <Tag color="warning" style={{ fontSize: 12, marginLeft: 6, padding: '0 8px', lineHeight: '20px', borderRadius: 4 }}>下一位</Tag>
               {callBtn}
             </span>
           );
@@ -210,7 +210,7 @@ export default function PatientList() {
           return (
             <span>
               <b>{name}</b>{' '}
-              <Tag color="processing" style={{ fontSize: 10, marginLeft: 4, padding: '0 6px', lineHeight: '18px', borderRadius: 3 }}>候诊</Tag>
+              <Tag color="processing" style={{ fontSize: 12, marginLeft: 6, padding: '0 8px', lineHeight: '20px', borderRadius: 4 }}>候诊中</Tag>
               {callBtn}
             </span>
           );
@@ -312,16 +312,16 @@ export default function PatientList() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontWeight: 600, fontSize: 16, color: '#5C4A32' }}>{patient.name}</span>
-            {queueStatus === 'seeing' && <Tag color="success" style={{ fontSize: 10, margin: 0, padding: '0 6px', lineHeight: '18px', borderRadius: 3 }}>就诊中</Tag>}
-            {queueStatus === 'ready' && <Tag color="warning" style={{ fontSize: 10, margin: 0, padding: '0 6px', lineHeight: '18px', borderRadius: 3 }}>请准备</Tag>}
-            {queueStatus === 'waiting' && <Tag color="processing" style={{ fontSize: 10, margin: 0, padding: '0 6px', lineHeight: '18px', borderRadius: 3 }}>候诊</Tag>}
+            {queueStatus === 'seeing' && <Tag color="success" style={{ fontSize: 12, margin: '0 0 0 6px', padding: '0 8px', lineHeight: '20px', borderRadius: 4 }}>就诊中</Tag>}
+            {queueStatus === 'ready' && <Tag color="warning" style={{ fontSize: 12, margin: '0 0 0 6px', padding: '0 8px', lineHeight: '20px', borderRadius: 4 }}>下一位</Tag>}
+            {queueStatus === 'waiting' && <Tag color="processing" style={{ fontSize: 12, margin: '0 0 0 6px', padding: '0 8px', lineHeight: '20px', borderRadius: 4 }}>候诊中</Tag>}
             {queueInfo && (
               <Button
                 type="link"
                 size="small"
                 icon={<SoundOutlined />}
                 onClick={(e) => { e.stopPropagation(); handleQueueCall(queueInfo); }}
-                style={{ fontSize: 12, padding: '0 4px' }}
+                style={{ fontSize: 14, padding: '0 6px', marginLeft: 4 }}
               />
             )}
             {genderIcon}

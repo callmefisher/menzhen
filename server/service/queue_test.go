@@ -161,6 +161,35 @@ func TestQueueComplete(t *testing.T) {
 	assert.NotNil(t, completed.CompletedAt)
 }
 
+// TestTakeNumber_RequeueAfterDone verifies that a patient whose prior entry is "done"
+// can take a new number on the same day.
+func TestTakeNumber_RequeueAfterDone(t *testing.T) {
+	svc, tenantID := makeQueueSvcSingle(t)
+
+	e := takeNumber(t, svc, tenantID, "张三", 1, "医生", "诊室")
+	_, err := svc.Call(tenantID, e.ID)
+	require.NoError(t, err)
+	_, _, err = svc.Complete(tenantID, e.ID)
+	require.NoError(t, err)
+
+	// Re-queue same patient — must succeed
+	result, err := svc.TakeNumber(tenantID, "张三", 1, "医生", "诊室", 1)
+	require.NoError(t, err, "done patient should be allowed to re-queue")
+	assert.Equal(t, "waiting", result.Entry.Status)
+	assert.Greater(t, result.Entry.SeqNumber, e.SeqNumber, "new entry should have a higher seq number")
+}
+
+// TestTakeNumber_DuplicateBlocked verifies that an active (waiting/seeing) patient cannot take a second number.
+func TestTakeNumber_DuplicateBlocked(t *testing.T) {
+	svc, tenantID := makeQueueSvcSingle(t)
+
+	_, err := svc.TakeNumber(tenantID, "李四", 1, "医生", "诊室", 1)
+	require.NoError(t, err)
+
+	_, err = svc.TakeNumber(tenantID, "李四", 1, "医生", "诊室", 1)
+	assert.ErrorIs(t, err, service.ErrDuplicatePatient, "active patient must be blocked from taking a second number")
+}
+
 // TestQueueComplete_AutoCallNext verifies that completing a patient auto-calls
 // the next waiting patient for the same doctor.
 func TestQueueComplete_AutoCallNext(t *testing.T) {
