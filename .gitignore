@@ -5,11 +5,16 @@
 # Claude Code
 .claude/
 
+# Trae IDE
+.trae/
+
 # Superpowers
 .superpowers/
 
 # Backups (local only)
-backups/
+backups/*
+# Keep specific backup files in main branch
+!backups/minio/xyj_minio_20260323_151726.tar.gz
 
 # Node modules
 node_modules/
