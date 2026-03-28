@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fmtTotal, chunkToRows } from '../format';
+import { fmtTotal, chunkToRows, formatRoom } from '../format';
 
 describe('fmtTotal', () => {
   it('returns integer string when result is whole number', () => {
@@ -88,5 +88,89 @@ describe('chunkToRows', () => {
 
   it('handles single item', () => {
     expect(chunkToRows(['a'], 10)).toEqual([[['a']]]);
+  });
+});
+
+describe('formatRoom', () => {
+  describe('empty or undefined input', () => {
+    it('returns "诊室" for undefined', () => {
+      expect(formatRoom(undefined)).toBe('诊室');
+    });
+
+    it('returns "诊室" for empty string', () => {
+      expect(formatRoom('')).toBe('诊室');
+    });
+
+    it('returns "诊室" for whitespace-only string', () => {
+      expect(formatRoom('   ')).toBe('诊室');
+    });
+  });
+
+  describe('pure number input', () => {
+    it('prepends "诊室" for single digit', () => {
+      expect(formatRoom('1')).toBe('诊室1');
+    });
+
+    it('prepends "诊室" for multi-digit number', () => {
+      expect(formatRoom('123')).toBe('诊室123');
+    });
+
+    it('handles zero', () => {
+      expect(formatRoom('0')).toBe('诊室0');
+    });
+
+    it('handles number with leading zeros', () => {
+      expect(formatRoom('001')).toBe('诊室001');
+    });
+
+    it('trims whitespace before checking', () => {
+      expect(formatRoom(' 123 ')).toBe('诊室123');
+    });
+  });
+
+  describe('already contains "诊室"', () => {
+    it('returns as-is when starts with "诊室"', () => {
+      expect(formatRoom('诊室1')).toBe('诊室1');
+    });
+
+    it('returns as-is when ends with "诊室"', () => {
+      expect(formatRoom('1诊室')).toBe('1诊室');
+    });
+
+    it('returns as-is when contains "诊室" in middle', () => {
+      expect(formatRoom('第一诊室A')).toBe('第一诊室A');
+    });
+
+    it('trims whitespace', () => {
+      expect(formatRoom(' 诊室1 ')).toBe('诊室1');
+    });
+  });
+
+  describe('other room names', () => {
+    it('returns original name for VIP room', () => {
+      expect(formatRoom('VIP室')).toBe('VIP室');
+    });
+
+    it('returns original name for special room', () => {
+      expect(formatRoom('专家门诊')).toBe('专家门诊');
+    });
+
+    it('trims whitespace from room name', () => {
+      expect(formatRoom(' VIP室 ')).toBe('VIP室');
+    });
+  });
+
+  describe('edge cases', () => {
+    it('handles alphanumeric room names', () => {
+      expect(formatRoom('A101')).toBe('A101');
+    });
+
+    it('handles room names with special characters', () => {
+      expect(formatRoom('1-诊室')).toBe('1-诊室');
+    });
+
+    it('handles Chinese number that is not pure digit', () => {
+      expect(formatRoom('一诊室')).toBe('一诊室');
+    });
   });
 });

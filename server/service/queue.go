@@ -11,6 +11,7 @@ import (
 var (
 	ErrQueueEntryNotFound = errors.New("queue entry not found")
 	ErrInvalidStatus      = errors.New("invalid queue status transition")
+	ErrDuplicatePatient   = errors.New("该患者今日已在排队中，请勿重复取号")
 )
 
 type QueueService struct {
@@ -26,53 +27,108 @@ func today() string {
 }
 
 // NextSeq atomically increments and returns the sequence number for today.
-// Uses LAST_INSERT_ID() to avoid TOCTOU race conditions — each connection
-// gets its own LAST_INSERT_ID value, so concurrent calls never collide.
+// Wraps UPSERT + SELECT in a transaction so both run on the same connection,
+// avoiding the LAST_INSERT_ID auto-increment override on new-day INSERT.
 func (s *QueueService) NextSeq(tenantID uint) (int, error) {
 	date := today()
-	err := s.DB.Exec(
-		`INSERT INTO queue_seqs (tenant_id, queue_date, last_seq)
-		 VALUES (?, ?, LAST_INSERT_ID(1))
-		 ON DUPLICATE KEY UPDATE last_seq = LAST_INSERT_ID(last_seq + 1)`,
-		tenantID, date,
-	).Error
-	if err != nil {
-		return 0, err
-	}
-
 	var seq int
-	err = s.DB.Raw("SELECT LAST_INSERT_ID()").Scan(&seq).Error
-	if err != nil {
-		return 0, err
-	}
-	return seq, nil
+	err := s.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(`
+			INSERT INTO queue_seqs (tenant_id, queue_date, last_seq)
+			VALUES (?, ?, 1)
+			ON DUPLICATE KEY UPDATE last_seq = last_seq + 1
+		`, tenantID, date).Error; err != nil {
+			return err
+		}
+		return tx.Raw(
+			"SELECT last_seq FROM queue_seqs WHERE tenant_id = ? AND queue_date = ?",
+			tenantID, date,
+		).Scan(&seq).Error
+	})
+	return seq, err
+}
+
+// TakeNumberResult wraps the queue entry and optional auto-created patient.
+type TakeNumberResult struct {
+	Entry          *model.QueueEntry `json:"entry"`
+	CreatedPatient *model.Patient    `json:"created_patient,omitempty"`
 }
 
 // TakeNumber creates a new waiting queue entry with an auto-generated sequence number.
-func (s *QueueService) TakeNumber(tenantID uint, patientName string, doctorID uint, doctorName, room string) (*model.QueueEntry, error) {
-	seq, err := s.NextSeq(tenantID)
-	if err != nil {
-		return nil, err
-	}
+// If the patient does not exist, auto-creates one with defaults.
+// The entire operation runs inside a transaction for atomicity.
+func (s *QueueService) TakeNumber(tenantID uint, patientName string, doctorID uint, doctorName, room string, userID uint64) (*TakeNumberResult, error) {
+	var result TakeNumberResult
 
-	now := time.Now()
-	entry := &model.QueueEntry{
-		TenantID:    tenantID,
-		PatientName: patientName,
-		DoctorID:    doctorID,
-		DoctorName:  doctorName,
-		Room:        room,
-		SeqNumber:   seq,
-		Status:      model.QueueStatusWaiting,
-		Source:      "walk_in",
-		QueueDate:   today(),
-		ArrivalTime: &now,
-	}
+	txErr := s.DB.Transaction(func(tx *gorm.DB) error {
+		// Check for duplicate: same patient name still active today
+		var count int64
+		if err := tx.Model(&model.QueueEntry{}).
+			Where("tenant_id = ? AND queue_date = ? AND patient_name = ? AND status NOT IN (?, ?)",
+				tenantID, today(), patientName, model.QueueStatusDone, model.QueueStatusMissed).
+			Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			return ErrDuplicatePatient
+		}
 
-	if err := s.DB.Create(entry).Error; err != nil {
-		return nil, err
+		// Auto-create patient if not exists
+		var patient model.Patient
+		err := tx.Where("tenant_id = ? AND name = ?", tenantID, patientName).First(&patient).Error
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				patient = model.Patient{
+					TenantID:  uint64(tenantID),
+					Name:      patientName,
+					Gender:    1, // 男
+					Age:       0,
+					Birthday:  nil,
+					Weight:    0,
+					CreatedBy: userID,
+				}
+				if createErr := tx.Create(&patient).Error; createErr != nil {
+					return createErr
+				}
+				result.CreatedPatient = &patient
+			} else {
+				return err
+			}
+		}
+
+		// Get next sequence number (uses raw SQL, operates outside tx scope but is atomic itself)
+		seq, err := s.NextSeq(tenantID)
+		if err != nil {
+			return err
+		}
+
+		now := time.Now()
+		patientID := uint(patient.ID)
+		entry := &model.QueueEntry{
+			TenantID:    tenantID,
+			PatientID:   &patientID,
+			PatientName: patientName,
+			DoctorID:    doctorID,
+			DoctorName:  doctorName,
+			Room:        room,
+			SeqNumber:   seq,
+			Status:      model.QueueStatusWaiting,
+			Source:      "walk_in",
+			QueueDate:   today(),
+			ArrivalTime: &now,
+		}
+
+		if err := tx.Create(entry).Error; err != nil {
+			return err
+		}
+		result.Entry = entry
+		return nil
+	})
+
+	if txErr != nil {
+		return nil, txErr
 	}
-	return entry, nil
+	return &result, nil
 }
 
 // ListToday returns today's queue entries for a tenant, optionally filtered by doctor.
@@ -88,7 +144,8 @@ func (s *QueueService) ListToday(tenantID uint, doctorID *uint) ([]model.QueueEn
 }
 
 // Call changes a waiting entry to seeing and sets CalledAt.
-// Returns ErrInvalidStatus if the entry is not in waiting status.
+// If the entry is already seeing, it returns the entry as-is (re-call scenario).
+// Returns ErrInvalidStatus if the entry is in any other status.
 func (s *QueueService) Call(tenantID, entryID uint) (*model.QueueEntry, error) {
 	var entry model.QueueEntry
 	err := s.DB.Where("id = ? AND tenant_id = ? AND queue_date = ?", entryID, tenantID, today()).First(&entry).Error
@@ -97,6 +154,11 @@ func (s *QueueService) Call(tenantID, entryID uint) (*model.QueueEntry, error) {
 			return nil, ErrQueueEntryNotFound
 		}
 		return nil, err
+	}
+
+	// Already seeing — re-call, just return the entry (handler will broadcast)
+	if entry.Status == model.QueueStatusSeeing {
+		return &entry, nil
 	}
 
 	if entry.Status != model.QueueStatusWaiting {

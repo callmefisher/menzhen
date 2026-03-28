@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
@@ -6,62 +6,79 @@ import HumanBodyModel from './HumanBodyModel';
 import type { ModelType } from './HumanBodyModel';
 import MeridianPath from './MeridianPath';
 import AcupointMarker from './AcupointMarker';
-import { meridianMap } from './data/meridians';
-import { acupointsByMeridian } from './data/acupoints';
-import { buildBVHForModel, disposeBVH } from './utils/surfaceProjection';
-import type { MergedBVH } from './utils/surfaceProjection';
+import { getMeridianMap } from './data/meridians';
+import { getAcupointsByMeridian } from './data/acupoints';
+import { buildBVHForModel, disposeBVH } from './utils/meridianProjection';
+import type { MergedBVH } from './utils/meridianProjection';
 import type { AcupointData } from './data/types';
 
 interface MeridianSceneProps {
   selectedMeridians: string[];
   focusedAcupoint: AcupointData | null;
+  selectedAcupoint: AcupointData | null; // 当前选中的单个穴位
   onAcupointClick: (acupoint: AcupointData | null) => void;
   modelType?: ModelType;
 }
 
-// Model center Y ≈ 0.82 (feet=0, head=1.64)
-const MODEL_CENTER_Y = 0.82;
+// 使用与校准工具相同的相机设置
+const CALIBRATOR_CAMERA_POS: [number, number, number] = [-0.6, 1.25, 0.5];
+const CALIBRATOR_TARGET: [number, number, number] = [-0.35, 1.15, 0];
 
 // No-op: clicking an acupoint no longer moves the camera/model
 function CameraController(_props: { focusedAcupoint: AcupointData | null }) {
+  // _props 故意不使用，组件保留用于未来扩展
+  void _props;
   return null;
 }
 
-function SceneContent({ selectedMeridians, focusedAcupoint, onAcupointClick, modelType = 'female' }: MeridianSceneProps) {
+function SceneContent({ selectedMeridians, focusedAcupoint, selectedAcupoint, onAcupointClick, modelType = 'female' }: MeridianSceneProps) {
   const [mergedBVH, setMergedBVH] = useState<MergedBVH | null>(null);
 
   // Build merged BVH when model loads
   const handleModelLoaded = useCallback((group: THREE.Group) => {
-    const result = buildBVHForModel(group);
+    const result = buildBVHForModel(group, modelType);
     if (result) {
       setMergedBVH(result);
     }
-  }, []);
+  }, [modelType]);
 
   // Cleanup BVH on unmount
   useEffect(() => {
     return () => { disposeBVH(); };
   }, []);
 
+  // 使用当前模型类型的经络和穴位数据
+  const meridianMap = getMeridianMap(modelType);
+  const acupointsByMeridian = getAcupointsByMeridian(modelType);
+
   // Collect all visible acupoints from selected meridians
-  const visibleAcupoints: AcupointData[] = [];
-  for (const mId of selectedMeridians) {
-    const points = acupointsByMeridian[mId];
-    if (points) {
-      visibleAcupoints.push(...points);
+  // 如果有选中的单个穴位，只显示该穴位；否则显示选中经络的所有穴位
+  const visibleAcupoints: AcupointData[] = useMemo(() => {
+    if (selectedAcupoint) {
+      // 只显示选中的单个穴位
+      return [selectedAcupoint];
     }
-  }
+    // 显示选中经络的所有穴位
+    const points: AcupointData[] = [];
+    for (const mId of selectedMeridians) {
+      const meridianPoints = acupointsByMeridian[mId];
+      if (meridianPoints) {
+        points.push(...meridianPoints);
+      }
+    }
+    return points;
+  }, [selectedAcupoint, selectedMeridians, acupointsByMeridian]);
 
   return (
     <>
-      {/* Lighting */}
-      <ambientLight intensity={0.6} />
-      <directionalLight position={[5, 5, 5]} intensity={0.8} />
-      <directionalLight position={[-5, 3, -5]} intensity={0.3} />
+      {/* Lighting — 使用与校准工具相同的设置 */}
+      <ambientLight color={0xffeedd} intensity={0.5} />
+      <directionalLight position={[1.5, 2.5, 2]} intensity={1.2} />
+      <directionalLight position={[-2, 1.5, -1]} intensity={0.3} color={0x6366f1} />
 
-      {/* Camera controls — centered on model torso, good rotation range */}
+      {/* Camera controls — 使用与校准工具相同的设置 */}
       <OrbitControls
-        target={[0, MODEL_CENTER_Y, 0]}
+        target={CALIBRATOR_TARGET}
         minDistance={0.3}
         maxDistance={5}
         enablePan
@@ -93,6 +110,7 @@ function SceneContent({ selectedMeridians, focusedAcupoint, onAcupointClick, mod
           color={meridianMap[a.meridianId]?.color ?? '#ffffff'}
           isFocused={focusedAcupoint?.code === a.code}
           onClick={onAcupointClick}
+          mergedBVH={mergedBVH}
         />
       ))}
     </>
@@ -104,12 +122,12 @@ export default function MeridianScene(props: MeridianSceneProps) {
   return (
     <Canvas
       camera={{
-        position: [0, MODEL_CENTER_Y, 2.8],
+        position: CALIBRATOR_CAMERA_POS,
         fov: 45,
         near: 0.01,
         far: 100,
       }}
-      style={{ background: '#1a1a2e' }}
+      style={{ background: '#0a0a0f' }}
     >
       <SceneContent key={modelType} {...props} />
     </Canvas>

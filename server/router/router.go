@@ -59,6 +59,8 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	wsHandler := handler.NewWSHandler(cfg.JWTSecret)
 	pnHandler := handler.NewPrescriptionNotificationHandler(db)
 	queueHandler := handler.NewQueueHandler(db)
+	qdSvc := service.NewQueueDoctorService(db)
+	qdHandler := handler.NewQueueDoctorHandler(qdSvc, db)
 
 	// ---------- Route groups ----------
 
@@ -325,12 +327,27 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		queue := authenticated.Group("/queue")
 		{
 			queue.GET("", middleware.RequirePermission(db, "queue:read"), queueHandler.List)
+			queue.GET("/doctors", middleware.RequirePermission(db, "queue:create"), queueHandler.Doctors)
 			queue.POST("/take", middleware.RequirePermission(db, "queue:create"), queueHandler.TakeNumber)
 			queue.POST("/:id/call", middleware.RequirePermission(db, "queue:update"), queueHandler.Call)
 			queue.POST("/:id/complete", middleware.RequirePermission(db, "queue:update"), queueHandler.Complete)
 			queue.POST("/clear", middleware.RequirePermission(db, "queue:clear"), queueHandler.Clear)
 			queue.GET("/stats", middleware.RequirePermission(db, "queue:read"), queueHandler.Stats)
 		}
+
+		// Queue doctor management routes (tenant-scoped).
+		qd := authenticated.Group("/queue-doctors")
+		{
+			qd.GET("", middleware.RequirePermission(db, "queue:read"), qdHandler.List)
+			qd.POST("", middleware.RequirePermission(db, "tenant:user:manage"), qdHandler.Create)
+			qd.PUT("/sort", middleware.RequirePermission(db, "tenant:user:manage"), qdHandler.UpdateSort)
+			qd.PUT("/:id", middleware.RequirePermission(db, "tenant:user:manage"), qdHandler.Update)
+			qd.DELETE("/:id", middleware.RequirePermission(db, "tenant:user:manage"), qdHandler.Delete)
+		}
+		authenticated.GET("/tenant/queue-enabled", qdHandler.GetQueueEnabled)
+		authenticated.PUT("/tenant/queue-enabled", middleware.RequirePermission(db, "tenant:user:manage"), qdHandler.SetQueueEnabled)
+		authenticated.GET("/tenant/call-duration", qdHandler.GetCallDisplayDuration)
+		authenticated.PUT("/tenant/call-duration", middleware.RequirePermission(db, "tenant:user:manage"), qdHandler.SetCallDisplayDuration)
 
 		// Follow-up routes (tenant-scoped).
 		followUps := authenticated.Group("/follow-ups")

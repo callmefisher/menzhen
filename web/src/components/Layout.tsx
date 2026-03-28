@@ -58,7 +58,7 @@ export default function AppLayout() {
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [passwordForm] = Form.useForm();
-  const { user, logout, hasPermission } = useAuth();
+  const { user, logout, hasPermission, queueEnabled, fetchQueueEnabled } = useAuth();
   const { themeKey, themeConfig, setTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
@@ -83,7 +83,8 @@ export default function AppLayout() {
   // Scroll to top only on initial mount (e.g. after login redirect)
   useEffect(() => {
     window.scrollTo(0, 0);
-  }, []);
+    fetchQueueEnabled();
+  }, [fetchQueueEnabled]);
 
   useEffect(() => {
     if (!hasPermission('inventory:read')) return;
@@ -241,7 +242,7 @@ export default function AppLayout() {
     const fmtBadge = (n: number) => n > 99 ? '99+' : String(n);
 
     // Queue menu item
-    if (hasPermission('queue:read')) {
+    if (hasPermission('queue:read') && queueEnabled) {
       items.push({
         key: '/queue',
         icon: <SoundOutlined />,
@@ -388,6 +389,11 @@ export default function AppLayout() {
       }
       if (canManageConfig) {
         settingsChildren.push({
+          key: '/settings/queue',
+          icon: <SoundOutlined />,
+          label: '排队设置',
+        });
+        settingsChildren.push({
           key: '/settings/config',
           icon: <ToolOutlined />,
           label: '软件配置',
@@ -415,7 +421,7 @@ export default function AppLayout() {
     }
 
     return items;
-  }, [hasPermission, alertCount, followUpCount, rxPendingCount, queueWaitingCount]);
+  }, [hasPermission, alertCount, followUpCount, rxPendingCount, queueWaitingCount, queueEnabled]);
 
   // Determine selected keys from current path
   const selectedKeys = useMemo(() => {
@@ -425,6 +431,7 @@ export default function AppLayout() {
     if (path.startsWith('/settings/tenants')) return ['/settings/tenants'];
     if (path.startsWith('/settings/config')) return ['/settings/config'];
     if (path.startsWith('/settings/backup')) return ['/settings/backup'];
+    if (path.startsWith('/settings/queue')) return ['/settings/queue'];
     if (path.startsWith('/patients')) return ['/patients'];
     if (path.startsWith('/queue')) return ['/queue'];
     if (path.startsWith('/oplogs')) return ['/oplogs'];

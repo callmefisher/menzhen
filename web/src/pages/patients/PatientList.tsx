@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Table,
@@ -22,14 +22,17 @@ import {
   ManOutlined,
   WomanOutlined,
   TeamOutlined,
+  SoundOutlined,
 } from '@ant-design/icons';
 import { listPatients, deletePatient, findPatientPage } from '../../api/patient';
+import { callNumber } from '../../api/queue';
 import { PatientFormModal } from './PatientForm';
 import useIsMobile from '../../hooks/useIsMobile';
 import useRowHighlight from '../../hooks/useRowHighlight';
 import { useAccessibleColumns, type AccessibleColumnsType } from '../../hooks/useAccessibleColumns';
 import HiddenColumnsHint from '../../components/HiddenColumnsHint';
-import QueueStrip, { useQueueStatusMap } from '../../components/QueueStrip';
+import QueueStrip, { useQueueStatusMap, type QueueStatusInfo } from '../../components/QueueStrip';
+import { useWebSocket } from '../../hooks/useWebSocket';
 
 interface PatientItem {
   id: number;
@@ -72,6 +75,14 @@ export default function PatientList() {
   // Queue status map for row highlighting
   const queueStatusMap = useQueueStatusMap();
 
+  const handleQueueCall = async (info: QueueStatusInfo) => {
+    try {
+      await callNumber(info.entryId);
+    } catch {
+      message.error('叫号失败');
+    }
+  };
+
   const highlight = useRowHighlight({
     data,
     page: params.page,
@@ -90,7 +101,7 @@ export default function PatientList() {
       // Clear state to prevent re-highlight on re-render
       window.history.replaceState({}, '');
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [location]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchData = useCallback(async (query: ListParams) => {
     setLoading(true);
@@ -118,6 +129,13 @@ export default function PatientList() {
   useEffect(() => {
     fetchData(params);
   }, [params, fetchData]);
+
+  // Auto-refresh when a patient is auto-created via queue take-number
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+  useWebSocket('patient_created', useCallback(() => {
+    fetchData(paramsRef.current);
+  }, [fetchData]));
 
   const handleSearch = () => {
     setParams({
@@ -148,8 +166,7 @@ export default function PatientList() {
   };
 
   const handleEditSuccess = (id: number) => {
-    fetchData(params);
-    highlight.setHighlightId(id);
+    fetchData(params).then(() => highlight.setHighlightId(id));
   };
 
   const allColumns: AccessibleColumnsType<PatientItem> = [
@@ -159,20 +176,41 @@ export default function PatientList() {
       key: 'name',
       width: 160,
       render: (name: string) => {
-        const status = queueStatusMap.get(name);
-        if (status === 'seeing') {
+        const info = queueStatusMap.get(name);
+        if (!info) return name;
+        const callBtn = (
+          <Button
+            type="link"
+            size="small"
+            icon={<SoundOutlined />}
+            onClick={(e) => { e.stopPropagation(); handleQueueCall(info); }}
+            style={{ fontSize: 14, padding: '0 6px', marginLeft: 4 }}
+          />
+        );
+        if (info.status === 'seeing') {
           return (
             <span>
               <b>{name}</b>{' '}
-              <Tag color="success" style={{ fontSize: 10, marginLeft: 4, padding: '0 6px', lineHeight: '18px', borderRadius: 3 }}>就诊中</Tag>
+              <Tag color="success" style={{ fontSize: 12, marginLeft: 6, padding: '0 8px', lineHeight: '20px', borderRadius: 4 }}>就诊中</Tag>
+              {callBtn}
             </span>
           );
         }
-        if (status === 'ready') {
+        if (info.status === 'ready') {
           return (
             <span>
               <b>{name}</b>{' '}
-              <Tag color="warning" style={{ fontSize: 10, marginLeft: 4, padding: '0 6px', lineHeight: '18px', borderRadius: 3 }}>请准备</Tag>
+              <Tag color="warning" style={{ fontSize: 12, marginLeft: 6, padding: '0 8px', lineHeight: '20px', borderRadius: 4 }}>下一位</Tag>
+              {callBtn}
+            </span>
+          );
+        }
+        if (info.status === 'waiting') {
+          return (
+            <span>
+              <b>{name}</b>{' '}
+              <Tag color="processing" style={{ fontSize: 12, marginLeft: 6, padding: '0 8px', lineHeight: '20px', borderRadius: 4 }}>候诊中</Tag>
+              {callBtn}
             </span>
           );
         }
@@ -259,7 +297,8 @@ export default function PatientList() {
       : patient.gender === 2
       ? <WomanOutlined style={{ color: '#FF85C0' }} />
       : null;
-    const queueStatus = queueStatusMap.get(patient.name);
+    const queueInfo = queueStatusMap.get(patient.name);
+    const queueStatus = queueInfo?.status;
     const cardExtraClass = queueStatus === 'seeing' ? ' queue-card-seeing' : queueStatus === 'ready' ? ' queue-card-ready' : '';
     return (
       <div
@@ -272,8 +311,18 @@ export default function PatientList() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontWeight: 600, fontSize: 16, color: '#5C4A32' }}>{patient.name}</span>
-            {queueStatus === 'seeing' && <Tag color="success" style={{ fontSize: 10, margin: 0, padding: '0 6px', lineHeight: '18px', borderRadius: 3 }}>就诊中</Tag>}
-            {queueStatus === 'ready' && <Tag color="warning" style={{ fontSize: 10, margin: 0, padding: '0 6px', lineHeight: '18px', borderRadius: 3 }}>请准备</Tag>}
+            {queueStatus === 'seeing' && <Tag color="success" style={{ fontSize: 12, margin: '0 0 0 6px', padding: '0 8px', lineHeight: '20px', borderRadius: 4 }}>就诊中</Tag>}
+            {queueStatus === 'ready' && <Tag color="warning" style={{ fontSize: 12, margin: '0 0 0 6px', padding: '0 8px', lineHeight: '20px', borderRadius: 4 }}>下一位</Tag>}
+            {queueStatus === 'waiting' && <Tag color="processing" style={{ fontSize: 12, margin: '0 0 0 6px', padding: '0 8px', lineHeight: '20px', borderRadius: 4 }}>候诊中</Tag>}
+            {queueInfo && (
+              <Button
+                type="link"
+                size="small"
+                icon={<SoundOutlined />}
+                onClick={(e) => { e.stopPropagation(); handleQueueCall(queueInfo); }}
+                style={{ fontSize: 14, padding: '0 6px', marginLeft: 4 }}
+              />
+            )}
             {genderIcon}
             <Tag className={patient.gender === 1 ? 'warm-tag-male' : patient.gender === 2 ? 'warm-tag-female' : ''} style={{ margin: 0 }}>
               {patient.age}岁
@@ -329,9 +378,9 @@ export default function PatientList() {
   // Combined row className for highlight + queue status
   const combinedRowClassName = (record: PatientItem) => {
     const base = highlight.rowClassName(record);
-    const status = queueStatusMap.get(record.name);
-    if (status === 'seeing') return `${base} queue-row-seeing`;
-    if (status === 'ready') return `${base} queue-row-ready`;
+    const info = queueStatusMap.get(record.name);
+    if (info?.status === 'seeing') return `${base} queue-row-seeing`;
+    if (info?.status === 'ready') return `${base} queue-row-ready`;
     return base;
   };
 

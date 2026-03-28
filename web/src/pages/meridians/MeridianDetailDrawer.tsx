@@ -129,9 +129,9 @@ export default function MeridianDetailDrawer({
   const handleTagClick = useCallback(
     (acupoint: AcupointData) => {
       onAcupointNavigate(acupoint);
-      onClose();
+      // 不关闭drawer，保持勾选状态可见
     },
-    [onAcupointNavigate, onClose],
+    [onAcupointNavigate],
   );
 
   const color = meridian?.color ?? '#666';

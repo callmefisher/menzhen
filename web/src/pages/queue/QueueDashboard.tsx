@@ -1,12 +1,14 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Button, Input, Select, Slider, Tabs, Tooltip, Modal, message } from 'antd';
+import { useNavigate } from 'react-router-dom';
+import { Button, Input, Select, Slider, Tooltip, Modal, message } from 'antd';
 import { SoundOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { listQueue, takeNumber, callNumber, completeVisit, clearQueue, type QueueEntry } from '../../api/queue';
-import { listUsers } from '../../api/user';
+import { listQueueDoctors, getCallDisplayDuration, type QueueDoctor as QueueDoctorConfig } from '../../api/queue-doctor';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { useAuth } from '../../store/auth';
 import useIsMobile from '../../hooks/useIsMobile';
 import CallOverlay from '../../components/CallOverlay';
+import { formatRoom } from '../../utils/format';
 
 const DOCTOR_COLORS = ['#52c41a', '#faad14', '#722ed1', '#cf1322', '#1677ff', '#13c2c2', '#eb2f96', '#fa541c'];
 
@@ -17,12 +19,16 @@ interface DoctorGroup {
   entries: QueueEntry[];
 }
 
-interface CallOverlayState {
-  visible: boolean;
+interface CallNotification {
   seq: number;
   name: string;
   room: string;
   doctor: string;
+}
+
+interface DoctorCallState {
+  queue: CallNotification[];
+  current: CallNotification | null;
 }
 
 interface DoctorOption {
@@ -34,6 +40,7 @@ interface DoctorOption {
 export default function QueueDashboard() {
   const { hasPermission } = useAuth();
   const isMobile = useIsMobile();
+  const navigate = useNavigate();
 
   const [entries, setEntries] = useState<QueueEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -41,8 +48,28 @@ export default function QueueDashboard() {
   const [takeNameValue, setTakeNameValue] = useState('');
   const [takeDoctorId, setTakeDoctorId] = useState<number | undefined>();
   const [takeLoading, setTakeLoading] = useState(false);
-  const [overlays, setOverlays] = useState<Record<number, CallOverlayState>>({});
+  // Per-doctor call state: queue + current merged into one atomic unit
+  const [doctorCallStates, setDoctorCallStates] = useState<Record<number, DoctorCallState>>({});
+  const [callDurationMs, setCallDurationMs] = useState(10000);
   const [doctors, setDoctors] = useState<DoctorOption[]>([]);
+  const [pageVisible, setPageVisible] = useState(() => {
+    // SSR compatibility: check if document is available
+    if (typeof document !== 'undefined') {
+      return !document.hidden;
+    }
+    return true;
+  });
+
+  // Page visibility detection (single listener at parent level)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      setPageVisible(!document.hidden);
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
 
   // Fetch queue data
   const fetchQueue = useCallback(async () => {
@@ -59,22 +86,62 @@ export default function QueueDashboard() {
     }
   }, []);
 
-  // Fetch doctors (users with doctor-like role)
+  // Fetch call display duration from tenant settings
   useEffect(() => {
     (async () => {
       try {
-        const res = await listUsers({ page: 1, size: 9999 });
+        const res = await getCallDisplayDuration();
         const body = res as any;
-        const users = body.data?.list || [];
-        // All users can potentially be doctors for queue purposes
-        const docs: DoctorOption[] = users.map((u: any) => ({
-          id: u.id,
-          name: u.real_name || u.username,
-          room: '',
-        }));
-        setDoctors(docs);
+        const seconds: number = body.data?.seconds ?? 10;
+        setCallDurationMs(seconds * 1000);
       } catch {
-        /* ignore - will derive from queue data */
+        // default 10s
+      }
+    })();
+  }, []);
+
+  // Per-doctor dequeue: atomic single-setState to avoid race between two separate states
+  useEffect(() => {
+    setDoctorCallStates(prev => {
+      let changed = false;
+      const next = { ...prev };
+      for (const key of Object.keys(next)) {
+        const doctorId = Number(key);
+        const state = next[doctorId];
+        if (state.current === null && state.queue.length > 0) {
+          const [nextCall, ...rest] = state.queue;
+          next[doctorId] = { queue: rest, current: nextCall };
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [doctorCallStates]);
+
+  const handleCallClose = useCallback((doctorId: number) => {
+    setDoctorCallStates(prev => ({
+      ...prev,
+      [doctorId]: { ...prev[doctorId], current: null },
+    }));
+  }, []);
+
+  // Fetch doctors for take-number dropdown
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await listQueueDoctors();
+        const body = res as any;
+        const list: QueueDoctorConfig[] = body.data?.list || [];
+        const docs: DoctorOption[] = list
+          .filter(d => d.enabled)
+          .map(d => ({ id: d.user_id, name: d.user_name, room: d.room }));
+        setDoctors(docs);
+        // Default select first enabled doctor (functional update avoids stale closure)
+        if (docs.length > 0) {
+          setTakeDoctorId(prev => prev ?? docs[0].id);
+        }
+      } catch {
+        /* fallback: derive from queue data */
       }
     })();
   }, []);
@@ -90,17 +157,18 @@ export default function QueueDashboard() {
 
   useWebSocket('queue_call', useCallback((msg: any) => {
     const { doctor_id, seq, patient_name, room, doctor_name } = msg.payload || {};
-    if (doctor_id && seq) {
-      setOverlays(prev => ({
-        ...prev,
-        [doctor_id]: { visible: true, seq, name: patient_name, room, doctor: doctor_name },
-      }));
+    if (seq > 0 && doctor_id) {
+      const notification: CallNotification = { seq, name: patient_name, room, doctor: doctor_name };
+      setDoctorCallStates(prev => {
+        const existing = prev[doctor_id] ?? { queue: [], current: null };
+        return { ...prev, [doctor_id]: { ...existing, queue: [...existing.queue, notification] } };
+      });
     }
   }, []));
 
   useWebSocket('queue_clear', useCallback(() => {
     setEntries([]);
-    setOverlays({});
+    setDoctorCallStates({});
   }, []));
 
   useWebSocket('_reconnect', useCallback(() => {
@@ -121,6 +189,10 @@ export default function QueueDashboard() {
         });
       }
       map.get(e.doctor_id)!.entries.push(e);
+    }
+    // Sort each doctor's entries by seq_number
+    for (const group of map.values()) {
+      group.entries.sort((a, b) => a.seq_number - b.seq_number);
     }
     return Array.from(map.values());
   }, [entries]);
@@ -182,8 +254,13 @@ export default function QueueDashboard() {
       const entry = body.data;
       message.success(`${takeNameValue.trim()} 取号成功 -> ${String(entry?.seq_number || '').padStart(2, '0')}号 - ${doc.name}`);
       setTakeNameValue('');
-    } catch {
-      message.error('取号失败');
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || '';
+      if (msg.includes('已在排队')) {
+        message.warning(msg);
+      } else {
+        message.error('取号失败');
+      }
     } finally {
       setTakeLoading(false);
     }
@@ -226,14 +303,6 @@ export default function QueueDashboard() {
     });
   };
 
-  // Close overlay for a doctor
-  const closeOverlay = useCallback((doctorId: number) => {
-    setOverlays(prev => ({
-      ...prev,
-      [doctorId]: { ...prev[doctorId], visible: false },
-    }));
-  }, []);
-
   // Grid columns
   const gridCols = useMemo(() => {
     const count = doctorGroups.length;
@@ -252,25 +321,10 @@ export default function QueueDashboard() {
     return '极快';
   }, [speed]);
 
-  // Mobile: currently selected doctor tab
-  const [activeTabKey, setActiveTabKey] = useState<string>('');
-
-  // Keep active tab in sync when doctorGroups changes
-  useEffect(() => {
-    if (doctorGroups.length === 0) {
-      setActiveTabKey('');
-      return;
-    }
-    const ids = doctorGroups.map(g => String(g.doctorId));
-    if (!ids.includes(activeTabKey)) {
-      setActiveTabKey(ids[0]);
-    }
-  }, [doctorGroups, activeTabKey]);
-
   // Stats row (shared between mobile and desktop)
   const statsRow = (
     <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 8, flexWrap: 'wrap' }}>
-      <span style={{ fontSize: isMobile ? 15 : 18, fontWeight: 700 }}>排队叫号</span>
+      <span style={{ fontSize: isMobile ? 18 : 22, fontWeight: 700 }}>排队叫号</span>
       <StatBadge count={stats.waiting} label="候诊" color="#1677ff" bgFrom="#e6f7ff" bgTo="#f0f5ff" border="#d6e4ff" />
       <StatBadge count={stats.seeing} label="就诊" color="#52c41a" bgFrom="#f6ffed" bgTo="#fcffe6" border="#d9f7be" />
       <StatBadge count={stats.done} label="已完成" color="#8c8c8c" bgFrom="#f9f9f9" bgTo="#f5f5f5" border="#e8e8e8" />
@@ -294,7 +348,7 @@ export default function QueueDashboard() {
       display: 'flex', justifyContent: 'flex-end', alignItems: 'center',
       gap: 8, marginTop: 10, flexShrink: 0, flexWrap: 'wrap',
     }}>
-      <span style={{ fontSize: 13, fontWeight: 600, color: '#555' }}>现场取号</span>
+      <span style={{ fontSize: 15, fontWeight: 600, color: '#555' }}>现场取号</span>
       <Input
         placeholder="患者姓名"
         value={takeNameValue}
@@ -311,7 +365,10 @@ export default function QueueDashboard() {
         size="middle"
         showSearch
         optionFilterProp="label"
-        options={doctorOptions.map(d => ({ value: d.id, label: d.name }))}
+        options={doctorOptions.map(d => ({
+          value: d.id,
+          label: d.name,
+        }))}
       />
       <Button
         type="primary"
@@ -338,51 +395,51 @@ export default function QueueDashboard() {
           {statsRow}
         </div>
 
-        {/* Doctor Tabs */}
-        {doctorGroups.length === 0 && !loading ? (
-          <div style={{ textAlign: 'center', padding: 60, color: '#999' }}>
-            暂无排队数据
-          </div>
-        ) : (
-          <Tabs
-            activeKey={activeTabKey}
-            onChange={setActiveTabKey}
-            size="small"
+        {/* Speed slider */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexShrink: 0 }}>
+          <span style={{ fontSize: 13, color: '#999' }}>滚动速度</span>
+          <Slider
+            min={0} max={100} value={speed} onChange={setSpeed}
             style={{ flex: 1 }}
-            tabBarStyle={{ marginBottom: 8 }}
-            items={doctorGroups.map((group, idx) => {
-              const color = DOCTOR_COLORS[idx % DOCTOR_COLORS.length];
-              const waitingCount = group.entries.filter(e => e.status === 'waiting' || e.status === 'ready').length;
-              return {
-                key: String(group.doctorId),
-                label: (
-                  <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1.3, padding: '2px 0' }}>
-                    <span style={{ fontWeight: 700, fontSize: 12, color: activeTabKey === String(group.doctorId) ? color : undefined }}>
-                      {group.doctorName}
-                    </span>
-                    <span style={{ fontSize: 10, color: activeTabKey === String(group.doctorId) ? color : '#999' }}>
-                      等候{waitingCount}
-                    </span>
-                  </span>
-                ),
-                children: (
-                  <div style={{ position: 'relative' }}>
-                    <DoctorCard
-                      group={group}
-                      colorIndex={idx}
-                      speed={0}
-                      overlay={overlays[group.doctorId]}
-                      onCloseOverlay={() => closeOverlay(group.doctorId)}
-                      onCall={handleCall}
-                      onComplete={handleComplete}
-                      hasWritePermission={hasPermission('queue:update')}
-                    />
-                  </div>
-                ),
-              };
-            })}
+            tooltip={{ formatter: () => speedLabel }}
           />
-        )}
+          <span style={{ fontSize: 13, color: '#52c41a', fontWeight: 600, minWidth: 28 }}>{speedLabel}</span>
+        </div>
+
+        {/* Doctor cards (same grid as desktop) */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, flex: 1, minHeight: 0, overflow: 'auto' }}>
+          {doctorGroups.length === 0 && !loading ? (
+            doctors.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: 60, color: '#999' }}>
+                <p>暂未配置接诊医生</p>
+                <Button type="link" onClick={() => navigate('/settings/queue')}>
+                  前往排队设置配置接诊医生
+                </Button>
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', padding: 60, color: '#999' }}>
+                暂无排队数据
+              </div>
+            )
+          ) : (
+            doctorGroups.map((group, idx) => (
+              <DoctorCard
+                key={group.doctorId}
+                group={group}
+                colorIndex={idx}
+                speed={speed}
+                onCall={handleCall}
+                onComplete={handleComplete}
+                currentCall={doctorCallStates[group.doctorId]?.current ?? null}
+                callDuration={callDurationMs}
+                onCallClose={() => handleCallClose(group.doctorId)}
+                hasWritePermission={hasPermission('queue:update')}
+                isMobile={isMobile}
+                pageVisible={pageVisible}
+              />
+            ))
+          )}
+        </div>
 
         {/* Take number bar */}
         {takeNumberBar}
@@ -399,13 +456,13 @@ export default function QueueDashboard() {
 
       {/* Speed slider */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexShrink: 0 }}>
-        <span style={{ fontSize: 12, color: '#999' }}>滚动速度</span>
+        <span style={{ fontSize: 13, color: '#999' }}>滚动速度</span>
         <Slider
           min={0} max={100} value={speed} onChange={setSpeed}
           style={{ width: 120 }}
           tooltip={{ formatter: () => speedLabel }}
         />
-        <span style={{ fontSize: 12, color: '#52c41a', fontWeight: 600, minWidth: 28 }}>{speedLabel}</span>
+        <span style={{ fontSize: 13, color: '#52c41a', fontWeight: 600, minWidth: 28 }}>{speedLabel}</span>
       </div>
 
       {/* Doctor cards grid */}
@@ -418,9 +475,18 @@ export default function QueueDashboard() {
         overflow: 'auto',
       }}>
         {doctorGroups.length === 0 && !loading && (
-          <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 60, color: '#999' }}>
-            暂无排队数据
-          </div>
+          doctors.length === 0 ? (
+            <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 60, color: '#999' }}>
+              <p>暂未配置接诊医生</p>
+              <Button type="link" onClick={() => navigate('/settings/queue')}>
+                前往排队设置配置接诊医生
+              </Button>
+            </div>
+          ) : (
+            <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 60, color: '#999' }}>
+              暂无排队数据
+            </div>
+          )
         )}
         {doctorGroups.map((group, idx) => (
           <DoctorCard
@@ -428,11 +494,14 @@ export default function QueueDashboard() {
             group={group}
             colorIndex={idx}
             speed={speed}
-            overlay={overlays[group.doctorId]}
-            onCloseOverlay={() => closeOverlay(group.doctorId)}
             onCall={handleCall}
             onComplete={handleComplete}
+            currentCall={doctorCallStates[group.doctorId]?.current ?? null}
+            callDuration={callDurationMs}
+            onCallClose={() => handleCallClose(group.doctorId)}
             hasWritePermission={hasPermission('queue:update')}
+            isMobile={isMobile}
+            pageVisible={pageVisible}
           />
         ))}
       </div>
@@ -451,8 +520,8 @@ function StatBadge({ count, label, color, bgFrom, bgTo, border }: {
   return (
     <div style={{
       background: `linear-gradient(135deg, ${bgFrom}, ${bgTo})`,
-      padding: '4px 14px', borderRadius: 6,
-      border: `1px solid ${border}`, fontSize: 12,
+      padding: '5px 16px', borderRadius: 6,
+      border: `1px solid ${border}`, fontSize: 14,
     }}>
       <b style={{ color }}>{count}</b>{' '}
       <span style={{ color }}>{label}</span>
@@ -460,15 +529,18 @@ function StatBadge({ count, label, color, bgFrom, bgTo, border }: {
   );
 }
 
-function DoctorCard({ group, colorIndex, speed, overlay, onCloseOverlay, onCall, onComplete, hasWritePermission }: {
+function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall, callDuration, onCallClose, hasWritePermission, isMobile, pageVisible = true }: {
   group: DoctorGroup;
   colorIndex: number;
   speed: number;
-  overlay?: CallOverlayState;
-  onCloseOverlay: () => void;
   onCall: (e: QueueEntry) => void;
   onComplete: (e: QueueEntry) => void;
+  currentCall: CallNotification | null;
+  callDuration: number;
+  onCallClose: () => void;
   hasWritePermission: boolean;
+  isMobile?: boolean;
+  pageVisible?: boolean;
 }) {
   const color = DOCTOR_COLORS[colorIndex % DOCTOR_COLORS.length];
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -488,23 +560,27 @@ function DoctorCard({ group, colorIndex, speed, overlay, onCloseOverlay, onCall,
     let lastTick = 0;
     let paused = false;
     let rafId: number;
+    let resetTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
     const tick = () => {
       const now = performance.now();
       const el = scrollRef.current;
-      if (el && !hoveredRef.current && !paused && now - lastTick >= interval) {
+      if (el && !hoveredRef.current && !paused && pageVisible && now - lastTick >= interval) {
         lastTick = now;
         el.scrollTop += 1;
         if (el.scrollTop >= el.scrollHeight - el.clientHeight - 1) {
           paused = true;
-          setTimeout(() => { if (el) el.scrollTop = 0; paused = false; }, 2000);
+          resetTimeoutId = setTimeout(() => { if (el) el.scrollTop = 0; paused = false; }, 2000);
         }
       }
       rafId = requestAnimationFrame(tick);
     };
     rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
-  }, [speed]);
+    return () => {
+      cancelAnimationFrame(rafId);
+      if (resetTimeoutId !== null) clearTimeout(resetTimeoutId);
+    };
+  }, [speed, pageVisible]);
 
   const waitingCount = group.entries.filter(e => e.status === 'waiting' || e.status === 'ready').length;
 
@@ -536,21 +612,21 @@ function DoctorCard({ group, colorIndex, speed, overlay, onCloseOverlay, onCall,
         flexShrink: 0,
       }}>
         <div style={{
-          width: 32, height: 32,
+          width: 40, height: 40,
           background: `linear-gradient(135deg, ${color}, ${color}cc)`,
           color: '#fff', borderRadius: 8,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 14, fontWeight: 700, flexShrink: 0,
+          fontSize: 16, fontWeight: 700, flexShrink: 0,
         }}>
           {group.doctorName.charAt(0)}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 700, fontSize: 13 }}>{group.doctorName}</div>
-          <div style={{ fontSize: 10, color: '#999' }}>{group.room || '诊室'}</div>
+          <div style={{ fontWeight: 700, fontSize: 16 }}>{group.doctorName}</div>
+          <div style={{ fontSize: 12, color: '#999' }}>{formatRoom(group.room)}</div>
         </div>
         <div style={{
           background: color, color: '#fff',
-          fontSize: 10, padding: '2px 8px', borderRadius: 10, fontWeight: 600,
+          fontSize: 12, padding: '2px 10px', borderRadius: 10, fontWeight: 600,
         }}>
           等候 {waitingCount}
         </div>
@@ -560,7 +636,7 @@ function DoctorCard({ group, colorIndex, speed, overlay, onCloseOverlay, onCall,
             size="small"
             icon={<SoundOutlined />}
             onClick={handleCallDoctor}
-            style={{ color, fontWeight: 600, fontSize: 12 }}
+            style={{ color, fontWeight: 600, fontSize: 14 }}
           >
             叫号
           </Button>
@@ -586,6 +662,7 @@ function DoctorCard({ group, colorIndex, speed, overlay, onCloseOverlay, onCall,
             onCall={onCall}
             onComplete={onComplete}
             hasWritePermission={hasWritePermission}
+            isMobile={isMobile}
           />
         )}
         {/* Waiting entries */}
@@ -598,38 +675,40 @@ function DoctorCard({ group, colorIndex, speed, overlay, onCloseOverlay, onCall,
             onCall={onCall}
             onComplete={onComplete}
             hasWritePermission={hasWritePermission}
+            isMobile={isMobile}
           />
         ))}
       </div>
-
-      {/* Call overlay */}
-      {overlay && (
-        <CallOverlay
-          visible={overlay.visible}
-          seq={overlay.seq}
-          name={overlay.name}
-          room={overlay.room}
-          doctor={overlay.doctor}
-          onClose={onCloseOverlay}
-        />
-      )}
 
       <style>{`
         .queue-scroll::-webkit-scrollbar { width: 4px; }
         .queue-scroll::-webkit-scrollbar-thumb { background: #e0e0e0; border-radius: 2px; }
         .queue-scroll::-webkit-scrollbar-track { background: transparent; }
       `}</style>
+
+      {/* Per-doctor call overlay — absolute-positioned within this card */}
+      <CallOverlay
+        visible={currentCall !== null}
+        seq={currentCall?.seq ?? 0}
+        name={currentCall?.name ?? ''}
+        room={currentCall?.room ?? ''}
+        doctor={currentCall?.doctor ?? ''}
+        duration={callDuration}
+        onClose={onCallClose}
+        isMobile={false}
+      />
     </div>
   );
 }
 
-function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermission }: {
+function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermission, isMobile }: {
   entry: QueueEntry;
   type: 'seeing' | 'next' | 'waiting';
   position: number;
   onCall: (e: QueueEntry) => void;
   onComplete: (e: QueueEntry) => void;
   hasWritePermission: boolean;
+  isMobile?: boolean;
 }) {
   const seq = String(entry.seq_number).padStart(2, '0');
 
@@ -648,7 +727,7 @@ function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermissio
       borderColor: '#fa8c16',
       bg: '#fff7e6',
       numBg: 'linear-gradient(135deg, #ffa940, #fa8c16)',
-      tagText: '请准备',
+      tagText: '下一位',
       tagColor: '#fa8c16',
       tagBorder: '#ffd591',
       tagBg: '#fff7e6',
@@ -667,7 +746,7 @@ function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermissio
   }[type];
 
   return (
-    <Tooltip title={config.tooltip} placement="right" mouseEnterDelay={0.5}>
+    <Tooltip title={config.tooltip} placement={isMobile ? 'top' : 'right'} mouseEnterDelay={0.5}>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 10,
         padding: '8px 10px',
@@ -680,11 +759,11 @@ function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermissio
       }}>
         {/* Seq badge */}
         <div style={{
-          width: 32, height: 32,
+          width: 38, height: 38,
           background: config.numBg,
           color: '#fff', borderRadius: 8,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 12, fontWeight: 800, flexShrink: 0,
+          fontSize: 15, fontWeight: 800, flexShrink: 0,
         }}>
           {seq}
         </div>
@@ -692,9 +771,13 @@ function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermissio
         {/* Info */}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ fontWeight: 700, fontSize: 14 }}>{entry.patient_name}</span>
+            <span
+              style={{ fontWeight: 700, fontSize: 17 }}
+            >
+              {entry.patient_name}
+            </span>
             <span style={{
-              fontSize: 10, color: config.tagColor,
+              fontSize: 12, color: config.tagColor,
               border: `1.5px solid ${config.tagBorder}`,
               background: config.tagBg,
               padding: '0 6px', borderRadius: 3, fontWeight: 600,
@@ -704,7 +787,7 @@ function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermissio
             </span>
           </div>
           {entry.booked_time && (
-            <div style={{ fontSize: 10, color: '#999', marginTop: 1 }}>
+            <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>
               约{entry.booked_time}
             </div>
           )}
@@ -716,7 +799,7 @@ function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermissio
             <Button
               type="link"
               size="small"
-              style={{ fontSize: 11, padding: '0 4px', color: '#52c41a' }}
+              style={{ fontSize: 13, padding: '0 4px', color: '#52c41a' }}
               onClick={(e) => { e.stopPropagation(); onCall(entry); }}
             >
               再次叫号
@@ -724,7 +807,7 @@ function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermissio
             <Button
               type="link"
               size="small"
-              style={{ fontSize: 11, padding: '0 4px', color: '#999' }}
+              style={{ fontSize: 13, padding: '0 4px', color: '#999' }}
               onClick={(e) => { e.stopPropagation(); onComplete(entry); }}
             >
               完成

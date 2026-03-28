@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>经络调试与导出工具 - 一键同步到正式环境</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0a0f; color: #e0e0e0; height: 100vh; overflow: hidden; }
+
+/* 分屏布局 */
+.container { display: flex; height: 100vh; }
+.panel { flex: 1; position: relative; border-right: 2px solid #333; }
+.panel:last-child { border-right: none; }
+
+/* 标签 */
+.panel-label {
+  position: absolute; top: 10px; left: 10px; z-index: 100;
+  background: rgba(0,0,0,0.7); padding: 8px 16px; border-radius: 4px;
+  font-size: 14px; font-weight: 600;
+}
+.panel-label.calibrator { color: #22c55e; border: 1px solid #22c55e; }
+.panel-label.production { color: #6366f1; border: 1px solid #6366f1; }
+
+/* 导出面板 */
+.export-panel {
+  position: absolute; top: 50px; left: 10px; right: 10px; z-index: 100;
+  background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(10px);
+  border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 8px;
+  padding: 12px; font-size: 11px;
+  max-height: 200px; overflow-y: auto;
+}
+.export-panel h3 { font-size: 12px; color: #6366f1; margin-bottom: 8px; }
+
+/* 控制按钮 */
+.controls {
+  position: absolute; top: 10px; right: 10px; z-index: 100;
+  display: flex; gap: 8px; flex-wrap: wrap;
+}
+.btn {
+  background: rgba(30, 41, 59, 0.8); border: 1px solid rgba(99, 102, 241, 0.3);
+  color: #e2e8f0; padding: 6px 12px; border-radius: 4px; cursor: pointer;
+  font-size: 12px; transition: all 0.15s;
+}
+.btn:hover { background: rgba(99, 102, 241, 0.3); }
+.btn.active { background: rgba(99, 102, 241, 0.5); border-color: #6366f1; }
+.btn.success { background: linear-gradient(135deg, #22c55e, #4ade80); border-color: #22c55e; }
+.btn.success:hover { box-shadow: 0 4px 12px rgba(34, 197, 94, 0.4); }
+.btn.warning { background: linear-gradient(135deg, #f59e0b, #fbbf24); border-color: #f59e0b; color: #000; }
+
+/* 经络选择器 */
+.meridian-selector {
+  display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 10px;
+}
+.meridian-btn {
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  color: #94a3b8;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+}
+.meridian-btn:hover { background: rgba(99, 102, 241, 0.2); }
+.meridian-btn.active {
+  background: rgba(99, 102, 241, 0.5);
+  border-color: #6366f1;
+  color: #fff;
+}
+
+/* 模型切换 */
+.model-toggle {
+  display: flex; gap: 4px;
+}
+.model-btn {
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  color: #94a3b8;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+}
+.model-btn.active {
+  background: rgba(99, 102, 241, 0.5);
+  border-color: #6366f1;
+  color: #fff;
+}
+
+/* 状态指示 */
+.status-bar {
+  position: absolute; bottom: 10px; left: 10px; right: 10px; z-index: 100;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 11px;
+}
+.status-row { display: flex; justify-content: space-between; align-items: center; }
+.status-item { display: flex; align-items: center; gap: 6px; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; }
+.status-dot.ready { background: #22c55e; }
+.status-dot.pending { background: #eab308; }
+.status-dot.error { background: #ef4444; }
+
+/* 穴位映射编辑器 */
+.mapping-editor {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  margin-top: 8px;
+}
+.mapping-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(30, 41, 59, 0.4);
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+.mapping-item label {
+  font-size: 10px;
+  color: #94a3b8;
+  min-width: 35px;
+}
+.mapping-item input {
+  width: 40px;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  color: #e2e8f0;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-size: 11px;
+  text-align: center;
+}
+
+/* 代码预览 */
+.code-preview {
+  background: #0f172a;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 4px;
+  padding: 8px;
+  font-family: 'SF Mono', monospace;
+  font-size: 9px;
+  color: #94a3b8;
+  max-height: 100px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin-top: 8px;
+}
+
+/* 进度条 */
+.progress-bar {
+  width: 100%;
+  height: 4px;
+  background: rgba(99, 102, 241, 0.2);
+  border-radius: 2px;
+  margin-top: 8px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #6366f1, #818cf8);
+  border-radius: 2px;
+  transition: width 0.3s;
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <!-- 左侧：校准工具 -->
+  <div class="panel" style="overflow: hidden;">
+    <div class="panel-label calibrator">📍 经络校准工具</div>
+    
+    <!-- 经络选择 -->
+    <div class="controls" style="top: 50px;">
+      <div class="meridian-selector" id="meridian-selector">
+        <!-- 动态生成 -->
+      </div>
+    </div>
+    
+    <!-- 模型切换 -->
+    <div class="controls">
+      <div class="model-toggle">
+        <button class="model-btn active" onclick="switchModel('male')">男模型</button>
+        <button class="model-btn" onclick="switchModel('female')">女模型</button>
+      </div>
+    </div>
+    
+    <iframe src="/lu-calibrator-ultra.html" id="calibrator-frame" style="width: 100%; height: 100%; border: none;"></iframe>
+  </div>
+
+  <!-- 右侧：正式环境预览 + 导出 -->
+  <div class="panel" id="panel-production" style="overflow: hidden;">
+    <div class="panel-label production">🚀 正式环境预览 & 导出</div>
+    
+    <!-- 导出控制面板 -->
+    <div class="export-panel">
+      <h3>📦 一键导出到正式环境</h3>
+      
+      <!-- 当前状态 -->
+      <div class="status-row" style="margin-bottom: 10px;">
+        <span>当前经络: <strong id="current-meridian">LU (手太阴肺经)</strong></span>
+        <span>模型: <strong id="current-model">male</strong></span>
+      </div>
+      
+      <!-- 穴位索引映射 -->
+      <div style="margin-bottom: 10px;">
+        <div style="font-size: 10px; color: #64748b; margin-bottom: 4px;">穴位索引映射（路径点索引）:</div>
+        <div class="mapping-editor" id="mapping-editor">
+          <!-- 动态生成 -->
+        </div>
+      </div>
+      
+      <!-- 操作按钮 -->
+      <div style="display: flex; gap: 8px;">
+        <button class="btn" onclick="loadFromCalibrator()" style="flex: 1;">🔄 从校准工具加载</button>
+        <button class="btn" onclick="previewData()" style="flex: 1;">👁️ 预览数据</button>
+        <button class="btn success" onclick="exportToProduction()" style="flex: 2;">💾 导出并同步到正式环境</button>
+      </div>
+      
+      <!-- 进度条 -->
+      <div class="progress-bar" id="progress-bar" style="display: none;">
+        <div class="progress-fill" id="progress-fill" style="width: 0%;"></div>
+      </div>
+      
+      <!-- 代码预览 -->
+      <div class="code-preview" id="code-preview" style="display: none;"></div>
+    </div>
+    
+    <!-- 状态栏 -->
+    <div class="status-bar">
+      <div class="status-row">
+        <div class="status-item">
+          <span class="status-dot ready" id="status-calibrator"></span>
+          <span>校准工具</span>
+        </div>
+        <div class="status-item">
+          <span class="status-dot pending" id="status-mapping"></span>
+          <span>穴位映射</span>
+        </div>
+        <div class="status-item">
+          <span class="status-dot pending" id="status-export"></span>
+          <span>数据导出</span>
+        </div>
+        <div class="status-item" id="export-result" style="color: #22c55e; font-weight: 600;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================
+// 全局配置
+// ============================================
+const MERIDIANS = {
+  'LU': { name: '手太阴肺经', acupoints: ['LU1', 'LU2', 'LU3', 'LU4', 'LU5', 'LU6', 'LU7', 'LU8', 'LU9', 'LU10', 'LU11'] },
+  'LI': { name: '手阳明大肠经', acupoints: ['LI1', 'LI2', 'LI3', 'LI4', 'LI5', 'LI6', 'LI7', 'LI8', 'LI9', 'LI10', 'LI11', 'LI12', 'LI13', 'LI14', 'LI15', 'LI16', 'LI17', 'LI18', 'LI19', 'LI20'] },
+  'ST': { name: '足阳明胃经', acupoints: ['ST1', 'ST2', 'ST3', 'ST4', 'ST5', 'ST6', 'ST7', 'ST8', 'ST9', 'ST10', 'ST11', 'ST12', 'ST13', 'ST14', 'ST15', 'ST16', 'ST17', 'ST18', 'ST19', 'ST20', 'ST21', 'ST22', 'ST23', 'ST24', 'ST25', 'ST26', 'ST27', 'ST28', 'ST29', 'ST30', 'ST31', 'ST32', 'ST33', 'ST34', 'ST35', 'ST36', 'ST37', 'ST38', 'ST39', 'ST40', 'ST41', 'ST42', 'ST43', 'ST44', 'ST45'] },
+  'SP': { name: '足太阴脾经', acupoints: ['SP1', 'SP2', 'SP3', 'SP4', 'SP5', 'SP6', 'SP7', 'SP8', 'SP9', 'SP10', 'SP11', 'SP12', 'SP13', 'SP14', 'SP15', 'SP16', 'SP17', 'SP18', 'SP19', 'SP20', 'SP21'] },
+  'HT': { name: '手少阴心经', acupoints: ['HT1', 'HT2', 'HT3', 'HT4', 'HT5', 'HT6', 'HT7', 'HT8', 'HT9'] },
+  'SI': { name: '手太阳小肠经', acupoints: ['SI1', 'SI2', 'SI3', 'SI4', 'SI5', 'SI6', 'SI7', 'SI8', 'SI9', 'SI10', 'SI11', 'SI12', 'SI13', 'SI14', 'SI15', 'SI16', 'SI17', 'SI18', 'SI19'] },
+  'BL': { name: '足太阳膀胱经', acupoints: ['BL1', 'BL2', 'BL3', 'BL4', 'BL5', 'BL6', 'BL7', 'BL8', 'BL9', 'BL10', 'BL11', 'BL12', 'BL13', 'BL14', 'BL15', 'BL16', 'BL17', 'BL18', 'BL19', 'BL20', 'BL21', 'BL22', 'BL23', 'BL24', 'BL25', 'BL26', 'BL27', 'BL28', 'BL29', 'BL30', 'BL31', 'BL32', 'BL33', 'BL34', 'BL35', 'BL36', 'BL37', 'BL38', 'BL39', 'BL40', 'BL41', 'BL42', 'BL43', 'BL44', 'BL45', 'BL46', 'BL47', 'BL48', 'BL49', 'BL50', 'BL51', 'BL52', 'BL53', 'BL54', 'BL55', 'BL56', 'BL57', 'BL58', 'BL59', 'BL60', 'BL61', 'BL62', 'BL63', 'BL64', 'BL65', 'BL66', 'BL67'] },
+  'KI': { name: '足少阴肾经', acupoints: ['KI1', 'KI2', 'KI3', 'KI4', 'KI5', 'KI6', 'KI7', 'KI8', 'KI9', 'KI10', 'KI11', 'KI12', 'KI13', 'KI14', 'KI15', 'KI16', 'KI17', 'KI18', 'KI19', 'KI20', 'KI21', 'KI22', 'KI23', 'KI24', 'KI25', 'KI26', 'KI27'] },
+  'PC': { name: '手厥阴心包经', acupoints: ['PC1', 'PC2', 'PC3', 'PC4', 'PC5', 'PC6', 'PC7', 'PC8', 'PC9'] },
+  'TE': { name: '手少阳三焦经', acupoints: ['TE1', 'TE2', 'TE3', 'TE4', 'TE5', 'TE6', 'TE7', 'TE8', 'TE9', 'TE10', 'TE11', 'TE12', 'TE13', 'TE14', 'TE15', 'TE16', 'TE17', 'TE18', 'TE19', 'TE20', 'TE21', 'TE22', 'TE23'] },
+  'GB': { name: '足少阳胆经', acupoints: ['GB1', 'GB2', 'GB3', 'GB4', 'GB5', 'GB6', 'GB7', 'GB8', 'GB9', 'GB10', 'GB11', 'GB12', 'GB13', 'GB14', 'GB15', 'GB16', 'GB17', 'GB18', 'GB19', 'GB20', 'GB21', 'GB22', 'GB23', 'GB24', 'GB25', 'GB26', 'GB27', 'GB28', 'GB29', 'GB30', 'GB31', 'GB32', 'GB33', 'GB34', 'GB35', 'GB36', 'GB37', 'GB38', 'GB39', 'GB40', 'GB41', 'GB42', 'GB43', 'GB44'] },
+  'LR': { name: '足厥阴肝经', acupoints: ['LR1', 'LR2', 'LR3', 'LR4', 'LR5', 'LR6', 'LR7', 'LR8', 'LR9', 'LR10', 'LR11', 'LR12', 'LR13', 'LR14'] },
+  'RN': { name: '任脉', acupoints: ['RN1', 'RN2', 'RN3', 'RN4', 'RN5', 'RN6', 'RN7', 'RN8', 'RN9', 'RN10', 'RN11', 'RN12', 'RN13', 'RN14', 'RN15', 'RN16', 'RN17', 'RN18', 'RN19', 'RN20', 'RN21', 'RN22', 'RN23', 'RN24'] },
+  'DU': { name: '督脉', acupoints: ['DU1', 'DU2', 'DU3', 'DU4', 'DU5', 'DU6', 'DU7', 'DU8', 'DU9', 'DU10', 'DU11', 'DU12', 'DU13', 'DU14', 'DU15', 'DU16', 'DU17', 'DU18', 'DU19', 'DU20', 'DU21', 'DU22', 'DU23', 'DU24', 'DU25', 'DU26', 'DU27', 'DU28'] },
+};
+
+// 默认穴位索引映射（肺经）
+const DEFAULT_MAPPINGS = {
+  'LU': { 'LU1': 0, 'LU2': 1, 'LU3': 5, 'LU4': 6, 'LU5': 11, 'LU6': 14, 'LU7': 18, 'LU8': 19, 'LU9': 20, 'LU10': 21, 'LU11': 26 },
+};
+
+// 当前状态
+let currentMeridian = 'LU';
+let currentModel = 'male';
+let currentPathData = [];
+let currentMappings = {};
+
+// ============================================
+// 初始化
+// ============================================
+function init() {
+  renderMeridianSelector();
+  renderMappingEditor();
+  loadDefaultData();
+}
+
+// 渲染经络选择器
+function renderMeridianSelector() {
+  const container = document.getElementById('meridian-selector');
+  container.innerHTML = Object.entries(MERIDIANS).map(([id, info]) => `
+    <button class="meridian-btn ${id === currentMeridian ? 'active' : ''}" onclick="selectMeridian('${id}')">
+      ${id}
+    </button>
+  `).join('');
+}
+
+// 渲染穴位映射编辑器
+function renderMappingEditor() {
+  const container = document.getElementById('mapping-editor');
+  const meridian = MERIDIANS[currentMeridian];
+  const defaultMapping = DEFAULT_MAPPINGS[currentMeridian] || {};
+  
+  container.innerHTML = meridian.acupoints.map((code, idx) => {
+    const defaultIdx = defaultMapping[code] !== undefined ? defaultMapping[code] : idx;
+    return `
+      <div class="mapping-item">
+        <label>${code}</label>
+        <input type="number" id="map-${code}" value="${defaultIdx}" min="0" placeholder="索引">
+      </div>
+    `;
+  }).join('');
+}
+
+// 选择经络
+function selectMeridian(id) {
+  currentMeridian = id;
+  document.getElementById('current-meridian').textContent = `${id} (${MERIDIANS[id].name})`;
+  renderMeridianSelector();
+  renderMappingEditor();
+  
+  // 通知 iframe 切换经络
+  const frame = document.getElementById('calibrator-frame');
+  if (frame.contentWindow && frame.contentWindow.switchMeridian) {
+    frame.contentWindow.switchMeridian(id);
+  }
+}
+
+// 切换模型
+function switchModel(model) {
+  currentModel = model;
+  document.getElementById('current-model').textContent = model;
+  
+  // 更新按钮状态
+  document.querySelectorAll('.model-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.textContent.includes(model === 'male' ? '男' : '女'));
+  });
+  
+  // 通知 iframe 切换模型
+  const frame = document.getElementById('calibrator-frame');
+  if (frame.contentWindow && frame.contentWindow.switchModel) {
+    frame.contentWindow.switchModel(model);
+  }
+}
+
+// 加载默认数据
+function loadDefaultData() {
+  // 肺经默认数据
+  currentPathData = [
+    [-0.138, 1.296, 0.089], [-0.141, 1.33, 0.075], [-0.178, 1.312, 0.071],
+    [-0.193, 1.299, 0.069], [-0.209, 1.271, 0.068], [-0.224, 1.22, 0.048],
+    [-0.228, 1.205, 0.042], [-0.235, 1.187, 0.035], [-0.243, 1.167, 0.03],
+    [-0.246, 1.157, 0.028], [-0.249, 1.147, 0.026], [-0.264, 1.098, 0.013],
+    [-0.275, 1.08, 0.023], [-0.288, 1.059, 0.039], [-0.31, 1.017, 0.051],
+    [-0.32, 1.005, 0.055], [-0.325, 0.995, 0.058], [-0.335, 0.984, 0.052],
+    [-0.373, 0.888, 0.079], [-0.371, 0.875, 0.087], [-0.375, 0.856, 0.095],
+    [-0.37, 0.832, 0.123], [-0.366, 0.827, 0.134], [-0.367, 0.822, 0.14],
+    [-0.37, 0.811, 0.149], [-0.375, 0.803, 0.163], [-0.373, 0.797, 0.178]
+  ];
+  
+  document.getElementById('status-calibrator').className = 'status-dot ready';
+}
+
+// 从校准工具加载数据
+function loadFromCalibrator() {
+  const frame = document.getElementById('calibrator-frame');
+  try {
+    // 尝试从 iframe 获取数据
+    const calibratorData = frame.contentWindow.getExportData && frame.contentWindow.getExportData();
+    if (calibratorData && calibratorData.points) {
+      currentPathData = calibratorData.points;
+      document.getElementById('status-calibrator').className = 'status-dot ready';
+      document.getElementById('status-mapping').className = 'status-dot ready';
+      alert(`✓ 已加载 ${currentPathData.length} 个路径点`);
+    } else {
+      alert('⚠ 校准工具暂无数据，使用默认数据');
+    }
+  } catch (e) {
+    alert('⚠ 无法访问校准工具，使用默认数据');
+  }
+}
+
+// 预览数据
+function previewData() {
+  // 收集映射
+  const meridian = MERIDIANS[currentMeridian];
+  const mappings = {};
+  meridian.acupoints.forEach(code => {
+    mappings[code] = parseInt(document.getElementById(`map-${code}`).value) || 0;
+  });
+  currentMappings = mappings;
+  
+  // 生成预览
+  const indexComments = Object.entries(mappings).map(([code, idx]) => `${code}@${idx}`).join(', ');
+  const pathLines = currentPathData.map((p, i) => `      [${p.map(v => v.toFixed(3)).join(', ')}],  // ${i}`).join('\n');
+  const acupointLines = Object.entries(mappings).map(([code, idx]) => {
+    const pos = currentPathData[idx] || [0, 0, 0];
+    return `  '${code}': [${pos.map(v => v.toFixed(3)).join(', ')}],  // ${idx}`;
+  }).join('\n');
+  
+  const preview = `// meridian-paths-${currentModel}.ts
+'${currentMeridian}': {
+  // ${meridian.name} — ${indexComments}
+  path: [
+${pathLines}
+  ],
+},
+
+// acupoint-positions-${currentModel}.ts
+${acupointLines}`;
+  
+  document.getElementById('code-preview').textContent = preview;
+  document.getElementById('code-preview').style.display = 'block';
+}
+
+// 导出到正式环境
+async function exportToProduction() {
+  const progressBar = document.getElementById('progress-bar');
+  const progressFill = document.getElementById('progress-fill');
+  const resultDiv = document.getElementById('export-result');
+  
+  progressBar.style.display = 'block';
+  resultDiv.textContent = '';
+  
+  try {
+    // 步骤1: 收集数据 (25%)
+    progressFill.style.width = '25%';
+    const meridian = MERIDIANS[currentMeridian];
+    const mappings = {};
+    meridian.acupoints.forEach(code => {
+      mappings[code] = parseInt(document.getElementById(`map-${code}`).value) || 0;
+    });
+    
+    // 步骤2: 构建导出数据 (50%)
+    progressFill.style.width = '50%';
+    const exportData = {
+      meridianId: currentMeridian,
+      meridianName: meridian.name,
+      modelType: currentModel,
+      timestamp: new Date().toISOString(),
+      path: currentPathData,
+      acupoints: {}
+    };
+    
+    Object.entries(mappings).forEach(([code, idx]) => {
+      exportData.acupoints[code] = {
+        index: idx,
+        position: currentPathData[idx] || [0, 0, 0]
+      };
+    });
+    
+    // 步骤3: 保存到 localStorage (75%)
+    progressFill.style.width = '75%';
+    const storageKey = `meridian-export-${currentMeridian}-${currentModel}`;
+    localStorage.setItem(storageKey, JSON.stringify(exportData));
+    
+    // 同时保存到全局变量供后端读取
+    window.MERIDIAN_EXPORT_DATA = exportData;
+    
+    // 步骤4: 显示结果 (100%)
+    progressFill.style.width = '100%';
+    
+    // 生成 TypeScript 代码
+    const tsCode = generateTypeScriptCode(exportData);
+    
+    // 复制到剪贴板
+    await navigator.clipboard.writeText(tsCode);
+    
+    document.getElementById('status-export').className = 'status-dot ready';
+    resultDiv.innerHTML = `✅ 导出成功！代码已复制到剪贴板<br><small>localStorage: ${storageKey}</small>`;
+    
+    // 在控制台输出完整数据
+    console.log('=== 经络数据导出 ===');
+    console.log('经络:', currentMeridian, meridian.name);
+    console.log('模型:', currentModel);
+    console.log('路径点数:', currentPathData.length);
+    console.log('穴位数量:', Object.keys(mappings).length);
+    console.log('完整数据:', exportData);
+    console.log('TypeScript代码:', tsCode);
+    
+    // 显示代码预览
+    document.getElementById('code-preview').textContent = tsCode;
+    document.getElementById('code-preview').style.display = 'block';
+    
+  } catch (err) {
+    resultDiv.innerHTML = `<span style="color: #ef4444;">❌ 导出失败: ${err.message}</span>`;
+    console.error('导出错误:', err);
+  }
+  
+  setTimeout(() => {
+    progressBar.style.display = 'none';
+    progressFill.style.width = '0%';
+  }, 3000);
+}
+
+// 生成 TypeScript 代码
+function generateTypeScriptCode(data) {
+  const meridian = MERIDIANS[data.meridianId];
+  
+  // 路径数据
+  const indexComments = Object.entries(data.acupoints).map(([code, info]) => `${code}@${info.index}`).join(', ');
+  const pathLines = data.path.map((p, i) => `      [${p.map(v => v.toFixed(3)).join(', ')}],  // ${i}`).join('\n');
+  
+  // 穴位数据
+  const acupointLines = Object.entries(data.acupoints).map(([code, info]) => {
+    const isLast = code === meridian.acupoints[meridian.acupoints.length - 1];
+    const comment = isLast ? '（末端）' : '';
+    return `  '${code}': [${info.position.map(v => v.toFixed(3)).join(', ')}],  // ${info.index}${comment}`;
+  }).join('\n');
+  
+  return `// ==================== 文件1: meridian-paths-${data.modelType}.ts ====================
+'${data.meridianId}': {
+  // ${data.meridianName} — ${indexComments}
+  path: [
+${pathLines}
+  ],
+},
+
+// ==================== 文件2: acupoint-positions-${data.modelType}.ts ====================
+// ${data.meridianName} (${data.meridianId}) - 坐标与经络路径对应
+${acupointLines}`;
+}
+
+// 页面加载时初始化
+window.onload = init;
+</script>
+</body>
+</html>
