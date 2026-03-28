@@ -434,7 +434,6 @@ export default function QueueDashboard() {
                 callDuration={callDurationMs}
                 onCallClose={() => handleCallClose(group.doctorId)}
                 hasWritePermission={hasPermission('queue:update')}
-                isMobile={isMobile}
                 pageVisible={pageVisible}
               />
             ))
@@ -500,7 +499,6 @@ export default function QueueDashboard() {
             callDuration={callDurationMs}
             onCallClose={() => handleCallClose(group.doctorId)}
             hasWritePermission={hasPermission('queue:update')}
-            isMobile={isMobile}
             pageVisible={pageVisible}
           />
         ))}
@@ -529,7 +527,7 @@ function StatBadge({ count, label, color, bgFrom, bgTo, border }: {
   );
 }
 
-function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall, callDuration, onCallClose, hasWritePermission, isMobile, pageVisible = true }: {
+function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall, callDuration, onCallClose, hasWritePermission, pageVisible = true }: {
   group: DoctorGroup;
   colorIndex: number;
   speed: number;
@@ -539,7 +537,6 @@ function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall,
   callDuration: number;
   onCallClose: () => void;
   hasWritePermission: boolean;
-  isMobile?: boolean;
   pageVisible?: boolean;
 }) {
   const color = DOCTOR_COLORS[colorIndex % DOCTOR_COLORS.length];
@@ -662,7 +659,6 @@ function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall,
             onCall={onCall}
             onComplete={onComplete}
             hasWritePermission={hasWritePermission}
-            isMobile={isMobile}
           />
         )}
         {/* Waiting entries */}
@@ -675,7 +671,6 @@ function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall,
             onCall={onCall}
             onComplete={onComplete}
             hasWritePermission={hasWritePermission}
-            isMobile={isMobile}
           />
         ))}
       </div>
@@ -701,14 +696,13 @@ function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall,
   );
 }
 
-function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermission, isMobile }: {
+function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermission }: {
   entry: QueueEntry;
   type: 'seeing' | 'next' | 'waiting';
   position: number;
   onCall: (e: QueueEntry) => void;
   onComplete: (e: QueueEntry) => void;
   hasWritePermission: boolean;
-  isMobile?: boolean;
 }) {
   const seq = String(entry.seq_number).padStart(2, '0');
 
@@ -746,7 +740,7 @@ function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermissio
   }[type];
 
   return (
-    <Tooltip title={config.tooltip} placement={isMobile ? 'top' : 'right'} mouseEnterDelay={0.5}>
+    <Tooltip title={config.tooltip} placement="top" mouseEnterDelay={0.5}>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 10,
         padding: '8px 10px',
@@ -813,6 +807,17 @@ function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermissio
               完成
             </Button>
           </div>
+        )}
+        {hasWritePermission && type === 'next' && (
+          <Button
+            type="link"
+            size="small"
+            icon={<SoundOutlined />}
+            style={{ fontSize: 13, padding: '0 4px', color: '#fa8c16', flexShrink: 0 }}
+            onClick={(e) => { e.stopPropagation(); onCall(entry); }}
+          >
+            叫号
+          </Button>
         )}
       </div>
 

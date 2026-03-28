@@ -143,40 +143,57 @@ func (s *QueueService) ListToday(tenantID uint, doctorID *uint) ([]model.QueueEn
 	return entries, err
 }
 
-// Call changes a waiting entry to seeing and sets CalledAt.
-// If the entry is already seeing, it returns the entry as-is (re-call scenario).
-// Returns ErrInvalidStatus if the entry is in any other status.
-func (s *QueueService) Call(tenantID, entryID uint) (*model.QueueEntry, error) {
-	var entry model.QueueEntry
-	err := s.DB.Where("id = ? AND tenant_id = ? AND queue_date = ?", entryID, tenantID, today()).First(&entry).Error
-	if err != nil {
+// Call handles a manual call for a queue entry.
+//   - Already seeing: re-call, no status change (statusChanged=false).
+//   - Waiting + no one is seeing for this doctor: transition to seeing (statusChanged=true).
+//   - Waiting + someone else is already seeing: notify only, no status change (statusChanged=false).
+// Returns ErrInvalidStatus if the entry is done/missed.
+func (s *QueueService) Call(tenantID, entryID uint) (entry *model.QueueEntry, statusChanged bool, err error) {
+	var e model.QueueEntry
+	if err := s.DB.Where("id = ? AND tenant_id = ? AND queue_date = ?", entryID, tenantID, today()).
+		First(&e).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrQueueEntryNotFound
+			return nil, false, ErrQueueEntryNotFound
 		}
-		return nil, err
+		return nil, false, err
 	}
 
-	// Already seeing — re-call, just return the entry (handler will broadcast)
-	if entry.Status == model.QueueStatusSeeing {
-		return &entry, nil
+	// Already seeing — re-call, just broadcast notification
+	if e.Status == model.QueueStatusSeeing {
+		return &e, false, nil
 	}
 
-	if entry.Status != model.QueueStatusWaiting {
-		return nil, ErrInvalidStatus
+	if e.Status != model.QueueStatusWaiting {
+		return nil, false, ErrInvalidStatus
 	}
 
+	// Check if anyone is already seeing for this doctor today
+	var seeingCount int64
+	if err := s.DB.Model(&model.QueueEntry{}).
+		Where("tenant_id = ? AND queue_date = ? AND doctor_id = ? AND status = ?",
+			tenantID, today(), e.DoctorID, model.QueueStatusSeeing).
+		Count(&seeingCount).Error; err != nil {
+		return nil, false, err
+	}
+
+	if seeingCount > 0 {
+		// Someone is already seeing — notify only, no status change
+		return &e, false, nil
+	}
+
+	// No one seeing — transition this entry to seeing
 	now := time.Now()
-	result := s.DB.Model(&entry).Updates(map[string]interface{}{
+	result := s.DB.Model(&e).Updates(map[string]interface{}{
 		"status":    model.QueueStatusSeeing,
 		"called_at": now,
 	})
 	if result.Error != nil {
-		return nil, result.Error
+		return nil, false, result.Error
 	}
 
-	entry.Status = model.QueueStatusSeeing
-	entry.CalledAt = &now
-	return &entry, nil
+	e.Status = model.QueueStatusSeeing
+	e.CalledAt = &now
+	return &e, true, nil
 }
 
 // Complete changes a seeing entry to done and sets CompletedAt.

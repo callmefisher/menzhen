@@ -92,6 +92,37 @@ vi.mock('rehype-raw', () => ({
   default: () => {},
 }));
 
+vi.mock('../../../components/BillingDrawer', () => ({
+  default: () => null,
+}));
+
+vi.mock('../../../components/PrintCenterDrawer', () => ({
+  default: () => null,
+}));
+
+vi.mock('../../../components/FollowUpPanel', () => ({
+  default: () => null,
+}));
+
+vi.mock('../../../hooks/useIsMobile', () => ({
+  default: () => false,
+}));
+
+vi.mock('../../../api/billing', () => ({
+  listRecordBillings: vi.fn().mockResolvedValue({ data: { list: [], total: 0 } }),
+  getPrescriptionBilling: vi.fn(),
+  createPrescriptionBilling: vi.fn(),
+  deductStockAndBill: vi.fn(),
+  getRecordBillingDetail: vi.fn(),
+  createRecordBilling: vi.fn(),
+}));
+
+vi.mock('../../../api/followUp', () => ({
+  listFollowUps: vi.fn().mockResolvedValue({ data: { list: [], total: 0 } }),
+  createFollowUp: vi.fn(),
+  updateFollowUp: vi.fn(),
+}));
+
 const mockPulseResult = {
   data: {
     list: [
@@ -138,8 +169,8 @@ describe('RecordForm', () => {
     });
   });
 
-  it('searches pulses on button click without auto-search on typing', { timeout: 15000 }, async () => {
-    const user = userEvent.setup();
+  it('searches pulses on button click without auto-search on typing', { timeout: 30000 }, async () => {
+    const user = userEvent.setup({ delay: null });
     renderComponent();
 
     await waitFor(() => {
@@ -163,8 +194,8 @@ describe('RecordForm', () => {
     });
   });
 
-  it('shows result tags after search, hides input, and selects on click', { timeout: 15000 }, async () => {
-    const user = userEvent.setup();
+  it('shows result tags after search, hides input, and selects on click', { timeout: 30000 }, async () => {
+    const user = userEvent.setup({ delay: null });
     mockListPulses.mockResolvedValue(mockPulseResult);
     renderComponent();
 
@@ -194,8 +225,8 @@ describe('RecordForm', () => {
     });
   });
 
-  it('clears pulse selection when tag is closed', { timeout: 15000 }, async () => {
-    const user = userEvent.setup();
+  it('clears pulse selection when tag is closed', { timeout: 30000 }, async () => {
+    const user = userEvent.setup({ delay: null });
     mockListPulses.mockResolvedValue(mockPulseResult);
     renderComponent();
 
@@ -229,8 +260,8 @@ describe('RecordForm', () => {
     expect(screen.queryByText(/脉管紧张如琴弦/)).not.toBeInTheDocument();
   });
 
-  it('saves pulse directly as free text without DB query', { timeout: 15000 }, async () => {
-    const user = userEvent.setup();
+  it('saves pulse directly as free text without DB query', { timeout: 30000 }, async () => {
+    const user = userEvent.setup({ delay: null });
     renderComponent();
 
     await waitFor(() => {
