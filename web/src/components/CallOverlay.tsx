@@ -75,7 +75,8 @@ export default function CallOverlay({
     display: 'flex',
     flexDirection: 'column' as const,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
+    paddingTop: 70,
     borderRadius: 10,
     overflow: 'hidden',
   };

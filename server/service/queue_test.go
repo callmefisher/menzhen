@@ -119,17 +119,57 @@ func TestQueueListToday_Empty(t *testing.T) {
 	assert.Len(t, entries, 0)
 }
 
-// TestQueueCall verifies that a waiting entry becomes "seeing" after Call.
+// TestQueueCall verifies that calling the first waiting entry transitions to "seeing".
 func TestQueueCall(t *testing.T) {
 	svc, tenantID := makeQueueSvcSingle(t)
 
 	e, err := svc.TakeNumber(tenantID, "患者", 1, "医生", "诊室", 1)
 	require.NoError(t, err)
 
-	called, err := svc.Call(tenantID, e.Entry.ID)
+	called, changed, err := svc.Call(tenantID, e.Entry.ID)
 	require.NoError(t, err)
+	assert.True(t, changed, "first waiting entry should change status")
 	assert.Equal(t, "seeing", called.Status)
 	assert.NotNil(t, called.CalledAt)
+}
+
+// TestQueueCall_WhenSeeingExists verifies that calling a waiting entry while
+// another patient is already seeing does NOT change status (notify only).
+func TestQueueCall_WhenSeeingExists(t *testing.T) {
+	svc, tenantID := makeQueueSvcSingle(t)
+
+	const docID uint = 1
+	first := takeNumber(t, svc, tenantID, "第一号", docID, "医生", "诊室")
+	second := takeNumber(t, svc, tenantID, "第二号", docID, "医生", "诊室")
+
+	// Make first entry "seeing"
+	_, changed, err := svc.Call(tenantID, first.ID)
+	require.NoError(t, err)
+	assert.True(t, changed)
+
+	// Now call second — someone is already seeing, so no status change
+	called, changed2, err := svc.Call(tenantID, second.ID)
+	require.NoError(t, err)
+	assert.False(t, changed2, "should NOT change status when someone is already seeing")
+	assert.Equal(t, "waiting", called.Status)
+	assert.Nil(t, called.CalledAt)
+}
+
+// TestQueueCall_ReSeeingEntry verifies that calling an already-seeing entry
+// returns the entry without changing status (re-call scenario).
+func TestQueueCall_ReSeeingEntry(t *testing.T) {
+	svc, tenantID := makeQueueSvcSingle(t)
+
+	e := takeNumber(t, svc, tenantID, "患者", 1, "医生", "诊室")
+	_, changed, err := svc.Call(tenantID, e.ID)
+	require.NoError(t, err)
+	assert.True(t, changed)
+
+	// Re-call the same entry (now seeing)
+	called, changed2, err := svc.Call(tenantID, e.ID)
+	require.NoError(t, err)
+	assert.False(t, changed2, "re-call should not change status")
+	assert.Equal(t, "seeing", called.Status)
 }
 
 // TestQueueCall_InvalidStatus verifies that calling a "done" patient returns ErrInvalidStatus.
@@ -138,12 +178,12 @@ func TestQueueCall_InvalidStatus(t *testing.T) {
 
 	e := takeNumber(t, svc, tenantID, "患者", 1, "医生", "诊室")
 
-	_, err := svc.Call(tenantID, e.ID)
+	_, _, err := svc.Call(tenantID, e.ID)
 	require.NoError(t, err)
 	_, _, err = svc.Complete(tenantID, e.ID)
 	require.NoError(t, err)
 
-	_, err = svc.Call(tenantID, e.ID)
+	_, _, err = svc.Call(tenantID, e.ID)
 	assert.ErrorIs(t, err, service.ErrInvalidStatus)
 }
 
@@ -152,7 +192,7 @@ func TestQueueComplete(t *testing.T) {
 	svc, tenantID := makeQueueSvcSingle(t)
 
 	e := takeNumber(t, svc, tenantID, "患者", 1, "医生", "诊室")
-	_, err := svc.Call(tenantID, e.ID)
+	_, _, err := svc.Call(tenantID, e.ID)
 	require.NoError(t, err)
 
 	completed, _, err := svc.Complete(tenantID, e.ID)
@@ -167,7 +207,7 @@ func TestTakeNumber_RequeueAfterDone(t *testing.T) {
 	svc, tenantID := makeQueueSvcSingle(t)
 
 	e := takeNumber(t, svc, tenantID, "张三", 1, "医生", "诊室")
-	_, err := svc.Call(tenantID, e.ID)
+	_, _, err := svc.Call(tenantID, e.ID)
 	require.NoError(t, err)
 	_, _, err = svc.Complete(tenantID, e.ID)
 	require.NoError(t, err)
@@ -200,7 +240,7 @@ func TestQueueComplete_AutoCallNext(t *testing.T) {
 	first := takeNumber(t, svc, tenantID, "第一号", docID, "医生", "诊室")
 	second := takeNumber(t, svc, tenantID, "第二号", docID, "医生", "诊室")
 
-	_, err := svc.Call(tenantID, first.ID)
+	_, _, err := svc.Call(tenantID, first.ID)
 	require.NoError(t, err)
 
 	_, next, err := svc.Complete(tenantID, first.ID)
@@ -217,7 +257,7 @@ func TestQueueComplete_NoNext(t *testing.T) {
 	svc, tenantID := makeQueueSvcSingle(t)
 
 	e := takeNumber(t, svc, tenantID, "唯一患者", 1, "医生", "诊室")
-	_, err := svc.Call(tenantID, e.ID)
+	_, _, err := svc.Call(tenantID, e.ID)
 	require.NoError(t, err)
 
 	_, next, err := svc.Complete(tenantID, e.ID)
@@ -312,7 +352,7 @@ func TestQueueConcurrentTakeNumber(t *testing.T) {
 func TestQueueCall_NotFound(t *testing.T) {
 	svc, tenantID := makeQueueSvcSingle(t)
 
-	_, err := svc.Call(tenantID, 99999)
+	_, _, err := svc.Call(tenantID, 99999)
 	assert.ErrorIs(t, err, service.ErrQueueEntryNotFound)
 }
 

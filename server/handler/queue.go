@@ -86,7 +86,9 @@ func (h *QueueHandler) TakeNumber(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": result.Entry})
 }
 
-// Call handles POST /queue/:id/call
+// Call handles POST /queue/:id/call — always broadcasts call notification (overlay),
+// only broadcasts queue_update (list refresh) when status actually changed
+// (i.e. no one was seeing and the entry transitioned waiting→seeing).
 func (h *QueueHandler) Call(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -95,7 +97,7 @@ func (h *QueueHandler) Call(c *gin.Context) {
 		return
 	}
 
-	entry, err := h.svc.Call(uint(tenantID), uint(id))
+	entry, statusChanged, err := h.svc.Call(uint(tenantID), uint(id))
 	if err != nil {
 		if errors.Is(err, service.ErrQueueEntryNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": err.Error()})
@@ -109,6 +111,7 @@ func (h *QueueHandler) Call(c *gin.Context) {
 		return
 	}
 
+	// Always broadcast the call overlay notification
 	ws.DefaultHub.Broadcast(tenantID, ws.Message{
 		Type: "queue_call",
 		Payload: gin.H{
@@ -120,10 +123,14 @@ func (h *QueueHandler) Call(c *gin.Context) {
 			"manual":       true,
 		},
 	})
-	ws.DefaultHub.Broadcast(tenantID, ws.Message{
-		Type:    "queue_update",
-		Payload: gin.H{"action": "call", "entry": entry},
-	})
+
+	// Only broadcast queue_update when status actually changed (no seeing → first waiting became seeing)
+	if statusChanged {
+		ws.DefaultHub.Broadcast(tenantID, ws.Message{
+			Type:    "queue_update",
+			Payload: gin.H{"action": "call", "entry": entry},
+		})
+	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": entry})
 }
