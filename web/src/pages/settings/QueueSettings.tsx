@@ -49,6 +49,8 @@ import {
   getQueueEnabled,
   getCallDisplayDuration,
   setCallDisplayDuration,
+  getShowArrivalTime,
+  setShowArrivalTime as apiSetShowArrivalTime,
   type QueueDoctor,
 } from '../../api/queue-doctor';
 import { listUsers } from '../../api/user';
@@ -192,6 +194,10 @@ export default function QueueSettings() {
   const [callDuration, setCallDuration] = useState(10);
   const [durationSaving, setDurationSaving] = useState(false);
 
+  // Show arrival time toggle
+  const [showArrivalTime, setShowArrivalTime] = useState(true);
+  const [arrivalTimeLoading, setArrivalTimeLoading] = useState(false);
+
   // Doctor list
   const [doctors, setDoctors] = useState<QueueDoctor[]>([]);
   const [loading, setLoading] = useState(false);
@@ -245,6 +251,16 @@ export default function QueueSettings() {
     }
   }, []);
 
+  const fetchShowArrivalTime = useCallback(async () => {
+    try {
+      const res = await getShowArrivalTime();
+      const body = res as any;
+      setShowArrivalTime(body.data?.show ?? true);
+    } catch {
+      // default on
+    }
+  }, []);
+
   const fetchUsers = useCallback(async () => {
     try {
       const res = await listUsers({ page: 1, size: 200 });
@@ -266,8 +282,9 @@ export default function QueueSettings() {
     fetchDoctors();
     fetchEnabled();
     fetchCallDuration();
+    fetchShowArrivalTime();
     fetchUsers();
-  }, [fetchDoctors, fetchEnabled, fetchCallDuration, fetchUsers]);
+  }, [fetchDoctors, fetchEnabled, fetchCallDuration, fetchShowArrivalTime, fetchUsers]);
 
   /* ---- Toggle handler ---- */
   const handleToggle = async (checked: boolean) => {
@@ -295,6 +312,20 @@ export default function QueueSettings() {
       message.error('保存失败');
     } finally {
       setDurationSaving(false);
+    }
+  };
+
+  /* ---- Show arrival time handler ---- */
+  const handleToggleArrivalTime = async (checked: boolean) => {
+    setArrivalTimeLoading(true);
+    try {
+      await apiSetShowArrivalTime(checked);
+      setShowArrivalTime(checked);
+      message.success(checked ? '入队时间显示已开启' : '入队时间显示已关闭');
+    } catch {
+      message.error('操作失败');
+    } finally {
+      setArrivalTimeLoading(false);
     }
   };
 
@@ -455,6 +486,29 @@ export default function QueueSettings() {
           >
             保存
           </Button>
+        </div>
+      </Card>
+
+      {/* Show arrival time card */}
+      <Card style={{ marginBottom: 16 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 600 }}>显示入队时间</div>
+            <div style={{ fontSize: 13, color: '#999', marginTop: 4 }}>
+              开启后：排队列表和看板中每位患者的入队时间以徽章形式显示
+            </div>
+          </div>
+          <Switch
+            checked={showArrivalTime}
+            loading={arrivalTimeLoading}
+            onChange={handleToggleArrivalTime}
+          />
         </div>
       </Card>
 

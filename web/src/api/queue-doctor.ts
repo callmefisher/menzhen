@@ -38,3 +38,9 @@ export const getCallDisplayDuration = () =>
 
 export const setCallDisplayDuration = (seconds: number) =>
   request.put('/tenant/call-duration', { seconds });
+
+export const getShowArrivalTime = () =>
+  request.get('/tenant/show-arrival-time');
+
+export const setShowArrivalTime = (show: boolean) =>
+  request.put('/tenant/show-arrival-time', { show });

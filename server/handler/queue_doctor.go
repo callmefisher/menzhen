@@ -254,3 +254,44 @@ func (h *QueueDoctorHandler) SetCallDisplayDuration(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": nil})
 }
+
+// GetShowArrivalTime handles GET /tenant/show-arrival-time — returns whether arrival time display is enabled.
+func (h *QueueDoctorHandler) GetShowArrivalTime(c *gin.Context) {
+	tenantID := uint(middleware.GetTenantID(c))
+
+	show, err := h.svc.GetShowArrivalTime(tenantID)
+	if err != nil {
+		if errors.Is(err, service.ErrTenantNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"show": show}})
+}
+
+// SetShowArrivalTime handles PUT /tenant/show-arrival-time — toggles arrival time display for the tenant.
+func (h *QueueDoctorHandler) SetShowArrivalTime(c *gin.Context) {
+	tenantID := uint(middleware.GetTenantID(c))
+
+	var req struct {
+		Show bool `json:"show"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": err.Error()})
+		return
+	}
+
+	if err := h.svc.SetShowArrivalTime(tenantID, req.Show); err != nil {
+		if errors.Is(err, service.ErrTenantNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": nil})
+}

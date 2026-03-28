@@ -18,6 +18,34 @@ export function chunkToRows<T>(items: T[], chunkSize: number): T[][][] {
 }
 
 /**
+ * Format arrival_time (ISO string) to HH:mm for queue badges.
+ * Returns empty string if time is falsy or unparseable.
+ */
+export function formatQueueTime(t?: string): string {
+  if (!t) return '';
+  try {
+    const d = new Date(t);
+    return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Format arrival_time (ISO string) to HH:mm:ss for take-number success messages.
+ * Returns empty string if time is falsy or unparseable.
+ */
+export function formatQueueTimeFull(t?: string): string {
+  if (!t) return '';
+  try {
+    const d = new Date(t);
+    return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  } catch {
+    return '';
+  }
+}
+
+/**
  * Format room name for display.
  * - If room is undefined or empty, returns "诊室"
  * - If room is a pure number (e.g., "1", "123"), prepends "诊室" -> "诊室1", "诊室123"

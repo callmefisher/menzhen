@@ -10,6 +10,7 @@ type Tenant struct {
 	Status       int8      `gorm:"column:status;type:tinyint;default:1;not null;comment:1=enabled 0=disabled" json:"status"`
 	QueueEnabled         *bool `gorm:"column:queue_enabled;default:true" json:"queue_enabled"`
 	CallDisplayDuration  *int  `gorm:"column:call_display_duration;default:10" json:"call_display_duration"`
+	ShowArrivalTime      *bool `gorm:"column:show_arrival_time;default:true" json:"show_arrival_time"`
 	CreatedAt    time.Time `json:"created_at"`
 
 	// Associations

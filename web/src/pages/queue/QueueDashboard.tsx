@@ -3,12 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { Button, Input, Select, Slider, Tooltip, Modal, message } from 'antd';
 import { SoundOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { listQueue, takeNumber, callNumber, completeVisit, clearQueue, type QueueEntry } from '../../api/queue';
-import { listQueueDoctors, getCallDisplayDuration, type QueueDoctor as QueueDoctorConfig } from '../../api/queue-doctor';
+import { listQueueDoctors, getCallDisplayDuration, getShowArrivalTime, type QueueDoctor as QueueDoctorConfig } from '../../api/queue-doctor';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { useAuth } from '../../store/auth';
 import useIsMobile from '../../hooks/useIsMobile';
 import CallOverlay from '../../components/CallOverlay';
-import { formatRoom } from '../../utils/format';
+import { formatRoom, formatQueueTime, formatQueueTimeFull } from '../../utils/format';
 
 const DOCTOR_COLORS = ['#52c41a', '#faad14', '#722ed1', '#cf1322', '#1677ff', '#13c2c2', '#eb2f96', '#fa541c'];
 
@@ -51,6 +51,7 @@ export default function QueueDashboard() {
   // Per-doctor call state: queue + current merged into one atomic unit
   const [doctorCallStates, setDoctorCallStates] = useState<Record<number, DoctorCallState>>({});
   const [callDurationMs, setCallDurationMs] = useState(10000);
+  const [showArrivalTime, setShowArrivalTime] = useState<boolean | null>(null);
   const [doctors, setDoctors] = useState<DoctorOption[]>([]);
   const [pageVisible, setPageVisible] = useState(() => {
     // SSR compatibility: check if document is available
@@ -96,6 +97,19 @@ export default function QueueDashboard() {
         setCallDurationMs(seconds * 1000);
       } catch {
         // default 10s
+      }
+    })();
+  }, []);
+
+  // Fetch show arrival time setting
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await getShowArrivalTime();
+        const body = res as any;
+        setShowArrivalTime(body.data?.show ?? true);
+      } catch {
+        setShowArrivalTime(true);
       }
     })();
   }, []);
@@ -252,7 +266,13 @@ export default function QueueDashboard() {
       });
       const body = res as any;
       const entry = body.data;
-      message.success(`${takeNameValue.trim()} 取号成功 -> ${String(entry?.seq_number || '').padStart(2, '0')}号 - ${doc.name}`);
+      const seqStr = String(entry?.seq_number || '').padStart(2, '0');
+      let successMsg = `${takeNameValue.trim()} 取号成功 -> ${seqStr}号 - ${doc.name}`;
+      if (showArrivalTime && entry?.arrival_time) {
+        const timeStr = formatQueueTimeFull(entry.arrival_time);
+        if (timeStr) successMsg += `（入队 ${timeStr}）`;
+      }
+      message.success(successMsg);
       setTakeNameValue('');
     } catch (err: any) {
       const msg = err?.response?.data?.message || err?.message || '';
@@ -435,6 +455,7 @@ export default function QueueDashboard() {
                 onCallClose={() => handleCallClose(group.doctorId)}
                 hasWritePermission={hasPermission('queue:update')}
                 pageVisible={pageVisible}
+                showArrivalTime={showArrivalTime}
               />
             ))
           )}
@@ -500,6 +521,7 @@ export default function QueueDashboard() {
             onCallClose={() => handleCallClose(group.doctorId)}
             hasWritePermission={hasPermission('queue:update')}
             pageVisible={pageVisible}
+            showArrivalTime={showArrivalTime}
           />
         ))}
       </div>
@@ -527,7 +549,7 @@ function StatBadge({ count, label, color, bgFrom, bgTo, border }: {
   );
 }
 
-function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall, callDuration, onCallClose, hasWritePermission, pageVisible = true }: {
+function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall, callDuration, onCallClose, hasWritePermission, pageVisible = true, showArrivalTime }: {
   group: DoctorGroup;
   colorIndex: number;
   speed: number;
@@ -538,6 +560,7 @@ function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall,
   onCallClose: () => void;
   hasWritePermission: boolean;
   pageVisible?: boolean;
+  showArrivalTime: boolean | null;
 }) {
   const color = DOCTOR_COLORS[colorIndex % DOCTOR_COLORS.length];
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -659,6 +682,7 @@ function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall,
             onCall={onCall}
             onComplete={onComplete}
             hasWritePermission={hasWritePermission}
+            showArrivalTime={showArrivalTime}
           />
         )}
         {/* Waiting entries */}
@@ -671,6 +695,7 @@ function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall,
             onCall={onCall}
             onComplete={onComplete}
             hasWritePermission={hasWritePermission}
+            showArrivalTime={showArrivalTime}
           />
         ))}
       </div>
@@ -696,15 +721,19 @@ function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall,
   );
 }
 
-function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermission }: {
+function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermission, showArrivalTime }: {
   entry: QueueEntry;
   type: 'seeing' | 'next' | 'waiting';
   position: number;
   onCall: (e: QueueEntry) => void;
   onComplete: (e: QueueEntry) => void;
   hasWritePermission: boolean;
+  showArrivalTime: boolean | null;
 }) {
   const seq = String(entry.seq_number).padStart(2, '0');
+
+  // Format arrival_time to HH:mm
+  const arrivalTimeStr = showArrivalTime ? formatQueueTime(entry.arrival_time) : '';
 
   const config = {
     seeing: {
@@ -779,6 +808,19 @@ function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermissio
             }}>
               {config.tagText}
             </span>
+            {arrivalTimeStr && (
+              <span style={{
+                fontSize: 11,
+                color: config.tagColor,
+                background: config.tagBg,
+                border: `1px solid ${config.tagBorder}`,
+                borderRadius: 4,
+                padding: '0 5px',
+                fontWeight: 600,
+              }}>
+                {arrivalTimeStr}
+              </span>
+            )}
           </div>
           {entry.booked_time && (
             <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>
