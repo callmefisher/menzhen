@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button, Input, Select, Slider, Tooltip, Modal, message } from 'antd';
 import { SoundOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { listQueue, takeNumber, callNumber, completeVisit, clearQueue, type QueueEntry } from '../../api/queue';
-import { listQueueDoctors, type QueueDoctor as QueueDoctorConfig } from '../../api/queue-doctor';
+import { listQueueDoctors, getCallDisplayDuration, type QueueDoctor as QueueDoctorConfig } from '../../api/queue-doctor';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { useAuth } from '../../store/auth';
 import useIsMobile from '../../hooks/useIsMobile';
@@ -19,12 +19,16 @@ interface DoctorGroup {
   entries: QueueEntry[];
 }
 
-interface CallOverlayState {
-  visible: boolean;
+interface CallNotification {
   seq: number;
   name: string;
   room: string;
   doctor: string;
+}
+
+interface DoctorCallState {
+  queue: CallNotification[];
+  current: CallNotification | null;
 }
 
 interface DoctorOption {
@@ -44,7 +48,9 @@ export default function QueueDashboard() {
   const [takeNameValue, setTakeNameValue] = useState('');
   const [takeDoctorId, setTakeDoctorId] = useState<number | undefined>();
   const [takeLoading, setTakeLoading] = useState(false);
-  const [overlays, setOverlays] = useState<Record<number, CallOverlayState>>({});
+  // Per-doctor call state: queue + current merged into one atomic unit
+  const [doctorCallStates, setDoctorCallStates] = useState<Record<number, DoctorCallState>>({});
+  const [callDurationMs, setCallDurationMs] = useState(10000);
   const [doctors, setDoctors] = useState<DoctorOption[]>([]);
   const [pageVisible, setPageVisible] = useState(() => {
     // SSR compatibility: check if document is available
@@ -73,29 +79,50 @@ export default function QueueDashboard() {
       const body = res as any;
       const list: QueueEntry[] = body.data?.list || [];
       setEntries(list);
-      // Clear stale overlays for doctors with no active (seeing/waiting) entries.
-      // This prevents a dismissed doctor's call overlay from re-appearing when a new
-      // patient is registered for the same doctor after the queue was emptied.
-      const activeDoctorIds = new Set(
-        list
-          .filter(e => e.status !== 'done' && e.status !== 'missed')
-          .map(e => e.doctor_id)
-      );
-      setOverlays(prev => {
-        const cleaned: Record<number, CallOverlayState> = {};
-        for (const [key, val] of Object.entries(prev)) {
-          const doctorId = Number(key);
-          if (activeDoctorIds.has(doctorId)) {
-            cleaned[doctorId] = val;
-          }
-        }
-        return cleaned;
-      });
     } catch {
       /* ignore */
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  // Fetch call display duration from tenant settings
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await getCallDisplayDuration();
+        const body = res as any;
+        const seconds: number = body.data?.seconds ?? 10;
+        setCallDurationMs(seconds * 1000);
+      } catch {
+        // default 10s
+      }
+    })();
+  }, []);
+
+  // Per-doctor dequeue: atomic single-setState to avoid race between two separate states
+  useEffect(() => {
+    setDoctorCallStates(prev => {
+      let changed = false;
+      const next = { ...prev };
+      for (const key of Object.keys(next)) {
+        const doctorId = Number(key);
+        const state = next[doctorId];
+        if (state.current === null && state.queue.length > 0) {
+          const [nextCall, ...rest] = state.queue;
+          next[doctorId] = { queue: rest, current: nextCall };
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [doctorCallStates]);
+
+  const handleCallClose = useCallback((doctorId: number) => {
+    setDoctorCallStates(prev => ({
+      ...prev,
+      [doctorId]: { ...prev[doctorId], current: null },
+    }));
   }, []);
 
   // Fetch doctors for take-number dropdown
@@ -109,9 +136,9 @@ export default function QueueDashboard() {
           .filter(d => d.enabled)
           .map(d => ({ id: d.user_id, name: d.user_name, room: d.room }));
         setDoctors(docs);
-        // Default select first enabled doctor
-        if (docs.length > 0 && !takeDoctorId) {
-          setTakeDoctorId(docs[0].id);
+        // Default select first enabled doctor (functional update avoids stale closure)
+        if (docs.length > 0) {
+          setTakeDoctorId(prev => prev ?? docs[0].id);
         }
       } catch {
         /* fallback: derive from queue data */
@@ -130,17 +157,18 @@ export default function QueueDashboard() {
 
   useWebSocket('queue_call', useCallback((msg: any) => {
     const { doctor_id, seq, patient_name, room, doctor_name } = msg.payload || {};
-    if (doctor_id && seq) {
-      setOverlays(prev => ({
-        ...prev,
-        [doctor_id]: { visible: true, seq, name: patient_name, room, doctor: doctor_name },
-      }));
+    if (seq > 0 && doctor_id) {
+      const notification: CallNotification = { seq, name: patient_name, room, doctor: doctor_name };
+      setDoctorCallStates(prev => {
+        const existing = prev[doctor_id] ?? { queue: [], current: null };
+        return { ...prev, [doctor_id]: { ...existing, queue: [...existing.queue, notification] } };
+      });
     }
   }, []));
 
   useWebSocket('queue_clear', useCallback(() => {
     setEntries([]);
-    setOverlays({});
+    setDoctorCallStates({});
   }, []));
 
   useWebSocket('_reconnect', useCallback(() => {
@@ -275,14 +303,6 @@ export default function QueueDashboard() {
     });
   };
 
-  // Close overlay for a doctor
-  const closeOverlay = useCallback((doctorId: number) => {
-    setOverlays(prev => ({
-      ...prev,
-      [doctorId]: { ...prev[doctorId], visible: false },
-    }));
-  }, []);
-
   // Grid columns
   const gridCols = useMemo(() => {
     const count = doctorGroups.length;
@@ -408,10 +428,11 @@ export default function QueueDashboard() {
                 group={group}
                 colorIndex={idx}
                 speed={speed}
-                overlay={overlays[group.doctorId]}
-                onCloseOverlay={() => closeOverlay(group.doctorId)}
                 onCall={handleCall}
                 onComplete={handleComplete}
+                currentCall={doctorCallStates[group.doctorId]?.current ?? null}
+                callDuration={callDurationMs}
+                onCallClose={() => handleCallClose(group.doctorId)}
                 hasWritePermission={hasPermission('queue:update')}
                 isMobile={isMobile}
                 pageVisible={pageVisible}
@@ -473,10 +494,11 @@ export default function QueueDashboard() {
             group={group}
             colorIndex={idx}
             speed={speed}
-            overlay={overlays[group.doctorId]}
-            onCloseOverlay={() => closeOverlay(group.doctorId)}
             onCall={handleCall}
             onComplete={handleComplete}
+            currentCall={doctorCallStates[group.doctorId]?.current ?? null}
+            callDuration={callDurationMs}
+            onCallClose={() => handleCallClose(group.doctorId)}
             hasWritePermission={hasPermission('queue:update')}
             isMobile={isMobile}
             pageVisible={pageVisible}
@@ -507,14 +529,15 @@ function StatBadge({ count, label, color, bgFrom, bgTo, border }: {
   );
 }
 
-function DoctorCard({ group, colorIndex, speed, overlay, onCloseOverlay, onCall, onComplete, hasWritePermission, isMobile, pageVisible = true }: {
+function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall, callDuration, onCallClose, hasWritePermission, isMobile, pageVisible = true }: {
   group: DoctorGroup;
   colorIndex: number;
   speed: number;
-  overlay?: CallOverlayState;
-  onCloseOverlay: () => void;
   onCall: (e: QueueEntry) => void;
   onComplete: (e: QueueEntry) => void;
+  currentCall: CallNotification | null;
+  callDuration: number;
+  onCallClose: () => void;
   hasWritePermission: boolean;
   isMobile?: boolean;
   pageVisible?: boolean;
@@ -537,6 +560,7 @@ function DoctorCard({ group, colorIndex, speed, overlay, onCloseOverlay, onCall,
     let lastTick = 0;
     let paused = false;
     let rafId: number;
+    let resetTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
     const tick = () => {
       const now = performance.now();
@@ -546,13 +570,16 @@ function DoctorCard({ group, colorIndex, speed, overlay, onCloseOverlay, onCall,
         el.scrollTop += 1;
         if (el.scrollTop >= el.scrollHeight - el.clientHeight - 1) {
           paused = true;
-          setTimeout(() => { if (el) el.scrollTop = 0; paused = false; }, 2000);
+          resetTimeoutId = setTimeout(() => { if (el) el.scrollTop = 0; paused = false; }, 2000);
         }
       }
       rafId = requestAnimationFrame(tick);
     };
     rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
+    return () => {
+      cancelAnimationFrame(rafId);
+      if (resetTimeoutId !== null) clearTimeout(resetTimeoutId);
+    };
   }, [speed, pageVisible]);
 
   const waitingCount = group.entries.filter(e => e.status === 'waiting' || e.status === 'ready').length;
@@ -653,24 +680,23 @@ function DoctorCard({ group, colorIndex, speed, overlay, onCloseOverlay, onCall,
         ))}
       </div>
 
-      {/* Call overlay */}
-      {overlay && (
-        <CallOverlay
-          visible={overlay.visible}
-          seq={overlay.seq}
-          name={overlay.name}
-          room={overlay.room}
-          doctor={overlay.doctor}
-          onClose={onCloseOverlay}
-          isMobile={isMobile}
-        />
-      )}
-
       <style>{`
         .queue-scroll::-webkit-scrollbar { width: 4px; }
         .queue-scroll::-webkit-scrollbar-thumb { background: #e0e0e0; border-radius: 2px; }
         .queue-scroll::-webkit-scrollbar-track { background: transparent; }
       `}</style>
+
+      {/* Per-doctor call overlay — absolute-positioned within this card */}
+      <CallOverlay
+        visible={currentCall !== null}
+        seq={currentCall?.seq ?? 0}
+        name={currentCall?.name ?? ''}
+        room={currentCall?.room ?? ''}
+        doctor={currentCall?.doctor ?? ''}
+        duration={callDuration}
+        onClose={onCallClose}
+        isMobile={false}
+      />
     </div>
   );
 }
@@ -745,7 +771,11 @@ function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermissio
         {/* Info */}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ fontWeight: 700, fontSize: 17 }}>{entry.patient_name}</span>
+            <span
+              style={{ fontWeight: 700, fontSize: 17 }}
+            >
+              {entry.patient_name}
+            </span>
             <span style={{
               fontSize: 12, color: config.tagColor,
               border: `1.5px solid ${config.tagBorder}`,

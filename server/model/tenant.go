@@ -8,7 +8,8 @@ type Tenant struct {
 	Name         string    `gorm:"column:name;type:varchar(100);not null" json:"name"`
 	Code         string    `gorm:"column:code;type:varchar(50);uniqueIndex;not null" json:"code"`
 	Status       int8      `gorm:"column:status;type:tinyint;default:1;not null;comment:1=enabled 0=disabled" json:"status"`
-	QueueEnabled *bool     `gorm:"column:queue_enabled;default:true" json:"queue_enabled"`
+	QueueEnabled         *bool `gorm:"column:queue_enabled;default:true" json:"queue_enabled"`
+	CallDisplayDuration  *int  `gorm:"column:call_display_duration;default:10" json:"call_display_duration"`
 	CreatedAt    time.Time `json:"created_at"`
 
 	// Associations

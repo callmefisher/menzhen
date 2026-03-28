@@ -346,6 +346,8 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		}
 		authenticated.GET("/tenant/queue-enabled", qdHandler.GetQueueEnabled)
 		authenticated.PUT("/tenant/queue-enabled", middleware.RequirePermission(db, "tenant:user:manage"), qdHandler.SetQueueEnabled)
+		authenticated.GET("/tenant/call-duration", qdHandler.GetCallDisplayDuration)
+		authenticated.PUT("/tenant/call-duration", middleware.RequirePermission(db, "tenant:user:manage"), qdHandler.SetCallDisplayDuration)
 
 		// Follow-up routes (tenant-scoped).
 		followUps := authenticated.Group("/follow-ups")

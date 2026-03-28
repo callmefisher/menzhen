@@ -358,6 +358,45 @@ func TestQueueClear_Empty(t *testing.T) {
 	assert.Equal(t, int64(0), affected, "clearing empty queue should affect 0 rows")
 }
 
+// TestNextSeq_Sequential verifies that consecutive NextSeq calls return 1, 2, 3.
+func TestNextSeq_Sequential(t *testing.T) {
+	svc, tenantID := makeQueueSvcSingle(t)
+
+	for i := 1; i <= 3; i++ {
+		seq, err := svc.NextSeq(tenantID)
+		require.NoError(t, err)
+		assert.Equal(t, i, seq, "seq %d should be %d", i, i)
+	}
+}
+
+// TestNextSeq_CrossDay verifies that after a day rollover the first call returns 1,
+// not the previous day's last seq + 1.
+func TestNextSeq_CrossDay(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	tenant := testutil.SeedTestTenant(t, db, "诊所", "queue-crossday-seq-"+t.Name())
+	svc := service.NewQueueService(db)
+	tenantID := uint(tenant.ID)
+
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+
+	// Simulate previous day: insert a queue_seq row with last_seq = 154
+	require.NoError(t, db.Create(&model.QueueSeq{
+		TenantID:  tenantID,
+		QueueDate: yesterday,
+		LastSeq:   154,
+	}).Error)
+
+	// First call of the new day must return 1, not 155
+	seq, err := svc.NextSeq(tenantID)
+	require.NoError(t, err)
+	assert.Equal(t, 1, seq, "first ticket after day rollover must be seq 1")
+
+	// Second call must return 2
+	seq2, err := svc.NextSeq(tenantID)
+	require.NoError(t, err)
+	assert.Equal(t, 2, seq2)
+}
+
 // TestQueueCrossDayCleanup verifies that entries with queue_date < today are deleted.
 func TestQueueCrossDayCleanup(t *testing.T) {
 	db := testutil.SetupTestDB(t)

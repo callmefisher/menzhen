@@ -27,29 +27,25 @@ func today() string {
 }
 
 // NextSeq atomically increments and returns the sequence number for today.
-// Uses MySQL's LAST_INSERT_ID() mechanism to ensure atomic increment.
+// Wraps UPSERT + SELECT in a transaction so both run on the same connection,
+// avoiding the LAST_INSERT_ID auto-increment override on new-day INSERT.
 func (s *QueueService) NextSeq(tenantID uint) (int, error) {
 	date := today()
-
-	// Use LAST_INSERT_ID() to ensure atomic increment:
-	// - If row doesn't exist: INSERT with LAST_INSERT_ID(1) sets LAST_INSERT_ID to 1
-	// - If row exists: UPDATE with LAST_INSERT_ID(last_seq + 1) atomically increments
-	err := s.DB.Exec(`
-		INSERT INTO queue_seqs (tenant_id, queue_date, last_seq)
-		VALUES (?, ?, LAST_INSERT_ID(1))
-		ON DUPLICATE KEY UPDATE last_seq = LAST_INSERT_ID(last_seq + 1)
-	`, tenantID, date).Error
-	if err != nil {
-		return 0, err
-	}
-
-	// Get the last inserted/updated value
 	var seq int
-	err = s.DB.Raw("SELECT LAST_INSERT_ID()").Scan(&seq).Error
-	if err != nil {
-		return 0, err
-	}
-	return seq, nil
+	err := s.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(`
+			INSERT INTO queue_seqs (tenant_id, queue_date, last_seq)
+			VALUES (?, ?, 1)
+			ON DUPLICATE KEY UPDATE last_seq = last_seq + 1
+		`, tenantID, date).Error; err != nil {
+			return err
+		}
+		return tx.Raw(
+			"SELECT last_seq FROM queue_seqs WHERE tenant_id = ? AND queue_date = ?",
+			tenantID, date,
+		).Scan(&seq).Error
+	})
+	return seq, err
 }
 
 // TakeNumberResult wraps the queue entry and optional auto-created patient.

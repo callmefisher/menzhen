@@ -101,7 +101,7 @@ export default function PatientList() {
       // Clear state to prevent re-highlight on re-render
       window.history.replaceState({}, '');
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [location]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchData = useCallback(async (query: ListParams) => {
     setLoading(true);
@@ -166,8 +166,7 @@ export default function PatientList() {
   };
 
   const handleEditSuccess = (id: number) => {
-    fetchData(params);
-    highlight.setHighlightId(id);
+    fetchData(params).then(() => highlight.setHighlightId(id));
   };
 
   const allColumns: AccessibleColumnsType<PatientItem> = [

@@ -32,3 +32,9 @@ export const getQueueEnabled = () =>
 
 export const setQueueEnabled = (enabled: boolean) =>
   request.put('/tenant/queue-enabled', { enabled });
+
+export const getCallDisplayDuration = () =>
+  request.get('/tenant/call-duration');
+
+export const setCallDisplayDuration = (seconds: number) =>
+  request.put('/tenant/call-duration', { seconds });

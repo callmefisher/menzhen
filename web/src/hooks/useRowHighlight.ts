@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import useIsMobile from './useIsMobile';
 
 interface UseRowHighlightOptions {
@@ -23,14 +23,18 @@ interface UseRowHighlightReturn {
 const HIGHLIGHT_DURATION = 15000;
 
 export default function useRowHighlight(options: UseRowHighlightOptions): UseRowHighlightReturn {
-  const { data, page, pageSize, loading, onPageChange, findPage, idPrefix } = options;
+  const { data, page, pageSize, loading, idPrefix } = options;
   const isMobile = useIsMobile();
   const [highlightIds, setHighlightIdsState] = useState<number[]>([]);
   const scrollTargetId = useRef<number | null>(null);
-  // Controls: true = just set, need to locate page & scroll; false = done or user navigated away
   const needsLocate = useRef(false);
-  // Controls: true = already scrolled for this highlight, don't scroll again on data refresh
   const scrollDone = useRef(false);
+
+  // Stable refs for callbacks that change every render — keeps effect deps stable
+  const onPageChangeRef = useRef(options.onPageChange);
+  onPageChangeRef.current = options.onPageChange;
+  const findPageRef = useRef(options.findPage);
+  findPageRef.current = options.findPage;
 
   const clearHighlight = useCallback(() => {
     setHighlightIdsState([]);
@@ -43,10 +47,10 @@ export default function useRowHighlight(options: UseRowHighlightOptions): UseRow
     if (id === null) {
       clearHighlight();
     } else {
-      setHighlightIdsState([id]);
       scrollTargetId.current = id;
       needsLocate.current = true;
       scrollDone.current = false;
+      setHighlightIdsState([id]);
     }
   }, [clearHighlight]);
 
@@ -64,8 +68,15 @@ export default function useRowHighlight(options: UseRowHighlightOptions): UseRow
   const doScrollTo = useCallback((targetId: number) => {
     const doScroll = () => {
       const el = document.getElementById(`${idPrefix}-row-${targetId}`);
-      el?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+      if (!el) return;
+      // Restart CSS animation: remove class → force reflow → re-add class.
+      // Runs inside rAF after React has committed, so no reconciler conflict.
+      el.classList.remove('row-highlight');
+      void el.offsetHeight; // force reflow to reset animation state
+      el.classList.add('row-highlight');
+      el.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
     };
+
     if (isMobile) {
       const t = setTimeout(doScroll, 500);
       return () => clearTimeout(t);
@@ -78,16 +89,16 @@ export default function useRowHighlight(options: UseRowHighlightOptions): UseRow
     }
   }, [idPrefix, isMobile]);
 
-  // Main effect: locate target row and scroll to it
+  // Main effect: locate target row, scroll to it, and set up the auto-clear timer.
   useEffect(() => {
     if (highlightIds.length === 0) return;
-    if (loading) return; // wait for data to finish loading
+    if (loading) return;
+    if (data.length === 0) return; // data not yet loaded, wait
 
     const primaryId = scrollTargetId.current ?? highlightIds[0];
     const inCurrentPage = data.some(item => item.id === primaryId);
 
     if (inCurrentPage && !scrollDone.current) {
-      // Found — scroll once, then start auto-clear timer
       needsLocate.current = false;
       scrollDone.current = true;
       const scrollCleanup = doScrollTo(primaryId);
@@ -96,39 +107,41 @@ export default function useRowHighlight(options: UseRowHighlightOptions): UseRow
     }
 
     if (inCurrentPage && scrollDone.current) {
-      // Already scrolled — just keep the highlight CSS alive with auto-clear
       const timer = setTimeout(clearHighlight, HIGHLIGHT_DURATION);
       return () => clearTimeout(timer);
     }
 
-    if (!inCurrentPage && needsLocate.current && data.length > 0 && findPage) {
-      // Not on current page, first attempt — ask backend
+    if (!inCurrentPage && needsLocate.current && data.length > 0 && findPageRef.current) {
       needsLocate.current = false;
-      findPage(primaryId, pageSize)
+      let cancelled = false;
+      findPageRef.current(primaryId, pageSize)
         .then((targetPage) => {
+          if (cancelled) return;
           if (targetPage !== page) {
-            onPageChange(targetPage);
-            // After page change, data will update and we'll re-enter this effect
+            onPageChangeRef.current(targetPage);
           } else {
             clearHighlight();
           }
         })
         .catch(clearHighlight);
       const timer = setTimeout(clearHighlight, HIGHLIGHT_DURATION);
-      return () => clearTimeout(timer);
+      return () => {
+        cancelled = true;
+        clearTimeout(timer);
+      };
     }
-    // Not in current page and needsLocate is false — either waiting for page data to load
-    // after findPage, or user manually changed page (which already calls setHighlightId(null)).
-    // Don't clear here; let the 15s timeout or explicit clear handle it.
-  }, [highlightIds, data, loading, findPage, pageSize, page, onPageChange, doScrollTo, clearHighlight]);
+  }, [highlightIds, data, loading, pageSize, page, doScrollTo, clearHighlight]);
+
+  // Use a Set for O(1) lookup instead of O(n) Array.includes.
+  const highlightSet = useMemo(() => new Set(highlightIds), [highlightIds]);
 
   const rowClassName = useCallback((record: { id: number }) => {
-    return highlightIds.includes(record.id) ? 'row-highlight' : '';
-  }, [highlightIds]);
+    return highlightSet.has(record.id) ? 'row-highlight' : '';
+  }, [highlightSet]);
 
   const isHighlighted = useCallback((id: number) => {
-    return highlightIds.includes(id);
-  }, [highlightIds]);
+    return highlightSet.has(id);
+  }, [highlightSet]);
 
   const onRow = useCallback((record: { id: number }) => ({
     id: `${idPrefix}-row-${record.id}`,

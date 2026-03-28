@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button, message } from 'antd';
 import { CheckOutlined, SoundOutlined } from '@ant-design/icons';
 import { listQueue, completeVisit, callNumber, type QueueEntry } from '../api/queue';
@@ -17,7 +18,14 @@ import useIsMobile from '../hooks/useIsMobile';
 export default function QueueStrip() {
   const { user } = useAuth();
   const isMobile = useIsMobile();
+  const navigate = useNavigate();
   const [entries, setEntries] = useState<QueueEntry[]>([]);
+
+  const handlePatientClick = useCallback((entry: QueueEntry) => {
+    if (entry.patient_id) {
+      navigate('/patients', { state: { highlightPatientId: entry.patient_id } });
+    }
+  }, [navigate]);
 
   const fetchQueue = useCallback(async () => {
     if (!user?.id) return;
@@ -241,7 +249,13 @@ export default function QueueStrip() {
               }}>
                 {seq(readyEntry.seq_number)}
               </div>
-              <span style={{ fontWeight: 700, fontSize: 15, color: '#ad6800' }}>
+              <span
+                style={{
+                  fontWeight: 700, fontSize: 15, color: '#ad6800',
+                  ...(readyEntry.patient_id ? { cursor: 'pointer', textDecoration: 'underline dotted' } : {}),
+                }}
+                onClick={readyEntry.patient_id ? () => handlePatientClick(readyEntry) : undefined}
+              >
                 {readyEntry.patient_name}
               </span>
               <Button
@@ -320,7 +334,13 @@ export default function QueueStrip() {
               }}>
                 {seq(seeingEntry.seq_number)}
               </div>
-              <span style={{ fontWeight: 700, fontSize: isMobile ? 13 : 15, color: '#135200' }}>
+              <span
+                style={{
+                  fontWeight: 700, fontSize: isMobile ? 13 : 15, color: '#135200',
+                  ...(seeingEntry.patient_id ? { cursor: 'pointer', textDecoration: 'underline dotted' } : {}),
+                }}
+                onClick={seeingEntry.patient_id ? () => handlePatientClick(seeingEntry) : undefined}
+              >
                 {seeingEntry.patient_name}
               </span>
               {/* Stacked buttons so chip width matches the ready chip */}

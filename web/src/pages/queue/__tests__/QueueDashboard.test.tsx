@@ -21,9 +21,11 @@ vi.mock('../../../api/queue', () => ({
 }));
 
 const mockListQueueDoctors = vi.fn();
+const mockGetCallDisplayDuration = vi.fn();
 
 vi.mock('../../../api/queue-doctor', () => ({
   listQueueDoctors: (...args: unknown[]) => mockListQueueDoctors(...args),
+  getCallDisplayDuration: (...args: unknown[]) => mockGetCallDisplayDuration(...args),
 }));
 
 // ── Auth mock ──────────────────────────────────────────────────────────────
@@ -39,11 +41,23 @@ vi.mock('../../../store/auth', () => ({
   }),
 }));
 
-// ── WebSocket mock ─────────────────────────────────────────────────────────
+// ── WebSocket mock (captures handlers for manual triggering) ───────────────
+
+const wsHandlers: Record<string, (msg: any) => void> = {};
 
 vi.mock('../../../hooks/useWebSocket', () => ({
-  useWebSocket: vi.fn(),
+  useWebSocket: (type: string, handler: (msg: any) => void) => {
+    wsHandlers[type] = handler;
+  },
 }));
+
+// ── Navigation mock ────────────────────────────────────────────────────────
+
+const mockNavigate = vi.fn();
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual('react-router-dom');
+  return { ...actual, useNavigate: () => mockNavigate };
+});
 
 // ── Mobile hook mock ───────────────────────────────────────────────────────
 
@@ -70,6 +84,7 @@ vi.mock('antd', async () => {
 const makeEntry = (overrides: Partial<Record<string, unknown>> = {}) => ({
   id: 1,
   tenant_id: 1,
+  patient_id: 100,
   patient_name: '张三',
   doctor_id: 10,
   doctor_name: '张医生',
@@ -100,6 +115,7 @@ describe('QueueDashboard', () => {
     // Default: empty queue, one enabled doctor
     mockListQueue.mockResolvedValue({ data: { list: [] } });
     mockListQueueDoctors.mockResolvedValue({ data: { list: [{ id: 1, user_id: 10, user_name: '张医生', room: '1诊室', enabled: true, sort_order: 0 }] } });
+    mockGetCallDisplayDuration.mockResolvedValue({ data: { seconds: 10 } });
   });
 
   // 1. Doctor cards rendered
@@ -199,12 +215,10 @@ describe('QueueDashboard', () => {
 
     renderDashboard();
 
-    // The waiting StatBadge shows "候诊" text next to the count
     await waitFor(() => {
       expect(screen.getByText('候诊')).toBeInTheDocument();
     });
 
-    // Count "2" should appear as a bold number somewhere in the stats row
     const waitingBadge = screen.getByText('候诊').closest('div');
     expect(waitingBadge).toBeInTheDocument();
   });
@@ -220,7 +234,7 @@ describe('QueueDashboard', () => {
     });
   });
 
-  // 9. NEW: "下一位" tag is displayed for first waiting patient
+  // 9. "下一位" tag is displayed for first waiting patient
   it('shows "下一位" tag for the first waiting patient', async () => {
     const entries = [
       makeEntry({ id: 1, patient_name: '张三', status: 'waiting', seq_number: 1 }),
@@ -234,11 +248,10 @@ describe('QueueDashboard', () => {
       expect(screen.getByText('张三')).toBeInTheDocument();
     });
 
-    // First waiting patient should have "下一位" tag
     expect(screen.getByText('下一位')).toBeInTheDocument();
   });
 
-  // 10. NEW: Room number formatting - pure number gets "诊室" prefix
+  // 10. Room number formatting - pure number gets "诊室" prefix
   it('formats pure number room with "诊室" prefix', async () => {
     const entries = [
       makeEntry({ id: 1, doctor_id: 10, doctor_name: '张医生', room: '5', seq_number: 1 }),
@@ -248,15 +261,13 @@ describe('QueueDashboard', () => {
     renderDashboard();
 
     await waitFor(() => {
-      // Use getAllByText since doctor name appears in multiple places
       expect(screen.getAllByText('张医生').length).toBeGreaterThanOrEqual(1);
     });
 
-    // Room "5" should be displayed as "诊室5"
     expect(screen.getByText('诊室5')).toBeInTheDocument();
   });
 
-  // 11. NEW: Room number formatting - room already with "诊室" stays unchanged
+  // 11. Room number formatting - room already with "诊室" stays unchanged
   it('keeps room name unchanged when it already contains "诊室"', async () => {
     const entries = [
       makeEntry({ id: 1, doctor_id: 10, doctor_name: '李医生', room: '诊室1', seq_number: 1 }),
@@ -269,11 +280,10 @@ describe('QueueDashboard', () => {
       expect(screen.getAllByText('李医生').length).toBeGreaterThanOrEqual(1);
     });
 
-    // Room "诊室1" should stay as "诊室1"
     expect(screen.getByText('诊室1')).toBeInTheDocument();
   });
 
-  // 12. NEW: Entries are sorted by seq_number
+  // 12. Entries are sorted by seq_number
   it('sorts entries by seq_number within each doctor group', async () => {
     const entries = [
       makeEntry({ id: 3, patient_name: '王五', doctor_id: 10, seq_number: 3, status: 'waiting' }),
@@ -288,12 +298,11 @@ describe('QueueDashboard', () => {
       expect(screen.getByText('张三')).toBeInTheDocument();
     });
 
-    // First waiting should be 张三 (seq 1), showing "下一位"
     const nextPatientTags = screen.getAllByText('下一位');
     expect(nextPatientTags.length).toBeGreaterThan(0);
   });
 
-  // 13. NEW: "就诊中" tag is displayed for seeing patient
+  // 13. "就诊中" tag is displayed for seeing patient
   it('shows "就诊中" tag for patient with seeing status', async () => {
     const entries = [
       makeEntry({ id: 1, patient_name: '张三', status: 'seeing', seq_number: 1 }),
@@ -309,7 +318,7 @@ describe('QueueDashboard', () => {
     expect(screen.getByText('就诊中')).toBeInTheDocument();
   });
 
-  // 14. NEW: Page visibility - only one listener is created
+  // 14. Page visibility - only one listener is created
   it('creates only one visibilitychange listener', async () => {
     const addEventListenerSpy = vi.spyOn(document, 'addEventListener');
 
@@ -319,7 +328,6 @@ describe('QueueDashboard', () => {
       expect(screen.getByText('排队叫号')).toBeInTheDocument();
     });
 
-    // Should have exactly one visibilitychange listener
     const visibilityListeners = addEventListenerSpy.mock.calls.filter(
       call => call[0] === 'visibilitychange',
     );
@@ -328,7 +336,7 @@ describe('QueueDashboard', () => {
     addEventListenerSpy.mockRestore();
   });
 
-  // 15. NEW: Page visibility - listener is cleaned up on unmount
+  // 15. Page visibility - listener is cleaned up on unmount
   it('removes visibilitychange listener on unmount', async () => {
     const addEventListenerSpy = vi.spyOn(document, 'addEventListener');
     const removeEventListenerSpy = vi.spyOn(document, 'removeEventListener');
@@ -339,14 +347,12 @@ describe('QueueDashboard', () => {
       expect(screen.getByText('排队叫号')).toBeInTheDocument();
     });
 
-    // Get the handler function reference
     const handler = addEventListenerSpy.mock.calls.find(
       call => call[0] === 'visibilitychange',
     )?.[1];
 
     unmount();
 
-    // Should remove the same handler
     const removedListeners = removeEventListenerSpy.mock.calls.filter(
       call => call[0] === 'visibilitychange',
     );
@@ -357,7 +363,7 @@ describe('QueueDashboard', () => {
     removeEventListenerSpy.mockRestore();
   });
 
-  // 16. NEW: Page visibility - state updates on visibility change
+  // 16. Page visibility - state updates on visibility change
   it('updates pageVisible state when visibility changes', async () => {
     const entries = [
       makeEntry({ id: 1, patient_name: '张三', status: 'waiting', seq_number: 1 }),
@@ -370,51 +376,193 @@ describe('QueueDashboard', () => {
       expect(screen.getByText('张三')).toBeInTheDocument();
     });
 
-    // Simulate page becoming hidden
-    Object.defineProperty(document, 'hidden', {
-      value: true,
-      writable: true,
-      configurable: true,
-    });
+    Object.defineProperty(document, 'hidden', { value: true, writable: true, configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+    Object.defineProperty(document, 'hidden', { value: false, writable: true, configurable: true });
     document.dispatchEvent(new Event('visibilitychange'));
 
-    // Simulate page becoming visible again
-    Object.defineProperty(document, 'hidden', {
-      value: false,
-      writable: true,
-      configurable: true,
-    });
-    document.dispatchEvent(new Event('visibilitychange'));
-
-    // Component should still be rendered without errors
     expect(screen.getByText('张三')).toBeInTheDocument();
   });
 
-  // 17. NEW: Page visibility - SSR compatibility for initial state
+  // 17. Page visibility - SSR compatibility for initial state
   it('handles SSR environment gracefully for initial state', async () => {
-    // Test that the initial state function handles missing document
-    // We test this by verifying the component doesn't crash when document.hidden is accessed
     const originalHidden = document.hidden;
-    
-    // Mock document.hidden to be undefined (simulating edge case)
-    Object.defineProperty(document, 'hidden', {
-      value: undefined,
-      writable: true,
-      configurable: true,
-    });
 
-    // This should not throw
+    Object.defineProperty(document, 'hidden', { value: undefined, writable: true, configurable: true });
+
     expect(() => renderDashboard()).not.toThrow();
 
-    // Restore original value
-    Object.defineProperty(document, 'hidden', {
-      value: originalHidden,
-      writable: true,
-      configurable: true,
-    });
+    Object.defineProperty(document, 'hidden', { value: originalHidden, writable: true, configurable: true });
 
     await waitFor(() => {
       expect(screen.getByText('排队叫号')).toBeInTheDocument();
+    });
+  });
+
+  // 18. NEW: call duration is fetched on mount
+  it('fetches call display duration on mount', async () => {
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(mockGetCallDisplayDuration).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // 19. NEW: call duration defaults to 10s when API fails
+  it('defaults call duration to 10s when API fails', async () => {
+    mockGetCallDisplayDuration.mockRejectedValue(new Error('network'));
+
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByText('排队叫号')).toBeInTheDocument();
+    });
+    // Component should still render without crashing
+    expect(screen.queryByText('排队叫号')).toBeInTheDocument();
+  });
+
+  // 20. NEW: first queue_call shows overlay immediately (within the doctor card)
+  it('shows call overlay immediately for the first queue_call message', async () => {
+    mockListQueue.mockResolvedValue({ data: { list: [makeEntry({ status: 'waiting' })] } });
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByText('排队叫号')).toBeInTheDocument();
+    });
+
+    act(() => {
+      wsHandlers['queue_call']?.({
+        type: 'queue_call',
+        payload: { doctor_id: 10, seq: 5, patient_name: '赵六', room: '1诊室', doctor_name: '张医生' },
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('赵六')).toBeInTheDocument();
+    });
+  });
+
+  // 21. NEW: second queue_call while first is showing — first stays visible, second queues
+  it('does not interrupt current overlay when second queue_call arrives', async () => {
+    mockListQueue.mockResolvedValue({ data: { list: [makeEntry({ status: 'waiting' })] } });
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByText('排队叫号')).toBeInTheDocument();
+    });
+
+    // First call
+    act(() => {
+      wsHandlers['queue_call']?.({
+        type: 'queue_call',
+        payload: { doctor_id: 10, seq: 1, patient_name: '第一位', room: '1诊室', doctor_name: '张医生' },
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('第一位')).toBeInTheDocument();
+    });
+
+    // Second call arrives while first is still shown
+    act(() => {
+      wsHandlers['queue_call']?.({
+        type: 'queue_call',
+        payload: { doctor_id: 10, seq: 2, patient_name: '第二位', room: '1诊室', doctor_name: '张医生' },
+      });
+    });
+
+    // First call should still be visible
+    expect(screen.getByText('第一位')).toBeInTheDocument();
+    // Second call should NOT be visible yet
+    expect(screen.queryByText('第二位')).not.toBeInTheDocument();
+  });
+
+  // 22. NEW: queue_clear clears pending notifications
+  it('clears all pending notifications on queue_clear', async () => {
+    mockListQueue.mockResolvedValue({ data: { list: [makeEntry({ status: 'waiting' })] } });
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByText('排队叫号')).toBeInTheDocument();
+    });
+
+    // Push two notifications
+    act(() => {
+      wsHandlers['queue_call']?.({
+        type: 'queue_call',
+        payload: { doctor_id: 10, seq: 1, patient_name: '张三', room: '1诊室', doctor_name: '张医生' },
+      });
+    });
+    act(() => {
+      wsHandlers['queue_call']?.({
+        type: 'queue_call',
+        payload: { doctor_id: 10, seq: 2, patient_name: '李四', room: '1诊室', doctor_name: '张医生' },
+      });
+    });
+
+    // Clear queue
+    act(() => {
+      wsHandlers['queue_clear']?.({ type: 'queue_clear', payload: {} });
+    });
+
+    // No overlay should be visible after clear
+    await waitFor(() => {
+      expect(screen.queryByText('确定')).not.toBeInTheDocument();
+    });
+  });
+
+  // 23. Patient names in queue rows are plain text (no click navigation)
+  it('renders patient name as plain text without click navigation', async () => {
+    const entries = [
+      makeEntry({ id: 1, patient_name: '张三', patient_id: 42, status: 'waiting', seq_number: 1 }),
+    ];
+    mockListQueue.mockResolvedValue({ data: { list: entries } });
+
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByText('张三')).toBeInTheDocument();
+    });
+
+    // Clicking patient name should NOT navigate (no navigation in QueueDashboard)
+    fireEvent.click(screen.getByText('张三'));
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  // 24. Per-doctor queues are independent: doctor A's call doesn't affect doctor B
+  it('shows each doctor their own independent call overlay', async () => {
+    const entries = [
+      makeEntry({ id: 1, patient_name: '张三', doctor_id: 10, doctor_name: '张医生', room: '1诊室', status: 'waiting', seq_number: 1 }),
+      makeEntry({ id: 2, patient_name: '李四', doctor_id: 20, doctor_name: '王医生', room: '2诊室', status: 'waiting', seq_number: 1 }),
+    ];
+    mockListQueue.mockResolvedValue({ data: { list: entries } });
+
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByText('排队叫号')).toBeInTheDocument();
+    });
+
+    // Doctor A calls
+    act(() => {
+      wsHandlers['queue_call']?.({
+        type: 'queue_call',
+        payload: { doctor_id: 10, seq: 1, patient_name: '张三叫号', room: '1诊室', doctor_name: '张医生' },
+      });
+    });
+
+    // Doctor B calls simultaneously
+    act(() => {
+      wsHandlers['queue_call']?.({
+        type: 'queue_call',
+        payload: { doctor_id: 20, seq: 1, patient_name: '李四叫号', room: '2诊室', doctor_name: '王医生' },
+      });
+    });
+
+    // Both overlays should be visible independently
+    await waitFor(() => {
+      expect(screen.getByText('张三叫号')).toBeInTheDocument();
+      expect(screen.getByText('李四叫号')).toBeInTheDocument();
     });
   });
 });

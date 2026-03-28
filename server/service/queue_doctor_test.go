@@ -267,3 +267,66 @@ func TestQueueDoctorUpdateSortOtherTenantIgnored(t *testing.T) {
 	require.Len(t, docsB, 1)
 	assert.NotEqual(t, 99, docsB[0].SortOrder, "other tenant's sort_order must not be modified")
 }
+
+// TestGetCallDisplayDuration_Default verifies the default value (10) when the column is NULL.
+func TestGetCallDisplayDuration_Default(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	tenant := testutil.SeedTestTenant(t, db, "诊所NULL", "qd-calldur-null-"+t.Name())
+
+	// Explicitly set call_display_duration to NULL to simulate old rows.
+	require.NoError(t, db.Model(&model.Tenant{}).Where("id = ?", tenant.ID).
+		Update("call_display_duration", nil).Error)
+
+	svc := service.NewQueueDoctorService(db)
+	seconds, err := svc.GetCallDisplayDuration(uint(tenant.ID))
+	require.NoError(t, err)
+	assert.Equal(t, 10, seconds, "NULL call_display_duration should default to 10")
+}
+
+// TestGetCallDisplayDuration_Custom verifies that a saved value is returned correctly.
+func TestGetCallDisplayDuration_Custom(t *testing.T) {
+	svc, tenantID := makeQueueDoctorSvc(t)
+
+	require.NoError(t, svc.SetCallDisplayDuration(tenantID, 30))
+	seconds, err := svc.GetCallDisplayDuration(tenantID)
+	require.NoError(t, err)
+	assert.Equal(t, 30, seconds)
+}
+
+// TestSetCallDisplayDuration_Valid verifies that a valid duration is saved.
+func TestSetCallDisplayDuration_Valid(t *testing.T) {
+	svc, tenantID := makeQueueDoctorSvc(t)
+
+	for _, v := range []int{3, 10, 30, 60} {
+		require.NoError(t, svc.SetCallDisplayDuration(tenantID, v), "value %d should be valid", v)
+		got, err := svc.GetCallDisplayDuration(tenantID)
+		require.NoError(t, err)
+		assert.Equal(t, v, got)
+	}
+}
+
+// TestSetCallDisplayDuration_OutOfRange verifies that values outside 3–60 are rejected.
+func TestSetCallDisplayDuration_OutOfRange(t *testing.T) {
+	svc, tenantID := makeQueueDoctorSvc(t)
+
+	for _, v := range []int{0, 1, 2, 61, 100} {
+		err := svc.SetCallDisplayDuration(tenantID, v)
+		assert.ErrorIs(t, err, service.ErrCallDurationOutOfRange, "value %d should be out of range", v)
+	}
+}
+
+// TestSetCallDisplayDuration_NotFound verifies ErrTenantNotFound for unknown tenant.
+func TestSetCallDisplayDuration_NotFound(t *testing.T) {
+	svc, _ := makeQueueDoctorSvc(t)
+
+	err := svc.SetCallDisplayDuration(99999, 10)
+	assert.ErrorIs(t, err, service.ErrTenantNotFound)
+}
+
+// TestGetCallDisplayDuration_NotFound verifies ErrTenantNotFound for unknown tenant.
+func TestGetCallDisplayDuration_NotFound(t *testing.T) {
+	svc, _ := makeQueueDoctorSvc(t)
+
+	_, err := svc.GetCallDisplayDuration(99999)
+	assert.ErrorIs(t, err, service.ErrTenantNotFound)
+}

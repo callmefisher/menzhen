@@ -40,10 +40,8 @@ func (h *QueueDoctorHandler) List(c *gin.Context) {
 			userIDs[i] = d.UserID
 		}
 		var users []model.User
-		if err := h.db.Select("id, real_name, username").Where("id IN ? AND tenant_id = ?", userIDs, tenantID).Find(&users).Error; err != nil {
-			// Non-fatal: names just won't be populated
-			_ = err
-		}
+		// best-effort: if lookup fails, user names remain empty strings in the response
+		h.db.Select("id, real_name, username").Where("id IN ? AND tenant_id = ?", userIDs, tenantID).Find(&users)
 		nameMap := make(map[uint]string)
 		for _, u := range users {
 			name := u.RealName
@@ -201,6 +199,51 @@ func (h *QueueDoctorHandler) SetQueueEnabled(c *gin.Context) {
 	}
 
 	if err := h.svc.SetQueueEnabled(tenantID, req.Enabled); err != nil {
+		if errors.Is(err, service.ErrTenantNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": nil})
+}
+
+// GetCallDisplayDuration handles GET /tenant/call-duration — returns the call overlay display duration.
+func (h *QueueDoctorHandler) GetCallDisplayDuration(c *gin.Context) {
+	tenantID := uint(middleware.GetTenantID(c))
+
+	seconds, err := h.svc.GetCallDisplayDuration(tenantID)
+	if err != nil {
+		if errors.Is(err, service.ErrTenantNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"seconds": seconds}})
+}
+
+// SetCallDisplayDuration handles PUT /tenant/call-duration — updates the call overlay display duration.
+func (h *QueueDoctorHandler) SetCallDisplayDuration(c *gin.Context) {
+	tenantID := uint(middleware.GetTenantID(c))
+
+	var req struct {
+		Seconds int `json:"seconds"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": err.Error()})
+		return
+	}
+
+	if err := h.svc.SetCallDisplayDuration(tenantID, req.Seconds); err != nil {
+		if errors.Is(err, service.ErrCallDurationOutOfRange) {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": err.Error()})
+			return
+		}
 		if errors.Is(err, service.ErrTenantNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": err.Error()})
 			return

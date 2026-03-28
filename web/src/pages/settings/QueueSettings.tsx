@@ -13,6 +13,8 @@ import {
   Spin,
   Empty,
   Space,
+  Slider,
+  InputNumber,
 } from 'antd';
 import {
   PlusOutlined,
@@ -45,6 +47,8 @@ import {
   updateQueueDoctorSort,
   setQueueEnabled,
   getQueueEnabled,
+  getCallDisplayDuration,
+  setCallDisplayDuration,
   type QueueDoctor,
 } from '../../api/queue-doctor';
 import { listUsers } from '../../api/user';
@@ -184,6 +188,10 @@ export default function QueueSettings() {
   const [enabled, setEnabled] = useState(true);
   const [toggleLoading, setToggleLoading] = useState(false);
 
+  // Call display duration
+  const [callDuration, setCallDuration] = useState(10);
+  const [durationSaving, setDurationSaving] = useState(false);
+
   // Doctor list
   const [doctors, setDoctors] = useState<QueueDoctor[]>([]);
   const [loading, setLoading] = useState(false);
@@ -227,6 +235,16 @@ export default function QueueSettings() {
     }
   }, []);
 
+  const fetchCallDuration = useCallback(async () => {
+    try {
+      const res = await getCallDisplayDuration();
+      const body = res as any;
+      setCallDuration(body.data?.seconds ?? 10);
+    } catch {
+      // default 10s
+    }
+  }, []);
+
   const fetchUsers = useCallback(async () => {
     try {
       const res = await listUsers({ page: 1, size: 200 });
@@ -247,8 +265,9 @@ export default function QueueSettings() {
   useEffect(() => {
     fetchDoctors();
     fetchEnabled();
+    fetchCallDuration();
     fetchUsers();
-  }, [fetchDoctors, fetchEnabled, fetchUsers]);
+  }, [fetchDoctors, fetchEnabled, fetchCallDuration, fetchUsers]);
 
   /* ---- Toggle handler ---- */
   const handleToggle = async (checked: boolean) => {
@@ -262,6 +281,20 @@ export default function QueueSettings() {
       message.error('操作失败');
     } finally {
       setToggleLoading(false);
+    }
+  };
+
+  /* ---- Call duration handler ---- */
+  const handleSaveDuration = async (val: number) => {
+    setDurationSaving(true);
+    try {
+      await setCallDisplayDuration(val);
+      setCallDuration(val);
+      message.success('叫号显示时长已保存');
+    } catch {
+      message.error('保存失败');
+    } finally {
+      setDurationSaving(false);
     }
   };
 
@@ -387,6 +420,41 @@ export default function QueueSettings() {
             loading={toggleLoading}
             onChange={handleToggle}
           />
+        </div>
+      </Card>
+
+      {/* Call display duration card */}
+      <Card style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>叫号显示设置</div>
+        <div style={{ fontSize: 13, color: '#999', marginBottom: 16 }}>
+          每条叫号通知的弹窗展示时长，到期后自动关闭并播放下一条
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 14, color: '#555', flexShrink: 0 }}>叫号通知时长</span>
+          <Slider
+            min={3}
+            max={60}
+            step={1}
+            value={callDuration}
+            onChange={setCallDuration}
+            style={{ flex: 1, minWidth: 160, maxWidth: 300 }}
+            tooltip={{ formatter: (v) => `${v}秒` }}
+          />
+          <InputNumber
+            min={3}
+            max={60}
+            value={callDuration}
+            onChange={(v) => setCallDuration(v ?? 10)}
+            addonAfter="秒"
+            style={{ width: 100 }}
+          />
+          <Button
+            type="primary"
+            loading={durationSaving}
+            onClick={() => handleSaveDuration(callDuration)}
+          >
+            保存
+          </Button>
         </div>
       </Card>
 

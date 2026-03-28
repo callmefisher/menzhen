@@ -10,6 +10,7 @@ import (
 var (
 	ErrQueueDoctorNotFound  = errors.New("queue doctor not found")
 	ErrQueueDoctorDuplicate = errors.New("该医生已在接诊列表中，请勿重复添加")
+	ErrCallDurationOutOfRange = errors.New("叫号显示时长必须在 3～60 秒之间")
 )
 
 // SortOrder is used for batch sort update.
@@ -145,6 +146,39 @@ func (s *QueueDoctorService) GetQueueEnabled(tenantID uint) (bool, error) {
 // SetQueueEnabled updates the queue_enabled toggle for the tenant.
 func (s *QueueDoctorService) SetQueueEnabled(tenantID uint, enabled bool) error {
 	result := s.DB.Model(&model.Tenant{}).Where("id = ?", tenantID).Update("queue_enabled", enabled)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrTenantNotFound
+	}
+	return nil
+}
+
+// GetCallDisplayDuration returns the call overlay display duration in seconds for the tenant.
+// Defaults to 10 when the column is NULL.
+func (s *QueueDoctorService) GetCallDisplayDuration(tenantID uint) (int, error) {
+	var tenant model.Tenant
+	err := s.DB.Select("id, call_display_duration").First(&tenant, tenantID).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, ErrTenantNotFound
+		}
+		return 0, err
+	}
+	if tenant.CallDisplayDuration == nil {
+		return 10, nil
+	}
+	return *tenant.CallDisplayDuration, nil
+}
+
+// SetCallDisplayDuration updates the call overlay display duration for the tenant.
+// Valid range is 3–60 seconds.
+func (s *QueueDoctorService) SetCallDisplayDuration(tenantID uint, seconds int) error {
+	if seconds < 3 || seconds > 60 {
+		return ErrCallDurationOutOfRange
+	}
+	result := s.DB.Model(&model.Tenant{}).Where("id = ?", tenantID).Update("call_display_duration", seconds)
 	if result.Error != nil {
 		return result.Error
 	}
