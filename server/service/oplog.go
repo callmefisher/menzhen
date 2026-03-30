@@ -54,13 +54,20 @@ func (s *OpLogService) CreateOpLog(tenantID, userID uint64, userName, action, re
 }
 
 // QueryOpLogs queries operation logs with filtering and pagination.
-// It filters by tenant_id, optional user_name (LIKE), and optional date range.
+// When tenantID == 0 (super admin), all tenants' logs are returned with Tenant preloaded.
+// Otherwise filters by tenant_id. Optional user_name (LIKE) and date range filters are applied.
 // Results are ordered by created_at DESC.
 func (s *OpLogService) QueryOpLogs(tenantID uint64, name string, startDate, endDate string, page, size int) ([]model.OpLog, int64, error) {
 	var logs []model.OpLog
 	var total int64
 
-	query := s.DB.Model(&model.OpLog{}).Where("tenant_id = ?", tenantID)
+	query := s.DB.Model(&model.OpLog{})
+	if tenantID > 0 {
+		query = query.Where("tenant_id = ?", tenantID)
+	} else {
+		// Super admin global query: preload tenant info for display.
+		query = query.Preload("Tenant")
+	}
 
 	if name != "" {
 		query = query.Where("user_name LIKE ?", "%"+name+"%")

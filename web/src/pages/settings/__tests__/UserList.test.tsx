@@ -30,6 +30,7 @@ vi.mock('../../../store/auth', () => ({
   useAuth: () => ({
     hasPermission: (code: string) => code === 'user:manage',
     isGlobalAdmin: true,
+    isSuperAdmin: true,
     user: { id: 1, username: 'admin' },
   }),
 }));

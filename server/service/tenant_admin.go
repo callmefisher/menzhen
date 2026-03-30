@@ -54,21 +54,14 @@ func (s *TenantAdminService) DB() *gorm.DB {
 // Results preload Roles and are ordered by created_at DESC.
 // Users with user:manage permission are hidden (except currentUserID).
 func (s *TenantAdminService) ListUsers(tenantID uint64, page, size int, currentUserID uint64) ([]model.User, int64, error) {
-	adminUserIDs := getAdminUserIDs(s.db)
-	var excludeIDs []uint64
-	for _, id := range adminUserIDs {
-		if id != currentUserID {
-			excludeIDs = append(excludeIDs, id)
-		}
+	base := s.db.Model(&model.User{}).Where("tenant_id = ?", tenantID)
+	query, err := applyAdminExclusion(s.db, base, currentUserID)
+	if err != nil {
+		return nil, 0, err
 	}
 
 	var users []model.User
 	var total int64
-
-	query := s.db.Model(&model.User{}).Where("tenant_id = ?", tenantID)
-	if len(excludeIDs) > 0 {
-		query = query.Where("id NOT IN ?", excludeIDs)
-	}
 
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -89,7 +82,11 @@ func (s *TenantAdminService) ListUsers(tenantID uint64, page, size int, currentU
 // Returns ErrUserNotFound if the user does not exist in this tenant (cross-tenant protection).
 // Returns ErrProtectedUser if the target user has user:manage permission.
 func (s *TenantAdminService) UpdateUser(tenantID, userID uint64, req *TenantUpdateUserRequest) (*model.User, error) {
-	if isAdminUser(s.db, userID) {
+	isAdmin, err := isAdminUser(s.db, userID)
+	if err != nil {
+		return nil, err
+	}
+	if isAdmin {
 		return nil, ErrProtectedUser
 	}
 	var user model.User
@@ -132,7 +129,11 @@ func (s *TenantAdminService) UpdateUser(tenantID, userID uint64, req *TenantUpda
 // Returns ErrUserNotFound if the user does not belong to this tenant.
 // Returns ErrProtectedUser if the target user has user:manage permission.
 func (s *TenantAdminService) DeleteUser(tenantID, userID uint64) (*model.User, error) {
-	if isAdminUser(s.db, userID) {
+	isAdmin, err := isAdminUser(s.db, userID)
+	if err != nil {
+		return nil, err
+	}
+	if isAdmin {
 		return nil, ErrProtectedUser
 	}
 	var user model.User
@@ -143,7 +144,7 @@ func (s *TenantAdminService) DeleteUser(tenantID, userID uint64) (*model.User, e
 		return nil, err
 	}
 
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+	err = s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&user).Association("Roles").Clear(); err != nil {
 			return err
 		}
@@ -159,7 +160,11 @@ func (s *TenantAdminService) DeleteUser(tenantID, userID uint64) (*model.User, e
 // Returns an error if the user or any of the roles do not belong to the tenant.
 // Returns ErrProtectedUser if the target user has user:manage permission.
 func (s *TenantAdminService) AssignRoles(tenantID, userID uint64, roleIDs []uint64) error {
-	if isAdminUser(s.db, userID) {
+	isAdmin, err := isAdminUser(s.db, userID)
+	if err != nil {
+		return err
+	}
+	if isAdmin {
 		return ErrProtectedUser
 	}
 	// Verify user belongs to this tenant.

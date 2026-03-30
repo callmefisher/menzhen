@@ -317,4 +317,79 @@ describe('OpLogList', () => {
     expect(screen.getByText('A-01')).toBeInTheDocument();
     expect(screen.getByText('B-02')).toBeInTheDocument();
   });
+
+  it('shows tenant column for super admin', async () => {
+    mockListOpLogs.mockResolvedValue({
+      data: {
+        list: [
+          {
+            id: 30,
+            user_name: '张医生',
+            action: 'create',
+            resource_type: 'patient',
+            resource_id: 1,
+            old_data: null,
+            new_data: null,
+            created_at: '2026-03-20T10:00:00Z',
+            tenant: { id: 1, name: '诊所A', code: 'clinic-a' },
+          },
+          {
+            id: 31,
+            user_name: '李医生',
+            action: 'update',
+            resource_type: 'patient',
+            resource_id: 2,
+            old_data: null,
+            new_data: null,
+            created_at: '2026-03-20T11:00:00Z',
+            tenant: { id: 2, name: '诊所B', code: 'clinic-b' },
+          },
+        ],
+        total: 2,
+        is_super_admin: true,
+      },
+    });
+
+    renderOpLogList();
+
+    await waitFor(() => {
+      expect(screen.getByText('张医生')).toBeInTheDocument();
+    });
+
+    // Super admin column header should be visible
+    expect(screen.getByText('所属租户')).toBeInTheDocument();
+    // Tenant names should appear in the table
+    expect(screen.getByText('诊所A')).toBeInTheDocument();
+    expect(screen.getByText('诊所B')).toBeInTheDocument();
+  });
+
+  it('hides tenant column for normal user', async () => {
+    mockListOpLogs.mockResolvedValue({
+      data: {
+        list: [
+          {
+            id: 40,
+            user_name: '王护士',
+            action: 'create',
+            resource_type: 'patient',
+            resource_id: 1,
+            old_data: null,
+            new_data: null,
+            created_at: '2026-03-20T10:00:00Z',
+          },
+        ],
+        total: 1,
+        is_super_admin: false,
+      },
+    });
+
+    renderOpLogList();
+
+    await waitFor(() => {
+      expect(screen.getByText('王护士')).toBeInTheDocument();
+    });
+
+    // No tenant column for normal user
+    expect(screen.queryByText('所属租户')).not.toBeInTheDocument();
+  });
 });

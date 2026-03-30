@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -22,6 +23,7 @@ func NewOpLogHandler(db *gorm.DB) *OpLogHandler {
 
 // ListOpLogs handles GET /api/v1/oplogs.
 // Query params: name, start_date, end_date, page (default 1), size (default 20).
+// Super admin (username="admin" + user:manage permission) sees all tenants' logs.
 func (h *OpLogHandler) ListOpLogs(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
 	if tenantID == 0 {
@@ -30,6 +32,13 @@ func (h *OpLogHandler) ListOpLogs(c *gin.Context) {
 			"message": "unauthorized",
 		})
 		return
+	}
+
+	// Super admin sees all tenants' logs.
+	userID := middleware.GetUserID(c)
+	isSuperAdmin := service.IsProtectedAdminAccount(h.db, userID)
+	if isSuperAdmin {
+		tenantID = 0
 	}
 
 	name := c.Query("name")
@@ -59,10 +68,11 @@ func (h *OpLogHandler) ListOpLogs(c *gin.Context) {
 		"code":    0,
 		"message": "success",
 		"data": gin.H{
-			"list":  logs,
-			"total": total,
-			"page":  page,
-			"size":  size,
+			"list":           logs,
+			"total":          total,
+			"page":           page,
+			"size":           size,
+			"is_super_admin": isSuperAdmin,
 		},
 	})
 }
@@ -89,6 +99,13 @@ func (h *OpLogHandler) DeleteOpLog(c *gin.Context) {
 
 	svc := service.NewOpLogService(h.db)
 	if err := svc.DeleteOpLog(tenantID, id); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"code":    404,
+				"message": "operation log not found",
+			})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
 			"message": "failed to delete operation log",
@@ -120,6 +137,13 @@ func (h *OpLogHandler) BatchDeleteOpLogs(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": "invalid request: ids required",
+		})
+		return
+	}
+	if len(req.IDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "ids must not be empty",
 		})
 		return
 	}

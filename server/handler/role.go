@@ -22,13 +22,34 @@ func NewRoleHandler(db *gorm.DB) *RoleHandler {
 }
 
 // List handles GET /api/v1/roles.
+// Only super admin (username=admin + user:manage) may use ?tenant_id to query another tenant's roles.
+// All other users always see only their own tenant's roles.
 func (h *RoleHandler) List(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
 
-	// Allow admin to query roles for a specific tenant (cross-tenant).
+	// Only super admin may override tenant_id via query param.
 	if tid := c.Query("tenant_id"); tid != "" {
-		if parsed, err := strconv.ParseUint(tid, 10, 64); err == nil && parsed > 0 {
-			tenantID = parsed
+		userID := middleware.GetUserID(c)
+		if service.IsProtectedAdminAccount(h.db, userID) {
+			if parsed, err := strconv.ParseUint(tid, 10, 64); err == nil && parsed > 0 {
+				// Validate the tenant exists before switching context.
+				tenantSvc := service.NewTenantService(h.db)
+				if _, err := tenantSvc.GetTenant(parsed); err != nil {
+					if errors.Is(err, service.ErrTenantNotFound) {
+						c.JSON(http.StatusNotFound, gin.H{
+							"code":    404,
+							"message": "诊所不存在",
+						})
+						return
+					}
+					c.JSON(http.StatusInternalServerError, gin.H{
+						"code":    500,
+						"message": "查询诊所失败",
+					})
+					return
+				}
+				tenantID = parsed
+			}
 		}
 	}
 
@@ -37,7 +58,7 @@ func (h *RoleHandler) List(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
-			"message": "failed to list roles",
+			"message": "查询角色列表失败",
 		})
 		return
 	}
@@ -57,7 +78,7 @@ func (h *RoleHandler) Create(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "invalid request: " + err.Error(),
+			"message": "请求参数错误: " + err.Error(),
 		})
 		return
 	}
@@ -67,7 +88,7 @@ func (h *RoleHandler) Create(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
-			"message": "failed to create role",
+			"message": "创建角色失败",
 		})
 		return
 	}
@@ -86,7 +107,7 @@ func (h *RoleHandler) Update(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "invalid role id",
+			"message": "角色 ID 无效",
 		})
 		return
 	}
@@ -95,7 +116,7 @@ func (h *RoleHandler) Update(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "invalid request: " + err.Error(),
+			"message": "请求参数错误: " + err.Error(),
 		})
 		return
 	}
@@ -106,7 +127,7 @@ func (h *RoleHandler) Update(c *gin.Context) {
 		if errors.Is(err, service.ErrRoleNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{
 				"code":    404,
-				"message": "role not found",
+				"message": "角色不存在",
 			})
 			return
 		}
@@ -119,7 +140,7 @@ func (h *RoleHandler) Update(c *gin.Context) {
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
-			"message": "failed to update role",
+			"message": "更新角色失败",
 		})
 		return
 	}
@@ -138,7 +159,7 @@ func (h *RoleHandler) ListPermissions(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
-			"message": "failed to list permissions",
+			"message": "查询权限列表失败",
 		})
 		return
 	}
@@ -157,7 +178,7 @@ func (h *RoleHandler) Delete(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "invalid role id",
+			"message": "角色 ID 无效",
 		})
 		return
 	}

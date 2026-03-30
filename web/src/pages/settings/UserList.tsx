@@ -76,7 +76,7 @@ export default function UserList() {
   const [total, setTotal] = useState(0);
   const [params, setParams] = useState<ListParams>({ page: 1, size: 20 });
   const isMobile = useIsMobile();
-  const { user: currentUser, isGlobalAdmin } = useAuth();
+  const { user: currentUser, isSuperAdmin } = useAuth();
 
   const highlight = useRowHighlight({
     data,
@@ -116,7 +116,7 @@ export default function UserList() {
   const fetchData = useCallback(async (query: ListParams) => {
     setLoading(true);
     try {
-      const res = isGlobalAdmin
+      const res = isSuperAdmin
         ? await listUsers({ page: query.page, size: query.size })
         : await listTenantUsers({ page: query.page, size: query.size });
       const body = res as unknown as {
@@ -132,7 +132,7 @@ export default function UserList() {
     } finally {
       setLoading(false);
     }
-  }, [isGlobalAdmin]);
+  }, [isSuperAdmin]);
 
   useEffect(() => {
     fetchData(params);
@@ -149,8 +149,8 @@ export default function UserList() {
       notes: record.notes,
     });
     setEditModalVisible(true);
-    // Load tenants for selector (global admin only)
-    if (isGlobalAdmin) {
+    // Load tenants for selector (super admin only)
+    if (isSuperAdmin) {
       try {
         const res = await listTenants({ page: 1, size: 100 });
         const body = res as unknown as { data: { list: TenantItem[] } };
@@ -167,7 +167,7 @@ export default function UserList() {
       if (!editingUser) return;
       const isSelf = editingUser.id === currentUser?.id;
       setEditLoading(true);
-      if (isGlobalAdmin) {
+      if (isSuperAdmin) {
         await updateUser(editingUser.id, {
           real_name: values.real_name,
           phone: values.phone,
@@ -201,7 +201,7 @@ export default function UserList() {
   const handleToggleStatus = async (record: UserItem) => {
     const newStatus = record.status === 1 ? 0 : 1;
     try {
-      if (isGlobalAdmin) {
+      if (isSuperAdmin) {
         await updateUser(record.id, { status: newStatus });
       } else {
         await updateTenantUser(record.id, { status: newStatus });
@@ -217,7 +217,7 @@ export default function UserList() {
   // --- Delete user ---
   const handleDelete = async (record: UserItem) => {
     try {
-      if (isGlobalAdmin) {
+      if (isSuperAdmin) {
         await deleteUser(record.id);
       } else {
         await deleteTenantUser(record.id);
@@ -241,7 +241,7 @@ export default function UserList() {
     try {
       const values = await resetPwdForm.validateFields();
       setResetPwdLoading(true);
-      if (isGlobalAdmin) {
+      if (isSuperAdmin) {
         await resetUserPassword(resetPwdTarget.id, { new_password: values.new_password });
       } else {
         await resetTenantUserPassword(resetPwdTarget.id, { new_password: values.new_password });
@@ -261,7 +261,7 @@ export default function UserList() {
   const handleOpenCreate = async () => {
     createForm.resetFields();
     setCreateModalVisible(true);
-    if (isGlobalAdmin) {
+    if (isSuperAdmin) {
       try {
         const res = await listTenants({ page: 1, size: 100 });
         const body = res as unknown as { data: { list: TenantItem[] } };
@@ -276,7 +276,7 @@ export default function UserList() {
     try {
       const values = await createForm.validateFields();
       setCreateLoading(true);
-      if (isGlobalAdmin) {
+      if (isSuperAdmin) {
         await createUser({
           tenant_id: values.tenant_id,
           username: values.username,
@@ -310,7 +310,7 @@ export default function UserList() {
     setRoleModalVisible(true);
     // Fetch all roles
     try {
-      const res = isGlobalAdmin
+      const res = isSuperAdmin
         ? await listRoles({ tenant_id: record.tenant_id })
         : await listTenantRoles();
       const body = res as unknown as { data: RoleItem[] };
@@ -324,7 +324,7 @@ export default function UserList() {
     if (!roleTargetUser) return;
     setRoleLoading(true);
     try {
-      if (isGlobalAdmin) {
+      if (isSuperAdmin) {
         await assignRoles(roleTargetUser.id, selectedRoleIds);
       } else {
         await assignTenantUserRoles(roleTargetUser.id, selectedRoleIds);
@@ -350,7 +350,7 @@ export default function UserList() {
       width: 150,
       render: (val: string, record: UserItem) => {
         const isCurrentUser = record.id === currentUser?.id;
-        const isProtectedAdmin = record.username === 'admin' && (record.roles || []).some(r => r.name === '管理员');
+        const isProtectedAdmin = record.username === 'admin';
         const dotDisabled = isCurrentUser || (!isCurrentUser && isProtectedAdmin);
         const isDisabled = record.status !== 1;
         return (
@@ -419,7 +419,7 @@ export default function UserList() {
       a11yPriority: 1,
       render: (val: string) => val || '-',
     },
-    ...(isGlobalAdmin ? [{
+    ...(isSuperAdmin ? [{
       title: '所属诊所',
       key: 'tenant',
       width: 100,
@@ -460,7 +460,7 @@ export default function UserList() {
       width: 220,
       render: (_, record) => {
         const isCurrentUser = record.id === currentUser?.id;
-        const isProtectedAdmin = record.username === 'admin' && (record.roles || []).some(r => r.name === '管理员');
+        const isProtectedAdmin = record.username === 'admin';
         const isReadOnly = !isCurrentUser && isProtectedAdmin;
         return (
           <Space size={4} wrap>
@@ -709,7 +709,7 @@ export default function UserList() {
           <Form.Item name="phone" label="手机号">
             <Input placeholder="请输入手机号" />
           </Form.Item>
-          {isGlobalAdmin && (
+          {isSuperAdmin && (
             <Form.Item name="tenant_id" label="所属诊所">
               <Select
                 placeholder="请选择所属诊所"
@@ -756,9 +756,9 @@ export default function UserList() {
         >
           {allRoles.map((role) => {
             const isAdminRole = role.name === '管理员';
-            const canAssignAdmin = isGlobalAdmin && currentUser?.username === 'admin';
+            const canAssignAdmin = isSuperAdmin;
             const disabled = isAdminRole && !canAssignAdmin;
-            if (isAdminRole && !canAssignAdmin && !isGlobalAdmin) return null;
+            if (isAdminRole && !isSuperAdmin) return null;
             return (
               <Checkbox key={role.id} value={role.id} disabled={disabled}>
                 {role.name}{disabled ? '（仅 admin 可分配）' : ''}
@@ -768,8 +768,7 @@ export default function UserList() {
         </Checkbox.Group>
         {allRoles.filter((r) => {
           const isAdminRole = r.name === '管理员';
-          const canAssignAdmin = isGlobalAdmin && currentUser?.username === 'admin';
-          return !isAdminRole || canAssignAdmin || isGlobalAdmin;
+          return !isAdminRole || isSuperAdmin;
         }).length === 0 && (
           <div style={{ color: '#999' }}>暂无可分配角色</div>
         )}
@@ -843,7 +842,7 @@ export default function UserList() {
         destroyOnClose
       >
         <Form form={createForm} layout="vertical">
-          {isGlobalAdmin && (
+          {isSuperAdmin && (
             <Form.Item
               name="tenant_id"
               label="所属诊所"
