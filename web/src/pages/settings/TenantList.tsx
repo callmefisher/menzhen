@@ -45,7 +45,7 @@ export default function TenantList() {
   const [total, setTotal] = useState(0);
   const [params, setParams] = useState<ListParams>({ page: 1, size: 20 });
   const isMobile = useIsMobile();
-  const { isGlobalAdmin } = useAuth();
+  const { isSuperAdmin } = useAuth();
 
   const highlight = useRowHighlight({
     data,
@@ -216,6 +216,7 @@ export default function TenantList() {
             size="small"
             icon={<EditOutlined />}
             onClick={() => handleOpenModal(record)}
+            disabled={!isSuperAdmin}
           >
             编辑
           </Button>
@@ -224,9 +225,9 @@ export default function TenantList() {
             onConfirm={() => handleDelete(record.id)}
             okText="确定"
             cancelText="取消"
-            disabled={!isGlobalAdmin}
+            disabled={!isSuperAdmin}
           >
-            <Button type="link" size="small" danger icon={<DeleteOutlined />} disabled={!isGlobalAdmin}>
+            <Button type="link" size="small" danger icon={<DeleteOutlined />} disabled={!isSuperAdmin}>
               删除
             </Button>
           </Popconfirm>
@@ -246,13 +247,15 @@ export default function TenantList() {
           marginBottom: 16,
         }}
       >
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => handleOpenModal()}
-        >
-          新增诊所
-        </Button>
+        {isSuperAdmin && (
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => handleOpenModal()}
+          >
+            新增诊所
+          </Button>
+        )}
       </div>
 
       {isMobile ? (
@@ -314,9 +317,9 @@ export default function TenantList() {
                   编码：{record.code}
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <Button type="link" size="small" style={{ padding: 0 }} icon={<EditOutlined />} onClick={() => handleOpenModal(record)}>编辑</Button>
-                  <Popconfirm title="确定删除此诊所？" onConfirm={() => handleDelete(record.id)} okText="确定" cancelText="取消" disabled={!isGlobalAdmin}>
-                    <Button type="link" size="small" style={{ padding: 0 }} danger icon={<DeleteOutlined />} disabled={!isGlobalAdmin}>删除</Button>
+                  <Button type="link" size="small" style={{ padding: 0 }} icon={<EditOutlined />} onClick={() => handleOpenModal(record)} disabled={!isSuperAdmin}>编辑</Button>
+                  <Popconfirm title="确定删除此诊所？" onConfirm={() => handleDelete(record.id)} okText="确定" cancelText="取消" disabled={!isSuperAdmin}>
+                    <Button type="link" size="small" style={{ padding: 0 }} danger icon={<DeleteOutlined />} disabled={!isSuperAdmin}>删除</Button>
                   </Popconfirm>
                 </div>
               </div>

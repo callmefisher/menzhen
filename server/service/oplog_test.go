@@ -183,3 +183,54 @@ func TestOpLogService_BatchDeleteOpLogs(t *testing.T) {
 	assert.Equal(t, int64(1), total)
 	assert.Len(t, logs, 1)
 }
+
+func TestOpLogService_QueryOpLogs_GlobalQuery(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	tenant1 := testutil.SeedTestTenant(t, db, "诊所A", "clinic-a")
+	tenant2 := testutil.SeedTestTenant(t, db, "诊所B", "clinic-b")
+	user1, _ := testutil.SeedTestUser(t, db, tenant1.ID, "doc1", "pass", nil)
+	user2, _ := testutil.SeedTestUser(t, db, tenant2.ID, "doc2", "pass", nil)
+	svc := service.NewOpLogService(db)
+
+	err := svc.CreateOpLog(tenant1.ID, user1.ID, "医生1", "create", "patient", 1, nil, nil)
+	assert.NoError(t, err)
+	err = svc.CreateOpLog(tenant2.ID, user2.ID, "医生2", "update", "patient", 2, nil, nil)
+	assert.NoError(t, err)
+
+	// Global query (tenantID=0): should return all logs across tenants.
+	logs, total, err := svc.QueryOpLogs(0, "", "", "", 1, 10)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(2), total)
+	assert.Len(t, logs, 2)
+
+	// Verify Tenant is preloaded.
+	tenantIDs := map[uint64]bool{}
+	for _, l := range logs {
+		tenantIDs[l.TenantID] = true
+		assert.NotEmpty(t, l.Tenant.Name, "Tenant should be preloaded in global query")
+	}
+	assert.True(t, tenantIDs[tenant1.ID], "should contain logs from tenant1")
+	assert.True(t, tenantIDs[tenant2.ID], "should contain logs from tenant2")
+}
+
+func TestOpLogService_QueryOpLogs_GlobalQuery_WithNameFilter(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	tenant1 := testutil.SeedTestTenant(t, db, "诊所A", "clinic-a2")
+	tenant2 := testutil.SeedTestTenant(t, db, "诊所B", "clinic-b2")
+	user1, _ := testutil.SeedTestUser(t, db, tenant1.ID, "doc1", "pass", nil)
+	user2, _ := testutil.SeedTestUser(t, db, tenant2.ID, "doc2", "pass", nil)
+	svc := service.NewOpLogService(db)
+
+	err := svc.CreateOpLog(tenant1.ID, user1.ID, "张三", "create", "patient", 1, nil, nil)
+	assert.NoError(t, err)
+	err = svc.CreateOpLog(tenant2.ID, user2.ID, "李四", "update", "patient", 2, nil, nil)
+	assert.NoError(t, err)
+
+	// Global query with name filter should still work across tenants.
+	logs, total, err := svc.QueryOpLogs(0, "张", "", "", 1, 10)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	assert.Len(t, logs, 1)
+	assert.Equal(t, "张三", logs[0].UserName)
+	assert.Equal(t, tenant1.ID, logs[0].TenantID)
+}

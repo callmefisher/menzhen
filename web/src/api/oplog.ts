@@ -8,6 +8,12 @@ export interface OpLogListParams {
   size?: number;
 }
 
+export interface OpLogTenant {
+  id: number;
+  name: string;
+  code: string;
+}
+
 export interface OpLogItem {
   id: number;
   user_name: string;
@@ -17,6 +23,7 @@ export interface OpLogItem {
   old_data: any;
   new_data: any;
   created_at: string;
+  tenant?: OpLogTenant;
 }
 
 export function listOpLogs(params: OpLogListParams) {

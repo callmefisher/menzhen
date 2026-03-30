@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/callmefisher/menzhen/server/middleware"
+	"github.com/callmefisher/menzhen/server/model"
 	"github.com/callmefisher/menzhen/server/service"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -83,6 +84,8 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 }
 
 // List handles GET /api/v1/users.
+// Super admin (username=admin + user:manage) sees all users across tenants.
+// Other users see only their own tenant's users.
 func (h *UserHandler) List(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	if page < 1 {
@@ -95,11 +98,23 @@ func (h *UserHandler) List(c *gin.Context) {
 
 	svc := service.NewUserService(h.db)
 	currentUserID := middleware.GetUserID(c)
-	users, total, err := svc.ListUsers(page, size, currentUserID)
+	isSuperAdmin := service.IsProtectedAdminAccount(h.db, currentUserID)
+
+	var users []model.User
+	var total int64
+	var err error
+
+	if isSuperAdmin {
+		users, total, err = svc.ListUsers(page, size, currentUserID)
+	} else {
+		tenantID := middleware.GetTenantID(c)
+		users, total, err = svc.ListUsersByTenant(tenantID, page, size, currentUserID)
+	}
+
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
-			"message": "failed to list users",
+			"message": "查询用户列表失败",
 		})
 		return
 	}
@@ -117,12 +132,13 @@ func (h *UserHandler) List(c *gin.Context) {
 }
 
 // Update handles PUT /api/v1/users/:id.
+// Super admin may update users across tenants; others are restricted to their own tenant.
 func (h *UserHandler) Update(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "invalid user id",
+			"message": "用户 ID 无效",
 		})
 		return
 	}
@@ -135,7 +151,7 @@ func (h *UserHandler) Update(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "invalid request: " + err.Error(),
+			"message": "请求参数错误: " + err.Error(),
 		})
 		return
 	}
@@ -150,19 +166,26 @@ func (h *UserHandler) Update(c *gin.Context) {
 		return
 	}
 
+	// Super admin may update across tenants; others are scoped to their own tenant.
+	isSuperAdmin := service.IsProtectedAdminAccount(h.db, currentUserID)
+	var tenantID uint64
+	if !isSuperAdmin {
+		tenantID = middleware.GetTenantID(c)
+	}
+
 	svc := service.NewUserService(h.db)
-	user, err := svc.UpdateUser(0, id, &req)
+	user, err := svc.UpdateUser(tenantID, id, &req)
 	if err != nil {
 		if errors.Is(err, service.ErrUserNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{
 				"code":    404,
-				"message": "user not found",
+				"message": "用户不存在",
 			})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
-			"message": "failed to update user",
+			"message": "更新用户失败",
 		})
 		return
 	}
@@ -177,13 +200,13 @@ func (h *UserHandler) Update(c *gin.Context) {
 }
 
 // Delete handles DELETE /api/v1/users/:id.
-// This permanently removes the user from the database.
+// Super admin may delete users across tenants; others are restricted to their own tenant.
 func (h *UserHandler) Delete(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "invalid user id",
+			"message": "用户 ID 无效",
 		})
 		return
 	}
@@ -197,31 +220,38 @@ func (h *UserHandler) Delete(c *gin.Context) {
 	if currentUserID == id {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "cannot delete yourself",
+			"message": "不能删除自己的账号",
 		})
 		return
 	}
 
+	// Super admin may delete across tenants; others are scoped to their own tenant.
+	isSuperAdmin := service.IsProtectedAdminAccount(h.db, currentUserID)
+	var tenantID uint64
+	if !isSuperAdmin {
+		tenantID = middleware.GetTenantID(c)
+	}
+
 	svc := service.NewUserService(h.db)
-	deletedUser, err := svc.DeleteUser(0, id)
+	deletedUser, err := svc.DeleteUser(tenantID, id)
 	if err != nil {
 		if errors.Is(err, service.ErrUserNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{
 				"code":    404,
-				"message": "user not found",
+				"message": "用户不存在",
 			})
 			return
 		}
 		if errors.Is(err, service.ErrProtectedUser) {
 			c.JSON(http.StatusForbidden, gin.H{
 				"code":    403,
-				"message": "cannot delete admin user",
+				"message": "admin 账号不可删除",
 			})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
-			"message": "failed to delete user",
+			"message": "删除用户失败",
 		})
 		return
 	}
@@ -238,13 +268,14 @@ func (h *UserHandler) Delete(c *gin.Context) {
 }
 
 // AssignRoles handles POST /api/v1/users/:id/roles.
+// Non-super-admin callers may only assign roles to users within their own tenant.
 func (h *UserHandler) AssignRoles(c *gin.Context) {
-	tenantID := middleware.GetTenantID(c)
+	callerTenantID := middleware.GetTenantID(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "invalid user id",
+			"message": "用户 ID 无效",
 		})
 		return
 	}
@@ -253,21 +284,48 @@ func (h *UserHandler) AssignRoles(c *gin.Context) {
 		return
 	}
 
+	// Non-super-admin: verify target user belongs to the caller's tenant.
+	callerID := middleware.GetUserID(c)
+	if !service.IsProtectedAdminAccount(h.db, callerID) {
+		var target model.User
+		if err := h.db.Select("id, tenant_id").First(&target, id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				c.JSON(http.StatusNotFound, gin.H{
+					"code":    404,
+					"message": "用户不存在",
+				})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "查询用户失败",
+			})
+			return
+		}
+		if target.TenantID != callerTenantID {
+			c.JSON(http.StatusForbidden, gin.H{
+				"code":    403,
+				"message": "无权操作其他租户的用户",
+			})
+			return
+		}
+	}
+
 	var req service.AssignRolesRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "invalid request: " + err.Error(),
+			"message": "请求参数错误: " + err.Error(),
 		})
 		return
 	}
 
 	svc := service.NewUserService(h.db)
-	if err := svc.AssignRoles(tenantID, id, req.RoleIDs); err != nil {
+	if err := svc.AssignRoles(callerTenantID, id, req.RoleIDs); err != nil {
 		if errors.Is(err, service.ErrUserNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{
 				"code":    404,
-				"message": "user not found",
+				"message": "用户不存在",
 			})
 			return
 		}
@@ -285,12 +343,13 @@ func (h *UserHandler) AssignRoles(c *gin.Context) {
 }
 
 // ResetPassword handles POST /api/v1/users/:id/reset-password.
+// Super admin may reset passwords across tenants; others are restricted to their own tenant.
 func (h *UserHandler) ResetPassword(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "invalid user id",
+			"message": "用户 ID 无效",
 		})
 		return
 	}
@@ -319,18 +378,25 @@ func (h *UserHandler) ResetPassword(c *gin.Context) {
 		return
 	}
 
+	// Super admin may reset across tenants; others are scoped to their own tenant.
+	isSuperAdmin := service.IsProtectedAdminAccount(h.db, currentUserID)
+	var tenantID uint64
+	if !isSuperAdmin {
+		tenantID = middleware.GetTenantID(c)
+	}
+
 	svc := service.NewUserService(h.db)
-	if err := svc.ResetPassword(0, id, req.NewPassword); err != nil {
+	if err := svc.ResetPassword(tenantID, id, req.NewPassword); err != nil {
 		if errors.Is(err, service.ErrUserNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{
 				"code":    404,
-				"message": "user not found",
+				"message": "用户不存在",
 			})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
-			"message": "failed to reset password",
+			"message": "重置密码失败",
 		})
 		return
 	}

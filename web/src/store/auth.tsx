@@ -31,6 +31,8 @@ interface AuthContextValue extends AuthState {
   hasPermission: (code: string) => boolean;
   /** True when user has user:manage permission (system-level admin). */
   isGlobalAdmin: boolean;
+  /** True only for username=admin with user:manage — can see across all tenants. */
+  isSuperAdmin: boolean;
   fetchQueueEnabled: () => Promise<void>;
 }
 
@@ -153,6 +155,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const isGlobalAdmin = state.permissions.includes('user:manage');
+  const isSuperAdmin = state.user?.username === 'admin' && isGlobalAdmin;
 
   return (
     <AuthContext.Provider
@@ -162,6 +165,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         logout,
         hasPermission,
         isGlobalAdmin,
+        isSuperAdmin,
         fetchQueueEnabled,
       }}
     >

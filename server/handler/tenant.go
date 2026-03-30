@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/callmefisher/menzhen/server/middleware"
 	"github.com/callmefisher/menzhen/server/service"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -21,6 +22,8 @@ func NewTenantHandler(db *gorm.DB) *TenantHandler {
 }
 
 // List handles GET /api/v1/tenants.
+// Super admin (username=admin + user:manage) sees all tenants.
+// Other users see only their own tenant as a single-item list.
 func (h *TenantHandler) List(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	if page < 1 {
@@ -31,22 +34,62 @@ func (h *TenantHandler) List(c *gin.Context) {
 		size = 20
 	}
 
+	userID := middleware.GetUserID(c)
+	isSuperAdmin := service.IsProtectedAdminAccount(h.db, userID)
+
 	svc := service.NewTenantService(h.db)
-	tenants, total, err := svc.ListTenants(page, size)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "failed to list tenants",
+
+	if isSuperAdmin {
+		tenants, total, err := svc.ListTenants(page, size)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "failed to list tenants",
+			})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"code":    0,
+			"message": "success",
+			"data": gin.H{
+				"list":  tenants,
+				"total": total,
+				"page":  page,
+				"size":  size,
+			},
 		})
 		return
 	}
 
+	// Non-super-admin: return only their own tenant.
+	tenantID := middleware.GetTenantID(c)
+	tenant, err := svc.GetTenant(tenantID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    0,
+				"message": "success",
+				"data": gin.H{
+					"list":  []interface{}{},
+					"total": 0,
+					"page":  page,
+					"size":  size,
+				},
+			})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "failed to get tenant",
+		})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"message": "success",
 		"data": gin.H{
-			"list":  tenants,
-			"total": total,
+			"list":  []interface{}{tenant},
+			"total": 1,
 			"page":  page,
 			"size":  size,
 		},
@@ -59,7 +102,7 @@ func (h *TenantHandler) Create(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "invalid request: " + err.Error(),
+			"message": "请求参数错误: " + err.Error(),
 		})
 		return
 	}
@@ -70,20 +113,20 @@ func (h *TenantHandler) Create(c *gin.Context) {
 		if errors.Is(err, service.ErrTenantCodeExist) {
 			c.JSON(http.StatusConflict, gin.H{
 				"code":    409,
-				"message": "tenant code already exists",
+				"message": "诊所编码已存在",
 			})
 			return
 		}
 		if errors.Is(err, service.ErrTenantNameExist) {
 			c.JSON(http.StatusConflict, gin.H{
 				"code":    409,
-				"message": "tenant name already exists",
+				"message": "诊所名称已存在",
 			})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
-			"message": "failed to create tenant",
+			"message": "创建诊所失败",
 		})
 		return
 	}
@@ -96,12 +139,22 @@ func (h *TenantHandler) Create(c *gin.Context) {
 }
 
 // Update handles PUT /api/v1/tenants/:id.
+// Only super admin (username=admin + user:manage) may update tenant information.
 func (h *TenantHandler) Update(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "invalid tenant id",
+			"message": "诊所 ID 无效",
+		})
+		return
+	}
+
+	userID := middleware.GetUserID(c)
+	if !service.IsProtectedAdminAccount(h.db, userID) {
+		c.JSON(http.StatusForbidden, gin.H{
+			"code":    403,
+			"message": "仅超级管理员可修改诊所信息",
 		})
 		return
 	}
@@ -110,7 +163,7 @@ func (h *TenantHandler) Update(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "invalid request: " + err.Error(),
+			"message": "请求参数错误: " + err.Error(),
 		})
 		return
 	}
@@ -121,21 +174,21 @@ func (h *TenantHandler) Update(c *gin.Context) {
 		if errors.Is(err, service.ErrTenantNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{
 				"code":    404,
-				"message": "tenant not found",
+				"message": "诊所不存在",
 			})
 			return
 		}
 		if errors.Is(err, service.ErrTenantCodeExist) {
 			c.JSON(http.StatusConflict, gin.H{
 				"code":    409,
-				"message": "tenant code already exists",
+				"message": "诊所编码已存在",
 			})
 			return
 		}
 		if errors.Is(err, service.ErrTenantNameExist) {
 			c.JSON(http.StatusConflict, gin.H{
 				"code":    409,
-				"message": "tenant name already exists",
+				"message": "诊所名称已存在",
 			})
 			return
 		}
@@ -148,7 +201,7 @@ func (h *TenantHandler) Update(c *gin.Context) {
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
-			"message": "failed to update tenant",
+			"message": "更新诊所失败",
 		})
 		return
 	}
@@ -166,7 +219,7 @@ func (h *TenantHandler) Delete(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "invalid tenant id",
+			"message": "诊所 ID 无效",
 		})
 		return
 	}
@@ -176,7 +229,7 @@ func (h *TenantHandler) Delete(c *gin.Context) {
 		if errors.Is(err, service.ErrTenantNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{
 				"code":    404,
-				"message": "tenant not found",
+				"message": "诊所不存在",
 			})
 			return
 		}
@@ -189,7 +242,7 @@ func (h *TenantHandler) Delete(c *gin.Context) {
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
-			"message": "failed to delete tenant",
+			"message": "删除诊所失败",
 		})
 		return
 	}

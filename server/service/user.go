@@ -15,8 +15,10 @@ var ErrProtectedUser = errors.New("cannot modify a system admin user")
 
 // IsProtectedAdminAccount checks if a user is the protected "admin" account
 // (has user:manage permission AND username is "admin").
+// Returns false (fail-safe) on any DB error.
 func IsProtectedAdminAccount(db *gorm.DB, userID uint64) bool {
-	if !isAdminUser(db, userID) {
+	isAdmin, err := isAdminUser(db, userID)
+	if err != nil || !isAdmin {
 		return false
 	}
 	var user model.User
@@ -27,26 +29,51 @@ func IsProtectedAdminAccount(db *gorm.DB, userID uint64) bool {
 }
 
 // getAdminUserIDs returns all user IDs that have the "user:manage" permission.
-func getAdminUserIDs(db *gorm.DB) []uint64 {
+// Returns an error if the DB query fails — callers must not silently ignore it.
+func getAdminUserIDs(db *gorm.DB) ([]uint64, error) {
 	var ids []uint64
-	db.Raw(`
+	result := db.Raw(`
 		SELECT DISTINCT ur.user_id
 		FROM user_roles ur
 		JOIN role_permissions rp ON rp.role_id = ur.role_id
 		JOIN permissions p ON p.id = rp.permission_id
 		WHERE p.code = ?
 	`, "user:manage").Scan(&ids)
-	return ids
+	return ids, result.Error
 }
 
 // isAdminUser checks whether the given user ID has "user:manage" permission.
-func isAdminUser(db *gorm.DB, userID uint64) bool {
-	for _, id := range getAdminUserIDs(db) {
+func isAdminUser(db *gorm.DB, userID uint64) (bool, error) {
+	ids, err := getAdminUserIDs(db)
+	if err != nil {
+		return false, err
+	}
+	for _, id := range ids {
 		if id == userID {
-			return true
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
+}
+
+// applyAdminExclusion filters admin users out of a query for non-admin callers.
+// If the current user is themselves an admin, no exclusion is applied (admins see all).
+// Returns an error if admin IDs cannot be fetched from the DB.
+func applyAdminExclusion(db *gorm.DB, query *gorm.DB, currentUserID uint64) (*gorm.DB, error) {
+	adminIDs, err := getAdminUserIDs(db)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range adminIDs {
+		if id == currentUserID {
+			return query, nil // caller is admin — show everyone
+		}
+	}
+	// Caller is not admin — hide all admin users
+	if len(adminIDs) > 0 {
+		query = query.Where("id NOT IN ?", adminIDs)
+	}
+	return query, nil
 }
 
 // UpdateUserRequest is the input for updating an existing user.
@@ -76,36 +103,15 @@ func NewUserService(db *gorm.DB) *UserService {
 
 // ListUsers returns a paginated list of all users across tenants.
 // Results include preloaded Roles and Tenant, ordered by created_at DESC.
-// Users who have the "user:manage" permission are hidden from others
-// (only visible to themselves).
+// Admin users (user:manage) are hidden from non-admin callers.
 func (s *UserService) ListUsers(page, size int, currentUserID uint64) ([]model.User, int64, error) {
-	adminUserIDs := getAdminUserIDs(s.DB)
-	isCurrentAdmin := false
-	for _, id := range adminUserIDs {
-		if id == currentUserID {
-			isCurrentAdmin = true
-			break
-		}
-	}
-
-	// If current user is admin, show all users.
-	// If current user is not admin, hide other admin users (only show themselves if they are admin).
-	var excludeIDs []uint64
-	if !isCurrentAdmin {
-		for _, id := range adminUserIDs {
-			if id != currentUserID {
-				excludeIDs = append(excludeIDs, id)
-			}
-		}
+	query, err := applyAdminExclusion(s.DB, s.DB.Model(&model.User{}), currentUserID)
+	if err != nil {
+		return nil, 0, err
 	}
 
 	var users []model.User
 	var total int64
-
-	query := s.DB.Model(&model.User{})
-	if len(excludeIDs) > 0 {
-		query = query.Where("id NOT IN ?", excludeIDs)
-	}
 
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -123,8 +129,34 @@ func (s *UserService) ListUsers(page, size int, currentUserID uint64) ([]model.U
 	return users, total, nil
 }
 
+// ListUsersByTenant returns a paginated list of users within a specific tenant.
+// Admin users (user:manage) are hidden from non-admin callers.
+func (s *UserService) ListUsersByTenant(tenantID uint64, page, size int, currentUserID uint64) ([]model.User, int64, error) {
+	base := s.DB.Model(&model.User{}).Where("tenant_id = ?", tenantID)
+	query, err := applyAdminExclusion(s.DB, base, currentUserID)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var users []model.User
+	var total int64
+
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	if err := query.Order("created_at DESC").
+		Offset((page-1)*size).Limit(size).
+		Preload("Roles").Preload("Tenant").
+		Find(&users).Error; err != nil {
+		return nil, 0, err
+	}
+
+	return users, total, nil
+}
+
 // UpdateUser updates an existing user's profile fields (real_name, phone, status).
-// When tenantID is 0, the update is cross-tenant (for admins with user:manage).
+// When tenantID is 0, the update is cross-tenant (for super admin).
 func (s *UserService) UpdateUser(tenantID, id uint64, req *UpdateUserRequest) (*model.User, error) {
 	var user model.User
 	query := s.DB
@@ -173,9 +205,8 @@ func (s *UserService) UpdateUser(tenantID, id uint64, req *UpdateUserRequest) (*
 }
 
 // DeleteUser removes a user from the database.
-// When tenantID is 0, the operation is cross-tenant.
-// It also clears the user's role associations.
-// Returns the deleted user info for audit logging.
+// When tenantID is 0, the operation is cross-tenant (for super admin).
+// The admin check runs inside the transaction to prevent a TOCTOU race.
 func (s *UserService) DeleteUser(tenantID, id uint64) (*model.User, error) {
 	var user model.User
 	query := s.DB
@@ -189,13 +220,15 @@ func (s *UserService) DeleteUser(tenantID, id uint64) (*model.User, error) {
 		return nil, err
 	}
 
-	// Prevent deleting admin users.
-	if isAdminUser(s.DB, id) {
-		return nil, ErrProtectedUser
-	}
-
-	// Use transaction to ensure atomicity of role cleanup + user deletion.
+	// Admin check and deletion run inside a single transaction to prevent TOCTOU.
 	err := s.DB.Transaction(func(tx *gorm.DB) error {
+		isAdmin, err := isAdminUser(tx, id)
+		if err != nil {
+			return err
+		}
+		if isAdmin {
+			return ErrProtectedUser
+		}
 		if err := tx.Model(&user).Association("Roles").Clear(); err != nil {
 			return err
 		}
@@ -243,7 +276,7 @@ func (s *UserService) AssignRoles(tenantID, userID uint64, roleIDs []uint64) err
 }
 
 // ResetPassword sets a new password for a user.
-// When tenantID is 0, the operation is cross-tenant (for admins with user:manage).
+// When tenantID is 0, the operation is cross-tenant (for super admin).
 // Bumps token_version to invalidate existing sessions.
 func (s *UserService) ResetPassword(tenantID, userID uint64, newPassword string) error {
 	var user model.User

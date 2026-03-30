@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Button, message } from 'antd';
 import { CheckOutlined, SoundOutlined } from '@ant-design/icons';
 import { listQueue, completeVisit, callNumber, type QueueEntry } from '../api/queue';
+import { getShowArrivalTime } from '../api/queue-doctor';
+import { formatQueueTime } from '../utils/format';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useAuth } from '../store/auth';
 import useIsMobile from '../hooks/useIsMobile';
@@ -20,6 +22,14 @@ export default function QueueStrip() {
   const isMobile = useIsMobile();
   const navigate = useNavigate();
   const [entries, setEntries] = useState<QueueEntry[]>([]);
+  const [showArrivalTime, setShowArrivalTime] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    getShowArrivalTime().then((res) => {
+      const body = res as any;
+      setShowArrivalTime(body.data?.show ?? true);
+    }).catch(() => { setShowArrivalTime(true); });
+  }, []);
 
   const handlePatientClick = useCallback((entry: QueueEntry) => {
     if (entry.patient_id) {
@@ -189,6 +199,19 @@ export default function QueueStrip() {
                   border: `1px solid rgba(0,0,0,${0.06 + opacity * 0.04})`,
                 }}>
                   <b>{seq(entry.seq_number)}</b>&nbsp;{entry.patient_name}
+                  {showArrivalTime && entry.arrival_time && (
+                    <span style={{
+                      marginLeft: 4,
+                      fontSize: 10,
+                      color: `rgba(0,0,0,${0.3 + opacity * 0.2})`,
+                      background: `rgba(0,0,0,${0.04 + opacity * 0.03})`,
+                      borderRadius: 3,
+                      padding: '0 4px',
+                      flexShrink: 0,
+                    }}>
+                      {formatQueueTime(entry.arrival_time)}
+                    </span>
+                  )}
                 </div>
               </div>
             );
@@ -258,6 +281,20 @@ export default function QueueStrip() {
               >
                 {readyEntry.patient_name}
               </span>
+              {showArrivalTime && readyEntry.arrival_time && (
+                <span style={{
+                  fontSize: 11,
+                  color: '#ad6800',
+                  background: 'rgba(250,140,22,0.12)',
+                  border: '1px solid #ffd591',
+                  borderRadius: 4,
+                  padding: '0 5px',
+                  fontWeight: 600,
+                  flexShrink: 0,
+                }}>
+                  {formatQueueTime(readyEntry.arrival_time)}
+                </span>
+              )}
               <Button
                 size="small"
                 icon={<SoundOutlined />}
@@ -343,6 +380,20 @@ export default function QueueStrip() {
               >
                 {seeingEntry.patient_name}
               </span>
+              {showArrivalTime && seeingEntry.arrival_time && (
+                <span style={{
+                  fontSize: 11,
+                  color: '#389e0d',
+                  background: 'rgba(82,196,26,0.1)',
+                  border: '1px solid #b7eb8f',
+                  borderRadius: 4,
+                  padding: '0 5px',
+                  fontWeight: 600,
+                  flexShrink: 0,
+                }}>
+                  {formatQueueTime(seeingEntry.arrival_time)}
+                </span>
+              )}
               {/* Stacked buttons so chip width matches the ready chip */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <Button

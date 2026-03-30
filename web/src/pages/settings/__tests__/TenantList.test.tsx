@@ -17,7 +17,7 @@ vi.mock('../../../hooks/useIsMobile', () => ({
 }));
 
 vi.mock('../../../store/auth', () => ({
-  useAuth: () => ({ isGlobalAdmin: true, user: { tenant_id: 1, role: 'admin' } }),
+  useAuth: () => ({ isGlobalAdmin: true, isSuperAdmin: true, user: { tenant_id: 1, role: 'admin' } }),
 }));
 
 vi.mock('antd', async () => {

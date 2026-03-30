@@ -330,3 +330,46 @@ func TestGetCallDisplayDuration_NotFound(t *testing.T) {
 	_, err := svc.GetCallDisplayDuration(99999)
 	assert.ErrorIs(t, err, service.ErrTenantNotFound)
 }
+
+// TestGetShowArrivalTime_Default verifies the default value (true) when the column is NULL.
+func TestGetShowArrivalTime_Default(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	tenant := testutil.SeedTestTenant(t, db, "诊所NULL", "qd-showat-null-"+t.Name())
+
+	// Explicitly set show_arrival_time to NULL to simulate old rows.
+	require.NoError(t, db.Model(&model.Tenant{}).Where("id = ?", tenant.ID).
+		Update("show_arrival_time", nil).Error)
+
+	svc := service.NewQueueDoctorService(db)
+	show, err := svc.GetShowArrivalTime(uint(tenant.ID))
+	require.NoError(t, err)
+	assert.True(t, show, "NULL show_arrival_time should default to true")
+}
+
+// TestShowArrivalTime_RoundTrip verifies Set → Get round-trip for both true and false.
+func TestShowArrivalTime_RoundTrip(t *testing.T) {
+	svc, tenantID := makeQueueDoctorSvc(t)
+
+	for _, val := range []bool{false, true, false} {
+		require.NoError(t, svc.SetShowArrivalTime(tenantID, val))
+		got, err := svc.GetShowArrivalTime(tenantID)
+		require.NoError(t, err)
+		assert.Equal(t, val, got, "GetShowArrivalTime should return %v after SetShowArrivalTime(%v)", val, val)
+	}
+}
+
+// TestSetShowArrivalTime_NotFound verifies ErrTenantNotFound for unknown tenant.
+func TestSetShowArrivalTime_NotFound(t *testing.T) {
+	svc, _ := makeQueueDoctorSvc(t)
+
+	err := svc.SetShowArrivalTime(99999, true)
+	assert.ErrorIs(t, err, service.ErrTenantNotFound)
+}
+
+// TestGetShowArrivalTime_NotFound verifies ErrTenantNotFound for unknown tenant.
+func TestGetShowArrivalTime_NotFound(t *testing.T) {
+	svc, _ := makeQueueDoctorSvc(t)
+
+	_, err := svc.GetShowArrivalTime(99999)
+	assert.ErrorIs(t, err, service.ErrTenantNotFound)
+}

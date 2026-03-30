@@ -546,6 +546,7 @@ export default function OpLogList() {
   const [data, setData] = useState<OpLogItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [params, setParams] = useState<OpLogListParams>({
     page: 1,
     size: 20,
@@ -574,10 +575,12 @@ export default function OpLogList() {
         data: {
           list: OpLogItem[];
           total: number;
+          is_super_admin: boolean;
         };
       };
-      setData(body.data.list || []);
-      setTotal(body.data.total || 0);
+      setData(body.data.list ?? []);
+      setTotal(body.data.total ?? 0);
+      setIsSuperAdmin(body.data.is_super_admin ?? false);
     } catch {
       // Error already handled by request interceptor
     } finally {
@@ -671,14 +674,16 @@ export default function OpLogList() {
         return <>{label} <span style={{ color: '#1677ff' }}>({displayName})</span></>;
       },
     },
-    {
-      title: '资源ID',
-      dataIndex: 'resource_id',
-      key: 'resource_id',
-      width: 100,
-      responsive: ['md'] as any,
-      a11yPriority: 2,
-    },
+    ...(isSuperAdmin
+      ? [
+          {
+            title: '所属租户',
+            key: 'tenant_name',
+            width: 120,
+            render: (_: unknown, record: OpLogItem) => record.tenant?.name || '-',
+          } as AccessibleColumnsType<OpLogItem>[number],
+        ]
+      : []),
     ...(canDelete
       ? [
           {
@@ -774,11 +779,16 @@ export default function OpLogList() {
             {formatTime(record.created_at, true)}
           </span>
         </div>
-        {/* Row 2: operator */}
-        <div style={{ fontSize: 12, color: '#888', marginBottom: expanded ? 8 : 0 }}>
-          {record.user_name} · #{record.resource_id}
+        {/* Row 2: operator + tenant (super admin) */}
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 4, fontSize: 12, color: '#888', marginBottom: expanded ? 8 : 0 }}>
+          <span>{record.user_name}</span>
+          {isSuperAdmin && record.tenant?.name && (
+            <Tag color="geekblue" style={{ margin: 0, fontSize: 11, lineHeight: '18px' }}>
+              {record.tenant.name}
+            </Tag>
+          )}
           {hasDetail && !expanded && (
-            <span style={{ color: '#1677ff', marginLeft: 8 }}>展开详情</span>
+            <span style={{ color: '#1677ff', marginLeft: 4 }}>展开详情</span>
           )}
         </div>
         {/* Expanded diff */}
@@ -927,6 +937,7 @@ export default function OpLogList() {
                 onChange={(page, pageSize) => {
                   setParams(prev => ({ ...prev, page, size: pageSize }));
                   setExpandedIds(new Set());
+                  setSelectedRowKeys([]);
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
               />
@@ -1005,6 +1016,7 @@ export default function OpLogList() {
             showTotal: (t) => `共 ${t} 条记录`,
             onChange: (page, pageSize) => {
               setParams((prev) => ({ ...prev, page, size: pageSize }));
+              setSelectedRowKeys([]);
             },
           }}
           locale={{

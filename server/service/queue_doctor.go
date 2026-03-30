@@ -187,3 +187,32 @@ func (s *QueueDoctorService) SetCallDisplayDuration(tenantID uint, seconds int) 
 	}
 	return nil
 }
+
+// GetShowArrivalTime returns whether arrival time badges are shown for the tenant.
+// Defaults to true when the field is NULL.
+func (s *QueueDoctorService) GetShowArrivalTime(tenantID uint) (bool, error) {
+	var tenant model.Tenant
+	err := s.DB.Select("id, show_arrival_time").First(&tenant, tenantID).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, ErrTenantNotFound
+		}
+		return false, err
+	}
+	if tenant.ShowArrivalTime == nil {
+		return true, nil // default true
+	}
+	return *tenant.ShowArrivalTime, nil
+}
+
+// SetShowArrivalTime updates the show_arrival_time toggle for the tenant.
+func (s *QueueDoctorService) SetShowArrivalTime(tenantID uint, show bool) error {
+	result := s.DB.Model(&model.Tenant{}).Where("id = ?", tenantID).Update("show_arrival_time", show)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrTenantNotFound
+	}
+	return nil
+}
