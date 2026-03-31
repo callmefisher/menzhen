@@ -34,7 +34,7 @@ export default function SummaryCards({ summary }: SummaryCardsProps) {
   const cards: CardConfig[] = [
     {
       title: '总收入',
-      value: `¥${summary.total_revenue.toLocaleString()}`,
+      value: `¥${Math.round(summary.total_revenue).toLocaleString()}`,
       change: summary.revenue_change_percent,
       gradient: 'linear-gradient(135deg, #1890ff, #36cfc9)',
     },

@@ -67,7 +67,7 @@ function StaffCard({
         </span>
         <div style={{ textAlign: 'right' }}>
           <span style={{ fontSize: isMobile ? 17 : 19, fontWeight: 800, color: '#4ade80' }}>
-            ¥{item.revenue.toLocaleString()}
+            ¥{Math.round(item.revenue).toLocaleString()}
           </span>
           <span style={{ fontSize: 11, color: '#6b7280', marginLeft: 6 }}>
             {item.revenue_percent.toFixed(1)}%
@@ -110,8 +110,8 @@ function StaffCard({
         <div style={{ display: 'flex' }}>
           {[
             { label: '诊次', value: String(item.record_count) },
-            { label: '诊金', value: `¥${item.consultation_fee.toLocaleString()}`, color: '#4f8ef7' },
-            { label: '药费', value: `¥${item.drug_fee.toLocaleString()}`, color: '#f59e0b' },
+            { label: '诊金', value: `¥${Math.round(item.consultation_fee).toLocaleString()}`, color: '#4f8ef7' },
+            { label: '药费', value: `¥${Math.round(item.drug_fee).toLocaleString()}`, color: '#f59e0b' },
             { label: '占比', value: `${item.revenue_percent.toFixed(1)}%` },
           ].map((s, i, arr) => (
             <div
@@ -132,9 +132,9 @@ function StaffCard({
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6 }}>
           {[
             { label: '诊次', value: String(item.record_count) },
-            { label: '诊金', value: `¥${item.consultation_fee.toLocaleString()}`, color: '#4f8ef7' },
-            { label: '药费', value: `¥${item.drug_fee.toLocaleString()}`, color: '#f59e0b' },
-            { label: '人均费用', value: `¥${item.avg_per_record.toLocaleString()}` },
+            { label: '诊金', value: `¥${Math.round(item.consultation_fee).toLocaleString()}`, color: '#4f8ef7' },
+            { label: '药费', value: `¥${Math.round(item.drug_fee).toLocaleString()}`, color: '#f59e0b' },
+            { label: '人均费用', value: `¥${Math.round(item.avg_per_record).toLocaleString()}` },
             { label: '收入占比', value: `${item.revenue_percent.toFixed(1)}%` },
           ].map((s) => (
             <div
@@ -182,10 +182,10 @@ export default function StaffRevenuePanel({ startDate, endDate }: Props) {
 
   const summaryItems = data
     ? [
-        { label: '团队总收入', value: `¥${data.summary.total_revenue.toLocaleString()}`, color: '#4ade80' },
+        { label: '团队总收入', value: `¥${Math.round(data.summary.total_revenue).toLocaleString()}`, color: '#4ade80' },
         { label: '总诊次', value: String(data.summary.total_records), color: '#4f8ef7' },
         { label: '参与医生', value: `${data.summary.staff_count}人`, color: '#f59e0b' },
-        { label: '人均诊次费用', value: `¥${data.summary.avg_per_record.toLocaleString()}`, color: '#a78bfa' },
+        { label: '人均诊次费用', value: `¥${Math.round(data.summary.avg_per_record).toLocaleString()}`, color: '#a78bfa' },
       ]
     : [];
 
