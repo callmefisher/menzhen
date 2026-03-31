@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Row, Col, Spin, Empty } from 'antd';
+import { Row, Col, Spin, Empty, message } from 'antd';
 import { getStaffRevenue } from '../../../api/statistics';
 import type { StaffRevenueData, StaffRevenueItem } from '../../../api/statistics';
 import useIsMobile from '../../../hooks/useIsMobile';
@@ -168,7 +168,7 @@ export default function StaffRevenuePanel({ startDate, endDate }: Props) {
       const body = res as unknown as { code: number; data: StaffRevenueData };
       setData(body.data);
     } catch {
-      // silently handle
+      void message.error('获取人员收费数据失败，请重试');
     } finally {
       setLoading(false);
     }

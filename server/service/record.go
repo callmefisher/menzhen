@@ -454,6 +454,9 @@ func (s *RecordService) DeleteRecord(tenantID uint64, id uint64) (*model.Medical
 	// Refresh daily stats: visit date (record/patient counts) and billing dates (revenue).
 	statsSvc := NewStatisticsService(s.DB)
 	_ = statsSvc.RefreshDailyStats(tenantID, record.VisitDate)
+	if err := statsSvc.RefreshDailyStaffStats(tenantID, record.CreatedBy, record.VisitDate); err != nil {
+		log.Printf("RefreshDailyStaffStats failed for tenant=%d user=%d: %v", tenantID, record.CreatedBy, err)
+	}
 	// Also refresh any billing dates that differ from visit date.
 	var billingDates []time.Time
 	s.DB.Unscoped().Model(&model.Billing{}).
@@ -464,8 +467,10 @@ func (s *RecordService) DeleteRecord(tenantID uint64, id uint64) (*model.Medical
 	for _, bd := range billingDates {
 		if !sameDay(bd, record.VisitDate) {
 			_ = statsSvc.RefreshDailyStats(tenantID, bd)
+			if err := statsSvc.RefreshDailyStaffStats(tenantID, record.CreatedBy, bd); err != nil {
+				log.Printf("RefreshDailyStaffStats failed for tenant=%d user=%d: %v", tenantID, record.CreatedBy, err)
+			}
 		}
-		_ = statsSvc.RefreshDailyStaffStats(tenantID, record.CreatedBy, bd)
 	}
 
 	return &record, nil

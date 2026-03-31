@@ -490,7 +490,7 @@ func (s *StatisticsService) GetStaffRevenue(tenantID uint64, startDate, endDate 
 		userIDs[i] = r.UserID
 	}
 	var users []model.User
-	s.DB.Select("id, real_name").Where("id IN ?", userIDs).Find(&users)
+	s.DB.Select("id, real_name").Where("tenant_id = ? AND id IN ?", tenantID, userIDs).Find(&users)
 	nameMap := make(map[uint64]string, len(users))
 	for _, u := range users {
 		nameMap[u.ID] = u.RealName
@@ -505,7 +505,7 @@ func (s *StatisticsService) GetStaffRevenue(tenantID uint64, startDate, endDate 
 	}
 	var summaryAvg float64
 	if totalRecords > 0 {
-		summaryAvg = totalRevenue / float64(totalRecords)
+		summaryAvg = math.Round(totalRevenue/float64(totalRecords)*100) / 100
 	}
 
 	// Build staff items.

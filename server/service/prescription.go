@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"log"
 	"time"
 
 	"github.com/callmefisher/menzhen/server/model"
@@ -269,7 +270,9 @@ func (s *PrescriptionService) Delete(tenantID, id uint64) (*model.Prescription, 
 	if s.DB.Unscoped().First(&record, prescription.RecordID).Error == nil {
 		_ = statsSvc.RefreshDailyStats(tenantID, record.VisitDate)
 		for _, bd := range billingDates {
-			_ = statsSvc.RefreshDailyStaffStats(tenantID, record.CreatedBy, bd)
+			if err := statsSvc.RefreshDailyStaffStats(tenantID, record.CreatedBy, bd); err != nil {
+				log.Printf("RefreshDailyStaffStats failed for tenant=%d user=%d: %v", tenantID, record.CreatedBy, err)
+			}
 		}
 	}
 

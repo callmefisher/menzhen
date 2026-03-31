@@ -241,7 +241,9 @@ func (s *BillingService) CreateBilling(tenantID, userID, prescriptionID uint64, 
 		if !sameDay(billing.CreatedAt, record.VisitDate) {
 			_ = statsSvc.RefreshDailyStats(tenantID, record.VisitDate)
 		}
-		_ = statsSvc.RefreshDailyStaffStats(tenantID, record.CreatedBy, billing.CreatedAt)
+		if err := statsSvc.RefreshDailyStaffStats(tenantID, record.CreatedBy, billing.CreatedAt); err != nil {
+			log.Printf("RefreshDailyStaffStats failed for tenant=%d user=%d: %v", tenantID, record.CreatedBy, err)
+		}
 	}
 
 	return &billing, nil
@@ -368,7 +370,9 @@ func (s *BillingService) DeductStockAndBill(tenantID, userID, prescriptionID uin
 		if !sameDay(result.CreatedAt, record.VisitDate) {
 			_ = statsSvc.RefreshDailyStats(tenantID, record.VisitDate)
 		}
-		_ = statsSvc.RefreshDailyStaffStats(tenantID, record.CreatedBy, result.CreatedAt)
+		if err := statsSvc.RefreshDailyStaffStats(tenantID, record.CreatedBy, result.CreatedAt); err != nil {
+			log.Printf("RefreshDailyStaffStats failed for tenant=%d user=%d: %v", tenantID, record.CreatedBy, err)
+		}
 	}
 
 	// After the transaction succeeds and stats are refreshed, create notification asynchronously
@@ -501,7 +505,9 @@ func (s *BillingService) CreateRecordBilling(tenantID, userID, recordID uint64, 
 	if !sameDay(billing.CreatedAt, record.VisitDate) {
 		_ = statsSvc.RefreshDailyStats(tenantID, record.VisitDate)
 	}
-	_ = statsSvc.RefreshDailyStaffStats(tenantID, record.CreatedBy, billing.CreatedAt)
+	if err := statsSvc.RefreshDailyStaffStats(tenantID, record.CreatedBy, billing.CreatedAt); err != nil {
+		log.Printf("RefreshDailyStaffStats failed for tenant=%d user=%d: %v", tenantID, record.CreatedBy, err)
+	}
 
 	return &billing, nil
 }
