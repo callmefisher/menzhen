@@ -268,6 +268,9 @@ func (s *PrescriptionService) Delete(tenantID, id uint64) (*model.Prescription, 
 	var record model.MedicalRecord
 	if s.DB.Unscoped().First(&record, prescription.RecordID).Error == nil {
 		_ = statsSvc.RefreshDailyStats(tenantID, record.VisitDate)
+		for _, bd := range billingDates {
+			_ = statsSvc.RefreshDailyStaffStats(tenantID, record.CreatedBy, bd)
+		}
 	}
 
 	return &prescription, nil

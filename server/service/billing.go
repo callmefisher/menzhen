@@ -241,10 +241,12 @@ func (s *BillingService) CreateBilling(tenantID, userID, prescriptionID uint64, 
 		if !sameDay(billing.CreatedAt, record.VisitDate) {
 			_ = statsSvc.RefreshDailyStats(tenantID, record.VisitDate)
 		}
+		_ = statsSvc.RefreshDailyStaffStats(tenantID, record.CreatedBy, billing.CreatedAt)
 	}
 
 	return &billing, nil
 }
+
 
 // DeductStockAndBill creates/updates billing and deducts stock in a single transaction.
 func (s *BillingService) DeductStockAndBill(tenantID, userID, prescriptionID uint64, req *CreateBillingRequest) (*model.Billing, error) {
@@ -366,6 +368,7 @@ func (s *BillingService) DeductStockAndBill(tenantID, userID, prescriptionID uin
 		if !sameDay(result.CreatedAt, record.VisitDate) {
 			_ = statsSvc.RefreshDailyStats(tenantID, record.VisitDate)
 		}
+		_ = statsSvc.RefreshDailyStaffStats(tenantID, record.CreatedBy, result.CreatedAt)
 	}
 
 	// After the transaction succeeds and stats are refreshed, create notification asynchronously
@@ -498,6 +501,7 @@ func (s *BillingService) CreateRecordBilling(tenantID, userID, recordID uint64, 
 	if !sameDay(billing.CreatedAt, record.VisitDate) {
 		_ = statsSvc.RefreshDailyStats(tenantID, record.VisitDate)
 	}
+	_ = statsSvc.RefreshDailyStaffStats(tenantID, record.CreatedBy, billing.CreatedAt)
 
 	return &billing, nil
 }

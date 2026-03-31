@@ -465,6 +465,7 @@ func (s *RecordService) DeleteRecord(tenantID uint64, id uint64) (*model.Medical
 		if !sameDay(bd, record.VisitDate) {
 			_ = statsSvc.RefreshDailyStats(tenantID, bd)
 		}
+		_ = statsSvc.RefreshDailyStaffStats(tenantID, record.CreatedBy, bd)
 	}
 
 	return &record, nil
