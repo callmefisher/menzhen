@@ -27,6 +27,7 @@ func Seed(db *gorm.DB) {
 	seedSolarTerms(db)
 	seedHexagrams(db)
 	rebuildEmptyDailyStats(db)
+	rebuildEmptyDailyStaffStats(db)
 	log.Println("Seed data check completed")
 }
 
@@ -309,6 +310,28 @@ func rebuildEmptyDailyStats(db *gorm.DB) {
 			log.Printf("Rebuilding daily stats for tenant %d (billing records exist but no stats)", tid)
 			if err := statsSvc.RebuildAllDailyStats(tid); err != nil {
 				log.Printf("Warning: failed to rebuild daily stats for tenant %d: %v", tid, err)
+			}
+		}
+	}
+}
+
+// rebuildEmptyDailyStaffStats checks if daily_staff_stats is empty for tenants that have
+// billing records, and triggers a full rebuild if so.
+func rebuildEmptyDailyStaffStats(db *gorm.DB) {
+	var tenantIDs []uint64
+	db.Model(&model.Billing{}).Distinct("tenant_id").Pluck("tenant_id", &tenantIDs)
+	if len(tenantIDs) == 0 {
+		return
+	}
+
+	statsSvc := service.NewStatisticsService(db)
+	for _, tid := range tenantIDs {
+		var statsCount int64
+		db.Model(&model.DailyStaffStats{}).Where("tenant_id = ?", tid).Count(&statsCount)
+		if statsCount == 0 {
+			log.Printf("Rebuilding daily staff stats for tenant %d", tid)
+			if err := statsSvc.RebuildAllDailyStaffStats(tid); err != nil {
+				log.Printf("Warning: failed to rebuild daily staff stats for tenant %d: %v", tid, err)
 			}
 		}
 	}
