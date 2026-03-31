@@ -111,6 +111,7 @@ func SetupTestDB(t *testing.T) *gorm.DB {
 		&model.Hexagram{},
 		&model.Billing{},
 		&model.DailyStats{},
+		&model.DailyStaffStats{},
 		&model.FollowUp{},
 		&model.QueueEntry{},
 		&model.QueueSeq{},
