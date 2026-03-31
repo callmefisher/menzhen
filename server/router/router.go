@@ -400,6 +400,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			statisticsHandler := handler.NewStatisticsHandler(db)
 			statistics.GET("/dashboard", middleware.RequirePermission(db, "statistics:read"), statisticsHandler.GetDashboard)
 			statistics.POST("/rebuild", middleware.RequirePermission(db, "tenant:manage"), statisticsHandler.RebuildStats)
+			statistics.GET("/staff", middleware.RequirePermission(db, "statistics:read"), statisticsHandler.GetStaffRevenue)
 		}
 
 		// Prescription list by record (nested under records).
