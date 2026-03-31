@@ -44,3 +44,32 @@ export function getDashboard(startDate: string, endDate: string) {
     params: { start_date: startDate, end_date: endDate },
   });
 }
+
+export interface StaffRevenueItem {
+  user_id: number;
+  real_name: string;
+  revenue: number;
+  consultation_fee: number;
+  drug_fee: number;
+  record_count: number;
+  avg_per_record: number;
+  revenue_percent: number;
+}
+
+export interface StaffRevenueSummary {
+  total_revenue: number;
+  total_records: number;
+  staff_count: number;
+  avg_per_record: number;
+}
+
+export interface StaffRevenueData {
+  summary: StaffRevenueSummary;
+  staff: StaffRevenueItem[];
+}
+
+export function getStaffRevenue(startDate: string, endDate: string) {
+  return request.get<{ code: number; data: StaffRevenueData }>('/statistics/staff', {
+    params: { start_date: startDate, end_date: endDate },
+  });
+}
