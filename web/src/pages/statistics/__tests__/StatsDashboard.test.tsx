@@ -37,6 +37,10 @@ vi.mock('../../../api/statistics', () => ({
       patient_breakdown: { new_patients: 34, returning_patients: 55 },
     },
   }),
+  getStaffRevenue: vi.fn().mockResolvedValue({
+    code: 0,
+    data: { summary: { total_revenue: 0, total_records: 0, staff_count: 0, avg_per_record: 0 }, staff: [] },
+  }),
 }));
 
 vi.mock('../../../hooks/useIsMobile', () => ({
@@ -119,5 +123,11 @@ describe('StatsDashboard', () => {
     await waitFor(() => {
       expect(screen.getByText('暂无统计数据')).toBeInTheDocument();
     });
+  });
+
+  it('renders Tabs with 数据概览 and 人员收费', () => {
+    renderWithRouter();
+    expect(screen.getByText('数据概览')).toBeInTheDocument();
+    expect(screen.getByText('人员收费')).toBeInTheDocument();
   });
 });
