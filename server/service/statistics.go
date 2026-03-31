@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"math"
 	"time"
 
@@ -329,5 +330,214 @@ func (s *StatisticsService) GetDashboard(tenantID uint64, startDate, endDate tim
 			NewPatients:       totalNew,
 			ReturningPatients: totalReturning,
 		},
+	}, nil
+}
+
+// StaffRevenueItem holds aggregated stats for one user over the queried date range.
+type StaffRevenueItem struct {
+	UserID          uint64  `json:"user_id"`
+	RealName        string  `json:"real_name"`
+	Revenue         float64 `json:"revenue"`
+	ConsultationFee float64 `json:"consultation_fee"`
+	DrugFee         float64 `json:"drug_fee"`
+	RecordCount     int     `json:"record_count"`
+	AvgPerRecord    float64 `json:"avg_per_record"`
+	RevenuePercent  float64 `json:"revenue_percent"`
+}
+
+// StaffRevenueSummary holds team-level totals.
+type StaffRevenueSummary struct {
+	TotalRevenue float64 `json:"total_revenue"`
+	TotalRecords int     `json:"total_records"`
+	StaffCount   int     `json:"staff_count"`
+	AvgPerRecord float64 `json:"avg_per_record"`
+}
+
+// StaffRevenueResult is the response type for GetStaffRevenue.
+type StaffRevenueResult struct {
+	Summary StaffRevenueSummary `json:"summary"`
+	Staff   []StaffRevenueItem  `json:"staff"`
+}
+
+// RefreshDailyStaffStats recomputes and upserts the stats row for one user on one date.
+// Revenue = billings created on date for records owned by userID.
+// RecordCount = records visited on date owned by userID.
+// Drug fee = revenue - LEAST(consultation_fee, actual_paid) per billing (never negative).
+func (s *StatisticsService) RefreshDailyStaffStats(tenantID, userID uint64, date time.Time) error {
+	statDate := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
+	nextDate := statDate.AddDate(0, 0, 1)
+
+	type billingSummary struct {
+		Revenue         float64
+		ConsultationFee float64
+	}
+	var summary billingSummary
+	s.DB.Model(&model.Billing{}).
+		Select("COALESCE(SUM(billings.actual_paid), 0) AS revenue, "+
+			"COALESCE(SUM(LEAST(billings.consultation_fee, billings.actual_paid)), 0) AS consultation_fee").
+		Joins("JOIN medical_records ON medical_records.id = billings.record_id AND medical_records.deleted_at IS NULL").
+		Where("billings.tenant_id = ? AND medical_records.created_by = ? "+
+			"AND billings.created_at >= ? AND billings.created_at < ? AND billings.deleted_at IS NULL",
+			tenantID, userID, statDate, nextDate).
+		Scan(&summary)
+
+	drugFee := summary.Revenue - summary.ConsultationFee
+
+	var recordCount int64
+	s.DB.Model(&model.MedicalRecord{}).
+		Where("tenant_id = ? AND created_by = ? AND visit_date >= ? AND visit_date < ? AND deleted_at IS NULL",
+			tenantID, userID, statDate, nextDate).
+		Count(&recordCount)
+
+	stats := model.DailyStaffStats{
+		TenantID:        tenantID,
+		UserID:          userID,
+		StatDate:        statDate,
+		Revenue:         summary.Revenue,
+		ConsultationFee: summary.ConsultationFee,
+		DrugFee:         drugFee,
+		RecordCount:     int(recordCount),
+	}
+
+	return s.DB.Clauses(clause.OnConflict{
+		Columns: []clause.Column{
+			{Name: "tenant_id"}, {Name: "user_id"}, {Name: "stat_date"},
+		},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"revenue", "consultation_fee", "drug_fee", "record_count", "updated_at",
+		}),
+	}).Create(&stats).Error
+}
+
+// RebuildAllDailyStaffStats drops and recomputes every daily_staff_stats row for the given tenant.
+func (s *StatisticsService) RebuildAllDailyStaffStats(tenantID uint64) error {
+	if err := s.DB.Where("tenant_id = ?", tenantID).Delete(&model.DailyStaffStats{}).Error; err != nil {
+		return err
+	}
+
+	type userDate struct {
+		UserID uint64
+		Date   time.Time
+	}
+
+	// Billing dates per user (via record.created_by).
+	var billingCombos []userDate
+	s.DB.Raw(`
+		SELECT mr.created_by AS user_id, DATE(b.created_at) AS date
+		FROM billings b
+		JOIN medical_records mr ON mr.id = b.record_id AND mr.deleted_at IS NULL
+		WHERE b.tenant_id = ? AND b.deleted_at IS NULL
+		GROUP BY mr.created_by, DATE(b.created_at)
+	`, tenantID).Scan(&billingCombos)
+
+	// Visit dates per user.
+	var visitCombos []userDate
+	s.DB.Model(&model.MedicalRecord{}).
+		Select("created_by AS user_id, DATE(visit_date) AS date").
+		Where("tenant_id = ? AND deleted_at IS NULL", tenantID).
+		Group("created_by, DATE(visit_date)").
+		Scan(&visitCombos)
+
+	// Merge and deduplicate.
+	seen := make(map[string]bool, len(billingCombos)+len(visitCombos))
+	all := make([]userDate, 0, len(billingCombos)+len(visitCombos))
+	for _, c := range append(billingCombos, visitCombos...) {
+		key := fmt.Sprintf("%d_%s", c.UserID, c.Date.Format("2006-01-02"))
+		if !seen[key] {
+			seen[key] = true
+			all = append(all, c)
+		}
+	}
+
+	for _, c := range all {
+		if err := s.RefreshDailyStaffStats(tenantID, c.UserID, c.Date); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// GetStaffRevenue aggregates daily_staff_stats for the given date range and returns
+// per-user revenue sorted by total revenue descending.
+// Queries the pre-aggregated table — O(doctors × days) not O(billings), safe at 10M+ rows.
+func (s *StatisticsService) GetStaffRevenue(tenantID uint64, startDate, endDate time.Time) (*StaffRevenueResult, error) {
+	type staffAgg struct {
+		UserID          uint64
+		Revenue         float64
+		ConsultationFee float64
+		DrugFee         float64
+		RecordCount     int
+	}
+	var rows []staffAgg
+	s.DB.Model(&model.DailyStaffStats{}).
+		Select("user_id, SUM(revenue) AS revenue, SUM(consultation_fee) AS consultation_fee, "+
+			"SUM(drug_fee) AS drug_fee, SUM(record_count) AS record_count").
+		Where("tenant_id = ? AND stat_date >= ? AND stat_date <= ?", tenantID, startDate, endDate).
+		Group("user_id").
+		Order("revenue DESC").
+		Scan(&rows)
+
+	if len(rows) == 0 {
+		return &StaffRevenueResult{
+			Summary: StaffRevenueSummary{},
+			Staff:   []StaffRevenueItem{},
+		}, nil
+	}
+
+	// Fetch user names in a single query.
+	userIDs := make([]uint64, len(rows))
+	for i, r := range rows {
+		userIDs[i] = r.UserID
+	}
+	var users []model.User
+	s.DB.Select("id, real_name").Where("tenant_id = ? AND id IN ?", tenantID, userIDs).Find(&users)
+	nameMap := make(map[uint64]string, len(users))
+	for _, u := range users {
+		nameMap[u.ID] = u.RealName
+	}
+
+	// Compute summary.
+	var totalRevenue float64
+	var totalRecords int
+	for _, r := range rows {
+		totalRevenue += r.Revenue
+		totalRecords += r.RecordCount
+	}
+	var summaryAvg float64
+	if totalRecords > 0 {
+		summaryAvg = math.Round(totalRevenue/float64(totalRecords)*100) / 100
+	}
+
+	// Build staff items.
+	staff := make([]StaffRevenueItem, len(rows))
+	for i, r := range rows {
+		var avgPerRecord float64
+		if r.RecordCount > 0 {
+			avgPerRecord = r.Revenue / float64(r.RecordCount)
+		}
+		var pct float64
+		if totalRevenue > 0 {
+			pct = r.Revenue / totalRevenue * 100
+		}
+		staff[i] = StaffRevenueItem{
+			UserID:          r.UserID,
+			RealName:        nameMap[r.UserID],
+			Revenue:         r.Revenue,
+			ConsultationFee: r.ConsultationFee,
+			DrugFee:         r.DrugFee,
+			RecordCount:     r.RecordCount,
+			AvgPerRecord:    avgPerRecord,
+			RevenuePercent:  pct,
+		}
+	}
+
+	return &StaffRevenueResult{
+		Summary: StaffRevenueSummary{
+			TotalRevenue: totalRevenue,
+			TotalRecords: totalRecords,
+			StaffCount:   len(rows),
+			AvgPerRecord: summaryAvg,
+		},
+		Staff: staff,
 	}, nil
 }

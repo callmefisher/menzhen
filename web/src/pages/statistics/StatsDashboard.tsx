@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Radio, DatePicker, Spin, Empty } from 'antd';
+import { Radio, DatePicker, Spin, Empty, Tabs } from 'antd';
 import dayjs from 'dayjs';
 import 'dayjs/locale/zh-cn';
 import type { Dayjs } from 'dayjs';
@@ -13,6 +13,7 @@ import SummaryCards from './components/SummaryCards';
 import RevenueTrendChart from './components/RevenueTrendChart';
 import RevenueBreakdownChart from './components/RevenueBreakdownChart';
 import PatientChart from './components/PatientChart';
+import StaffRevenuePanel from './components/StaffRevenuePanel';
 
 const { RangePicker } = DatePicker;
 
@@ -130,60 +131,79 @@ export default function StatsDashboard() {
     [data, quickRange],
   );
 
+  const startDateStr = dateRange[0].format('YYYY-MM-DD');
+  const endDateStr = dateRange[1].format('YYYY-MM-DD');
+
+  const filterBar = (
+    <div
+      style={{
+        marginBottom: 16,
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: 8,
+        alignItems: 'center',
+        overflowX: isMobile ? 'auto' : undefined,
+      }}
+    >
+      <Radio.Group
+        value={quickRange}
+        onChange={(e) => handleQuickRange(e.target.value)}
+        size={isMobile ? 'small' : 'middle'}
+        optionType="button"
+        buttonStyle="solid"
+      >
+        <Radio.Button value="today">今日</Radio.Button>
+        <Radio.Button value="week">本周</Radio.Button>
+        <Radio.Button value="month">本月</Radio.Button>
+        <Radio.Button value="quarter">本季</Radio.Button>
+        <Radio.Button value="year">本年</Radio.Button>
+      </Radio.Group>
+      <RangePicker
+        size={isMobile ? 'small' : 'middle'}
+        value={dateRange}
+        onChange={handleRangeChange}
+        style={{ minWidth: isMobile ? 200 : 240 }}
+      />
+    </div>
+  );
+
+  const overviewContent = (
+    <Spin spinning={loading}>
+      {data ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <SummaryCards summary={data.summary} />
+          <RevenueTrendChart data={chartData} />
+          <div
+            style={{
+              display: isMobile ? 'flex' : 'grid',
+              flexDirection: 'column',
+              gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+              gap: 16,
+            }}
+          >
+            <RevenueBreakdownChart data={chartData} />
+            <PatientChart data={chartData} />
+          </div>
+        </div>
+      ) : (
+        !loading && <Empty description="暂无统计数据" />
+      )}
+    </Spin>
+  );
+
   return (
     <div style={{ padding: isMobile ? 12 : 24 }}>
-      <div
-        style={{
-          marginBottom: 16,
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: 8,
-          alignItems: 'center',
-          overflowX: isMobile ? 'auto' : undefined,
-        }}
-      >
-        <Radio.Group
-          value={quickRange}
-          onChange={(e) => handleQuickRange(e.target.value)}
-          size={isMobile ? 'small' : 'middle'}
-          optionType="button"
-          buttonStyle="solid"
-        >
-          <Radio.Button value="today">今日</Radio.Button>
-          <Radio.Button value="week">本周</Radio.Button>
-          <Radio.Button value="month">本月</Radio.Button>
-          <Radio.Button value="quarter">本季</Radio.Button>
-          <Radio.Button value="year">本年</Radio.Button>
-        </Radio.Group>
-        <RangePicker
-          size={isMobile ? 'small' : 'middle'}
-          value={dateRange}
-          onChange={handleRangeChange}
-          style={{ minWidth: isMobile ? 200 : 240 }}
-        />
-      </div>
-
-      <Spin spinning={loading}>
-        {data ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <SummaryCards summary={data.summary} />
-            <RevenueTrendChart data={chartData} />
-            <div
-              style={{
-                display: isMobile ? 'flex' : 'grid',
-                flexDirection: 'column',
-                gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
-                gap: 16,
-              }}
-            >
-              <RevenueBreakdownChart data={chartData} />
-              <PatientChart data={chartData} />
-            </div>
-          </div>
-        ) : (
-          !loading && <Empty description="暂无统计数据" />
-        )}
-      </Spin>
+      {filterBar}
+      <Tabs
+        items={[
+          { key: 'overview', label: '数据概览', children: overviewContent },
+          {
+            key: 'staff',
+            label: '人员收费',
+            children: <StaffRevenuePanel startDate={startDateStr} endDate={endDateStr} />,
+          },
+        ]}
+      />
     </div>
   );
 }

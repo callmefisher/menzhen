@@ -58,6 +58,7 @@ func InitDB(cfg *config.Config) *gorm.DB {
 		&model.Hexagram{},
 		&model.Billing{},
 		&model.DailyStats{},
+		&model.DailyStaffStats{},
 		&model.FollowUp{},
 		&model.PrescriptionNotification{},
 		&model.QueueEntry{},
