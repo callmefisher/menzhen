@@ -335,6 +335,16 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			queue.GET("/stats", middleware.RequirePermission(db, "queue:read"), queueHandler.Stats)
 		}
 
+		// Appointment routes (tenant-scoped).
+		apptHandler := handler.NewAppointmentHandler(db)
+		appt := authenticated.Group("/appointments")
+		{
+			appt.POST("", middleware.RequirePermission(db, "appointment:create"), apptHandler.Create)
+			appt.GET("", middleware.RequirePermission(db, "appointment:read"), apptHandler.List)
+			appt.POST("/:id/checkin", middleware.RequirePermission(db, "appointment:checkin"), apptHandler.Checkin)
+			appt.POST("/:id/cancel", middleware.RequirePermission(db, "appointment:update"), apptHandler.Cancel)
+		}
+
 		// Queue doctor management routes (tenant-scoped).
 		qd := authenticated.Group("/queue-doctors")
 		{
