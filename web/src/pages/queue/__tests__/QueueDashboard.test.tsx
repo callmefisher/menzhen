@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import QueueDashboard from '../QueueDashboard';
+import type { QueueEntry } from '../../../api/queue';
 
 // ── API mocks ──────────────────────────────────────────────────────────────
 
@@ -87,7 +88,7 @@ vi.mock('antd', async () => {
 
 // ── Fixtures ───────────────────────────────────────────────────────────────
 
-const makeEntry = (overrides: Partial<Record<string, unknown>> = {}) => ({
+const makeEntry = (overrides: Partial<QueueEntry> = {}): QueueEntry => ({
   id: 1,
   tenant_id: 1,
   patient_id: 100,
@@ -228,6 +229,7 @@ describe('QueueDashboard', () => {
 
     const waitingBadge = screen.getByText('候诊').closest('div');
     expect(waitingBadge).toBeInTheDocument();
+    expect(waitingBadge).toHaveTextContent('2'); // 2 waiting entries
   });
 
   // 8. Page title / header renders
@@ -597,7 +599,6 @@ describe('QueueDashboard', () => {
     const buttons = screen.getAllByRole('button');
     const checkinBtn = buttons.find(btn => btn.textContent?.replace(/\s/g, '') === '签到');
     expect(checkinBtn).toBeDefined();
-    expect(screen.getByText('预')).toBeInTheDocument();
     expect(screen.getByText('预')).toBeInTheDocument();
   });
 

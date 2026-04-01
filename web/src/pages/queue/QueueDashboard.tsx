@@ -79,7 +79,7 @@ export default function QueueDashboard() {
     try {
       setLoading(true);
       const res = await listQueue();
-      const body = res as any;
+      const body = res as unknown as { data?: { list?: QueueEntry[] } };
       const list: QueueEntry[] = body.data?.list || [];
       setEntries(list);
     } catch {
@@ -94,7 +94,7 @@ export default function QueueDashboard() {
     (async () => {
       try {
         const res = await getCallDisplayDuration();
-        const body = res as any;
+        const body = res as unknown as { data?: { seconds?: number } };
         const seconds: number = body.data?.seconds ?? 10;
         setCallDurationMs(seconds * 1000);
       } catch {
@@ -108,7 +108,7 @@ export default function QueueDashboard() {
     (async () => {
       try {
         const res = await getShowArrivalTime();
-        const body = res as any;
+        const body = res as unknown as { data?: { show?: boolean } };
         setShowArrivalTime(body.data?.show ?? true);
       } catch {
         setShowArrivalTime(true);
@@ -146,7 +146,7 @@ export default function QueueDashboard() {
     (async () => {
       try {
         const res = await listQueueDoctors();
-        const body = res as any;
+        const body = res as unknown as { data?: { list?: QueueDoctorConfig[] } };
         const list: QueueDoctorConfig[] = body.data?.list || [];
         const docs: DoctorOption[] = list
           .filter(d => d.enabled)
@@ -171,10 +171,11 @@ export default function QueueDashboard() {
     fetchQueue();
   }, [fetchQueue]));
 
-  useWebSocket('queue_call', useCallback((msg: any) => {
-    const { doctor_id, seq, patient_name, room, doctor_name } = msg.payload || {};
-    if (seq > 0 && doctor_id) {
-      const notification: CallNotification = { seq, name: patient_name, room, doctor: doctor_name };
+  useWebSocket('queue_call', useCallback((msg: unknown) => {
+    const payload = (msg as { payload?: { doctor_id?: number; seq?: number; patient_name?: string; room?: string; doctor_name?: string } })?.payload;
+    const { doctor_id, seq, patient_name, room, doctor_name } = payload || {};
+    if (seq && seq > 0 && doctor_id) {
+      const notification: CallNotification = { seq, name: patient_name ?? '', room: room ?? '', doctor: doctor_name ?? '' };
       setDoctorCallStates(prev => {
         const existing = prev[doctor_id] ?? { queue: [], current: null };
         return { ...prev, [doctor_id]: { ...existing, queue: [...existing.queue, notification] } };
@@ -266,7 +267,7 @@ export default function QueueDashboard() {
         doctor_name: doc.name,
         room: doc.room,
       });
-      const body = res as any;
+      const body = res as unknown as { data?: { seq_number?: number; arrival_time?: string } };
       const entry = body.data;
       const seqStr = String(entry?.seq_number || '').padStart(2, '0');
       let successMsg = `${takeNameValue.trim()} 取号成功 -> ${seqStr}号 - ${doc.name}`;
@@ -276,8 +277,11 @@ export default function QueueDashboard() {
       }
       message.success(successMsg);
       setTakeNameValue('');
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || err?.message || '';
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??
+        (err as { message?: string })?.message ??
+        '';
       if (msg.includes('已在排队')) {
         message.warning(msg);
       } else {
