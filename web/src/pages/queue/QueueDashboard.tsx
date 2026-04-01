@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Input, Select, Slider, Tooltip, Modal, message } from 'antd';
-import { SoundOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
+import { SoundOutlined, DeleteOutlined, PlusOutlined, CalendarOutlined } from '@ant-design/icons';
 import { listQueue, takeNumber, callNumber, completeVisit, clearQueue, type QueueEntry } from '../../api/queue';
 import { checkinAppointment } from '../../api/appointment';
 import { listQueueDoctors, getCallDisplayDuration, getShowArrivalTime, type QueueDoctor as QueueDoctorConfig } from '../../api/queue-doctor';
@@ -9,6 +9,7 @@ import { useWebSocket } from '../../hooks/useWebSocket';
 import { useAuth } from '../../store/auth';
 import useIsMobile from '../../hooks/useIsMobile';
 import CallOverlay from '../../components/CallOverlay';
+import AppointmentModal from '../../components/AppointmentModal';
 import { formatRoom, formatQueueTime, formatQueueTimeFull } from '../../utils/format';
 
 const DOCTOR_COLORS = ['#52c41a', '#faad14', '#722ed1', '#cf1322', '#1677ff', '#13c2c2', '#eb2f96', '#fa541c'];
@@ -55,6 +56,7 @@ export default function QueueDashboard() {
   const [showArrivalTime, setShowArrivalTime] = useState<boolean | null>(null);
   const [doctors, setDoctors] = useState<DoctorOption[]>([]);
   const [checkinLoading, setCheckinLoading] = useState<Record<number, boolean>>({});
+  const [apptModalOpen, setApptModalOpen] = useState(false);
   const [pageVisible, setPageVisible] = useState(() => {
     // SSR compatibility: check if document is available
     if (typeof document !== 'undefined') {
@@ -423,7 +425,26 @@ export default function QueueDashboard() {
       >
         取号
       </Button>
+      {hasPermission('appointment:create') && (
+        <Button
+          icon={<CalendarOutlined />}
+          onClick={() => setApptModalOpen(true)}
+          size="middle"
+          style={{ background: '#e6f7ff', borderColor: '#91caff', color: '#0958d9' }}
+        >
+          预约
+        </Button>
+      )}
     </div>
+  );
+
+  const apptModal = (
+    <AppointmentModal
+      open={apptModalOpen}
+      onClose={() => setApptModalOpen(false)}
+      onSuccess={fetchQueue}
+      doctorOptions={doctorOptions}
+    />
   );
 
   if (isMobile) {
@@ -484,6 +505,7 @@ export default function QueueDashboard() {
 
         {/* Take number bar */}
         {takeNumberBar}
+        {apptModal}
       </div>
     );
   }
@@ -551,6 +573,7 @@ export default function QueueDashboard() {
 
       {/* Take number bar */}
       {takeNumberBar}
+      {apptModal}
     </div>
   );
 }

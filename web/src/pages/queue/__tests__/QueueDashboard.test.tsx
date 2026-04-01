@@ -33,6 +33,12 @@ vi.mock('../../../api/queue-doctor', () => ({
 const mockCheckinAppointment = vi.fn();
 vi.mock('../../../api/appointment', () => ({
   checkinAppointment: (...args: unknown[]) => mockCheckinAppointment(...args),
+  createAppointment: vi.fn(),
+  getSlots: vi.fn().mockResolvedValue({ data: { data: { list: [] } } }),
+}));
+
+vi.mock('../../../components/AppointmentModal', () => ({
+  default: () => null,
 }));
 
 // ── Auth mock ──────────────────────────────────────────────────────────────

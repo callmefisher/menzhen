@@ -37,3 +37,16 @@ export const checkinAppointment = (id: number) =>
 
 export const cancelAppointment = (id: number) =>
   request.post<{ code: number; message?: string }>(`/appointments/${id}/cancel`);
+
+export interface SlotInfo {
+  slot_start: string;
+  slot_end: string;
+  max_count: number;
+  booked_count: number;
+  available: boolean;
+}
+
+export const getSlots = (date: string, doctorId: number) =>
+  request.get<{ code: number; data: { list: SlotInfo[] } }>('/appointments/slots', {
+    params: { date, doctor_id: doctorId },
+  });
