@@ -68,6 +68,13 @@ func main() {
 			retries := 0
 			var failed []uint
 
+			// Mark no_show for past-date unattended appointments before enqueuing today's
+			if affected, err := apptSvc.MarkNoShowForPastDates(); err != nil {
+				log.Printf("appointment no_show marking failed: %v", err)
+			} else if affected > 0 {
+				log.Printf("appointment no_show: marked %d appointments", affected)
+			}
+
 			run := func() {
 				f, n := apptSvc.AutoEnqueueToday(queueSvc)
 				if n > 0 {
