@@ -23,9 +23,13 @@ type QueueEntry struct {
 	ArrivalTime *time.Time `gorm:"column:arrival_time" json:"arrival_time"`
 	CalledAt    *time.Time `gorm:"column:called_at" json:"called_at"`
 	CompletedAt *time.Time `gorm:"column:completed_at" json:"completed_at"`
-	Source      string     `gorm:"column:source;type:varchar(20);not null;default:walk_in" json:"source"`
-	QueueDate   string     `gorm:"column:queue_date;type:date;not null;index:idx_queue_tenant_date_status,priority:2" json:"queue_date"`
-	CreatedAt   time.Time  `gorm:"autoCreateTime" json:"created_at"`
+	Source        string     `gorm:"column:source;type:varchar(20);not null;default:walk_in" json:"source"`
+	QueueDate     string     `gorm:"column:queue_date;type:date;not null;index:idx_queue_tenant_date_status,priority:2" json:"queue_date"`
+	CheckinStatus string     `gorm:"column:checkin_status;type:varchar(20);not null;default:pending" json:"checkin_status"`
+	AppointmentID *uint      `gorm:"column:appointment_id" json:"appointment_id,omitempty"`
+	SlotStart     string     `gorm:"column:slot_start;type:varchar(5)" json:"slot_start,omitempty"`
+	SlotEnd       string     `gorm:"column:slot_end;type:varchar(5)" json:"slot_end,omitempty"`
+	CreatedAt     time.Time  `gorm:"autoCreateTime" json:"created_at"`
 }
 
 func (QueueEntry) TableName() string { return "queue_entries" }
