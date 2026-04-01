@@ -81,6 +81,10 @@ func (h *AppointmentHandler) Create(c *gin.Context) {
 func (h *AppointmentHandler) List(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
 	date := c.Query("date")
+	if date == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": "date is required"})
+		return
+	}
 
 	var doctorID *uint
 	if raw := c.Query("doctor_id"); raw != "" {

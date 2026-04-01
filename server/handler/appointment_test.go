@@ -171,13 +171,13 @@ func TestApptHandler_List(t *testing.T) {
 func TestApptHandler_List_EmptyDate(t *testing.T) {
 	r, token := setupApptHandlerRouter(t)
 
-	// No date param — handler should still respond 200 (may default to today or empty)
+	// No date param — handler must return 400.
 	w := doApptRequest(t, r, http.MethodGet, "/api/v1/appointments", nil, token)
-	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
 
 	var resp map[string]interface{}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	assert.Equal(t, float64(0), resp["code"])
+	assert.Equal(t, float64(1), resp["code"])
 }
 
 // — Checkin —
