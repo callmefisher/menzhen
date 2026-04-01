@@ -76,10 +76,15 @@ func (h *AppointmentHandler) Create(c *gin.Context) {
 		return
 	}
 
+	if ws.DefaultHub != nil {
+		ws.DefaultHub.Broadcast(tenantID, ws.Message{
+			Type:    "appt_created",
+			Payload: gin.H{"appointment": appt},
+		})
+	}
+
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": appt})
 }
-
-// List handles GET /appointments?date=2006-01-02[&doctor_id=N]
 // Success 200: { code: 0, data: { list: []Appointment } }
 func (h *AppointmentHandler) List(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
@@ -159,6 +164,43 @@ func (h *AppointmentHandler) Checkin(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": entry})
 }
 
+// Slots handles GET /appointments/slots?date=2006-01-02&doctor_id=N
+// Returns all configured time slots for the given doctor and date with booking counts.
+// Success 200: { code: 0, data: { slots: []SlotInfo } }
+func (h *AppointmentHandler) Slots(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 1, "message": "missing tenant"})
+		return
+	}
+	date := c.Query("date")
+	if date == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": "date is required"})
+		return
+	}
+	if _, err := time.Parse("2006-01-02", date); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": "date must be YYYY-MM-DD"})
+		return
+	}
+	rawDoctorID := c.Query("doctor_id")
+	if rawDoctorID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": "doctor_id is required"})
+		return
+	}
+	parsed, err := strconv.ParseUint(rawDoctorID, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": "invalid doctor_id"})
+		return
+	}
+
+	slots, err := h.svc.ListSlots(uint(tenantID), date, uint(parsed))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "internal server error"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"slots": slots}})
+}
+
 // Cancel handles POST /appointments/:id/cancel
 // Success  200: { code: 0, data: nil }
 // Not found 404
@@ -186,6 +228,13 @@ func (h *AppointmentHandler) Cancel(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": err.Error()})
 		}
 		return
+	}
+
+	if ws.DefaultHub != nil {
+		ws.DefaultHub.Broadcast(tenantID, ws.Message{
+			Type:    "appt_cancelled",
+			Payload: gin.H{"appointment_id": apptID},
+		})
 	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": nil})

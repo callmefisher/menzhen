@@ -194,6 +194,78 @@ func (s *AppointmentService) Checkin(tenantID, apptID uint) (*model.QueueEntry, 
 	return &entry, nil
 }
 
+// MarkNoShowForPastDates marks yesterday-and-earlier unattended queued appointments as no_show.
+// Called by the midnight scheduler before auto-enqueuing today's appointments.
+func (s *AppointmentService) MarkNoShowForPastDates() (int64, error) {
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	result := s.DB.Model(&model.Appointment{}).
+		Where("appoint_date <= ? AND status = ? AND queue_entry_id IS NOT NULL",
+			yesterday, model.AppointmentStatusQueued).
+		Update("status", model.AppointmentStatusNoShow)
+	if result.Error != nil {
+		return 0, fmt.Errorf("mark no_show: %w", result.Error)
+	}
+	return result.RowsAffected, nil
+}
+
+// SlotInfo describes the availability of a single time slot for a given doctor and date.
+type SlotInfo struct {
+	SlotStart   string `json:"slot_start"`
+	SlotEnd     string `json:"slot_end"`
+	MaxCount    int    `json:"max_count"`
+	BookedCount int    `json:"booked_count"`
+	Available   bool   `json:"available"`
+}
+
+// ListSlots returns all configured time slots for the given doctor and date,
+// annotated with booking counts. If the doctor has no slot configs, an empty
+// slice is returned so the caller can degrade gracefully.
+func (s *AppointmentService) ListSlots(tenantID uint, date string, doctorID uint) ([]SlotInfo, error) {
+	// 1. Read the slot configs for this doctor.
+	var configs []model.AppointmentSlotConfig
+	if err := s.DB.Where("tenant_id = ? AND doctor_id = ?", tenantID, doctorID).
+		Order("slot_start ASC").Find(&configs).Error; err != nil {
+		return nil, fmt.Errorf("list slot configs: %w", err)
+	}
+	if len(configs) == 0 {
+		return []SlotInfo{}, nil
+	}
+
+	// 2. Count bookings per slot_start (only pending/queued statuses).
+	type slotCount struct {
+		SlotStart string
+		Count     int
+	}
+	var counts []slotCount
+	if err := s.DB.Model(&model.Appointment{}).
+		Select("slot_start, COUNT(*) as count").
+		Where("tenant_id = ? AND doctor_id = ? AND appoint_date = ? AND status IN (?,?)",
+			tenantID, doctorID, date,
+			model.AppointmentStatusPending, model.AppointmentStatusQueued).
+		Group("slot_start").
+		Scan(&counts).Error; err != nil {
+		return nil, fmt.Errorf("count slot bookings: %w", err)
+	}
+	countMap := make(map[string]int, len(counts))
+	for _, c := range counts {
+		countMap[c.SlotStart] = c.Count
+	}
+
+	// 3. Assemble results.
+	result := make([]SlotInfo, 0, len(configs))
+	for _, cfg := range configs {
+		booked := countMap[cfg.SlotStart]
+		result = append(result, SlotInfo{
+			SlotStart:   cfg.SlotStart,
+			SlotEnd:     cfg.SlotEnd,
+			MaxCount:    cfg.MaxCount,
+			BookedCount: booked,
+			Available:   booked < cfg.MaxCount,
+		})
+	}
+	return result, nil
+}
+
 // AutoEnqueueToday enqueues all pending appointments for today.
 // Returns (failedIDs, successCount). Per-item failures don't stop others.
 func (s *AppointmentService) AutoEnqueueToday(queueSvc *QueueService) (failedIDs []uint, successCount int) {

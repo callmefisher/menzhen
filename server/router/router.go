@@ -341,6 +341,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		{
 			appt.POST("", middleware.RequirePermission(db, "appointment:create"), apptHandler.Create)
 			appt.GET("", middleware.RequirePermission(db, "appointment:read"), apptHandler.List)
+			appt.GET("/slots", middleware.RequirePermission(db, "appointment:read"), apptHandler.Slots)
 			appt.POST("/:id/checkin", middleware.RequirePermission(db, "appointment:checkin"), apptHandler.Checkin)
 			appt.POST("/:id/cancel", middleware.RequirePermission(db, "appointment:update"), apptHandler.Cancel)
 		}
