@@ -895,7 +895,11 @@ function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermissio
               loading={checkinLoading[entry.id]}
               onClick={(e) => {
                 e.stopPropagation();
-                if (entry.appointment_id) onCheckin(entry.appointment_id, entry.id);
+                if (entry.appointment_id) {
+                  onCheckin(entry.appointment_id, entry.id);
+                } else {
+                  message.warning('预约数据异常，请刷新后重试');
+                }
               }}
             >
               签到

@@ -50,10 +50,10 @@ vi.mock('../../../store/auth', () => ({
 
 // ── WebSocket mock (captures handlers for manual triggering) ───────────────
 
-const wsHandlers: Record<string, (msg: any) => void> = {};
+const wsHandlers: Record<string, (msg: unknown) => void> = {};
 
 vi.mock('../../../hooks/useWebSocket', () => ({
-  useWebSocket: (type: string, handler: (msg: any) => void) => {
+  useWebSocket: (type: string, handler: (msg: unknown) => void) => {
     wsHandlers[type] = handler;
   },
 }));
@@ -600,6 +600,18 @@ describe('QueueDashboard', () => {
     const checkinBtn = buttons.find(btn => btn.textContent?.replace(/\s/g, '') === '签到');
     expect(checkinBtn).toBeDefined();
     expect(screen.getByText('预')).toBeInTheDocument();
+
+    // Click 签到 button and verify checkinAppointment is called with appointment_id=5
+    fireEvent.click(checkinBtn!);
+
+    await waitFor(() => {
+      expect(mockCheckinAppointment).toHaveBeenCalledWith(5);
+    });
+
+    // After checkin, fetchQueue should be called again (initial load + post-checkin refresh)
+    await waitFor(() => {
+      expect(mockListQueue).toHaveBeenCalledTimes(2);
+    });
   });
 
   // 26. Shows ✓ 已到 chip for appointment entry with checkin_status=done

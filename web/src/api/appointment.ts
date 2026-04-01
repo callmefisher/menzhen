@@ -33,7 +33,7 @@ export const listAppointments = (date: string, doctorId?: number) =>
   });
 
 export const checkinAppointment = (id: number) =>
-  request.post(`/appointments/${id}/checkin`);
+  request.post<{ code: number; message?: string }>(`/appointments/${id}/checkin`);
 
 export const cancelAppointment = (id: number) =>
-  request.post(`/appointments/${id}/cancel`);
+  request.post<{ code: number; message?: string }>(`/appointments/${id}/cancel`);
