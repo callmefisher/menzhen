@@ -26,7 +26,7 @@ export default function QueueStrip() {
 
   useEffect(() => {
     getShowArrivalTime().then((res) => {
-      const body = res as any;
+      const body = res as unknown as { data?: { show?: boolean } };
       setShowArrivalTime(body.data?.show ?? true);
     }).catch(() => { setShowArrivalTime(true); });
   }, []);
@@ -41,7 +41,7 @@ export default function QueueStrip() {
     if (!user?.id) return;
     try {
       const res = await listQueue(user.id);
-      const body = res as any;
+      const body = res as unknown as { data?: { list?: QueueEntry[] } };
       const list: QueueEntry[] = body.data?.list || [];
       // Only keep active entries (not done/missed)
       setEntries(list.filter(e => e.status !== 'done' && e.status !== 'missed'));
@@ -197,8 +197,16 @@ export default function QueueStrip() {
                   whiteSpace: 'nowrap',
                   flexShrink: 0,
                   border: `1px solid rgba(0,0,0,${0.06 + opacity * 0.04})`,
+                  position: 'relative',
                 }}>
                   <b>{seq(entry.seq_number)}</b>&nbsp;{entry.patient_name}
+                  {entry.source === 'appointment' && (
+                    <span style={{
+                      display: 'inline-block', fontSize: 9, fontWeight: 800,
+                      background: '#1677ff', color: '#fff', borderRadius: 3,
+                      padding: '0 3px', verticalAlign: 'super', marginLeft: 2, lineHeight: 1.5,
+                    }}>预</span>
+                  )}
                   {showArrivalTime && entry.arrival_time && (
                     <span style={{
                       marginLeft: 4,
@@ -211,6 +219,13 @@ export default function QueueStrip() {
                     }}>
                       {formatQueueTime(entry.arrival_time)}
                     </span>
+                  )}
+                  {entry.source === 'appointment' && entry.checkin_status === 'pending' && (
+                    <span style={{
+                      position: 'absolute', top: 2, right: 2,
+                      width: 6, height: 6, borderRadius: '50%',
+                      background: '#fa8c16', display: 'block',
+                    }} />
                   )}
                 </div>
               </div>
@@ -280,7 +295,21 @@ export default function QueueStrip() {
                 onClick={readyEntry.patient_id ? () => handlePatientClick(readyEntry) : undefined}
               >
                 {readyEntry.patient_name}
+                {readyEntry.source === 'appointment' && (
+                  <span style={{
+                    display: 'inline-block', fontSize: 9, fontWeight: 800,
+                    background: '#1677ff', color: '#fff', borderRadius: 3,
+                    padding: '0 3px', verticalAlign: 'super', marginLeft: 2, lineHeight: 1.5,
+                  }}>预</span>
+                )}
               </span>
+              {readyEntry.source === 'appointment' && readyEntry.checkin_status === 'pending' && (
+                <span style={{
+                  position: 'absolute', top: 2, right: 2,
+                  width: 6, height: 6, borderRadius: '50%',
+                  background: '#fa8c16', display: 'block',
+                }} />
+              )}
               {showArrivalTime && readyEntry.arrival_time && (
                 <span style={{
                   fontSize: 11,
@@ -379,7 +408,21 @@ export default function QueueStrip() {
                 onClick={seeingEntry.patient_id ? () => handlePatientClick(seeingEntry) : undefined}
               >
                 {seeingEntry.patient_name}
+                {seeingEntry.source === 'appointment' && (
+                  <span style={{
+                    display: 'inline-block', fontSize: 9, fontWeight: 800,
+                    background: '#1677ff', color: '#fff', borderRadius: 3,
+                    padding: '0 3px', verticalAlign: 'super', marginLeft: 2, lineHeight: 1.5,
+                  }}>预</span>
+                )}
               </span>
+              {seeingEntry.source === 'appointment' && seeingEntry.checkin_status === 'pending' && (
+                <span style={{
+                  position: 'absolute', top: 2, right: 2,
+                  width: 6, height: 6, borderRadius: '50%',
+                  background: '#fa8c16', display: 'block',
+                }} />
+              )}
               {showArrivalTime && seeingEntry.arrival_time && (
                 <span style={{
                   fontSize: 11,
@@ -488,7 +531,7 @@ export function useQueueStatusMap(): Map<string, QueueStatusInfo> {
     if (!user?.id) return;
     try {
       const res = await listQueue(user.id);
-      const body = res as any;
+      const body = res as unknown as { data?: { list?: QueueEntry[] } };
       const list: QueueEntry[] = body.data?.list || [];
       setEntries(list.filter(e => e.status !== 'done' && e.status !== 'missed'));
     } catch {
