@@ -67,6 +67,10 @@ func seedPermissions(db *gorm.DB) {
 		{Code: "queue:create", Name: "取号", Description: "新增排队号"},
 		{Code: "queue:update", Name: "叫号/完成", Description: "叫号或完成就诊"},
 		{Code: "queue:clear", Name: "清空排队", Description: "清空当日排队"},
+		{Code: "appointment:create",  Name: "创建预约",  Description: "创建预约记录"},
+		{Code: "appointment:read",    Name: "查看预约",  Description: "查看预约列表"},
+		{Code: "appointment:update",  Name: "修改预约",  Description: "修改/取消预约"},
+		{Code: "appointment:checkin", Name: "预约签到",  Description: "为预约患者签到"},
 	}
 
 	for _, p := range permissions {
