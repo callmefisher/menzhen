@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Card,
   Switch,
@@ -21,6 +22,7 @@ import {
   EditOutlined,
   DeleteOutlined,
   HolderOutlined,
+  CalendarOutlined,
 } from '@ant-design/icons';
 import {
   DndContext,
@@ -185,6 +187,7 @@ function SortableDoctorItem({
 export default function QueueSettings() {
   const isMobile = useIsMobile();
   const { fetchQueueEnabled } = useAuth();
+  const navigate = useNavigate();
 
   // Feature toggle
   const [enabled, setEnabled] = useState(true);
@@ -510,6 +513,21 @@ export default function QueueSettings() {
             onChange={handleToggleArrivalTime}
           />
         </div>
+      </Card>
+
+      {/* Appointment config card */}
+      <Card style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>预约配置</div>
+        <div style={{ fontSize: 13, color: '#999', marginBottom: 16 }}>
+          配置各医生的可预约时间段及每个时段最大预约人数
+        </div>
+        <Button
+          type="default"
+          icon={<CalendarOutlined />}
+          onClick={() => navigate('/settings/appointment-slots')}
+        >
+          管理预约时间段
+        </Button>
       </Card>
 
       {/* Doctor list card */}

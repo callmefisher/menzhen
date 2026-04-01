@@ -255,6 +255,15 @@ export default function AppLayout() {
       });
     }
 
+    // Appointment menu item
+    if (hasPermission('appointment:read')) {
+      items.push({
+        key: '/appointments',
+        icon: <CalendarOutlined />,
+        label: '预约管理',
+      });
+    }
+
     const showOps = hasPermission('inventory:read') || hasPermission('followup:read') || hasPermission('statistics:read');
     if (showOps) {
       const totalBadge = alertCount + followUpCount + rxPendingCount;
@@ -394,6 +403,11 @@ export default function AppLayout() {
           label: '排队设置',
         });
         settingsChildren.push({
+          key: '/settings/appointment-slots',
+          icon: <CalendarOutlined />,
+          label: '预约时间段',
+        });
+        settingsChildren.push({
           key: '/settings/config',
           icon: <ToolOutlined />,
           label: '软件配置',
@@ -432,8 +446,10 @@ export default function AppLayout() {
     if (path.startsWith('/settings/config')) return ['/settings/config'];
     if (path.startsWith('/settings/backup')) return ['/settings/backup'];
     if (path.startsWith('/settings/queue')) return ['/settings/queue'];
+    if (path.startsWith('/settings/appointment-slots')) return ['/settings/appointment-slots'];
     if (path.startsWith('/patients')) return ['/patients'];
     if (path.startsWith('/queue')) return ['/queue'];
+    if (path.startsWith('/appointments')) return ['/appointments'];
     if (path.startsWith('/oplogs')) return ['/oplogs'];
     if (path.startsWith('/herbs')) return ['/herbs'];
     if (path.startsWith('/formulas')) return ['/formulas'];

@@ -1,6 +1,8 @@
 import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Spin, ConfigProvider } from 'antd';
+import zhCN from 'antd/locale/zh_CN';
+import 'dayjs/locale/zh-cn';
 import { AuthProvider, useAuth } from './store/auth';
 import { ThemeProvider } from './store/theme';
 import { AccessibilityProvider, useAccessibility } from './store/accessibility';
@@ -21,6 +23,7 @@ import TenantList from './pages/settings/TenantList';
 import SystemConfig from './pages/settings/SystemConfig';
 import BackupRestore from './pages/settings/BackupRestore';
 import QueueSettings from './pages/settings/QueueSettings';
+import AppointmentSlots from './pages/settings/AppointmentSlots';
 import HerbSearch from './pages/herbs/HerbSearch';
 import FormulaSearch from './pages/formulas/FormulaSearch';
 import PulseList from './pages/pulses/PulseList';
@@ -33,6 +36,7 @@ import InventoryAlert from './pages/inventory/InventoryAlert';
 import FollowUpList from './pages/followup/FollowUpList';
 import StatsDashboard from './pages/statistics/StatsDashboard';
 import QueueDashboard from './pages/queue/QueueDashboard';
+import AppointmentManage from './pages/appointments/AppointmentManage';
 import type { ReactNode } from 'react';
 
 const MeridianView = lazy(() => import('./pages/meridians/MeridianView'));
@@ -95,6 +99,7 @@ function AppRoutes() {
         <Route path="follow-ups" element={<FollowUpList />} />
         <Route path="statistics" element={<StatsDashboard />} />
         <Route path="queue" element={<QueueDashboard />} />
+        <Route path="appointments" element={<AppointmentManage />} />
         <Route path="oplogs" element={<OpLogList />} />
         <Route path="settings/users" element={<UserList />} />
         <Route path="settings/roles" element={<RoleList />} />
@@ -102,6 +107,7 @@ function AppRoutes() {
         <Route path="settings/config" element={<SystemConfig />} />
         <Route path="settings/backup" element={<BackupRestore />} />
         <Route path="settings/queue" element={<QueueSettings />} />
+        <Route path="settings/appointment-slots" element={<AppointmentSlots />} />
       </Route>
       <Route path="*" element={<Navigate to="/patients" replace />} />
     </Routes>
@@ -162,7 +168,7 @@ function AppInner() {
     : baseTheme;
 
   return (
-    <ConfigProvider theme={currentTheme}>
+    <ConfigProvider theme={currentTheme} locale={zhCN}>
       <ThemeProvider>
         <BrowserRouter>
           <AuthProvider>
