@@ -134,7 +134,7 @@ func TestCheckin_WrongTenant(t *testing.T) {
 	queueSvc := service.NewQueueService(svc.DB)
 	require.NoError(t, svc.EnqueueAppointment(tid, appt.ID, queueSvc))
 	_, err := svc.Checkin(tid+999, appt.ID)
-	assert.Error(t, err)
+	assert.ErrorIs(t, err, service.ErrAppointmentNotFound)
 }
 
 func TestCheckin_NotQueued(t *testing.T) {
@@ -159,6 +159,19 @@ func TestCancel_Success(t *testing.T) {
 	var updated model.Appointment
 	svc.DB.First(&updated, appt.ID)
 	assert.Equal(t, model.AppointmentStatusCancelled, updated.Status)
+}
+
+func TestCancel_NotPending(t *testing.T) {
+	svc, tid := setupApptService(t)
+	appt, _ := svc.CreateAppointment(tid, service.CreateAppointmentInput{
+		PatientName: "测试", DoctorID: 1, DoctorName: "李医生",
+		AppointDate: time.Now().Format("2006-01-02"), SlotStart: "09:00", SlotEnd: "09:30",
+	})
+	// Cancel once (succeeds)
+	require.NoError(t, svc.Cancel(tid, appt.ID))
+	// Cancel again — should return ErrCancelNotAllowed, not ErrAppointmentNotFound
+	err := svc.Cancel(tid, appt.ID)
+	assert.ErrorIs(t, err, service.ErrCancelNotAllowed)
 }
 
 func TestAutoEnqueueToday_SkipsAlreadyQueued(t *testing.T) {
@@ -189,4 +202,22 @@ func TestListByDate(t *testing.T) {
 	list, err := svc.ListByDate(tid, time.Now().Format("2006-01-02"), nil)
 	require.NoError(t, err)
 	assert.Len(t, list, 2)
+}
+
+func TestListByDate_FilterByDoctor(t *testing.T) {
+	svc, tid := setupApptService(t)
+	_, _ = svc.CreateAppointment(tid, service.CreateAppointmentInput{
+		PatientName: "甲", DoctorID: 1, DoctorName: "李医生",
+		AppointDate: time.Now().Format("2006-01-02"), SlotStart: "09:00", SlotEnd: "09:30",
+	})
+	_, _ = svc.CreateAppointment(tid, service.CreateAppointmentInput{
+		PatientName: "乙", DoctorID: 2, DoctorName: "王医生",
+		AppointDate: time.Now().Format("2006-01-02"), SlotStart: "10:00", SlotEnd: "10:30",
+	})
+
+	docID := uint(1)
+	list, err := svc.ListByDate(tid, time.Now().Format("2006-01-02"), &docID)
+	require.NoError(t, err)
+	assert.Len(t, list, 1)
+	assert.Equal(t, uint(1), list[0].DoctorID)
 }

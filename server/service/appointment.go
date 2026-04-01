@@ -14,6 +14,7 @@ var (
 	ErrDuplicateAppointment = errors.New("该患者当日已有预约，请勿重复预约")
 	ErrNotQueued            = errors.New("该预约尚未入队，无法签到")
 	ErrCheckinWrongDate     = errors.New("只能在预约当日签到")
+	ErrCancelNotAllowed     = errors.New("预约状态不允许取消")
 )
 
 type CreateAppointmentInput struct {
@@ -75,19 +76,26 @@ func (s *AppointmentService) ListByDate(tenantID uint, date string, doctorID *ui
 	}
 	var list []model.Appointment
 	err := q.Order("slot_start ASC, id ASC").Find(&list).Error
-	return list, err
+	if err != nil {
+		return nil, fmt.Errorf("list appointments: %w", err)
+	}
+	return list, nil
 }
 
 // Cancel cancels a pending appointment.
 func (s *AppointmentService) Cancel(tenantID, apptID uint) error {
-	result := s.DB.Model(&model.Appointment{}).
-		Where("id = ? AND tenant_id = ? AND status = ?", apptID, tenantID, model.AppointmentStatusPending).
-		Update("status", model.AppointmentStatusCancelled)
-	if result.Error != nil {
-		return fmt.Errorf("cancel appointment: %w", result.Error)
+	var appt model.Appointment
+	if err := s.DB.Where("id = ? AND tenant_id = ?", apptID, tenantID).First(&appt).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrAppointmentNotFound
+		}
+		return fmt.Errorf("load appointment: %w", err)
 	}
-	if result.RowsAffected == 0 {
-		return ErrAppointmentNotFound
+	if appt.Status != model.AppointmentStatusPending {
+		return ErrCancelNotAllowed
+	}
+	if err := s.DB.Model(&appt).Update("status", model.AppointmentStatusCancelled).Error; err != nil {
+		return fmt.Errorf("cancel appointment: %w", err)
 	}
 	return nil
 }
@@ -156,11 +164,10 @@ func (s *AppointmentService) Checkin(tenantID, apptID uint) (*model.QueueEntry, 
 	if appt.Status != model.AppointmentStatusQueued || appt.QueueEntryID == nil {
 		return nil, ErrNotQueued
 	}
-	if appt.AppointDate != time.Now().Format("2006-01-02") {
+	now := time.Now()
+	if appt.AppointDate != now.Format("2006-01-02") {
 		return nil, ErrCheckinWrongDate
 	}
-
-	now := time.Now()
 	var entry model.QueueEntry
 	if err := s.DB.Where("id = ? AND tenant_id = ?", *appt.QueueEntryID, tenantID).First(&entry).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -183,6 +190,7 @@ func (s *AppointmentService) Checkin(tenantID, apptID uint) (*model.QueueEntry, 
 // Returns (failedIDs, successCount). Per-item failures don't stop others.
 func (s *AppointmentService) AutoEnqueueToday(queueSvc *QueueService) (failedIDs []uint, successCount int) {
 	var appts []model.Appointment
+	// intentional: cross-tenant scheduled job — each item is enqueued under its own appt.TenantID
 	if err := s.DB.Where("appoint_date = ? AND status = ?",
 		time.Now().Format("2006-01-02"), model.AppointmentStatusPending).
 		Find(&appts).Error; err != nil {
