@@ -163,6 +163,9 @@ func (s *AppointmentService) Checkin(tenantID, apptID uint) (*model.QueueEntry, 
 	now := time.Now()
 	var entry model.QueueEntry
 	if err := s.DB.Where("id = ? AND tenant_id = ?", *appt.QueueEntryID, tenantID).First(&entry).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotQueued
+		}
 		return nil, fmt.Errorf("load queue entry: %w", err)
 	}
 	if err := s.DB.Model(&entry).Updates(map[string]interface{}{
