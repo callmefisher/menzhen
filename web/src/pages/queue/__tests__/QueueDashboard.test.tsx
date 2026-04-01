@@ -26,6 +26,12 @@ const mockGetCallDisplayDuration = vi.fn();
 vi.mock('../../../api/queue-doctor', () => ({
   listQueueDoctors: (...args: unknown[]) => mockListQueueDoctors(...args),
   getCallDisplayDuration: (...args: unknown[]) => mockGetCallDisplayDuration(...args),
+  getShowArrivalTime: vi.fn().mockResolvedValue({ data: { show: true } }),
+}));
+
+const mockCheckinAppointment = vi.fn();
+vi.mock('../../../api/appointment', () => ({
+  checkinAppointment: (...args: unknown[]) => mockCheckinAppointment(...args),
 }));
 
 // ── Auth mock ──────────────────────────────────────────────────────────────
@@ -116,6 +122,7 @@ describe('QueueDashboard', () => {
     mockListQueue.mockResolvedValue({ data: { list: [] } });
     mockListQueueDoctors.mockResolvedValue({ data: { list: [{ id: 1, user_id: 10, user_name: '张医生', room: '1诊室', enabled: true, sort_order: 0 }] } });
     mockGetCallDisplayDuration.mockResolvedValue({ data: { seconds: 10 } });
+    mockCheckinAppointment.mockResolvedValue({ data: { code: 0 } });
   });
 
   // 1. Doctor cards rendered
@@ -564,5 +571,54 @@ describe('QueueDashboard', () => {
       expect(screen.getByText('张三叫号')).toBeInTheDocument();
       expect(screen.getByText('李四叫号')).toBeInTheDocument();
     });
+  });
+
+  // 25. Shows 签到 button for appointment entry with pending checkin
+  it('shows 签到 button for appointment entry with checkin_status=pending', async () => {
+    mockListQueue.mockResolvedValue({
+      data: {
+        list: [makeEntry({
+          id: 10,
+          source: 'appointment',
+          checkin_status: 'pending',
+          appointment_id: 5,
+          slot_start: '09:00',
+          slot_end: '09:30',
+        })],
+      },
+    });
+
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByText('张三')).toBeInTheDocument();
+    });
+    // antd v5 auto-inserts a space between Chinese chars in Button text: '签 到'
+    const buttons = screen.getAllByRole('button');
+    const checkinBtn = buttons.find(btn => btn.textContent?.replace(/\s/g, '') === '签到');
+    expect(checkinBtn).toBeDefined();
+    expect(screen.getByText('预')).toBeInTheDocument();
+    expect(screen.getByText('预')).toBeInTheDocument();
+  });
+
+  // 26. Shows ✓ 已到 chip for appointment entry with checkin_status=done
+  it('shows ✓ 已到 chip for appointment entry with checkin_status=done', async () => {
+    mockListQueue.mockResolvedValue({
+      data: {
+        list: [makeEntry({
+          id: 11,
+          source: 'appointment',
+          checkin_status: 'done',
+          appointment_id: 6,
+          slot_start: '09:00',
+          slot_end: '09:30',
+        })],
+      },
+    });
+
+    renderDashboard();
+
+    expect(await screen.findByText('✓ 已到')).toBeInTheDocument();
+    expect(screen.getByText('预')).toBeInTheDocument();
   });
 });

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button, Input, Select, Slider, Tooltip, Modal, message } from 'antd';
 import { SoundOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { listQueue, takeNumber, callNumber, completeVisit, clearQueue, type QueueEntry } from '../../api/queue';
+import { checkinAppointment } from '../../api/appointment';
 import { listQueueDoctors, getCallDisplayDuration, getShowArrivalTime, type QueueDoctor as QueueDoctorConfig } from '../../api/queue-doctor';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { useAuth } from '../../store/auth';
@@ -53,6 +54,7 @@ export default function QueueDashboard() {
   const [callDurationMs, setCallDurationMs] = useState(10000);
   const [showArrivalTime, setShowArrivalTime] = useState<boolean | null>(null);
   const [doctors, setDoctors] = useState<DoctorOption[]>([]);
+  const [checkinLoading, setCheckinLoading] = useState<Record<number, boolean>>({});
   const [pageVisible, setPageVisible] = useState(() => {
     // SSR compatibility: check if document is available
     if (typeof document !== 'undefined') {
@@ -304,6 +306,19 @@ export default function QueueDashboard() {
     }
   };
 
+  // Handle appointment checkin
+  const handleCheckin = useCallback(async (apptId: number, entryId: number) => {
+    setCheckinLoading(prev => ({ ...prev, [entryId]: true }));
+    try {
+      await checkinAppointment(apptId);
+      await fetchQueue();
+    } catch {
+      message.error('签到失败');
+    } finally {
+      setCheckinLoading(prev => ({ ...prev, [entryId]: false }));
+    }
+  }, [fetchQueue]);
+
   // Handle clear
   const handleClear = () => {
     Modal.confirm({
@@ -456,6 +471,8 @@ export default function QueueDashboard() {
                 hasWritePermission={hasPermission('queue:update')}
                 pageVisible={pageVisible}
                 showArrivalTime={showArrivalTime}
+                onCheckin={handleCheckin}
+                checkinLoading={checkinLoading}
               />
             ))
           )}
@@ -522,6 +539,8 @@ export default function QueueDashboard() {
             hasWritePermission={hasPermission('queue:update')}
             pageVisible={pageVisible}
             showArrivalTime={showArrivalTime}
+            onCheckin={handleCheckin}
+            checkinLoading={checkinLoading}
           />
         ))}
       </div>
@@ -549,7 +568,7 @@ function StatBadge({ count, label, color, bgFrom, bgTo, border }: {
   );
 }
 
-function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall, callDuration, onCallClose, hasWritePermission, pageVisible = true, showArrivalTime }: {
+function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall, callDuration, onCallClose, hasWritePermission, pageVisible = true, showArrivalTime, onCheckin, checkinLoading }: {
   group: DoctorGroup;
   colorIndex: number;
   speed: number;
@@ -561,6 +580,8 @@ function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall,
   hasWritePermission: boolean;
   pageVisible?: boolean;
   showArrivalTime: boolean | null;
+  onCheckin: (apptId: number, entryId: number) => void;
+  checkinLoading: Record<number, boolean>;
 }) {
   const color = DOCTOR_COLORS[colorIndex % DOCTOR_COLORS.length];
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -683,6 +704,8 @@ function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall,
             onComplete={onComplete}
             hasWritePermission={hasWritePermission}
             showArrivalTime={showArrivalTime}
+            onCheckin={onCheckin}
+            checkinLoading={checkinLoading}
           />
         )}
         {/* Waiting entries */}
@@ -696,6 +719,8 @@ function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall,
             onComplete={onComplete}
             hasWritePermission={hasWritePermission}
             showArrivalTime={showArrivalTime}
+            onCheckin={onCheckin}
+            checkinLoading={checkinLoading}
           />
         ))}
       </div>
@@ -721,7 +746,7 @@ function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall,
   );
 }
 
-function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermission, showArrivalTime }: {
+function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermission, showArrivalTime, onCheckin, checkinLoading }: {
   entry: QueueEntry;
   type: 'seeing' | 'next' | 'waiting';
   position: number;
@@ -729,6 +754,8 @@ function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermissio
   onComplete: (e: QueueEntry) => void;
   hasWritePermission: boolean;
   showArrivalTime: boolean | null;
+  onCheckin: (apptId: number, entryId: number) => void;
+  checkinLoading: Record<number, boolean>;
 }) {
   const seq = String(entry.seq_number).padStart(2, '0');
 
@@ -798,6 +825,20 @@ function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermissio
               style={{ fontWeight: 700, fontSize: 17 }}
             >
               {entry.patient_name}
+              {entry.source === 'appointment' && (
+                <span style={{
+                  display: 'inline-block',
+                  fontSize: 9,
+                  fontWeight: 800,
+                  background: '#1677ff',
+                  color: '#fff',
+                  borderRadius: 3,
+                  padding: '0 3px',
+                  verticalAlign: 'super',
+                  marginLeft: 2,
+                  lineHeight: 1.5,
+                }}>预</span>
+              )}
             </span>
             <span style={{
               fontSize: 12, color: config.tagColor,
@@ -828,6 +869,35 @@ function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermissio
             </div>
           )}
         </div>
+
+        {/* Appointment checkin action */}
+        {entry.source === 'appointment' && (
+          entry.checkin_status === 'done' ? (
+            <span style={{
+              fontSize: 10,
+              padding: '1px 6px',
+              borderRadius: 8,
+              fontWeight: 600,
+              color: '#52c41a',
+              background: '#f6ffed',
+              border: '1px solid #b7eb8f',
+              whiteSpace: 'nowrap',
+            }}>✓ 已到</span>
+          ) : (
+            <Button
+              size="small"
+              type="primary"
+              style={{ background: '#fa8c16', borderColor: '#fa8c16', fontSize: 12 }}
+              loading={checkinLoading[entry.id]}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (entry.appointment_id) onCheckin(entry.appointment_id, entry.id);
+              }}
+            >
+              签到
+            </Button>
+          )
+        )}
 
         {/* Action buttons */}
         {hasWritePermission && type === 'seeing' && (
