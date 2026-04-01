@@ -18,21 +18,21 @@ export default function AppointmentModal({ open, onClose, onSuccess, doctorOptio
   const [submitting, setSubmitting] = useState(false);
 
   const doctorId = Form.useWatch('doctor_id', form) as number | undefined;
-  const appointDate = Form.useWatch('appoint_date', form) as { format: (f: string) => string } | undefined;
+  const appointDateObj = Form.useWatch('appoint_date', form) as { format: (f: string) => string } | undefined;
+  const appointDateStr = appointDateObj?.format('YYYY-MM-DD');
 
   useEffect(() => {
-    if (!doctorId || !appointDate) { setSlots([]); return; }
-    const dateStr = appointDate.format('YYYY-MM-DD');
+    if (!doctorId || !appointDateStr) { setSlots([]); return; }
     setSelectedSlot(null);
     setSlotsLoading(true);
-    getSlots(dateStr, doctorId)
+    getSlots(appointDateStr, doctorId)
       .then(res => {
-        const body = res as unknown as { data?: { data?: { list?: SlotInfo[] } } };
-        setSlots(body.data?.data?.list ?? []);
+        const body = res as unknown as { data?: { list?: SlotInfo[] } };
+        setSlots(body.data?.list ?? []);
       })
       .catch(() => setSlots([]))
       .finally(() => setSlotsLoading(false));
-  }, [doctorId, appointDate]);
+  }, [doctorId, appointDateStr]);
 
   const handleClose = () => {
     form.resetFields();
@@ -115,7 +115,7 @@ export default function AppointmentModal({ open, onClose, onSuccess, doctorOptio
             <Spin size="small" />
           ) : slots.length === 0 ? (
             <div style={{ color: '#999', fontSize: 13 }}>
-              {doctorId && appointDate ? '暂无可用时间段' : '请先选择医生和日期'}
+              {doctorId && appointDateObj ? '暂无可用时间段' : '请先选择医生和日期'}
             </div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>

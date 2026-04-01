@@ -72,7 +72,7 @@ func (h *AppointmentHandler) Create(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"code": 1, "message": err.Error()})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "internal server error"})
 		return
 	}
 
@@ -115,7 +115,7 @@ func (h *AppointmentHandler) List(c *gin.Context) {
 
 	list, err := h.svc.ListByDate(uint(tenantID), date, doctorID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "internal server error"})
 		return
 	}
 
@@ -149,7 +149,7 @@ func (h *AppointmentHandler) Checkin(c *gin.Context) {
 		case errors.Is(err, service.ErrCheckinWrongDate):
 			c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": err.Error()})
 		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "internal server error"})
 		}
 		return
 	}
@@ -198,7 +198,7 @@ func (h *AppointmentHandler) Slots(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "internal server error"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"slots": slots}})
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": slots}})
 }
 
 // Cancel handles POST /appointments/:id/cancel
@@ -225,7 +225,7 @@ func (h *AppointmentHandler) Cancel(c *gin.Context) {
 		case errors.Is(err, service.ErrCancelNotAllowed):
 			c.JSON(http.StatusConflict, gin.H{"code": 1, "message": err.Error()})
 		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "internal server error"})
 		}
 		return
 	}

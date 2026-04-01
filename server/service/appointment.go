@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/callmefisher/menzhen/server/model"
@@ -39,11 +40,16 @@ func NewAppointmentService(db *gorm.DB) *AppointmentService {
 // CreateAppointment creates an appointment. Same patient same date is rejected.
 func (s *AppointmentService) CreateAppointment(tenantID uint, in CreateAppointmentInput) (*model.Appointment, error) {
 	var count int64
-	if err := s.DB.Model(&model.Appointment{}).
-		Where("tenant_id = ? AND patient_name = ? AND appoint_date = ? AND status NOT IN (?,?)",
-			tenantID, in.PatientName, in.AppointDate,
-			model.AppointmentStatusCancelled, model.AppointmentStatusNoShow).
-		Count(&count).Error; err != nil {
+	dupQuery := s.DB.Model(&model.Appointment{}).
+		Where("tenant_id = ? AND appoint_date = ? AND status NOT IN (?,?)",
+			tenantID, in.AppointDate,
+			model.AppointmentStatusCancelled, model.AppointmentStatusNoShow)
+	if in.PatientID != nil {
+		dupQuery = dupQuery.Where("patient_id = ?", *in.PatientID)
+	} else {
+		dupQuery = dupQuery.Where("patient_name = ?", in.PatientName)
+	}
+	if err := dupQuery.Count(&count).Error; err != nil {
 		return nil, fmt.Errorf("check duplicate appointment: %w", err)
 	}
 	if count > 0 {
@@ -198,6 +204,7 @@ func (s *AppointmentService) Checkin(tenantID, apptID uint) (*model.QueueEntry, 
 // Called by the midnight scheduler before auto-enqueuing today's appointments.
 func (s *AppointmentService) MarkNoShowForPastDates() (int64, error) {
 	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	// intentional: cross-tenant scheduled job — marks no_show across all tenants
 	result := s.DB.Model(&model.Appointment{}).
 		Where("appoint_date <= ? AND status = ? AND queue_entry_id IS NOT NULL",
 			yesterday, model.AppointmentStatusQueued).
@@ -274,6 +281,7 @@ func (s *AppointmentService) AutoEnqueueToday(queueSvc *QueueService) (failedIDs
 	if err := s.DB.Where("appoint_date = ? AND status = ?",
 		time.Now().Format("2006-01-02"), model.AppointmentStatusPending).
 		Find(&appts).Error; err != nil {
+		log.Printf("auto_enqueue_today: failed to load appointments: %v", err)
 		return nil, 0
 	}
 	for _, appt := range appts {
