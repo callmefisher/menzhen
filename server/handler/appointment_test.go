@@ -254,3 +254,40 @@ func TestApptHandler_Cancel_AlreadyCancelled(t *testing.T) {
 	w2 := doApptRequest(t, r, http.MethodPost, path, nil, token)
 	assert.Equal(t, http.StatusConflict, w2.Code)
 }
+
+func TestApptHandler_Checkin_WrongDate(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := testutil.SetupTestDB(t)
+	tenant, user, token := testutil.SeedAdminUser(t, db)
+	_ = tenant
+
+	var userRole model.UserRole
+	require.NoError(t, db.Where("user_id = ?", user.ID).First(&userRole).Error)
+	seedApptPermissions(t, db, uint64(userRole.RoleID))
+
+	h := NewAppointmentHandler(db)
+	r := gin.New()
+	r.Use(middleware.AuthMiddleware(testutil.TestJWTSecret))
+	appts := r.Group("/api/v1/appointments")
+	appts.POST("/:id/checkin", middleware.RequirePermission(db, "appointment:checkin"), h.Checkin)
+
+	// Create a QueueEntry with a past date.
+	qe := model.QueueEntry{
+		TenantID: 1, PatientName: "张三", DoctorID: 1, DoctorName: "李医生",
+		SeqNumber: 1, Status: model.QueueStatusWaiting, QueueDate: "2020-01-01",
+		CheckinStatus: model.CheckinStatusPending, Source: "appointment",
+	}
+	require.NoError(t, db.Create(&qe).Error)
+
+	// Create appointment with a past date and status queued.
+	appt := model.Appointment{
+		TenantID: 1, PatientName: "张三", DoctorID: 1, DoctorName: "李医生",
+		AppointDate: "2020-01-01", SlotStart: "09:00", SlotEnd: "09:30",
+		Status: model.AppointmentStatusQueued, QueueEntryID: &qe.ID,
+	}
+	require.NoError(t, db.Create(&appt).Error)
+
+	// Checkin on a queued appointment with a past date should return 400.
+	w := doApptRequest(t, r, http.MethodPost, fmt.Sprintf("/api/v1/appointments/%d/checkin", appt.ID), nil, token)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/callmefisher/menzhen/server/middleware"
 	"github.com/callmefisher/menzhen/server/service"
@@ -14,7 +15,6 @@ import (
 
 // AppointmentHandler handles appointment CRUD and lifecycle endpoints.
 type AppointmentHandler struct {
-	db       *gorm.DB
 	svc      *service.AppointmentService
 	queueSvc *service.QueueService
 }
@@ -22,7 +22,6 @@ type AppointmentHandler struct {
 // NewAppointmentHandler creates a new AppointmentHandler.
 func NewAppointmentHandler(db *gorm.DB) *AppointmentHandler {
 	return &AppointmentHandler{
-		db:       db,
 		svc:      service.NewAppointmentService(db),
 		queueSvc: service.NewQueueService(db),
 	}
@@ -52,6 +51,10 @@ func (h *AppointmentHandler) Create(c *gin.Context) {
 	}
 
 	tenantID := middleware.GetTenantID(c)
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 1, "message": "missing tenant"})
+		return
+	}
 	in := service.CreateAppointmentInput{
 		PatientName: req.PatientName,
 		PatientID:   req.PatientID,
@@ -80,9 +83,17 @@ func (h *AppointmentHandler) Create(c *gin.Context) {
 // Success 200: { code: 0, data: { list: []Appointment } }
 func (h *AppointmentHandler) List(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 1, "message": "missing tenant"})
+		return
+	}
 	date := c.Query("date")
 	if date == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": "date is required"})
+		return
+	}
+	if _, err := time.Parse("2006-01-02", date); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": "date must be YYYY-MM-DD"})
 		return
 	}
 
@@ -112,6 +123,10 @@ func (h *AppointmentHandler) List(c *gin.Context) {
 // Bad req   400: not queued or wrong date
 func (h *AppointmentHandler) Checkin(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 1, "message": "missing tenant"})
+		return
+	}
 	idStr := c.Param("id")
 	apptID, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
@@ -150,6 +165,10 @@ func (h *AppointmentHandler) Checkin(c *gin.Context) {
 // Conflict  409: ErrCancelNotAllowed
 func (h *AppointmentHandler) Cancel(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 1, "message": "missing tenant"})
+		return
+	}
 	idStr := c.Param("id")
 	apptID, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
