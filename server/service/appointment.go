@@ -102,25 +102,34 @@ func (s *AppointmentService) Cancel(tenantID, apptID uint) error {
 
 // EnqueueAppointment converts a pending appointment into a QueueEntry (source=appointment).
 // Idempotent: returns nil if already queued.
+// Only today's appointments can be enqueued; past/future dates are skipped (returns nil).
 func (s *AppointmentService) EnqueueAppointment(tenantID, apptID uint, queueSvc *QueueService) error {
-	var appt model.Appointment
-	if err := s.DB.Where("id = ? AND tenant_id = ?", apptID, tenantID).First(&appt).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+	return s.DB.Transaction(func(tx *gorm.DB) error {
+		// Load appointment inside transaction with a row-level lock to prevent concurrent enqueue.
+		var appt model.Appointment
+		if err := tx.Raw(
+			"SELECT * FROM appointments WHERE id = ? AND tenant_id = ? FOR UPDATE",
+			apptID, tenantID,
+		).Scan(&appt).Error; err != nil {
+			return fmt.Errorf("load appointment: %w", err)
+		}
+		if appt.ID == 0 {
 			return ErrAppointmentNotFound
 		}
-		return fmt.Errorf("load appointment: %w", err)
-	}
-	if appt.Status == model.AppointmentStatusQueued {
-		return nil // idempotent
-	}
+		if appt.Status == model.AppointmentStatusQueued {
+			return nil // idempotent
+		}
 
-	return s.DB.Transaction(func(tx *gorm.DB) error {
+		// Only enqueue appointments for today; skip past/future dates silently.
+		if appt.AppointDate != time.Now().Format("2006-01-02") {
+			return nil
+		}
+
 		txQueueSvc := &QueueService{DB: tx}
 		seq, err := txQueueSvc.NextSeq(tenantID)
 		if err != nil {
 			return fmt.Errorf("next seq: %w", err)
 		}
-		now := time.Now()
 		entry := &model.QueueEntry{
 			TenantID:      tenantID,
 			PatientID:     appt.PatientID,
@@ -132,7 +141,6 @@ func (s *AppointmentService) EnqueueAppointment(tenantID, apptID uint, queueSvc 
 			Status:        model.QueueStatusWaiting,
 			Source:        "appointment",
 			QueueDate:     appt.AppointDate,
-			ArrivalTime:   &now,
 			CheckinStatus: model.CheckinStatusPending,
 			AppointmentID: &appt.ID,
 			SlotStart:     appt.SlotStart,

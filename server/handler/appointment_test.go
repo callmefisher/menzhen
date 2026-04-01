@@ -259,7 +259,6 @@ func TestApptHandler_Checkin_WrongDate(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := testutil.SetupTestDB(t)
 	tenant, user, token := testutil.SeedAdminUser(t, db)
-	_ = tenant
 
 	var userRole model.UserRole
 	require.NoError(t, db.Where("user_id = ?", user.ID).First(&userRole).Error)
@@ -273,7 +272,7 @@ func TestApptHandler_Checkin_WrongDate(t *testing.T) {
 
 	// Create a QueueEntry with a past date.
 	qe := model.QueueEntry{
-		TenantID: 1, PatientName: "张三", DoctorID: 1, DoctorName: "李医生",
+		TenantID: uint(tenant.ID), PatientName: "张三", DoctorID: 1, DoctorName: "李医生",
 		SeqNumber: 1, Status: model.QueueStatusWaiting, QueueDate: "2020-01-01",
 		CheckinStatus: model.CheckinStatusPending, Source: "appointment",
 	}
@@ -281,7 +280,7 @@ func TestApptHandler_Checkin_WrongDate(t *testing.T) {
 
 	// Create appointment with a past date and status queued.
 	appt := model.Appointment{
-		TenantID: 1, PatientName: "张三", DoctorID: 1, DoctorName: "李医生",
+		TenantID: uint(tenant.ID), PatientName: "张三", DoctorID: 1, DoctorName: "李医生",
 		AppointDate: "2020-01-01", SlotStart: "09:00", SlotEnd: "09:30",
 		Status: model.AppointmentStatusQueued, QueueEntryID: &qe.ID,
 	}
