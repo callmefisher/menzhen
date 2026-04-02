@@ -87,6 +87,10 @@ const PERMISSION_GROUPS: { label: string; codes: string[] }[] = [
     codes: ['queue:read', 'queue:create', 'queue:update', 'queue:clear'],
   },
   {
+    label: '预约管理',
+    codes: ['appointment:read', 'appointment:create', 'appointment:update', 'appointment:checkin'],
+  },
+  {
     label: '诊所运营',
     codes: ['tenant:user:manage', 'tenant:role:manage', 'statistics:read'],
   },

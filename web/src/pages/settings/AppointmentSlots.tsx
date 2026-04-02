@@ -1,14 +1,14 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import {
-  Card, Table, Button, Modal, Form, Select, InputNumber, TimePicker, Space, message, Typography, Empty, Spin, Tag
+  Card, Table, Button, Modal, Form, Select, InputNumber, TimePicker, Space, message, Typography, Tag, Alert
 } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, GlobalOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
 import type { ColumnsType } from 'antd/es/table';
 import {
   listSlotConfigs, createSlotConfig, updateSlotConfig, deleteSlotConfig, type SlotConfig
 } from '../../api/appointmentSlot';
-import { listQueueDoctors, type QueueDoctor } from '../../api/queue-doctor';
+import { listQueueDoctors, getAppointmentConfig, type QueueDoctor } from '../../api/queue-doctor';
 
 const { Title } = Typography;
 
@@ -17,13 +17,29 @@ export default function AppointmentSlots() {
   const [selectedDoctorId, setSelectedDoctorId] = useState<number | undefined>();
   const [slots, setSlots] = useState<SlotConfig[]>([]);
   const [loading, setLoading] = useState(false);
+  const [globalSlots, setGlobalSlots] = useState<SlotConfig[]>([]);
+  const [globalLoading, setGlobalLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingSlot, setEditingSlot] = useState<SlotConfig | null>(null);
+  const [isAddingGlobal, setIsAddingGlobal] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
   const [form] = Form.useForm();
 
-  // Load doctors on mount
+  const fetchGlobalSlots = useCallback(async () => {
+    setGlobalLoading(true);
+    try {
+      const res = await listSlotConfigs(0);
+      const body = res as unknown as { data?: { list?: SlotConfig[] } };
+      setGlobalSlots(body.data?.list ?? []);
+    } catch {
+      message.error('加载全局时间段失败');
+    } finally {
+      setGlobalLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
+    fetchGlobalSlots();
     (async () => {
       try {
         const res = await listQueueDoctors();
@@ -35,7 +51,7 @@ export default function AppointmentSlots() {
         message.error('加载医生列表失败');
       }
     })();
-  }, []);
+  }, [fetchGlobalSlots]);
 
   const fetchSlots = useCallback(async (doctorId: number) => {
     setLoading(true);
@@ -54,24 +70,23 @@ export default function AppointmentSlots() {
     if (selectedDoctorId) fetchSlots(selectedDoctorId);
   }, [selectedDoctorId, fetchSlots]);
 
-  const handleAdd = useCallback(() => {
-    setEditingSlot(null);
-    form.resetFields();
-    form.setFieldsValue({ max_count: 10 });
-    setModalOpen(true);
-  }, [form]);
-
-  const handleEdit = useCallback((slot: SlotConfig) => {
+  const openModal = useCallback((forGlobal: boolean, slot: SlotConfig | null = null) => {
+    setIsAddingGlobal(forGlobal);
     setEditingSlot(slot);
-    form.setFieldsValue({
-      slot_start: dayjs(slot.slot_start, 'HH:mm'),
-      slot_end: dayjs(slot.slot_end, 'HH:mm'),
-      max_count: slot.max_count,
-    });
+    if (slot) {
+      form.setFieldsValue({
+        slot_start: dayjs(slot.slot_start, 'HH:mm'),
+        slot_end: dayjs(slot.slot_end, 'HH:mm'),
+        max_count: slot.max_count,
+      });
+    } else {
+      form.resetFields();
+      form.setFieldsValue({ max_count: 10 });
+    }
     setModalOpen(true);
   }, [form]);
 
-  const handleDelete = useCallback((slot: SlotConfig) => {
+  const handleDelete = useCallback((slot: SlotConfig, forGlobal: boolean) => {
     Modal.confirm({
       title: '确认删除',
       content: `删除时间段 ${slot.slot_start}–${slot.slot_end}？`,
@@ -82,13 +97,17 @@ export default function AppointmentSlots() {
         try {
           await deleteSlotConfig(slot.id);
           message.success('已删除');
-          if (selectedDoctorId) fetchSlots(selectedDoctorId);
+          if (forGlobal) {
+            fetchGlobalSlots();
+          } else if (selectedDoctorId) {
+            fetchSlots(selectedDoctorId);
+          }
         } catch {
           message.error('删除失败');
         }
       },
     });
-  }, [selectedDoctorId, fetchSlots]);
+  }, [selectedDoctorId, fetchSlots, fetchGlobalSlots]);
 
   const handleSubmit = useCallback(async () => {
     let values: { slot_start: Dayjs; slot_end: Dayjs; max_count: number };
@@ -96,22 +115,32 @@ export default function AppointmentSlots() {
       values = await form.validateFields();
     } catch { return; }
 
-    if (!selectedDoctorId) { message.warning('请先选择医生'); return; }
+    const startStr = values.slot_start.format('HH:mm');
+    const endStr = values.slot_end.format('HH:mm');
+    if (startStr >= endStr) {
+      message.warning('结束时间必须晚于开始时间');
+      return;
+    }
+
+    if (!isAddingGlobal && !selectedDoctorId) {
+      message.warning('请先选择医生');
+      return;
+    }
 
     setSubmitLoading(true);
     try {
       if (editingSlot) {
         await updateSlotConfig(editingSlot.id, {
-          slot_start: values.slot_start.format('HH:mm'),
-          slot_end: values.slot_end.format('HH:mm'),
+          slot_start: startStr,
+          slot_end: endStr,
           max_count: values.max_count,
         });
         message.success('已更新');
       } else {
         await createSlotConfig({
-          doctor_id: selectedDoctorId,
-          slot_start: values.slot_start.format('HH:mm'),
-          slot_end: values.slot_end.format('HH:mm'),
+          doctor_id: isAddingGlobal ? 0 : selectedDoctorId!,
+          slot_start: startStr,
+          slot_end: endStr,
           max_count: values.max_count,
         });
         message.success('已添加');
@@ -119,16 +148,66 @@ export default function AppointmentSlots() {
       setModalOpen(false);
       setEditingSlot(null);
       form.resetFields();
-      fetchSlots(selectedDoctorId);
+      if (isAddingGlobal) {
+        fetchGlobalSlots();
+      } else if (selectedDoctorId) {
+        fetchSlots(selectedDoctorId);
+      }
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
       message.error(msg ?? '操作失败');
     } finally {
       setSubmitLoading(false);
     }
-  }, [form, editingSlot, selectedDoctorId, fetchSlots]);
+  }, [form, editingSlot, isAddingGlobal, selectedDoctorId, fetchGlobalSlots, fetchSlots]);
 
-  const columns = useMemo<ColumnsType<SlotConfig>>(() => [
+  const [initLoading, setInitLoading] = useState(false);
+
+  // Auto-seed global slots: 08:00–17:00 based on slot_minutes config, max_count=10
+  const handleInitGlobalSlots = useCallback(async () => {
+    setInitLoading(true);
+    try {
+      const cfgRes = await getAppointmentConfig();
+      const cfgBody = cfgRes as unknown as { data?: { slot_minutes?: number } };
+      const mins = cfgBody.data?.slot_minutes ?? 30;
+      // Generate slots from 08:00 to 17:00, skip 12:00–13:00 lunch break
+      const slots: Array<{ slot_start: string; slot_end: string }> = [];
+      let cur = 8 * 60; // minutes since midnight
+      const dayEnd = 17 * 60;
+      const lunchStart = 12 * 60;
+      const lunchEnd = 13 * 60;
+      while (cur + mins <= dayEnd) {
+        const slotEnd = cur + mins;
+        // Skip any slot that overlaps with lunch (12:00–13:00)
+        if (cur < lunchEnd && slotEnd > lunchStart) {
+          // Jump to end of lunch break
+          cur = lunchEnd;
+          continue;
+        }
+        const fmt = (m: number) =>
+          `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+        slots.push({ slot_start: fmt(cur), slot_end: fmt(slotEnd) });
+        cur = slotEnd;
+      }
+      const maxCount = mins <= 30 ? 1 : 2;
+      const results = await Promise.allSettled(
+        slots.map(s => createSlotConfig({ doctor_id: 0, slot_start: s.slot_start, slot_end: s.slot_end, max_count: maxCount }))
+      );
+      const failed = results.filter(r => r.status === 'rejected').length;
+      if (failed === 0) {
+        message.success(`已初始化 ${slots.length} 个默认时间段`);
+      } else {
+        message.warning(`初始化完成，${slots.length - failed} 成功，${failed} 失败（可能已存在）`);
+      }
+      fetchGlobalSlots();
+    } catch {
+      message.error('初始化失败，请重试');
+    } finally {
+      setInitLoading(false);
+    }
+  }, [fetchGlobalSlots]);
+
+  const slotColumns = useCallback((forGlobal: boolean): ColumnsType<SlotConfig> => [
     {
       title: '开始时间',
       dataIndex: 'slot_start',
@@ -165,19 +244,80 @@ export default function AppointmentSlots() {
       width: 120,
       render: (_: unknown, r: SlotConfig) => (
         <Space>
-          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(r)}>编辑</Button>
-          <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(r)}>删除</Button>
+          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openModal(forGlobal, r)}>编辑</Button>
+          <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(r, forGlobal)}>删除</Button>
         </Space>
       ),
     },
-  ], [handleEdit, handleDelete]);
+  ], [openModal, handleDelete]);
+
+  const globalColumns = useMemo(() => slotColumns(true), [slotColumns]);
+  const doctorColumns = useMemo(() => slotColumns(false), [slotColumns]);
 
   return (
-    <div style={{ maxWidth: 800, margin: '0 auto' }}>
+    <div style={{ maxWidth: 900, margin: '0 auto' }}>
       <Title level={4} style={{ marginBottom: 16 }}>预约时间段配置</Title>
 
-      <Card>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+      {/* Global defaults section */}
+      <Card
+        style={{ marginBottom: 16 }}
+        title={
+          <Space>
+            <GlobalOutlined />
+            <span>全局默认时间段</span>
+          </Space>
+        }
+        extra={
+          <Button type="primary" icon={<PlusOutlined />} size="small" onClick={() => openModal(true)}>
+            添加默认时间段
+          </Button>
+        }
+      >
+        <div style={{ fontSize: 13, color: '#999', marginBottom: 12 }}>
+          所有医生未单独配置时将使用这些时间段
+        </div>
+        {!globalLoading && globalSlots.length === 0 && (
+          <Alert
+            type="warning"
+            message="尚未配置全局默认时间段"
+            description="可点击「一键初始化」按照当前时间粒度自动生成 08:00–17:00 的标准时间段（最大预约人数默认 10 人），也可手动逐个添加。"
+            showIcon
+            style={{ marginBottom: 12 }}
+            action={
+              <Button size="small" loading={initLoading} disabled={initLoading} onClick={handleInitGlobalSlots}>
+                一键初始化
+              </Button>
+            }
+          />
+        )}
+        <Table<SlotConfig>
+          rowKey="id"
+          loading={globalLoading}
+          dataSource={globalSlots}
+          columns={globalColumns}
+          pagination={false}
+          size="small"
+          locale={{ emptyText: '暂无全局默认配置，建议添加标准工作时间段' }}
+        />
+      </Card>
+
+      {/* Doctor-specific section */}
+      <Card
+        title="医生个人时间段配置"
+        extra={
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            size="small"
+            disabled={!selectedDoctorId}
+            onClick={() => openModal(false)}
+          >
+            添加时间段
+          </Button>
+        }
+      >
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
+          <span style={{ marginRight: 8, color: '#666', fontSize: 14 }}>选择医生：</span>
           <Select
             placeholder="选择医生"
             value={selectedDoctorId}
@@ -185,28 +325,31 @@ export default function AppointmentSlots() {
             style={{ width: 200 }}
             options={doctors.map(d => ({ value: d.user_id, label: d.user_name }))}
           />
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} disabled={!selectedDoctorId}>
-            添加时间段
-          </Button>
         </div>
 
-        {loading ? (
-          <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
-        ) : slots.length === 0 ? (
-          <Empty description={selectedDoctorId ? '该医生暂无时间段配置' : '请先选择医生'} />
-        ) : (
-          <Table<SlotConfig>
-            rowKey="id"
-            dataSource={slots}
-            columns={columns}
-            pagination={false}
-            size="middle"
+        {selectedDoctorId && !loading && slots.length === 0 && (
+          <Alert
+            type="info"
+            message="该医生使用全局默认时间段"
+            description={'该医生尚未配置个人时间段，将使用全局默认配置。可点击「添加时间段」为该医生单独配置。'}
+            showIcon
+            style={{ marginBottom: 12 }}
           />
         )}
+
+        <Table<SlotConfig>
+          rowKey="id"
+          loading={loading}
+          dataSource={slots}
+          columns={doctorColumns}
+          pagination={false}
+          size="middle"
+          locale={{ emptyText: selectedDoctorId ? '该医生无个人配置（使用全局默认）' : '请先选择医生' }}
+        />
       </Card>
 
       <Modal
-        title={editingSlot ? '编辑时间段' : '添加时间段'}
+        title={editingSlot ? '编辑时间段' : (isAddingGlobal ? '添加全局默认时间段' : '添加时间段')}
         open={modalOpen}
         onOk={handleSubmit}
         onCancel={() => { setModalOpen(false); setEditingSlot(null); form.resetFields(); }}

@@ -26,10 +26,14 @@ func NewQueueDoctorHandler(svc *service.QueueDoctorService, db *gorm.DB) *QueueD
 // List handles GET /queue-doctors — returns all queue doctors for the tenant with user_name populated.
 func (h *QueueDoctorHandler) List(c *gin.Context) {
 	tenantID := uint(middleware.GetTenantID(c))
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 1, "message": "missing tenant"})
+		return
+	}
 
 	doctors, err := h.svc.List(tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "internal server error"})
 		return
 	}
 
@@ -61,6 +65,10 @@ func (h *QueueDoctorHandler) List(c *gin.Context) {
 // Create handles POST /queue-doctors — adds a doctor to the tenant's queue list.
 func (h *QueueDoctorHandler) Create(c *gin.Context) {
 	tenantID := uint(middleware.GetTenantID(c))
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 1, "message": "missing tenant"})
+		return
+	}
 
 	var req struct {
 		UserID  uint   `json:"user_id" binding:"required"`
@@ -85,10 +93,10 @@ func (h *QueueDoctorHandler) Create(c *gin.Context) {
 
 	if err := h.svc.Create(doc); err != nil {
 		if errors.Is(err, service.ErrQueueDoctorDuplicate) {
-			c.JSON(http.StatusConflict, gin.H{"code": 1, "message": err.Error()})
+			c.JSON(http.StatusConflict, gin.H{"code": 1, "message": "doctor already in queue"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "internal server error"})
 		return
 	}
 
@@ -98,6 +106,10 @@ func (h *QueueDoctorHandler) Create(c *gin.Context) {
 // Update handles PUT /queue-doctors/:id — edits room and enabled status.
 func (h *QueueDoctorHandler) Update(c *gin.Context) {
 	tenantID := uint(middleware.GetTenantID(c))
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 1, "message": "missing tenant"})
+		return
+	}
 
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
@@ -117,10 +129,10 @@ func (h *QueueDoctorHandler) Update(c *gin.Context) {
 	doc, err := h.svc.Update(tenantID, uint(id), req.Room, req.Enabled)
 	if err != nil {
 		if errors.Is(err, service.ErrQueueDoctorNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": err.Error()})
+			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": "queue doctor not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "internal server error"})
 		return
 	}
 
@@ -130,6 +142,10 @@ func (h *QueueDoctorHandler) Update(c *gin.Context) {
 // Delete handles DELETE /queue-doctors/:id — removes a doctor from the tenant's queue list.
 func (h *QueueDoctorHandler) Delete(c *gin.Context) {
 	tenantID := uint(middleware.GetTenantID(c))
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 1, "message": "missing tenant"})
+		return
+	}
 
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
@@ -139,10 +155,10 @@ func (h *QueueDoctorHandler) Delete(c *gin.Context) {
 
 	if err := h.svc.Delete(tenantID, uint(id)); err != nil {
 		if errors.Is(err, service.ErrQueueDoctorNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": err.Error()})
+			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": "queue doctor not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "internal server error"})
 		return
 	}
 
@@ -152,6 +168,10 @@ func (h *QueueDoctorHandler) Delete(c *gin.Context) {
 // UpdateSort handles PUT /queue-doctors/sort — batch updates sort_order values.
 func (h *QueueDoctorHandler) UpdateSort(c *gin.Context) {
 	tenantID := uint(middleware.GetTenantID(c))
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 1, "message": "missing tenant"})
+		return
+	}
 
 	var req struct {
 		Orders []service.SortOrder `json:"orders" binding:"required"`
@@ -162,7 +182,7 @@ func (h *QueueDoctorHandler) UpdateSort(c *gin.Context) {
 	}
 
 	if err := h.svc.UpdateSort(tenantID, req.Orders); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "internal server error"})
 		return
 	}
 
@@ -172,14 +192,18 @@ func (h *QueueDoctorHandler) UpdateSort(c *gin.Context) {
 // GetQueueEnabled handles GET /tenant/queue-enabled — returns whether queue feature is enabled.
 func (h *QueueDoctorHandler) GetQueueEnabled(c *gin.Context) {
 	tenantID := uint(middleware.GetTenantID(c))
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 1, "message": "missing tenant"})
+		return
+	}
 
 	enabled, err := h.svc.GetQueueEnabled(tenantID)
 	if err != nil {
 		if errors.Is(err, service.ErrTenantNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": err.Error()})
+			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": "tenant not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "internal server error"})
 		return
 	}
 
@@ -189,6 +213,10 @@ func (h *QueueDoctorHandler) GetQueueEnabled(c *gin.Context) {
 // SetQueueEnabled handles PUT /tenant/queue-enabled — toggles the queue feature for the tenant.
 func (h *QueueDoctorHandler) SetQueueEnabled(c *gin.Context) {
 	tenantID := uint(middleware.GetTenantID(c))
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 1, "message": "missing tenant"})
+		return
+	}
 
 	var req struct {
 		Enabled bool `json:"enabled"`
@@ -200,10 +228,10 @@ func (h *QueueDoctorHandler) SetQueueEnabled(c *gin.Context) {
 
 	if err := h.svc.SetQueueEnabled(tenantID, req.Enabled); err != nil {
 		if errors.Is(err, service.ErrTenantNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": err.Error()})
+			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": "tenant not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "internal server error"})
 		return
 	}
 
@@ -213,14 +241,18 @@ func (h *QueueDoctorHandler) SetQueueEnabled(c *gin.Context) {
 // GetCallDisplayDuration handles GET /tenant/call-duration — returns the call overlay display duration.
 func (h *QueueDoctorHandler) GetCallDisplayDuration(c *gin.Context) {
 	tenantID := uint(middleware.GetTenantID(c))
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 1, "message": "missing tenant"})
+		return
+	}
 
 	seconds, err := h.svc.GetCallDisplayDuration(tenantID)
 	if err != nil {
 		if errors.Is(err, service.ErrTenantNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": err.Error()})
+			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": "tenant not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "internal server error"})
 		return
 	}
 
@@ -230,6 +262,10 @@ func (h *QueueDoctorHandler) GetCallDisplayDuration(c *gin.Context) {
 // SetCallDisplayDuration handles PUT /tenant/call-duration — updates the call overlay display duration.
 func (h *QueueDoctorHandler) SetCallDisplayDuration(c *gin.Context) {
 	tenantID := uint(middleware.GetTenantID(c))
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 1, "message": "missing tenant"})
+		return
+	}
 
 	var req struct {
 		Seconds int `json:"seconds"`
@@ -241,14 +277,14 @@ func (h *QueueDoctorHandler) SetCallDisplayDuration(c *gin.Context) {
 
 	if err := h.svc.SetCallDisplayDuration(tenantID, req.Seconds); err != nil {
 		if errors.Is(err, service.ErrCallDurationOutOfRange) {
-			c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": err.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": "call duration out of range"})
 			return
 		}
 		if errors.Is(err, service.ErrTenantNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": err.Error()})
+			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": "tenant not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "internal server error"})
 		return
 	}
 
@@ -258,14 +294,18 @@ func (h *QueueDoctorHandler) SetCallDisplayDuration(c *gin.Context) {
 // GetShowArrivalTime handles GET /tenant/show-arrival-time — returns whether arrival time display is enabled.
 func (h *QueueDoctorHandler) GetShowArrivalTime(c *gin.Context) {
 	tenantID := uint(middleware.GetTenantID(c))
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 1, "message": "missing tenant"})
+		return
+	}
 
 	show, err := h.svc.GetShowArrivalTime(tenantID)
 	if err != nil {
 		if errors.Is(err, service.ErrTenantNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": err.Error()})
+			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": "tenant not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "internal server error"})
 		return
 	}
 
@@ -275,6 +315,10 @@ func (h *QueueDoctorHandler) GetShowArrivalTime(c *gin.Context) {
 // SetShowArrivalTime handles PUT /tenant/show-arrival-time — toggles arrival time display for the tenant.
 func (h *QueueDoctorHandler) SetShowArrivalTime(c *gin.Context) {
 	tenantID := uint(middleware.GetTenantID(c))
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 1, "message": "missing tenant"})
+		return
+	}
 
 	var req struct {
 		Show bool `json:"show"`
@@ -286,10 +330,161 @@ func (h *QueueDoctorHandler) SetShowArrivalTime(c *gin.Context) {
 
 	if err := h.svc.SetShowArrivalTime(tenantID, req.Show); err != nil {
 		if errors.Is(err, service.ErrTenantNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": err.Error()})
+			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": "tenant not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "internal server error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": nil})
+}
+
+// GetAppointmentEnabled handles GET /tenant/appointment-enabled — returns whether appointment feature is enabled.
+func (h *QueueDoctorHandler) GetAppointmentEnabled(c *gin.Context) {
+	tenantID := uint(middleware.GetTenantID(c))
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 1, "message": "missing tenant"})
+		return
+	}
+
+	enabled, err := h.svc.GetAppointmentEnabled(tenantID)
+	if err != nil {
+		if errors.Is(err, service.ErrTenantNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": "tenant not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "internal server error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"enabled": enabled}})
+}
+
+// SetAppointmentEnabled handles PUT /tenant/appointment-enabled — toggles the appointment feature.
+func (h *QueueDoctorHandler) SetAppointmentEnabled(c *gin.Context) {
+	tenantID := uint(middleware.GetTenantID(c))
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 1, "message": "missing tenant"})
+		return
+	}
+
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": err.Error()})
+		return
+	}
+
+	if err := h.svc.SetAppointmentEnabled(tenantID, req.Enabled); err != nil {
+		if errors.Is(err, service.ErrTenantNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": "tenant not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "internal server error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": nil})
+}
+
+// GetCallSoundEnabled handles GET /tenant/call-sound-enabled — returns whether call sound broadcast is enabled.
+func (h *QueueDoctorHandler) GetCallSoundEnabled(c *gin.Context) {
+	tenantID := uint(middleware.GetTenantID(c))
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 1, "message": "missing tenant"})
+		return
+	}
+
+	enabled, err := h.svc.GetCallSoundEnabled(tenantID)
+	if err != nil {
+		if errors.Is(err, service.ErrTenantNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": "tenant not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "internal server error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"enabled": enabled}})
+}
+
+// SetCallSoundEnabled handles PUT /tenant/call-sound-enabled — toggles the call sound broadcast for the tenant.
+func (h *QueueDoctorHandler) SetCallSoundEnabled(c *gin.Context) {
+	tenantID := uint(middleware.GetTenantID(c))
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 1, "message": "missing tenant"})
+		return
+	}
+
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": err.Error()})
+		return
+	}
+
+	if err := h.svc.SetCallSoundEnabled(tenantID, req.Enabled); err != nil {
+		if errors.Is(err, service.ErrTenantNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": "tenant not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "internal server error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": nil})
+}
+
+// GetAppointmentConfig handles GET /tenant/appointment-config — returns global appointment parameters.
+func (h *QueueDoctorHandler) GetAppointmentConfig(c *gin.Context) {
+	tenantID := uint(middleware.GetTenantID(c))
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 1, "message": "missing tenant"})
+		return
+	}
+
+	cfg, err := h.svc.GetAppointmentConfig(tenantID)
+	if err != nil {
+		if errors.Is(err, service.ErrTenantNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": "tenant not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "internal server error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": cfg})
+}
+
+// SetAppointmentConfig handles PUT /tenant/appointment-config — updates global appointment parameters.
+func (h *QueueDoctorHandler) SetAppointmentConfig(c *gin.Context) {
+	tenantID := uint(middleware.GetTenantID(c))
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 1, "message": "missing tenant"})
+		return
+	}
+
+	var req service.AppointmentConfig
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": err.Error()})
+		return
+	}
+
+	if err := h.svc.SetAppointmentConfig(tenantID, req); err != nil {
+		if errors.Is(err, service.ErrTenantNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": "tenant not found"})
+			return
+		}
+		if errors.Is(err, service.ErrSlotMinutesOutOfRange) ||
+			errors.Is(err, service.ErrMaxPerSlotOutOfRange) ||
+			errors.Is(err, service.ErrAdvanceDaysOutOfRange) {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "internal server error"})
 		return
 	}
 

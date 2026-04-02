@@ -16,9 +16,21 @@ var (
 	ErrNotQueued            = errors.New("该预约尚未入队，无法签到")
 	ErrCheckinWrongDate     = errors.New("只能在预约当日签到")
 	ErrCancelNotAllowed     = errors.New("预约状态不允许取消")
+	ErrUpdateNotAllowed     = errors.New("appointment cannot be updated in current status")
 )
 
 type CreateAppointmentInput struct {
+	PatientName string
+	PatientID   *uint
+	DoctorID    uint
+	DoctorName  string
+	Room        string
+	AppointDate string // "2006-01-02"
+	SlotStart   string // "09:00"
+	SlotEnd     string // "09:30"
+}
+
+type UpdateAppointmentInput struct {
 	PatientName string
 	PatientID   *uint
 	DoctorID    uint
@@ -72,6 +84,33 @@ func (s *AppointmentService) CreateAppointment(tenantID uint, in CreateAppointme
 		return nil, fmt.Errorf("create appointment: %w", err)
 	}
 	return appt, nil
+}
+
+// Update updates a pending or queued appointment's fields.
+func (s *AppointmentService) Update(tenantID, apptID uint, in UpdateAppointmentInput) (*model.Appointment, error) {
+	var appt model.Appointment
+	if err := s.DB.Where("id = ? AND tenant_id = ?", apptID, tenantID).First(&appt).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrAppointmentNotFound
+		}
+		return nil, fmt.Errorf("load appointment: %w", err)
+	}
+	if appt.Status != model.AppointmentStatusPending && appt.Status != model.AppointmentStatusQueued {
+		return nil, ErrUpdateNotAllowed
+	}
+	if err := s.DB.Model(&appt).Updates(map[string]interface{}{
+		"patient_name": in.PatientName,
+		"patient_id":   in.PatientID,
+		"doctor_id":    in.DoctorID,
+		"doctor_name":  in.DoctorName,
+		"room":         in.Room,
+		"appoint_date": in.AppointDate,
+		"slot_start":   in.SlotStart,
+		"slot_end":     in.SlotEnd,
+	}).Error; err != nil {
+		return nil, fmt.Errorf("update appointment: %w", err)
+	}
+	return &appt, nil
 }
 
 // ListByDate returns appointments for a given date, optionally filtered by doctorID.
@@ -235,7 +274,14 @@ func (s *AppointmentService) ListSlots(tenantID uint, date string, doctorID uint
 		return nil, fmt.Errorf("list slot configs: %w", err)
 	}
 	if len(configs) == 0 {
-		return []SlotInfo{}, nil
+		// Fall back to global defaults (doctor_id = 0).
+		if err := s.DB.Where("tenant_id = ? AND doctor_id = 0", tenantID).
+			Order("slot_start ASC").Find(&configs).Error; err != nil {
+			return nil, fmt.Errorf("list global slot configs: %w", err)
+		}
+		if len(configs) == 0 {
+			return []SlotInfo{}, nil
+		}
 	}
 
 	// 2. Count bookings per slot_start (only pending/queued statuses).

@@ -4,7 +4,7 @@ import { Button, Input, Select, Slider, Tooltip, Modal, message } from 'antd';
 import { SoundOutlined, DeleteOutlined, PlusOutlined, CalendarOutlined } from '@ant-design/icons';
 import { listQueue, takeNumber, callNumber, completeVisit, clearQueue, type QueueEntry } from '../../api/queue';
 import { checkinAppointment } from '../../api/appointment';
-import { listQueueDoctors, getCallDisplayDuration, getShowArrivalTime, type QueueDoctor as QueueDoctorConfig } from '../../api/queue-doctor';
+import { listQueueDoctors, getCallDisplayDuration, getShowArrivalTime, getCallSoundEnabled, type QueueDoctor as QueueDoctorConfig } from '../../api/queue-doctor';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { useAuth } from '../../store/auth';
 import useIsMobile from '../../hooks/useIsMobile';
@@ -40,7 +40,7 @@ interface DoctorOption {
 }
 
 export default function QueueDashboard() {
-  const { hasPermission } = useAuth();
+  const { hasPermission, appointmentEnabled } = useAuth();
   const isMobile = useIsMobile();
   const navigate = useNavigate();
 
@@ -54,6 +54,7 @@ export default function QueueDashboard() {
   const [doctorCallStates, setDoctorCallStates] = useState<Record<number, DoctorCallState>>({});
   const [callDurationMs, setCallDurationMs] = useState(10000);
   const [showArrivalTime, setShowArrivalTime] = useState<boolean | null>(null);
+  const [soundEnabled, setSoundEnabled] = useState(true);
   const [doctors, setDoctors] = useState<DoctorOption[]>([]);
   const [checkinLoading, setCheckinLoading] = useState<Record<number, boolean>>({});
   const [apptModalOpen, setApptModalOpen] = useState(false);
@@ -114,6 +115,19 @@ export default function QueueDashboard() {
         setShowArrivalTime(body.data?.show ?? true);
       } catch {
         setShowArrivalTime(true);
+      }
+    })();
+  }, []);
+
+  // Fetch call sound enabled setting
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await getCallSoundEnabled();
+        const body = res as unknown as { data?: { enabled?: boolean } };
+        setSoundEnabled(body.data?.enabled ?? true);
+      } catch {
+        // default true
       }
     })();
   }, []);
@@ -294,8 +308,25 @@ export default function QueueDashboard() {
     }
   };
 
-  // Handle call
+  // Handle call — speak is invoked synchronously in the click handler to satisfy
+  // browser autoplay policy; async callNumber happens after.
   const handleCall = async (entry: QueueEntry) => {
+    if (soundEnabled && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+      const room = entry.room ? entry.room.replace(/诊室$/u, '') + '诊室' : '诊室';
+      const utter = new SpeechSynthesisUtterance(
+        `请${entry.seq_number}号 ${entry.patient_name} 到${room}就诊`
+      );
+      utter.lang = 'zh-CN';
+      utter.rate = 0.9;
+      const voices = window.speechSynthesis.getVoices();
+      const zhVoice = voices.find(v => v.lang === 'zh-CN')
+        ?? voices.find(v => v.lang === 'zh-TW')
+        ?? voices.find(v => v.lang.startsWith('zh'))
+        ?? null;
+      if (zhVoice) utter.voice = zhVoice;
+      window.speechSynthesis.speak(utter);
+    }
     try {
       await callNumber(entry.id);
     } catch {
@@ -425,7 +456,7 @@ export default function QueueDashboard() {
       >
         取号
       </Button>
-      {hasPermission('appointment:create') && (
+      {hasPermission('appointment:create') && appointmentEnabled && (
         <Button
           icon={<CalendarOutlined />}
           onClick={() => setApptModalOpen(true)}
@@ -498,6 +529,7 @@ export default function QueueDashboard() {
                 showArrivalTime={showArrivalTime}
                 onCheckin={handleCheckin}
                 checkinLoading={checkinLoading}
+                soundEnabled={soundEnabled}
               />
             ))
           )}
@@ -567,6 +599,7 @@ export default function QueueDashboard() {
             showArrivalTime={showArrivalTime}
             onCheckin={handleCheckin}
             checkinLoading={checkinLoading}
+            soundEnabled={soundEnabled}
           />
         ))}
       </div>
@@ -595,7 +628,7 @@ function StatBadge({ count, label, color, bgFrom, bgTo, border }: {
   );
 }
 
-function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall, callDuration, onCallClose, hasWritePermission, pageVisible = true, showArrivalTime, onCheckin, checkinLoading }: {
+function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall, callDuration, onCallClose, hasWritePermission, pageVisible = true, showArrivalTime, onCheckin, checkinLoading, soundEnabled }: {
   group: DoctorGroup;
   colorIndex: number;
   speed: number;
@@ -609,6 +642,7 @@ function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall,
   showArrivalTime: boolean | null;
   onCheckin: (apptId: number, entryId: number) => void;
   checkinLoading: Record<number, boolean>;
+  soundEnabled?: boolean;
 }) {
   const color = DOCTOR_COLORS[colorIndex % DOCTOR_COLORS.length];
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -768,6 +802,7 @@ function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall,
         duration={callDuration}
         onClose={onCallClose}
         isMobile={false}
+        soundEnabled={soundEnabled}
       />
     </div>
   );

@@ -373,3 +373,149 @@ func TestGetShowArrivalTime_NotFound(t *testing.T) {
 	_, err := svc.GetShowArrivalTime(99999)
 	assert.ErrorIs(t, err, service.ErrTenantNotFound)
 }
+
+// TestAppointmentEnabled_RoundTrip verifies GetAppointmentEnabled and SetAppointmentEnabled round-trip.
+func TestAppointmentEnabled_RoundTrip(t *testing.T) {
+	svc, tenantID := makeQueueDoctorSvc(t)
+
+	// Initially should be true (default).
+	enabled, err := svc.GetAppointmentEnabled(tenantID)
+	require.NoError(t, err)
+	assert.True(t, enabled, "appointment should be enabled by default")
+
+	// Disable it.
+	require.NoError(t, svc.SetAppointmentEnabled(tenantID, false))
+	enabled, err = svc.GetAppointmentEnabled(tenantID)
+	require.NoError(t, err)
+	assert.False(t, enabled, "appointment should be disabled after SetAppointmentEnabled(false)")
+
+	// Re-enable it.
+	require.NoError(t, svc.SetAppointmentEnabled(tenantID, true))
+	enabled, err = svc.GetAppointmentEnabled(tenantID)
+	require.NoError(t, err)
+	assert.True(t, enabled, "appointment should be enabled after SetAppointmentEnabled(true)")
+}
+
+// TestAppointmentEnabled_Default verifies GetAppointmentEnabled returns true when appointment_enabled is NULL.
+func TestAppointmentEnabled_Default(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	tenant := testutil.SeedTestTenant(t, db, "诊所NULL", "qd-appt-null-"+t.Name())
+
+	// Explicitly set appointment_enabled to NULL.
+	require.NoError(t, db.Model(&model.Tenant{}).Where("id = ?", tenant.ID).
+		Update("appointment_enabled", nil).Error)
+
+	svc := service.NewQueueDoctorService(db)
+	enabled, err := svc.GetAppointmentEnabled(uint(tenant.ID))
+	require.NoError(t, err)
+	assert.True(t, enabled, "NULL appointment_enabled should default to true")
+}
+
+// TestAppointmentEnabled_NotFound verifies ErrTenantNotFound for unknown tenant.
+func TestAppointmentEnabled_NotFound(t *testing.T) {
+	svc, _ := makeQueueDoctorSvc(t)
+
+	_, err := svc.GetAppointmentEnabled(99999)
+	assert.ErrorIs(t, err, service.ErrTenantNotFound)
+}
+
+// TestSetAppointmentEnabled_NotFound verifies ErrTenantNotFound for unknown tenant.
+func TestSetAppointmentEnabled_NotFound(t *testing.T) {
+	svc, _ := makeQueueDoctorSvc(t)
+
+	err := svc.SetAppointmentEnabled(99999, false)
+	assert.ErrorIs(t, err, service.ErrTenantNotFound)
+}
+
+// TestAppointmentConfig_Defaults verifies GetAppointmentConfig returns defaults when fields are NULL.
+func TestAppointmentConfig_Defaults(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	tenant := testutil.SeedTestTenant(t, db, "诊所NULL", "qd-apptcfg-null-"+t.Name())
+
+	// Explicitly set all appointment config columns to NULL.
+	require.NoError(t, db.Model(&model.Tenant{}).Where("id = ?", tenant.ID).Updates(map[string]interface{}{
+		"appointment_slot_minutes":  nil,
+		"appointment_max_per_slot":  nil,
+		"appointment_advance_days":  nil,
+	}).Error)
+
+	svc := service.NewQueueDoctorService(db)
+	cfg, err := svc.GetAppointmentConfig(uint(tenant.ID))
+	require.NoError(t, err)
+	assert.Equal(t, 30, cfg.SlotMinutes, "slot_minutes default should be 30")
+	assert.Equal(t, 10, cfg.MaxPerSlot, "max_appt_per_slot default should be 10")
+	assert.Equal(t, 7, cfg.AdvanceDays, "advance_days default should be 7")
+}
+
+// TestAppointmentConfig_RoundTrip verifies SetAppointmentConfig → GetAppointmentConfig round-trip.
+func TestAppointmentConfig_RoundTrip(t *testing.T) {
+	svc, tenantID := makeQueueDoctorSvc(t)
+
+	input := service.AppointmentConfig{
+		SlotMinutes: 15,
+		MaxPerSlot:  5,
+		AdvanceDays: 14,
+	}
+	require.NoError(t, svc.SetAppointmentConfig(tenantID, input))
+
+	got, err := svc.GetAppointmentConfig(tenantID)
+	require.NoError(t, err)
+	assert.Equal(t, input.SlotMinutes, got.SlotMinutes)
+	assert.Equal(t, input.MaxPerSlot, got.MaxPerSlot)
+	assert.Equal(t, input.AdvanceDays, got.AdvanceDays)
+}
+
+// TestAppointmentConfig_InvalidSlotMinutes verifies ErrSlotMinutesOutOfRange for invalid values.
+func TestAppointmentConfig_InvalidSlotMinutes(t *testing.T) {
+	svc, tenantID := makeQueueDoctorSvc(t)
+
+	for _, v := range []int{0, 10, 20, 45, 90, 120} {
+		err := svc.SetAppointmentConfig(tenantID, service.AppointmentConfig{SlotMinutes: v, MaxPerSlot: 10, AdvanceDays: 7})
+		assert.ErrorIs(t, err, service.ErrSlotMinutesOutOfRange, "slot_minutes=%d should be invalid", v)
+	}
+
+	// Valid values should succeed.
+	for _, v := range []int{15, 30, 60} {
+		err := svc.SetAppointmentConfig(tenantID, service.AppointmentConfig{SlotMinutes: v, MaxPerSlot: 10, AdvanceDays: 7})
+		assert.NoError(t, err, "slot_minutes=%d should be valid", v)
+	}
+}
+
+// TestAppointmentConfig_InvalidMaxPerSlot verifies ErrMaxPerSlotOutOfRange for out-of-range values.
+func TestAppointmentConfig_InvalidMaxPerSlot(t *testing.T) {
+	svc, tenantID := makeQueueDoctorSvc(t)
+
+	for _, v := range []int{0, 101, 200} {
+		err := svc.SetAppointmentConfig(tenantID, service.AppointmentConfig{SlotMinutes: 30, MaxPerSlot: v, AdvanceDays: 7})
+		assert.ErrorIs(t, err, service.ErrMaxPerSlotOutOfRange, "max_per_slot=%d should be invalid", v)
+	}
+
+	// Boundary values.
+	assert.NoError(t, svc.SetAppointmentConfig(tenantID, service.AppointmentConfig{SlotMinutes: 30, MaxPerSlot: 1, AdvanceDays: 7}))
+	assert.NoError(t, svc.SetAppointmentConfig(tenantID, service.AppointmentConfig{SlotMinutes: 30, MaxPerSlot: 100, AdvanceDays: 7}))
+}
+
+// TestAppointmentConfig_InvalidAdvanceDays verifies ErrAdvanceDaysOutOfRange for out-of-range values.
+func TestAppointmentConfig_InvalidAdvanceDays(t *testing.T) {
+	svc, tenantID := makeQueueDoctorSvc(t)
+
+	for _, v := range []int{0, 31, 100} {
+		err := svc.SetAppointmentConfig(tenantID, service.AppointmentConfig{SlotMinutes: 30, MaxPerSlot: 10, AdvanceDays: v})
+		assert.ErrorIs(t, err, service.ErrAdvanceDaysOutOfRange, "advance_days=%d should be invalid", v)
+	}
+
+	// Boundary values.
+	assert.NoError(t, svc.SetAppointmentConfig(tenantID, service.AppointmentConfig{SlotMinutes: 30, MaxPerSlot: 10, AdvanceDays: 1}))
+	assert.NoError(t, svc.SetAppointmentConfig(tenantID, service.AppointmentConfig{SlotMinutes: 30, MaxPerSlot: 10, AdvanceDays: 30}))
+}
+
+// TestAppointmentConfig_NotFound verifies ErrTenantNotFound for unknown tenant.
+func TestAppointmentConfig_NotFound(t *testing.T) {
+	svc, _ := makeQueueDoctorSvc(t)
+
+	_, err := svc.GetAppointmentConfig(99999)
+	assert.ErrorIs(t, err, service.ErrTenantNotFound)
+
+	err = svc.SetAppointmentConfig(99999, service.AppointmentConfig{SlotMinutes: 30, MaxPerSlot: 10, AdvanceDays: 7})
+	assert.ErrorIs(t, err, service.ErrTenantNotFound)
+}

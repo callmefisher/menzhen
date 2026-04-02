@@ -1,29 +1,61 @@
 import { useState, useEffect } from 'react';
 import { Modal, Form, Input, Select, DatePicker, Spin, Tooltip, message } from 'antd';
-import dayjs from 'dayjs';
-import { createAppointment, getSlots, type SlotInfo } from '../api/appointment';
+import dayjs, { type Dayjs } from 'dayjs';
+import { createAppointment, updateAppointment, getSlots, type SlotInfo } from '../api/appointment';
+
+interface InitialValues {
+  id: number;
+  patient_name: string;
+  patient_id?: number;
+  doctor_id: number;
+  doctor_name: string;
+  room?: string;
+  appoint_date: string;
+  slot_start: string;
+  slot_end: string;
+}
 
 interface AppointmentModalProps {
   open: boolean;
   onClose: () => void;
   onSuccess: () => void;
   doctorOptions: Array<{ id: number; name: string; room: string }>;
+  initialValues?: InitialValues;
 }
 
-export default function AppointmentModal({ open, onClose, onSuccess, doctorOptions }: AppointmentModalProps) {
+export default function AppointmentModal({ open, onClose, onSuccess, doctorOptions, initialValues }: AppointmentModalProps) {
   const [form] = Form.useForm();
   const [slots, setSlots] = useState<SlotInfo[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  const isEdit = !!initialValues;
+
   const doctorId = Form.useWatch('doctor_id', form) as number | undefined;
-  const appointDateObj = Form.useWatch('appoint_date', form) as { format: (f: string) => string } | undefined;
+  const appointDateObj = Form.useWatch('appoint_date', form) as Dayjs | undefined;
   const appointDateStr = appointDateObj?.format('YYYY-MM-DD');
+
+  // Pre-fill form when editing
+  useEffect(() => {
+    if (open && initialValues) {
+      form.setFieldsValue({
+        patient_name: initialValues.patient_name,
+        doctor_id: initialValues.doctor_id,
+        appoint_date: dayjs(initialValues.appoint_date),
+      });
+      setSelectedSlot(initialValues.slot_start);
+    }
+    if (!open) {
+      form.resetFields();
+      setSelectedSlot(null);
+      setSlots([]);
+    }
+  }, [open, initialValues, form]);
 
   useEffect(() => {
     if (!doctorId || !appointDateStr) { setSlots([]); return; }
-    setSelectedSlot(null);
+    // Don't clear the selected slot when the effect fires during edit mode initialization
     setSlotsLoading(true);
     getSlots(appointDateStr, doctorId)
       .then(res => {
@@ -54,18 +86,37 @@ export default function AppointmentModal({ open, onClose, onSuccess, doctorOptio
     }
     const slot = slots.find(s => s.slot_start === selectedSlot);
     const doc = doctorOptions.find(d => d.id === values.doctor_id);
+    const apptDate = values.appoint_date.format('YYYY-MM-DD');
+    const slotEnd = slot?.slot_end ?? (isEdit ? initialValues.slot_end : '');
+    const doctorName = doc?.name ?? (isEdit ? initialValues.doctor_name : '');
+    const room = doc?.room ?? (isEdit ? (initialValues.room ?? '') : '');
+
     setSubmitting(true);
     try {
-      await createAppointment({
-        patient_name: values.patient_name,
-        doctor_id: values.doctor_id,
-        doctor_name: doc?.name ?? '',
-        room: doc?.room ?? '',
-        appoint_date: values.appoint_date.format('YYYY-MM-DD'),
-        slot_start: selectedSlot,
-        slot_end: slot?.slot_end ?? '',
-      });
-      message.success('预约成功');
+      if (isEdit) {
+        await updateAppointment(initialValues.id, {
+          patient_name: values.patient_name,
+          patient_id: initialValues.patient_id,
+          doctor_id: values.doctor_id,
+          doctor_name: doctorName,
+          room,
+          appoint_date: apptDate,
+          slot_start: selectedSlot,
+          slot_end: slotEnd,
+        });
+        message.success('预约已更新');
+      } else {
+        await createAppointment({
+          patient_name: values.patient_name,
+          doctor_id: values.doctor_id,
+          doctor_name: doctorName,
+          room,
+          appoint_date: apptDate,
+          slot_start: selectedSlot,
+          slot_end: slotEnd,
+        });
+        message.success('预约成功');
+      }
       form.resetFields();
       setSelectedSlot(null);
       setSlots([]);
@@ -73,7 +124,7 @@ export default function AppointmentModal({ open, onClose, onSuccess, doctorOptio
       onClose();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      message.error(msg ?? '预约失败');
+      message.error(msg ?? (isEdit ? '更新失败' : '预约失败'));
     } finally {
       setSubmitting(false);
     }
@@ -84,11 +135,11 @@ export default function AppointmentModal({ open, onClose, onSuccess, doctorOptio
 
   return (
     <Modal
-      title="新建预约"
+      title={isEdit ? '编辑预约' : '新建预约'}
       open={open}
       onCancel={handleClose}
       onOk={handleSubmit}
-      okText="确认预约"
+      okText={isEdit ? '保存' : '确认预约'}
       cancelText="取消"
       confirmLoading={submitting}
       destroyOnClose

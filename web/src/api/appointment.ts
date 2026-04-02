@@ -38,6 +38,20 @@ export const checkinAppointment = (id: number) =>
 export const cancelAppointment = (id: number) =>
   request.post<{ code: number; message?: string }>(`/appointments/${id}/cancel`);
 
+export interface UpdateAppointmentInput {
+  patient_name: string;
+  patient_id?: number;
+  doctor_id: number;
+  doctor_name: string;
+  room?: string;
+  appoint_date: string;
+  slot_start: string;
+  slot_end: string;
+}
+
+export const updateAppointment = (id: number, data: UpdateAppointmentInput) =>
+  request.put<{ code: number; data: Appointment }>(`/appointments/${id}`, data);
+
 export interface SlotInfo {
   slot_start: string;
   slot_end: string;

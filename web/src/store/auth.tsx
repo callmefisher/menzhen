@@ -7,7 +7,7 @@ import {
 } from 'react';
 import type { ReactNode } from 'react';
 import { login as loginApi, getMe, logout as logoutApi } from '../api/auth';
-import { getQueueEnabled } from '../api/queue-doctor';
+import { getQueueEnabled, getAppointmentEnabled } from '../api/queue-doctor';
 
 interface User {
   id: number;
@@ -23,6 +23,7 @@ interface AuthState {
   token: string | null;
   loading: boolean;
   queueEnabled: boolean;
+  appointmentEnabled: boolean;
 }
 
 interface AuthContextValue extends AuthState {
@@ -34,6 +35,7 @@ interface AuthContextValue extends AuthState {
   /** True only for username=admin with user:manage — can see across all tenants. */
   isSuperAdmin: boolean;
   fetchQueueEnabled: () => Promise<void>;
+  fetchAppointmentEnabled: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -54,15 +56,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     token: getStoredToken(),
     loading: true,
     queueEnabled: true,
+    appointmentEnabled: true,
   });
 
   const fetchQueueEnabled = useCallback(async () => {
     try {
       const res = await getQueueEnabled();
-      const body = res as any;
+      const body = res as unknown as { data?: { enabled?: boolean } };
       setState(prev => ({ ...prev, queueEnabled: body.data?.enabled ?? true }));
     } catch {
       setState(prev => ({ ...prev, queueEnabled: true }));
+    }
+  }, []);
+
+  const fetchAppointmentEnabled = useCallback(async () => {
+    try {
+      const res = await getAppointmentEnabled();
+      const body = res as unknown as { data?: { enabled?: boolean } };
+      setState(prev => ({ ...prev, appointmentEnabled: body.data?.enabled ?? true }));
+    } catch {
+      setState(prev => ({ ...prev, appointmentEnabled: true }));
     }
   }, []);
 
@@ -84,6 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             document.title = body.data.user.tenant_name;
           }
           fetchQueueEnabled();
+          fetchAppointmentEnabled();
         })
         .catch(() => {
           clearStoredToken();
@@ -93,6 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             token: null,
             loading: false,
             queueEnabled: true,
+            appointmentEnabled: true,
           });
         });
     } else {
@@ -120,15 +135,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       token: body.data.token,
       loading: false,
       queueEnabled: true,
+      appointmentEnabled: true,
     });
     if (body.data.user.tenant_name) {
       document.title = body.data.user.tenant_name;
     }
-    // Fetch actual queue toggle after login
+    // Fetch actual feature toggles after login
     try {
       const qRes = await getQueueEnabled();
-      const qBody = qRes as any;
+      const qBody = qRes as unknown as { data?: { enabled?: boolean } };
       setState(prev => ({ ...prev, queueEnabled: qBody.data?.enabled ?? true }));
+    } catch { /* keep default true */ }
+    try {
+      const aRes = await getAppointmentEnabled();
+      const aBody = aRes as unknown as { data?: { enabled?: boolean } };
+      setState(prev => ({ ...prev, appointmentEnabled: aBody.data?.enabled ?? true }));
     } catch { /* keep default true */ }
   }, []);
 
@@ -143,6 +164,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         token: null,
         loading: false,
         queueEnabled: true,
+        appointmentEnabled: true,
       });
     }
   }, []);
@@ -167,6 +189,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isGlobalAdmin,
         isSuperAdmin,
         fetchQueueEnabled,
+        fetchAppointmentEnabled,
       }}
     >
       {children}

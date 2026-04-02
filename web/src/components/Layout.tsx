@@ -58,7 +58,7 @@ export default function AppLayout() {
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [passwordForm] = Form.useForm();
-  const { user, logout, hasPermission, queueEnabled, fetchQueueEnabled } = useAuth();
+  const { user, logout, hasPermission, queueEnabled, fetchQueueEnabled, appointmentEnabled, fetchAppointmentEnabled } = useAuth();
   const { themeKey, themeConfig, setTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
@@ -84,7 +84,8 @@ export default function AppLayout() {
   useEffect(() => {
     window.scrollTo(0, 0);
     fetchQueueEnabled();
-  }, [fetchQueueEnabled]);
+    fetchAppointmentEnabled();
+  }, [fetchQueueEnabled, fetchAppointmentEnabled]);
 
   useEffect(() => {
     if (!hasPermission('inventory:read')) return;
@@ -92,8 +93,8 @@ export default function AppLayout() {
     const checkAlerts = async () => {
       try {
         const res = await listInventoryDrugs({ size: 9999 });
-        const body = res as any;
-        const drugs: InventoryDrug[] = body.data?.list || [];
+        const body = res as unknown as { data?: { list?: InventoryDrug[] } };
+        const drugs: InventoryDrug[] = body.data?.list ?? [];
         const config = JSON.parse(localStorage.getItem('inventory-alert-config') || '{}');
 
         const rawMuted = JSON.parse(localStorage.getItem('inventory-alert-muted') || '[]');
@@ -166,8 +167,8 @@ export default function AppLayout() {
     const checkFollowUps = async () => {
       try {
         const res = await getFollowUpStats();
-        const data = (res as any).data;
-        setFollowUpCount(data?.overdue_count || 0);
+        const body = res as unknown as { data?: { overdue_count?: number } };
+        setFollowUpCount(body.data?.overdue_count ?? 0);
       } catch { /* ignore */ }
     };
 
@@ -185,8 +186,8 @@ export default function AppLayout() {
   const fetchRxPendingCount = useCallback(async () => {
     try {
       const res = await getPendingCount();
-      const data = (res as any).data;
-      setRxPendingCount(typeof data?.count === 'number' ? data.count : 0);
+      const body = res as unknown as { data?: { count?: number } };
+      setRxPendingCount(typeof body.data?.count === 'number' ? body.data.count : 0);
     } catch { /* ignore */ }
   }, []);
 
@@ -199,8 +200,8 @@ export default function AppLayout() {
     if (!hasPermission('queue:read')) return;
     try {
       const res = await getQueueStats();
-      const data = (res as any).data;
-      setQueueWaitingCount(typeof data?.waiting === 'number' ? data.waiting : 0);
+      const body = res as unknown as { data?: { waiting?: number } };
+      setQueueWaitingCount(typeof body.data?.waiting === 'number' ? body.data.waiting : 0);
     } catch { /* ignore */ }
   }, [hasPermission]);
 
@@ -256,7 +257,7 @@ export default function AppLayout() {
     }
 
     // Appointment menu item
-    if (hasPermission('appointment:read')) {
+    if (hasPermission('appointment:read') && appointmentEnabled) {
       items.push({
         key: '/appointments',
         icon: <CalendarOutlined />,
@@ -402,11 +403,13 @@ export default function AppLayout() {
           icon: <SoundOutlined />,
           label: '排队设置',
         });
-        settingsChildren.push({
-          key: '/settings/appointment-slots',
-          icon: <CalendarOutlined />,
-          label: '预约时间段',
-        });
+        if (appointmentEnabled) {
+          settingsChildren.push({
+            key: '/settings/appointment-slots',
+            icon: <CalendarOutlined />,
+            label: '预约时间段',
+          });
+        }
         settingsChildren.push({
           key: '/settings/config',
           icon: <ToolOutlined />,
@@ -435,7 +438,7 @@ export default function AppLayout() {
     }
 
     return items;
-  }, [hasPermission, alertCount, followUpCount, rxPendingCount, queueWaitingCount, queueEnabled]);
+  }, [hasPermission, alertCount, followUpCount, rxPendingCount, queueWaitingCount, queueEnabled, appointmentEnabled]);
 
   // Determine selected keys from current path
   const selectedKeys = useMemo(() => {

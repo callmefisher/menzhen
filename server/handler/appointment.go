@@ -201,6 +201,76 @@ func (h *AppointmentHandler) Slots(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": slots}})
 }
 
+// updateAppointmentRequest is the JSON body for Update.
+type updateAppointmentRequest struct {
+	PatientName string `json:"patient_name" binding:"required"`
+	PatientID   *uint  `json:"patient_id"`
+	DoctorID    uint   `json:"doctor_id"    binding:"required"`
+	DoctorName  string `json:"doctor_name"  binding:"required"`
+	Room        string `json:"room"`
+	AppointDate string `json:"appoint_date" binding:"required"`
+	SlotStart   string `json:"slot_start"   binding:"required"`
+	SlotEnd     string `json:"slot_end"     binding:"required"`
+}
+
+// Update handles PUT /appointments/:id
+// Success  200: { code: 0, data: Appointment }
+// Not found 404
+// Conflict  409: ErrUpdateNotAllowed
+// Bad req   400: invalid id or body
+func (h *AppointmentHandler) Update(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 1, "message": "missing tenant"})
+		return
+	}
+	idStr := c.Param("id")
+	apptID, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": "invalid appointment id"})
+		return
+	}
+
+	var req updateAppointmentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": err.Error()})
+		return
+	}
+
+	in := service.UpdateAppointmentInput{
+		PatientName: req.PatientName,
+		PatientID:   req.PatientID,
+		DoctorID:    req.DoctorID,
+		DoctorName:  req.DoctorName,
+		Room:        req.Room,
+		AppointDate: req.AppointDate,
+		SlotStart:   req.SlotStart,
+		SlotEnd:     req.SlotEnd,
+	}
+
+	appt, err := h.svc.Update(uint(tenantID), uint(apptID), in)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrAppointmentNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": err.Error()})
+		case errors.Is(err, service.ErrUpdateNotAllowed):
+			c.JSON(http.StatusConflict, gin.H{"code": 1, "message": err.Error()})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "internal server error"})
+		}
+		return
+	}
+
+	if ws.DefaultHub != nil {
+		ws.DefaultHub.Broadcast(tenantID, ws.Message{
+			Type:    "appt_updated",
+			Payload: gin.H{"appointment": appt},
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": appt})
+}
+
 // Cancel handles POST /appointments/:id/cancel
 // Success  200: { code: 0, data: nil }
 // Not found 404
