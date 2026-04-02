@@ -247,15 +247,30 @@ func (s *AppointmentService) Checkin(tenantID, apptID uint) (*model.QueueEntry, 
 // no_show across ALL tenants. Intentionally cross-tenant — called by the midnight scheduler only.
 func (s *AppointmentService) MarkNoShowAllTenantsForPastDates() (int64, error) {
 	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
-	// intentional: cross-tenant scheduled job — marks no_show across all tenants
-	result := s.DB.Model(&model.Appointment{}).
+	var total int64
+
+	// 1. Queued appointments from past dates that were never attended.
+	r1 := s.DB.Model(&model.Appointment{}).
 		Where("appoint_date <= ? AND status = ? AND queue_entry_id IS NOT NULL",
 			yesterday, model.AppointmentStatusQueued).
 		Update("status", model.AppointmentStatusNoShow)
-	if result.Error != nil {
-		return 0, fmt.Errorf("mark no_show: %w", result.Error)
+	if r1.Error != nil {
+		return 0, fmt.Errorf("mark no_show (queued): %w", r1.Error)
 	}
-	return result.RowsAffected, nil
+	total += r1.RowsAffected
+
+	// 2. Pending appointments from past dates that were never enqueued
+	// (e.g. server was down all day — they missed their window entirely).
+	r2 := s.DB.Model(&model.Appointment{}).
+		Where("appoint_date <= ? AND status = ?",
+			yesterday, model.AppointmentStatusPending).
+		Update("status", model.AppointmentStatusNoShow)
+	if r2.Error != nil {
+		return 0, fmt.Errorf("mark no_show (pending): %w", r2.Error)
+	}
+	total += r2.RowsAffected
+
+	return total, nil
 }
 
 // SlotInfo describes the availability of a single time slot for a given doctor and date.

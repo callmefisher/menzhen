@@ -93,6 +93,7 @@ func main() {
 				defer retryTicker.Stop()
 				for range retryTicker.C {
 					if len(failed) == 0 || retries >= maxRetries {
+						retryTicker.Stop()
 						break
 					}
 					retries++
@@ -113,6 +114,38 @@ func main() {
 			next := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 5, 0, now.Location())
 			time.Sleep(time.Until(next))
 			scheduleAutoEnqueue()
+		}
+	}()
+
+	// Daily database cleanup: runs immediately on startup (then every 24h as backup).
+	// Designed for servers that may run only ~1 hour/day at an arbitrary time.
+	// Retry logic: up to 3 attempts with 5-min intervals on failure.
+	go func() {
+		runCleanup := func() {
+			const maxRetries = 3
+			for attempt := 1; attempt <= maxRetries; attempt++ {
+				cleanupSvc := service.NewDBCleanupService(db)
+				result, err := cleanupSvc.CleanupOrphanData()
+				if err == nil {
+					log.Printf("[db-cleanup] done: %+v", result.Cleaned)
+					return
+				}
+				log.Printf("[db-cleanup] attempt %d/%d failed: %v", attempt, maxRetries, err)
+				if attempt < maxRetries {
+					time.Sleep(5 * time.Minute)
+				}
+			}
+			log.Printf("[db-cleanup] all retries exhausted, will retry on next startup or 24h tick")
+		}
+
+		// Run immediately on startup — covers any-time boot scenario
+		runCleanup()
+
+		// Also run every 24h in case the server stays up continuously
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			runCleanup()
 		}
 	}()
 
