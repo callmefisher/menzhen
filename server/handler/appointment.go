@@ -83,6 +83,17 @@ func (h *AppointmentHandler) Create(c *gin.Context) {
 		})
 	}
 
+	// Immediately enqueue if the appointment is for today so it appears in the queue
+	// without waiting for the midnight scheduler.
+	if err := h.svc.EnqueueAppointment(uint(tenantID), appt.ID, h.queueSvc); err == nil {
+		if ws.DefaultHub != nil {
+			ws.DefaultHub.Broadcast(tenantID, ws.Message{
+				Type:    "queue_update",
+				Payload: gin.H{"action": "enqueued", "appointment_id": appt.ID},
+			})
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": appt})
 }
 // Success 200: { code: 0, data: { list: []Appointment } }
@@ -266,6 +277,16 @@ func (h *AppointmentHandler) Update(c *gin.Context) {
 			Type:    "appt_updated",
 			Payload: gin.H{"appointment": appt},
 		})
+	}
+
+	// Enqueue immediately if the (possibly rescheduled) appointment is now for today.
+	if err := h.svc.EnqueueAppointment(uint(tenantID), appt.ID, h.queueSvc); err == nil {
+		if ws.DefaultHub != nil {
+			ws.DefaultHub.Broadcast(tenantID, ws.Message{
+				Type:    "queue_update",
+				Payload: gin.H{"action": "enqueued", "appointment_id": appt.ID},
+			})
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": appt})

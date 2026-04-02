@@ -87,15 +87,17 @@ func main() {
 			}
 			run()
 
-			// Retry loop: up to maxRetries, every 5 min
-			retryTicker := time.NewTicker(5 * time.Minute)
-			defer retryTicker.Stop()
-			for range retryTicker.C {
-				if len(failed) == 0 || retries >= maxRetries {
-					break
+			// Retry loop: up to maxRetries, every 5 min (only if there are failures)
+			if len(failed) > 0 {
+				retryTicker := time.NewTicker(5 * time.Minute)
+				defer retryTicker.Stop()
+				for range retryTicker.C {
+					if len(failed) == 0 || retries >= maxRetries {
+						break
+					}
+					retries++
+					run()
 				}
-				retries++
-				run()
 			}
 			if len(failed) > 0 {
 				log.Printf("appointment auto-enqueue: gave up after %d retries, failed IDs: %v", maxRetries, failed)
