@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/callmefisher/menzhen/server/middleware"
 	"github.com/callmefisher/menzhen/server/model"
@@ -53,6 +54,10 @@ func (h *AIAnalysisHandler) Analyze(c *gin.Context) {
 		if err := h.db.Where("record_id = ? AND tenant_id = ?", req.RecordID, tenantID).First(&cached).Error; err == nil {
 			// Found cached result — check if diagnosis matches
 			if cached.Diagnosis == req.Diagnosis {
+				now := time.Now()
+				if res := h.db.Model(&cached).Update("last_accessed_at", now); res.Error != nil {
+					log.Printf("Analyze: update last_accessed_at failed: %v", res.Error)
+				}
 				Success(c, gin.H{"analysis": cached.Analysis, "cached": true})
 				return
 			}
@@ -69,18 +74,21 @@ func (h *AIAnalysisHandler) Analyze(c *gin.Context) {
 	// Persist result if record_id is provided
 	cached := false
 	if req.RecordID > 0 {
+		now := time.Now()
 		analysis := model.AIAnalysis{
-			RecordID:  req.RecordID,
-			TenantID:  tenantID,
-			Diagnosis: req.Diagnosis,
-			Analysis:  result,
+			RecordID:       req.RecordID,
+			TenantID:       tenantID,
+			Diagnosis:      req.Diagnosis,
+			Analysis:       result,
+			LastAccessedAt: &now,
 		}
 		// Upsert: update if exists, create if not
 		var existing model.AIAnalysis
 		if err := h.db.Where("record_id = ? AND tenant_id = ?", req.RecordID, tenantID).First(&existing).Error; err == nil {
 			if err := h.db.Model(&existing).Updates(map[string]interface{}{
-				"diagnosis": req.Diagnosis,
-				"analysis":  result,
+				"diagnosis":        req.Diagnosis,
+				"analysis":         result,
+				"last_accessed_at": now,
 			}).Error; err == nil {
 				cached = true
 			}
@@ -115,19 +123,26 @@ func (h *AIAnalysisHandler) SaveCached(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
 
 	// Upsert: update if exists, create if not
+	now := time.Now()
 	var existing model.AIAnalysis
 	if err := h.db.Where("record_id = ? AND tenant_id = ?", recordID, tenantID).First(&existing).Error; err == nil {
-		h.db.Model(&existing).Updates(map[string]interface{}{
-			"diagnosis": req.Diagnosis,
-			"analysis":  req.Analysis,
-		})
+		if res := h.db.Model(&existing).Updates(map[string]interface{}{
+			"diagnosis":        req.Diagnosis,
+			"analysis":         req.Analysis,
+			"last_accessed_at": now,
+		}); res.Error != nil {
+			log.Printf("SaveCached: update failed for record %d: %v", recordID, res.Error)
+		}
 	} else {
-		h.db.Create(&model.AIAnalysis{
-			RecordID:  recordID,
-			TenantID:  tenantID,
-			Diagnosis: req.Diagnosis,
-			Analysis:  req.Analysis,
-		})
+		if res := h.db.Create(&model.AIAnalysis{
+			RecordID:       recordID,
+			TenantID:       tenantID,
+			Diagnosis:      req.Diagnosis,
+			Analysis:       req.Analysis,
+			LastAccessedAt: &now,
+		}); res.Error != nil {
+			log.Printf("SaveCached: create failed for record %d: %v", recordID, res.Error)
+		}
 	}
 
 	Success(c, nil)
@@ -150,6 +165,9 @@ func (h *AIAnalysisHandler) GetCached(c *gin.Context) {
 		Success(c, gin.H{"analysis": nil})
 		return
 	}
+
+	now := time.Now()
+	h.db.Model(&cached).Update("last_accessed_at", now)
 
 	Success(c, gin.H{
 		"analysis":  cached.Analysis,
@@ -180,6 +198,10 @@ func (h *AIAnalysisHandler) AnalyzeStream(c *gin.Context) {
 		var cached model.AIAnalysis
 		if err := h.db.Where("record_id = ? AND tenant_id = ?", req.RecordID, tenantID).First(&cached).Error; err == nil {
 			if cached.Diagnosis == req.Diagnosis {
+				now := time.Now()
+				if res := h.db.Model(&cached).Update("last_accessed_at", now); res.Error != nil {
+					log.Printf("AnalyzeStream: update last_accessed_at failed: %v", res.Error)
+				}
 				// Return cached result as a single SSE "cached" event
 				c.Header("Content-Type", "text/event-stream")
 				c.Header("Cache-Control", "no-cache")
@@ -219,20 +241,27 @@ func (h *AIAnalysisHandler) AnalyzeStream(c *gin.Context) {
 
 	// Always persist result to DB even if client disconnected (chatStream continues accumulating)
 	if req.RecordID > 0 && fullContent != "" {
+		now := time.Now()
 		analysis := model.AIAnalysis{
-			RecordID:  req.RecordID,
-			TenantID:  tenantID,
-			Diagnosis: req.Diagnosis,
-			Analysis:  fullContent,
+			RecordID:       req.RecordID,
+			TenantID:       tenantID,
+			Diagnosis:      req.Diagnosis,
+			Analysis:       fullContent,
+			LastAccessedAt: &now,
 		}
 		var existing model.AIAnalysis
 		if err := h.db.Where("record_id = ? AND tenant_id = ?", req.RecordID, tenantID).First(&existing).Error; err == nil {
-			h.db.Model(&existing).Updates(map[string]interface{}{
-				"diagnosis": req.Diagnosis,
-				"analysis":  fullContent,
-			})
+			if res := h.db.Model(&existing).Updates(map[string]interface{}{
+				"diagnosis":        req.Diagnosis,
+				"analysis":         fullContent,
+				"last_accessed_at": now,
+			}); res.Error != nil {
+				log.Printf("AnalyzeStream: update ai_analysis failed for record %d: %v", req.RecordID, res.Error)
+			}
 		} else {
-			h.db.Create(&analysis)
+			if res := h.db.Create(&analysis); res.Error != nil {
+				log.Printf("AnalyzeStream: create ai_analysis failed for record %d: %v", req.RecordID, res.Error)
+			}
 		}
 	}
 

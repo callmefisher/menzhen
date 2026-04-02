@@ -368,3 +368,73 @@ func TestUpdateAppointment_ReturnsFreshData(t *testing.T) {
 	assert.Equal(t, "10:00", updated.SlotStart)
 	assert.Equal(t, "10:30", updated.SlotEnd)
 }
+
+// ── MarkNoShowAllTenantsForPastDates ─────────────────────────────────────────
+
+func TestMarkNoShow_MarksQueuedPastAppointments(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	tenant := testutil.SeedTestTenant(t, db, "诊所", "clinic")
+	svc := service.NewAppointmentService(db)
+	queueSvc := service.NewQueueService(db)
+
+	// Create a pending appointment for yesterday and enqueue it
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	appt, err := svc.CreateAppointment(uint(tenant.ID), service.CreateAppointmentInput{
+		PatientName: "张三", DoctorID: 1, DoctorName: "李医生",
+		AppointDate: yesterday, SlotStart: "09:00", SlotEnd: "09:30",
+	})
+	require.NoError(t, err)
+	require.NoError(t, svc.EnqueueAppointment(uint(tenant.ID), appt.ID, queueSvc))
+
+	affected, err := svc.MarkNoShowAllTenantsForPastDates()
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), affected)
+
+	var updated model.Appointment
+	require.NoError(t, db.First(&updated, appt.ID).Error)
+	assert.Equal(t, model.AppointmentStatusNoShow, updated.Status)
+}
+
+func TestMarkNoShow_MarksPendingPastAppointments(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	tenant := testutil.SeedTestTenant(t, db, "诊所", "clinic")
+	svc := service.NewAppointmentService(db)
+
+	// Pending appointment from yesterday — server was down, never enqueued
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	appt, err := svc.CreateAppointment(uint(tenant.ID), service.CreateAppointmentInput{
+		PatientName: "李四", DoctorID: 1, DoctorName: "李医生",
+		AppointDate: yesterday, SlotStart: "10:00", SlotEnd: "10:30",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, model.AppointmentStatusPending, appt.Status)
+
+	affected, err := svc.MarkNoShowAllTenantsForPastDates()
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), affected)
+
+	var updated model.Appointment
+	require.NoError(t, db.First(&updated, appt.ID).Error)
+	assert.Equal(t, model.AppointmentStatusNoShow, updated.Status)
+}
+
+func TestMarkNoShow_PreservesTodayPendingAppointments(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	tenant := testutil.SeedTestTenant(t, db, "诊所", "clinic")
+	svc := service.NewAppointmentService(db)
+
+	// Today's pending appointment must NOT be touched
+	appt, err := svc.CreateAppointment(uint(tenant.ID), service.CreateAppointmentInput{
+		PatientName: "王五", DoctorID: 1, DoctorName: "李医生",
+		AppointDate: time.Now().Format("2006-01-02"), SlotStart: "14:00", SlotEnd: "14:30",
+	})
+	require.NoError(t, err)
+
+	affected, err := svc.MarkNoShowAllTenantsForPastDates()
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), affected)
+
+	var updated model.Appointment
+	require.NoError(t, db.First(&updated, appt.ID).Error)
+	assert.Equal(t, model.AppointmentStatusPending, updated.Status)
+}
