@@ -8,12 +8,15 @@ import (
 	"gorm.io/gorm"
 )
 
-var ErrInvalidRange = errors.New("range_start 必须 >= 1，且 range_end >= range_start")
+var (
+	ErrInvalidRange    = errors.New("range_start 必须 >= 1，且 range_end >= range_start")
+	ErrInvalidWeekdays = errors.New("weekdays 必须在 0–127 之间")
+)
 
 type UpsertScheduleInput struct {
-	Weekdays   uint8
-	RangeStart int
-	RangeEnd   int
+	Weekdays   uint8 `json:"weekdays"`
+	RangeStart int   `json:"range_start"`
+	RangeEnd   int   `json:"range_end"`
 }
 
 type DoctorScheduleService struct {
@@ -50,7 +53,10 @@ func (s *DoctorScheduleService) Get(tenantID, doctorID uint) (*model.DoctorSched
 
 // Upsert creates or updates the doctor's schedule config.
 func (s *DoctorScheduleService) Upsert(tenantID, doctorID uint, in UpsertScheduleInput) (*model.DoctorScheduleConfig, error) {
-	if in.RangeStart < 1 || in.RangeEnd < in.RangeStart {
+	if in.Weekdays > 127 {
+		return nil, ErrInvalidWeekdays
+	}
+	if in.RangeStart < 1 || in.RangeEnd < in.RangeStart || in.RangeEnd > 365 {
 		return nil, ErrInvalidRange
 	}
 

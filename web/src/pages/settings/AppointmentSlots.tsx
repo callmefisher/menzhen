@@ -95,9 +95,14 @@ export default function AppointmentSlots() {
   // Load doctor schedule config when selected doctor changes
   useEffect(() => {
     if (!selectedDoctorId) return;
+    let cancelled = false;
     setScheduleLoading(true);
+    setSelectedWeekdays([]);
+    setRangeStart(1);
+    setRangeEnd(30);
     getDoctorSchedule(selectedDoctorId)
       .then(res => {
+        if (cancelled) return;
         const body = res as unknown as { data?: DoctorScheduleConfig };
         const cfg = body.data ?? { doctor_id: selectedDoctorId, weekdays: 0, range_start: 1, range_end: 30 };
         setSelectedWeekdays(fromBitmask(cfg.weekdays));
@@ -105,11 +110,14 @@ export default function AppointmentSlots() {
         setRangeEnd(cfg.range_end);
       })
       .catch(() => {
-        setSelectedWeekdays([]);
-        setRangeStart(1);
-        setRangeEnd(30);
+        if (!cancelled) {
+          setSelectedWeekdays([]);
+          setRangeStart(1);
+          setRangeEnd(30);
+        }
       })
-      .finally(() => setScheduleLoading(false));
+      .finally(() => { if (!cancelled) setScheduleLoading(false); });
+    return () => { cancelled = true; };
   }, [selectedDoctorId]);
 
   const handleSaveSchedule = useCallback(async () => {
