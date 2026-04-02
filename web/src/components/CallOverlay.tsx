@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from 'antd';
 import { formatRoom } from '../utils/format';
-import { useCallSound } from '../hooks/useCallSound';
 
 interface CallOverlayProps {
   visible: boolean;
@@ -12,7 +11,7 @@ interface CallOverlayProps {
   onClose: () => void;
   duration?: number; // ms, default 15000
   isMobile?: boolean;
-  soundEnabled?: boolean;
+  soundEnabled?: boolean; // kept for API compatibility, sound is triggered by caller
 }
 
 export default function CallOverlay({
@@ -24,24 +23,16 @@ export default function CallOverlay({
   onClose,
   duration = 15000,
   isMobile = false,
-  soundEnabled = false,
 }: CallOverlayProps) {
   const [progress, setProgress] = useState(100);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startRef = useRef(0);
 
   const displayRoom = formatRoom(room);
-  const { speak, cancel } = useCallSound();
 
-  // Track whether we've already spoken for the current visible=true activation
-  // to avoid re-triggering speak when other props (name/seq/room) change mid-display.
-  const spokenRef = useRef(false);
-
-  // Timer effect — only depends on visible/duration/onClose
   useEffect(() => {
     if (!visible) {
       if (timerRef.current) clearInterval(timerRef.current);
-      spokenRef.current = false;
       return;
     }
     startRef.current = Date.now();
@@ -59,17 +50,6 @@ export default function CallOverlay({
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [visible, duration, onClose]);
-
-  // Sound effect — fires once when overlay becomes visible
-  useEffect(() => {
-    if (visible && soundEnabled && !spokenRef.current) {
-      spokenRef.current = true;
-      speak(`请${seq}号 ${name} 到${displayRoom}就诊`);
-    }
-    if (!visible) {
-      cancel();
-    }
-  }, [visible, soundEnabled, seq, name, displayRoom, speak, cancel]);
 
   if (!visible) return null;
 

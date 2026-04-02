@@ -14,13 +14,14 @@ import (
 
 // QueueDoctorHandler handles HTTP endpoints for managing the per-tenant doctor queue list.
 type QueueDoctorHandler struct {
-	svc *service.QueueDoctorService
-	db  *gorm.DB
+	svc      *service.QueueDoctorService
+	schedSvc *service.DoctorScheduleService
+	db       *gorm.DB
 }
 
 // NewQueueDoctorHandler creates a new QueueDoctorHandler.
-func NewQueueDoctorHandler(svc *service.QueueDoctorService, db *gorm.DB) *QueueDoctorHandler {
-	return &QueueDoctorHandler{svc: svc, db: db}
+func NewQueueDoctorHandler(svc *service.QueueDoctorService, schedSvc *service.DoctorScheduleService, db *gorm.DB) *QueueDoctorHandler {
+	return &QueueDoctorHandler{svc: svc, schedSvc: schedSvc, db: db}
 }
 
 // List handles GET /queue-doctors — returns all queue doctors for the tenant with user_name populated.
@@ -489,4 +490,53 @@ func (h *QueueDoctorHandler) SetAppointmentConfig(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": nil})
+}
+
+// GetDoctorSchedule handles GET /queue-doctors/:id/schedule
+func (h *QueueDoctorHandler) GetDoctorSchedule(c *gin.Context) {
+	tenantID := uint(middleware.GetTenantID(c))
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 1, "message": "missing tenant"})
+		return
+	}
+	doctorID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || doctorID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": "invalid doctor id"})
+		return
+	}
+	cfg, err := h.schedSvc.Get(tenantID, uint(doctorID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "internal server error"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": cfg})
+}
+
+// SetDoctorSchedule handles PUT /queue-doctors/:id/schedule
+func (h *QueueDoctorHandler) SetDoctorSchedule(c *gin.Context) {
+	tenantID := uint(middleware.GetTenantID(c))
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 1, "message": "missing tenant"})
+		return
+	}
+	doctorID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || doctorID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": "invalid doctor id"})
+		return
+	}
+	var req service.UpsertScheduleInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": err.Error()})
+		return
+	}
+	cfg, err := h.schedSvc.Upsert(tenantID, uint(doctorID), req)
+	if err != nil {
+		if errors.Is(err, service.ErrInvalidRange) {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "internal server error"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": cfg})
 }

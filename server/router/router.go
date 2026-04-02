@@ -60,7 +60,8 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	pnHandler := handler.NewPrescriptionNotificationHandler(db)
 	queueHandler := handler.NewQueueHandler(db)
 	qdSvc := service.NewQueueDoctorService(db)
-	qdHandler := handler.NewQueueDoctorHandler(qdSvc, db)
+	schedSvc := service.NewDoctorScheduleService(db)
+	qdHandler := handler.NewQueueDoctorHandler(qdSvc, schedSvc, db)
 
 	// ---------- Route groups ----------
 
@@ -366,6 +367,8 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			qd.PUT("/sort", middleware.RequirePermission(db, "tenant:user:manage"), qdHandler.UpdateSort)
 			qd.PUT("/:id", middleware.RequirePermission(db, "tenant:user:manage"), qdHandler.Update)
 			qd.DELETE("/:id", middleware.RequirePermission(db, "tenant:user:manage"), qdHandler.Delete)
+			qd.GET("/:id/schedule", middleware.RequirePermission(db, "appointment:read"), qdHandler.GetDoctorSchedule)
+			qd.PUT("/:id/schedule", middleware.RequirePermission(db, "appointment:update"), qdHandler.SetDoctorSchedule)
 		}
 		authenticated.GET("/tenant/queue-enabled", middleware.RequirePermission(db, "queue:read"), qdHandler.GetQueueEnabled)
 		authenticated.PUT("/tenant/queue-enabled", middleware.RequirePermission(db, "tenant:user:manage"), qdHandler.SetQueueEnabled)

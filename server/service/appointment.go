@@ -49,12 +49,12 @@ func NewAppointmentService(db *gorm.DB) *AppointmentService {
 	return &AppointmentService{DB: db}
 }
 
-// CreateAppointment creates an appointment. Same patient same date is rejected.
+// CreateAppointment creates an appointment. Same patient same doctor same date is rejected.
 func (s *AppointmentService) CreateAppointment(tenantID uint, in CreateAppointmentInput) (*model.Appointment, error) {
 	var count int64
 	dupQuery := s.DB.Model(&model.Appointment{}).
-		Where("tenant_id = ? AND appoint_date = ? AND status NOT IN (?,?)",
-			tenantID, in.AppointDate,
+		Where("tenant_id = ? AND doctor_id = ? AND appoint_date = ? AND status NOT IN (?,?)",
+			tenantID, in.DoctorID, in.AppointDate,
 			model.AppointmentStatusCancelled, model.AppointmentStatusNoShow)
 	if in.PatientID != nil {
 		dupQuery = dupQuery.Where("patient_id = ?", *in.PatientID)
@@ -109,6 +109,10 @@ func (s *AppointmentService) Update(tenantID, apptID uint, in UpdateAppointmentI
 		"slot_end":     in.SlotEnd,
 	}).Error; err != nil {
 		return nil, fmt.Errorf("update appointment: %w", err)
+	}
+	// Reload to return fresh data (GORM Updates does not refresh the struct)
+	if err := s.DB.First(&appt, appt.ID).Error; err != nil {
+		return nil, fmt.Errorf("reload appointment: %w", err)
 	}
 	return &appt, nil
 }
@@ -239,9 +243,9 @@ func (s *AppointmentService) Checkin(tenantID, apptID uint) (*model.QueueEntry, 
 	return &entry, nil
 }
 
-// MarkNoShowForPastDates marks yesterday-and-earlier unattended queued appointments as no_show.
-// Called by the midnight scheduler before auto-enqueuing today's appointments.
-func (s *AppointmentService) MarkNoShowForPastDates() (int64, error) {
+// MarkNoShowAllTenantsForPastDates marks yesterday-and-earlier unattended queued appointments as
+// no_show across ALL tenants. Intentionally cross-tenant — called by the midnight scheduler only.
+func (s *AppointmentService) MarkNoShowAllTenantsForPastDates() (int64, error) {
 	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
 	// intentional: cross-tenant scheduled job — marks no_show across all tenants
 	result := s.DB.Model(&model.Appointment{}).

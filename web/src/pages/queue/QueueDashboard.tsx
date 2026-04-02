@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Input, Select, Slider, Tooltip, Modal, message } from 'antd';
 import { SoundOutlined, DeleteOutlined, PlusOutlined, CalendarOutlined } from '@ant-design/icons';
@@ -14,6 +14,44 @@ import { formatRoom, formatQueueTime, formatQueueTimeFull } from '../../utils/fo
 
 const DOCTOR_COLORS = ['#52c41a', '#faad14', '#722ed1', '#cf1322', '#1677ff', '#13c2c2', '#eb2f96', '#fa541c'];
 
+// Monotonically increasing counter for uniquely identifying each call event within this session.
+let callIdCounter = 0;
+
+/**
+ * Speak a call announcement with natural pauses using multiple utterances.
+ * Segments: "请" → pause → "{seq}号" → pause → "{name}" → pause → "到{room}就诊"
+ * Falls back to a single utterance if speechSynthesis is unavailable.
+ */
+function speakTTS(call: { seq: number; name: string; room: string }, voices: SpeechSynthesisVoice[]) {
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+
+  const zhVoice =
+    voices.find(v => v.lang === 'zh-CN') ??
+    voices.find(v => v.lang === 'zh-TW') ??
+    voices.find(v => v.lang.startsWith('zh')) ??
+    null;
+
+  const roomPart = call.room ? `到${call.room}就诊` : '就诊';
+  // Break into segments that pause naturally between each phrase
+  const segments = [
+    { text: '请', rate: 0.85 },
+    { text: `${call.seq}号`, rate: 0.8 },
+    { text: call.name, rate: 0.85 },
+    { text: roomPart, rate: 0.85 },
+  ];
+
+  segments.forEach(seg => {
+    const utter = new SpeechSynthesisUtterance(seg.text);
+    utter.lang = 'zh-CN';
+    utter.rate = seg.rate;
+    utter.pitch = 1.05;
+    utter.volume = 1.0;
+    if (zhVoice) utter.voice = zhVoice;
+    window.speechSynthesis.speak(utter);
+  });
+}
+
 interface DoctorGroup {
   doctorId: number;
   doctorName: string;
@@ -22,6 +60,7 @@ interface DoctorGroup {
 }
 
 interface CallNotification {
+  callId: number; // monotonically increasing, uniquely identifies each call event
   seq: number;
   name: string;
   room: string;
@@ -55,6 +94,20 @@ export default function QueueDashboard() {
   const [callDurationMs, setCallDurationMs] = useState(10000);
   const [showArrivalTime, setShowArrivalTime] = useState<boolean | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  // Pre-load TTS voices on mount so they're ready when handleCall fires.
+  // getVoices() is synchronous but returns [] until the browser loads the list;
+  // listening to voiceschanged ensures we have voices when the user first clicks.
+  const ttsVoicesRef = useRef<SpeechSynthesisVoice[]>([]);
+  useEffect(() => {
+    if (!window.speechSynthesis) return;
+    const load = () => { ttsVoicesRef.current = window.speechSynthesis.getVoices(); };
+    load();
+    window.speechSynthesis.addEventListener('voiceschanged', load);
+    return () => window.speechSynthesis.removeEventListener('voiceschanged', load);
+  }, []);
+  // Timestamp of the last locally-initiated call. DoctorCard skips TTS for WS
+  // events that arrive within 2 s of a local call (same terminal, same event).
+  const localCallTimestampRef = useRef<number>(0);
   const [doctors, setDoctors] = useState<DoctorOption[]>([]);
   const [checkinLoading, setCheckinLoading] = useState<Record<number, boolean>>({});
   const [apptModalOpen, setApptModalOpen] = useState(false);
@@ -191,7 +244,7 @@ export default function QueueDashboard() {
     const payload = (msg as { payload?: { doctor_id?: number; seq?: number; patient_name?: string; room?: string; doctor_name?: string } })?.payload;
     const { doctor_id, seq, patient_name, room, doctor_name } = payload || {};
     if (seq && seq > 0 && doctor_id) {
-      const notification: CallNotification = { seq, name: patient_name ?? '', room: room ?? '', doctor: doctor_name ?? '' };
+      const notification: CallNotification = { callId: ++callIdCounter, seq, name: patient_name ?? '', room: room ?? '', doctor: doctor_name ?? '' };
       setDoctorCallStates(prev => {
         const existing = prev[doctor_id] ?? { queue: [], current: null };
         return { ...prev, [doctor_id]: { ...existing, queue: [...existing.queue, notification] } };
@@ -311,21 +364,13 @@ export default function QueueDashboard() {
   // Handle call — speak is invoked synchronously in the click handler to satisfy
   // browser autoplay policy; async callNumber happens after.
   const handleCall = async (entry: QueueEntry) => {
-    if (soundEnabled && window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-      const room = entry.room ? entry.room.replace(/诊室$/u, '') + '诊室' : '诊室';
-      const utter = new SpeechSynthesisUtterance(
-        `请${entry.seq_number}号 ${entry.patient_name} 到${room}就诊`
-      );
-      utter.lang = 'zh-CN';
-      utter.rate = 0.9;
-      const voices = window.speechSynthesis.getVoices();
-      const zhVoice = voices.find(v => v.lang === 'zh-CN')
-        ?? voices.find(v => v.lang === 'zh-TW')
-        ?? voices.find(v => v.lang.startsWith('zh'))
-        ?? null;
-      if (zhVoice) utter.voice = zhVoice;
-      window.speechSynthesis.speak(utter);
+    if (soundEnabled) {
+      const voices = ttsVoicesRef.current.length
+        ? ttsVoicesRef.current
+        : window.speechSynthesis?.getVoices() ?? [];
+      speakTTS({ seq: entry.seq_number, name: entry.patient_name, room: entry.room }, voices);
+      // Mark this terminal as the initiator so DoctorCard skips the echoed WS TTS
+      localCallTimestampRef.current = Date.now();
     }
     try {
       await callNumber(entry.id);
@@ -530,6 +575,8 @@ export default function QueueDashboard() {
                 onCheckin={handleCheckin}
                 checkinLoading={checkinLoading}
                 soundEnabled={soundEnabled}
+                ttsVoicesRef={ttsVoicesRef}
+                localCallTimestampRef={localCallTimestampRef}
               />
             ))
           )}
@@ -600,6 +647,8 @@ export default function QueueDashboard() {
             onCheckin={handleCheckin}
             checkinLoading={checkinLoading}
             soundEnabled={soundEnabled}
+            ttsVoicesRef={ttsVoicesRef}
+            localCallTimestampRef={localCallTimestampRef}
           />
         ))}
       </div>
@@ -628,7 +677,7 @@ function StatBadge({ count, label, color, bgFrom, bgTo, border }: {
   );
 }
 
-function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall, callDuration, onCallClose, hasWritePermission, pageVisible = true, showArrivalTime, onCheckin, checkinLoading, soundEnabled }: {
+function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall, callDuration, onCallClose, hasWritePermission, pageVisible = true, showArrivalTime, onCheckin, checkinLoading, soundEnabled, ttsVoicesRef, localCallTimestampRef }: {
   group: DoctorGroup;
   colorIndex: number;
   speed: number;
@@ -643,10 +692,26 @@ function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall,
   onCheckin: (apptId: number, entryId: number) => void;
   checkinLoading: Record<number, boolean>;
   soundEnabled?: boolean;
+  ttsVoicesRef: React.RefObject<SpeechSynthesisVoice[]>;
+  localCallTimestampRef: React.RefObject<number>;
 }) {
   const color = DOCTOR_COLORS[colorIndex % DOCTOR_COLORS.length];
   const scrollRef = useRef<HTMLDivElement>(null);
   const hoveredRef = useRef(false);
+  const prevCallIdRef = useRef<number>(-1);
+
+  // Speak TTS when a new call arrives from another terminal (via WebSocket).
+  // Each call event has a unique callId, so repeat calls to the same patient
+  // are handled correctly. Skip if this terminal initiated the call within 2 s.
+  useEffect(() => {
+    if (!currentCall || !soundEnabled || !window.speechSynthesis) return;
+    // deduplicate by callId — prevents firing twice on same event
+    if (currentCall.callId === prevCallIdRef.current) return;
+    prevCallIdRef.current = currentCall.callId;
+    // If this terminal fired the call recently, the handleCall already spoke it
+    if (Date.now() - (localCallTimestampRef.current ?? 0) < 2000) return;
+    speakTTS(currentCall, ttsVoicesRef.current ?? []);
+  }, [currentCall, soundEnabled, ttsVoicesRef, localCallTimestampRef]);
 
   // Auto scroll
   useEffect(() => {

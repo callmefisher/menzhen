@@ -68,3 +68,16 @@ export const getCallSoundEnabled = () =>
 
 export const setCallSoundEnabled = (enabled: boolean) =>
   request.put<{ code: number; data: null }>('/tenant/call-sound-enabled', { enabled });
+
+export interface DoctorScheduleConfig {
+  doctor_id: number;
+  weekdays: number;    // bitmask: bit0=Sun, bit1=Mon, ..., bit6=Sat; 0 = no restriction
+  range_start: number; // days offset from today (>=1)
+  range_end: number;   // days offset from today
+}
+
+export const getDoctorSchedule = (doctorId: number) =>
+  request.get(`/queue-doctors/${doctorId}/schedule`);
+
+export const setDoctorSchedule = (doctorId: number, data: Omit<DoctorScheduleConfig, 'doctor_id'>) =>
+  request.put(`/queue-doctors/${doctorId}/schedule`, data);

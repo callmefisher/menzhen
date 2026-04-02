@@ -70,7 +70,7 @@ func (h *SlotConfigHandler) Create(c *gin.Context) {
 		DoctorID: doctorID, SlotStart: in.SlotStart, SlotEnd: in.SlotEnd, MaxCount: in.MaxCount,
 	})
 	if err != nil {
-		if errors.Is(err, service.ErrInvalidTimeFormat) || errors.Is(err, service.ErrSlotEndBeforeStart) {
+		if errors.Is(err, service.ErrInvalidTimeFormat) || errors.Is(err, service.ErrSlotEndBeforeStart) || errors.Is(err, service.ErrSlotOverlap) {
 			c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": err.Error()})
 			return
 		}
@@ -111,7 +111,7 @@ func (h *SlotConfigHandler) Update(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": err.Error()})
 			return
 		}
-		if errors.Is(err, service.ErrInvalidTimeFormat) || errors.Is(err, service.ErrSlotEndBeforeStart) {
+		if errors.Is(err, service.ErrInvalidTimeFormat) || errors.Is(err, service.ErrSlotEndBeforeStart) || errors.Is(err, service.ErrSlotOverlap) {
 			c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": err.Error()})
 			return
 		}

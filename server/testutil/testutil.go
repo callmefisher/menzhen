@@ -118,6 +118,7 @@ func SetupTestDB(t *testing.T) *gorm.DB {
 		&model.QueueDoctor{},
 		&model.Appointment{},
 		&model.AppointmentSlotConfig{},
+		&model.DoctorScheduleConfig{},
 	)
 	if err != nil {
 		db.Exec("DROP DATABASE IF EXISTS " + dbName)

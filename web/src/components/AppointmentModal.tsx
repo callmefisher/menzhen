@@ -2,6 +2,33 @@ import { useState, useEffect } from 'react';
 import { Modal, Form, Input, Select, DatePicker, Spin, Tooltip, message } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
 import { createAppointment, updateAppointment, getSlots, type SlotInfo } from '../api/appointment';
+import { getDoctorSchedule } from '../api/queue-doctor';
+
+/**
+ * Pure function — returns a disabledDate predicate for DatePicker.
+ * Rules (AND):
+ *   - date must be strictly after today (no same-day booking)
+ *   - date must be within [today + rangeStart, today + rangeEnd]
+ *   - if weekdays !== 0, date must be one of the configured weekdays
+ *     (bit0=Sun, bit1=Mon, ..., bit6=Sat)
+ */
+export function makeDisabledDate(
+  today: Dayjs,
+  rangeStart: number,
+  rangeEnd: number,
+  weekdays: number,
+): (d: Dayjs) => boolean {
+  return (d: Dayjs) => {
+    if (!d.isAfter(today, 'day')) return true;
+    if (d.isBefore(today.add(rangeStart, 'day'), 'day')) return true;
+    if (d.isAfter(today.add(rangeEnd, 'day'), 'day')) return true;
+    if (weekdays !== 0) {
+      const dow = d.day(); // 0=Sun, 1=Mon, ...6=Sat
+      if (!((weekdays >> dow) & 1)) return true;
+    }
+    return false;
+  };
+}
 
 interface InitialValues {
   id: number;
@@ -29,6 +56,7 @@ export default function AppointmentModal({ open, onClose, onSuccess, doctorOptio
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [scheduleConfig, setScheduleConfig] = useState({ weekdays: 0, range_start: 1, range_end: 30 });
 
   const isEdit = !!initialValues;
 
@@ -36,7 +64,7 @@ export default function AppointmentModal({ open, onClose, onSuccess, doctorOptio
   const appointDateObj = Form.useWatch('appoint_date', form) as Dayjs | undefined;
   const appointDateStr = appointDateObj?.format('YYYY-MM-DD');
 
-  // Pre-fill form when editing
+  // Pre-fill form when editing; default to first doctor when creating
   useEffect(() => {
     if (open && initialValues) {
       form.setFieldsValue({
@@ -45,26 +73,55 @@ export default function AppointmentModal({ open, onClose, onSuccess, doctorOptio
         appoint_date: dayjs(initialValues.appoint_date),
       });
       setSelectedSlot(initialValues.slot_start);
+    } else if (open && !initialValues && doctorOptions.length > 0) {
+      form.setFieldsValue({ doctor_id: doctorOptions[0].id });
     }
     if (!open) {
       form.resetFields();
       setSelectedSlot(null);
       setSlots([]);
     }
-  }, [open, initialValues, form]);
+  }, [open, initialValues, form, doctorOptions]);
 
   useEffect(() => {
     if (!doctorId || !appointDateStr) { setSlots([]); return; }
-    // Don't clear the selected slot when the effect fires during edit mode initialization
+    // Clear selectedSlot when doctor or date changes so a stale slot_start is never submitted
+    setSelectedSlot(null);
     setSlotsLoading(true);
     getSlots(appointDateStr, doctorId)
       .then(res => {
         const body = res as unknown as { data?: { list?: SlotInfo[] } };
-        setSlots(body.data?.list ?? []);
+        const list = body.data?.list ?? [];
+        setSlots(list);
+        // In edit mode, restore the original slot selection if it still exists in the new list
+        if (initialValues?.slot_start && list.some(s => s.slot_start === initialValues.slot_start)) {
+          setSelectedSlot(initialValues.slot_start);
+        }
       })
       .catch(() => setSlots([]))
       .finally(() => setSlotsLoading(false));
-  }, [doctorId, appointDateStr]);
+  }, [doctorId, appointDateStr, initialValues?.slot_start]);
+
+  // Load doctor schedule config when doctor changes
+  useEffect(() => {
+    if (!doctorId) return;
+    let cancelled = false;
+    getDoctorSchedule(doctorId)
+      .then(res => {
+        if (cancelled) return;
+        const body = res as unknown as { data?: { weekdays?: number; range_start?: number; range_end?: number } };
+        const d = body.data;
+        setScheduleConfig({
+          weekdays: d?.weekdays ?? 0,
+          range_start: d?.range_start ?? 1,
+          range_end: d?.range_end ?? 30,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setScheduleConfig({ weekdays: 0, range_start: 1, range_end: 30 });
+      });
+    return () => { cancelled = true; };
+  }, [doctorId]);
 
   const handleClose = () => {
     form.resetFields();
@@ -131,7 +188,8 @@ export default function AppointmentModal({ open, onClose, onSuccess, doctorOptio
   };
 
   const today = dayjs();
-  const maxDate = today.add(7, 'day');
+  const disabledDate = makeDisabledDate(today, scheduleConfig.range_start, scheduleConfig.range_end, scheduleConfig.weekdays);
+  const tomorrow = today.add(scheduleConfig.range_start, 'day');
 
   return (
     <Modal
@@ -144,7 +202,7 @@ export default function AppointmentModal({ open, onClose, onSuccess, doctorOptio
       confirmLoading={submitting}
       destroyOnClose
     >
-      <Form form={form} layout="vertical" initialValues={{ appoint_date: today }}>
+      <Form form={form} layout="vertical" initialValues={{ appoint_date: tomorrow }}>
         <Form.Item label="患者姓名" name="patient_name" rules={[{ required: true, message: '请输入患者姓名' }]}>
           <Input placeholder="请输入患者姓名" />
         </Form.Item>
@@ -157,7 +215,7 @@ export default function AppointmentModal({ open, onClose, onSuccess, doctorOptio
         <Form.Item label="预约日期" name="appoint_date" rules={[{ required: true, message: '请选择日期' }]}>
           <DatePicker
             style={{ width: '100%' }}
-            disabledDate={d => d.isBefore(today, 'day') || d.isAfter(maxDate, 'day')}
+            disabledDate={disabledDate}
             format="YYYY-MM-DD"
           />
         </Form.Item>

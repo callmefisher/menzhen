@@ -1,14 +1,29 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import {
-  Card, Table, Button, Modal, Form, Select, InputNumber, TimePicker, Space, message, Typography, Tag, Alert
+  Card, Table, Button, Modal, Form, Select, InputNumber, TimePicker, Space, message, Typography, Tag, Alert, Divider, Checkbox
 } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, GlobalOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, GlobalOutlined, CopyOutlined, SaveOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
 import type { ColumnsType } from 'antd/es/table';
 import {
   listSlotConfigs, createSlotConfig, updateSlotConfig, deleteSlotConfig, type SlotConfig
 } from '../../api/appointmentSlot';
-import { listQueueDoctors, getAppointmentConfig, type QueueDoctor } from '../../api/queue-doctor';
+import {
+  listQueueDoctors, getAppointmentConfig, getDoctorSchedule, setDoctorSchedule, type QueueDoctor, type DoctorScheduleConfig
+} from '../../api/queue-doctor';
+
+// Weekday bitmask helpers (bit0=Sun, bit1=Mon, ..., bit6=Sat — matches JS Date.getDay())
+const WEEKDAY_OPTIONS = [
+  { label: '周一', value: 1 },
+  { label: '周二', value: 2 },
+  { label: '周三', value: 3 },
+  { label: '周四', value: 4 },
+  { label: '周五', value: 5 },
+  { label: '周六', value: 6 },
+  { label: '周日', value: 0 },
+];
+const fromBitmask = (mask: number): number[] => WEEKDAY_OPTIONS.map(o => o.value).filter(d => (mask >> d) & 1);
+const toBitmask = (days: number[]): number => days.reduce((acc, d) => acc | (1 << d), 0);
 
 const { Title } = Typography;
 
@@ -24,6 +39,13 @@ export default function AppointmentSlots() {
   const [isAddingGlobal, setIsAddingGlobal] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
   const [form] = Form.useForm();
+
+  // Doctor schedule config state
+  const [scheduleLoading, setScheduleLoading] = useState(false);
+  const [scheduleSaving, setScheduleSaving] = useState(false);
+  const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>([]);
+  const [rangeStart, setRangeStart] = useState(1);
+  const [rangeEnd, setRangeEnd] = useState(30);
 
   const fetchGlobalSlots = useCallback(async () => {
     setGlobalLoading(true);
@@ -70,6 +92,47 @@ export default function AppointmentSlots() {
     if (selectedDoctorId) fetchSlots(selectedDoctorId);
   }, [selectedDoctorId, fetchSlots]);
 
+  // Load doctor schedule config when selected doctor changes
+  useEffect(() => {
+    if (!selectedDoctorId) return;
+    setScheduleLoading(true);
+    getDoctorSchedule(selectedDoctorId)
+      .then(res => {
+        const body = res as unknown as { data?: DoctorScheduleConfig };
+        const cfg = body.data ?? { doctor_id: selectedDoctorId, weekdays: 0, range_start: 1, range_end: 30 };
+        setSelectedWeekdays(fromBitmask(cfg.weekdays));
+        setRangeStart(cfg.range_start);
+        setRangeEnd(cfg.range_end);
+      })
+      .catch(() => {
+        setSelectedWeekdays([]);
+        setRangeStart(1);
+        setRangeEnd(30);
+      })
+      .finally(() => setScheduleLoading(false));
+  }, [selectedDoctorId]);
+
+  const handleSaveSchedule = useCallback(async () => {
+    if (!selectedDoctorId) return;
+    if (rangeStart < 1 || rangeEnd < rangeStart) {
+      message.warning('日期范围无效：起始天数 ≥ 1，且结束天数 ≥ 起始天数');
+      return;
+    }
+    setScheduleSaving(true);
+    try {
+      await setDoctorSchedule(selectedDoctorId, {
+        weekdays: toBitmask(selectedWeekdays),
+        range_start: rangeStart,
+        range_end: rangeEnd,
+      });
+      message.success('出诊日期规则已保存');
+    } catch {
+      message.error('保存失败，请重试');
+    } finally {
+      setScheduleSaving(false);
+    }
+  }, [selectedDoctorId, selectedWeekdays, rangeStart, rangeEnd]);
+
   const openModal = useCallback((forGlobal: boolean, slot: SlotConfig | null = null) => {
     setIsAddingGlobal(forGlobal);
     setEditingSlot(slot);
@@ -81,7 +144,7 @@ export default function AppointmentSlots() {
       });
     } else {
       form.resetFields();
-      form.setFieldsValue({ max_count: 10 });
+      form.setFieldsValue({ max_count: 1 });
     }
     setModalOpen(true);
   }, [form]);
@@ -162,6 +225,42 @@ export default function AppointmentSlots() {
   }, [form, editingSlot, isAddingGlobal, selectedDoctorId, fetchGlobalSlots, fetchSlots]);
 
   const [initLoading, setInitLoading] = useState(false);
+  const [copyLoading, setCopyLoading] = useState(false);
+
+  // Copy all global slots to the selected doctor
+  const handleCopyGlobalSlots = useCallback(async () => {
+    if (!selectedDoctorId || globalSlots.length === 0) return;
+    Modal.confirm({
+      title: '复制全局配置',
+      content: `将把 ${globalSlots.length} 个全局默认时间段复制给该医生，已有个人配置不会被删除。确认继续？`,
+      okText: '确认复制',
+      cancelText: '取消',
+      onOk: async () => {
+        setCopyLoading(true);
+        try {
+          const results = await Promise.allSettled(
+            globalSlots.map(s => createSlotConfig({
+              doctor_id: selectedDoctorId,
+              slot_start: s.slot_start,
+              slot_end: s.slot_end,
+              max_count: s.max_count,
+            }))
+          );
+          const failed = results.filter(r => r.status === 'rejected').length;
+          if (failed === 0) {
+            message.success(`已复制 ${globalSlots.length} 个时间段`);
+          } else {
+            message.warning(`复制完成，${globalSlots.length - failed} 成功，${failed} 失败（可能已存在）`);
+          }
+          fetchSlots(selectedDoctorId);
+        } catch {
+          message.error('复制失败');
+        } finally {
+          setCopyLoading(false);
+        }
+      },
+    });
+  }, [selectedDoctorId, globalSlots, fetchSlots]);
 
   // Auto-seed global slots: 08:00–17:00 based on slot_minutes config, max_count=10
   const handleInitGlobalSlots = useCallback(async () => {
@@ -189,7 +288,7 @@ export default function AppointmentSlots() {
         slots.push({ slot_start: fmt(cur), slot_end: fmt(slotEnd) });
         cur = slotEnd;
       }
-      const maxCount = mins <= 30 ? 1 : 2;
+      const maxCount = 1;
       const results = await Promise.allSettled(
         slots.map(s => createSlotConfig({ doctor_id: 0, slot_start: s.slot_start, slot_end: s.slot_end, max_count: maxCount }))
       );
@@ -280,7 +379,7 @@ export default function AppointmentSlots() {
           <Alert
             type="warning"
             message="尚未配置全局默认时间段"
-            description="可点击「一键初始化」按照当前时间粒度自动生成 08:00–17:00 的标准时间段（最大预约人数默认 10 人），也可手动逐个添加。"
+            description="可点击「一键初始化」按照当前时间粒度自动生成 08:00–17:00 的标准时间段（最大预约人数默认 1 人），也可手动逐个添加。"
             showIcon
             style={{ marginBottom: 12 }}
             action={
@@ -305,15 +404,27 @@ export default function AppointmentSlots() {
       <Card
         title="医生个人时间段配置"
         extra={
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            size="small"
-            disabled={!selectedDoctorId}
-            onClick={() => openModal(false)}
-          >
-            添加时间段
-          </Button>
+          <Space>
+            <Button
+              icon={<CopyOutlined />}
+              size="small"
+              disabled={!selectedDoctorId || globalSlots.length === 0}
+              loading={copyLoading}
+              onClick={handleCopyGlobalSlots}
+            >
+              复制全局配置
+            </Button>
+            <Divider type="vertical" />
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              size="small"
+              disabled={!selectedDoctorId}
+              onClick={() => openModal(false)}
+            >
+              添加时间段
+            </Button>
+          </Space>
         }
       >
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
@@ -346,6 +457,53 @@ export default function AppointmentSlots() {
           size="middle"
           locale={{ emptyText: selectedDoctorId ? '该医生无个人配置（使用全局默认）' : '请先选择医生' }}
         />
+
+        {selectedDoctorId && (
+          <>
+            <Divider style={{ fontSize: 13, color: '#555', marginTop: 20 }}>出诊日期规则</Divider>
+            <div style={{ opacity: scheduleLoading ? 0.5 : 1, transition: 'opacity 0.2s' }}>
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 13, color: '#555', marginBottom: 8 }}>出诊星期</div>
+                <Checkbox.Group
+                  options={WEEKDAY_OPTIONS}
+                  value={selectedWeekdays}
+                  onChange={vals => setSelectedWeekdays(vals as number[])}
+                />
+                <div style={{ fontSize: 12, color: '#999', marginTop: 4 }}>全不勾选 = 不限制，所有星期均可预约</div>
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 13, color: '#555', marginBottom: 8 }}>可预约日期范围</div>
+                <Space>
+                  <span style={{ fontSize: 13, color: '#666' }}>从今天起</span>
+                  <InputNumber
+                    min={1} max={180}
+                    value={rangeStart}
+                    onChange={v => setRangeStart(v ?? 1)}
+                    style={{ width: 70 }}
+                    addonAfter="天后"
+                  />
+                  <span style={{ fontSize: 13, color: '#666' }}>到</span>
+                  <InputNumber
+                    min={1} max={180}
+                    value={rangeEnd}
+                    onChange={v => setRangeEnd(v ?? 30)}
+                    style={{ width: 70 }}
+                    addonAfter="天内"
+                  />
+                </Space>
+              </div>
+              <Button
+                type="primary"
+                icon={<SaveOutlined />}
+                size="small"
+                loading={scheduleSaving}
+                onClick={handleSaveSchedule}
+              >
+                保存规则
+              </Button>
+            </div>
+          </>
+        )}
       </Card>
 
       <Modal

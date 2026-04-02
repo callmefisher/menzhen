@@ -8,16 +8,13 @@ import {
   Typography,
   message,
   DatePicker,
-  Badge,
-} from 'antd';
-import { PlusOutlined, SearchOutlined, LeftOutlined, RightOutlined, CalendarOutlined } from '@ant-design/icons';
+} from 'antd';import { PlusOutlined, SearchOutlined, LeftOutlined, RightOutlined, CalendarOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
 import type { ColumnsType } from 'antd/es/table';
 import { listAppointments, cancelAppointment, type Appointment } from '../../api/appointment';
 import { listQueueDoctors, type QueueDoctor } from '../../api/queue-doctor';
 import AppointmentModal from '../../components/AppointmentModal';
 
-const { Title } = Typography;
 
 const STATUS_MAP: Record<string, { color: string; label: string }> = {
   pending:   { color: 'blue',    label: '待签到' },
@@ -27,7 +24,7 @@ const STATUS_MAP: Record<string, { color: string; label: string }> = {
 };
 
 export default function AppointmentManage() {
-  const [selectedDate, setSelectedDate] = useState<Dayjs>(() => dayjs());
+  const [selectedDate, setSelectedDate] = useState<Dayjs>(() => dayjs().add(1, 'day'));
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(false);
   const [cancelLoading, setCancelLoading] = useState<Record<number, boolean>>({});
@@ -90,56 +87,61 @@ export default function AppointmentManage() {
   const columns = useMemo<ColumnsType<Appointment>>(
     () => [
       {
-        title: '时间段',
+        title: '时间',
         key: 'slot',
-        width: 120,
+        width: 100,
         render: (_: unknown, r: Appointment) => (
-          <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: 13 }}>
+          <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: 12, whiteSpace: 'nowrap' }}>
             {r.slot_start}–{r.slot_end}
           </span>
         ),
       },
       {
-        title: '患者姓名',
+        title: '患者',
         dataIndex: 'patient_name',
         key: 'patient_name',
+        ellipsis: true,
       },
       {
-        title: '就诊医生',
-        dataIndex: 'doctor_name',
-        key: 'doctor_name',
-      },
-      {
-        title: '诊室',
-        dataIndex: 'room',
-        key: 'room',
-        render: (v: string) => v || '-',
+        title: '医生 / 诊室',
+        key: 'doctor_room',
+        ellipsis: true,
+        render: (_: unknown, r: Appointment) => (
+          <span>
+            {r.doctor_name}
+            {r.room && <span style={{ color: '#999', fontSize: 12, marginLeft: 4 }}>·{r.room}</span>}
+          </span>
+        ),
       },
       {
         title: '状态',
         key: 'status',
-        width: 100,
+        width: 80,
         render: (_: unknown, r: Appointment) => {
           const s = STATUS_MAP[r.status] ?? { color: 'default', label: r.status };
-          return <Tag color={s.color}>{s.label}</Tag>;
+          return <Tag color={s.color} style={{ marginInlineEnd: 0 }}>{s.label}</Tag>;
         },
       },
       {
         title: '操作',
         key: 'action',
-        width: 140,
+        width: 120,
         render: (_: unknown, r: Appointment) =>
           r.status === 'pending' ? (
-            <Space size="small">
+            <Space size={4}>
               <Button
+                type="link"
                 size="small"
+                style={{ padding: '0 4px' }}
                 onClick={() => { setEditingAppointment(r); setModalOpen(true); }}
               >
                 编辑
               </Button>
               <Button
+                type="link"
                 danger
                 size="small"
+                style={{ padding: '0 4px' }}
                 loading={cancelLoading[r.id]}
                 onClick={() => handleCancel(r.id)}
               >
@@ -153,6 +155,7 @@ export default function AppointmentManage() {
   );
 
   const isToday = selectedDate.isSame(dayjs(), 'day');
+  const isTomorrow = selectedDate.isSame(dayjs().add(1, 'day'), 'day');
 
   const pendingCount = useMemo(
     () => appointments.filter((a) => a.status === 'pending' || a.status === 'queued').length,
@@ -160,9 +163,10 @@ export default function AppointmentManage() {
   );
 
   return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <Title level={4} style={{ margin: 0 }}>预约管理</Title>
+    <div style={{ maxWidth: '100%', overflow: 'hidden' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+        <Typography.Title level={4} style={{ margin: 0 }}>预约管理</Typography.Title>
         <Button
           type="primary"
           icon={<PlusOutlined />}
@@ -174,12 +178,12 @@ export default function AppointmentManage() {
 
       {/* Toolbar */}
       <div style={{
-        display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
-        padding: '12px 16px', background: '#fafafa', borderRadius: 8, marginBottom: 16,
+        display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+        padding: '10px 12px', background: '#fafafa', borderRadius: 8, marginBottom: 12,
         border: '1px solid #f0f0f0',
       }}>
         {/* Date navigator */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
           <Button
             size="small"
             icon={<LeftOutlined />}
@@ -189,64 +193,67 @@ export default function AppointmentManage() {
             value={selectedDate}
             onChange={(d) => { if (d) setSelectedDate(d); }}
             allowClear={false}
-            style={{ width: 140 }}
-            format="YYYY年MM月DD日"
+            style={{ width: 130 }}
+            format="MM月DD日"
+            size="small"
           />
           <Button
             size="small"
             icon={<RightOutlined />}
             onClick={() => setSelectedDate((d) => d.add(1, 'day'))}
           />
-          {!isToday && (
+          {!isToday && !isTomorrow && (
             <Button
               size="small"
               icon={<CalendarOutlined />}
-              onClick={() => setSelectedDate(dayjs())}
+              onClick={() => setSelectedDate(dayjs().add(1, 'day'))}
             >
-              今天
+              明天
             </Button>
+          )}
+        </div>
+
+        {/* Date label */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          <span style={{ color: '#666', fontSize: 13 }}>
+            {selectedDate.format('YYYY年MM月DD日')}
+          </span>
+          {isToday && <Tag color="green" style={{ marginInlineEnd: 0 }}>今天</Tag>}
+          {isTomorrow && <Tag color="blue" style={{ marginInlineEnd: 0 }}>明天</Tag>}
+          {pendingCount > 0 && (
+            <Tag color="blue" style={{ marginInlineEnd: 0 }}>待诊 {pendingCount}</Tag>
           )}
         </div>
 
         {/* Doctor filter */}
         <Input
           allowClear
-          placeholder="按医生姓名筛选"
+          placeholder="按医生筛选"
           prefix={<SearchOutlined />}
           value={doctorFilter}
           onChange={(e) => setDoctorFilter(e.target.value)}
-          style={{ width: 200 }}
-          size="middle"
+          style={{ width: 140, marginLeft: 'auto' }}
+          size="small"
         />
-
-        {/* Date summary */}
-        <Space style={{ marginLeft: 'auto' }}>
-          <span style={{ color: '#666', fontSize: 14 }}>
-            {selectedDate.format('YYYY年MM月DD日')}
-            {isToday && <Tag color="green" style={{ marginLeft: 6 }}>今天</Tag>}
-          </span>
-          {pendingCount > 0 && (
-            <Badge count={pendingCount} color="#1677ff" overflowCount={99}>
-              <span style={{ fontSize: 13, color: '#666' }}>待诊</span>
-            </Badge>
-          )}
-        </Space>
       </div>
 
       {/* Table */}
-      <Table<Appointment>
-        rowKey="id"
-        loading={loading}
-        dataSource={filteredAppointments}
-        columns={columns}
-        pagination={{ pageSize: 20, showSizeChanger: false, hideOnSinglePage: true }}
-        locale={{ emptyText: '暂无预约' }}
-        size="middle"
-      />
+      <div style={{ overflowX: 'auto' }}>
+        <Table<Appointment>
+          rowKey="id"
+          loading={loading}
+          dataSource={filteredAppointments}
+          columns={columns}
+          pagination={{ pageSize: 20, showSizeChanger: false, hideOnSinglePage: true }}
+          locale={{ emptyText: '暂无预约' }}
+          size="small"
+          scroll={{ x: 480 }}
+        />
+      </div>
 
       <AppointmentModal
         open={modalOpen}
-        doctorOptions={doctors.map(d => ({ id: d.id, name: d.user_name, room: d.room }))}
+        doctorOptions={doctors.map(d => ({ id: d.user_id, name: d.user_name, room: d.room }))}
         initialValues={editingAppointment ? {
           id: editingAppointment.id,
           patient_name: editingAppointment.patient_name,

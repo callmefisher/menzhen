@@ -314,3 +314,57 @@ func TestListByDate_FilterByDoctor(t *testing.T) {
 	assert.Len(t, list, 1)
 	assert.Equal(t, uint(1), list[0].DoctorID)
 }
+
+// ── New tests for H-2 fix: duplicate check now scoped to doctor_id ──────────
+
+func TestCreateAppointment_SamePatientDifferentDoctorAllowed(t *testing.T) {
+	svc, tid := setupApptService(t)
+	date := time.Now().Format("2006-01-02")
+	_, err := svc.CreateAppointment(tid, service.CreateAppointmentInput{
+		PatientName: "张三", DoctorID: 1, DoctorName: "李医生",
+		AppointDate: date, SlotStart: "09:00", SlotEnd: "09:30",
+	})
+	require.NoError(t, err)
+	// Same patient, different doctor, same day — must be allowed
+	_, err2 := svc.CreateAppointment(tid, service.CreateAppointmentInput{
+		PatientName: "张三", DoctorID: 2, DoctorName: "王医生",
+		AppointDate: date, SlotStart: "10:00", SlotEnd: "10:30",
+	})
+	assert.NoError(t, err2, "same patient different doctor same day should be allowed")
+}
+
+func TestCreateAppointment_SamePatientSameDoctorDuplicateRejected(t *testing.T) {
+	svc, tid := setupApptService(t)
+	date := time.Now().Format("2006-01-02")
+	input := service.CreateAppointmentInput{
+		PatientName: "李四", DoctorID: 1, DoctorName: "李医生",
+		AppointDate: date, SlotStart: "09:00", SlotEnd: "09:30",
+	}
+	_, err := svc.CreateAppointment(tid, input)
+	require.NoError(t, err)
+	_, err2 := svc.CreateAppointment(tid, input)
+	assert.ErrorIs(t, err2, service.ErrDuplicateAppointment)
+}
+
+// ── Tests for C-3 fix: Update returns fresh data ─────────────────────────────
+
+func TestUpdateAppointment_ReturnsFreshData(t *testing.T) {
+	svc, tid := setupApptService(t)
+	appt, err := svc.CreateAppointment(tid, service.CreateAppointmentInput{
+		PatientName: "王五", DoctorID: 1, DoctorName: "李医生",
+		AppointDate: time.Now().Add(24*time.Hour).Format("2006-01-02"),
+		SlotStart:   "09:00", SlotEnd: "09:30",
+	})
+	require.NoError(t, err)
+
+	updated, err := svc.Update(tid, appt.ID, service.UpdateAppointmentInput{
+		PatientName: "王五已改名", DoctorID: 1, DoctorName: "李医生",
+		AppointDate: time.Now().Add(48*time.Hour).Format("2006-01-02"),
+		SlotStart:   "10:00", SlotEnd: "10:30",
+	})
+	require.NoError(t, err)
+	// Returned struct must reflect the new values, not the pre-update in-memory copy
+	assert.Equal(t, "王五已改名", updated.PatientName)
+	assert.Equal(t, "10:00", updated.SlotStart)
+	assert.Equal(t, "10:30", updated.SlotEnd)
+}
