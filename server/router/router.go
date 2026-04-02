@@ -60,7 +60,8 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	pnHandler := handler.NewPrescriptionNotificationHandler(db)
 	queueHandler := handler.NewQueueHandler(db)
 	qdSvc := service.NewQueueDoctorService(db)
-	qdHandler := handler.NewQueueDoctorHandler(qdSvc, db)
+	schedSvc := service.NewDoctorScheduleService(db)
+	qdHandler := handler.NewQueueDoctorHandler(qdSvc, schedSvc, db)
 
 	// ---------- Route groups ----------
 
@@ -335,6 +336,29 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			queue.GET("/stats", middleware.RequirePermission(db, "queue:read"), queueHandler.Stats)
 		}
 
+		// Appointment routes (tenant-scoped).
+		apptHandler := handler.NewAppointmentHandler(db)
+		appt := authenticated.Group("/appointments")
+		{
+			appt.POST("", middleware.RequirePermission(db, "appointment:create"), apptHandler.Create)
+			appt.GET("", middleware.RequirePermission(db, "appointment:read"), apptHandler.List)
+			appt.GET("/slots", middleware.RequirePermission(db, "appointment:read"), apptHandler.Slots)
+			appt.PUT("/:id", middleware.RequirePermission(db, "appointment:update"), apptHandler.Update)
+			appt.POST("/:id/checkin", middleware.RequirePermission(db, "appointment:checkin"), apptHandler.Checkin)
+			appt.POST("/:id/cancel", middleware.RequirePermission(db, "appointment:update"), apptHandler.Cancel)
+		}
+
+		// Appointment slot config routes (tenant-scoped, admin).
+		slotSvc := service.NewSlotConfigService(db)
+		slotHandler := handler.NewSlotConfigHandler(slotSvc)
+		apptSlots := authenticated.Group("/appointment-slots")
+		{
+			apptSlots.GET("", middleware.RequirePermission(db, "appointment:read"), slotHandler.List)
+			apptSlots.POST("", middleware.RequirePermission(db, "appointment:update"), slotHandler.Create)
+			apptSlots.PUT("/:id", middleware.RequirePermission(db, "appointment:update"), slotHandler.Update)
+			apptSlots.DELETE("/:id", middleware.RequirePermission(db, "appointment:update"), slotHandler.Delete)
+		}
+
 		// Queue doctor management routes (tenant-scoped).
 		qd := authenticated.Group("/queue-doctors")
 		{
@@ -343,13 +367,21 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			qd.PUT("/sort", middleware.RequirePermission(db, "tenant:user:manage"), qdHandler.UpdateSort)
 			qd.PUT("/:id", middleware.RequirePermission(db, "tenant:user:manage"), qdHandler.Update)
 			qd.DELETE("/:id", middleware.RequirePermission(db, "tenant:user:manage"), qdHandler.Delete)
+			qd.GET("/:id/schedule", middleware.RequirePermission(db, "appointment:read"), qdHandler.GetDoctorSchedule)
+			qd.PUT("/:id/schedule", middleware.RequirePermission(db, "appointment:update"), qdHandler.SetDoctorSchedule)
 		}
-		authenticated.GET("/tenant/queue-enabled", qdHandler.GetQueueEnabled)
+		authenticated.GET("/tenant/queue-enabled", middleware.RequirePermission(db, "queue:read"), qdHandler.GetQueueEnabled)
 		authenticated.PUT("/tenant/queue-enabled", middleware.RequirePermission(db, "tenant:user:manage"), qdHandler.SetQueueEnabled)
-		authenticated.GET("/tenant/call-duration", qdHandler.GetCallDisplayDuration)
+		authenticated.GET("/tenant/call-duration", middleware.RequirePermission(db, "queue:read"), qdHandler.GetCallDisplayDuration)
 		authenticated.PUT("/tenant/call-duration", middleware.RequirePermission(db, "tenant:user:manage"), qdHandler.SetCallDisplayDuration)
-		authenticated.GET("/tenant/show-arrival-time", qdHandler.GetShowArrivalTime)
+		authenticated.GET("/tenant/show-arrival-time", middleware.RequirePermission(db, "queue:read"), qdHandler.GetShowArrivalTime)
 		authenticated.PUT("/tenant/show-arrival-time", middleware.RequirePermission(db, "tenant:user:manage"), qdHandler.SetShowArrivalTime)
+		authenticated.GET("/tenant/appointment-enabled", middleware.RequirePermission(db, "appointment:read"), qdHandler.GetAppointmentEnabled)
+		authenticated.PUT("/tenant/appointment-enabled", middleware.RequirePermission(db, "appointment:update"), qdHandler.SetAppointmentEnabled)
+		authenticated.GET("/tenant/appointment-config", middleware.RequirePermission(db, "appointment:read"), qdHandler.GetAppointmentConfig)
+		authenticated.PUT("/tenant/appointment-config", middleware.RequirePermission(db, "appointment:update"), qdHandler.SetAppointmentConfig)
+		authenticated.GET("/tenant/call-sound-enabled", middleware.RequirePermission(db, "queue:read"), qdHandler.GetCallSoundEnabled)
+		authenticated.PUT("/tenant/call-sound-enabled", middleware.RequirePermission(db, "queue:read"), qdHandler.SetCallSoundEnabled)
 
 		// Follow-up routes (tenant-scoped).
 		followUps := authenticated.Group("/follow-ups")

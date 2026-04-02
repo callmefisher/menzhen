@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Card,
   Switch,
@@ -21,6 +22,7 @@ import {
   EditOutlined,
   DeleteOutlined,
   HolderOutlined,
+  CalendarOutlined,
 } from '@ant-design/icons';
 import {
   DndContext,
@@ -51,7 +53,14 @@ import {
   setCallDisplayDuration,
   getShowArrivalTime,
   setShowArrivalTime as apiSetShowArrivalTime,
+  getAppointmentEnabled,
+  setAppointmentEnabled as apiSetAppointmentEnabled,
+  getAppointmentConfig,
+  setAppointmentConfig as apiSetAppointmentConfig,
+  getCallSoundEnabled,
+  setCallSoundEnabled as apiSetCallSoundEnabled,
   type QueueDoctor,
+  type AppointmentConfig,
 } from '../../api/queue-doctor';
 import { listUsers } from '../../api/user';
 import { useAuth } from '../../store/auth';
@@ -62,6 +71,12 @@ const AVATAR_COLORS = ['#52c41a', '#faad14', '#722ed1', '#cf1322', '#1677ff', '#
 interface UserOption {
   id: number;
   real_name: string;
+  username: string;
+}
+
+interface RawUser {
+  id: number;
+  real_name?: string;
   username: string;
 }
 
@@ -184,7 +199,8 @@ function SortableDoctorItem({
 /* ========== Main component ========== */
 export default function QueueSettings() {
   const isMobile = useIsMobile();
-  const { fetchQueueEnabled } = useAuth();
+  const { fetchQueueEnabled, fetchAppointmentEnabled } = useAuth();
+  const navigate = useNavigate();
 
   // Feature toggle
   const [enabled, setEnabled] = useState(true);
@@ -197,6 +213,22 @@ export default function QueueSettings() {
   // Show arrival time toggle
   const [showArrivalTime, setShowArrivalTime] = useState(true);
   const [arrivalTimeLoading, setArrivalTimeLoading] = useState(false);
+
+  // Appointment enabled toggle
+  const [apptEnabled, setApptEnabled] = useState(true);
+  const [apptEnabledLoading, setApptEnabledLoading] = useState(false);
+
+  // Appointment config
+  const [apptConfig, setApptConfig] = useState<AppointmentConfig>({
+    slot_minutes: 30,
+    max_appt_per_slot: 10,
+    advance_days: 7,
+  });
+  const [apptConfigSaving, setApptConfigSaving] = useState(false);
+
+  // Call sound broadcast toggle
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [soundLoading, setSoundLoading] = useState(false);
 
   // Doctor list
   const [doctors, setDoctors] = useState<QueueDoctor[]>([]);
@@ -222,8 +254,8 @@ export default function QueueSettings() {
     setLoading(true);
     try {
       const res = await listQueueDoctors();
-      const body = res as any;
-      setDoctors(body.data?.list || []);
+      const body = res as unknown as { data?: { list?: QueueDoctor[] } };
+      setDoctors(body.data?.list ?? []);
     } catch {
       // handled by interceptor
     } finally {
@@ -234,7 +266,7 @@ export default function QueueSettings() {
   const fetchEnabled = useCallback(async () => {
     try {
       const res = await getQueueEnabled();
-      const body = res as any;
+      const body = res as unknown as { data?: { enabled?: boolean } };
       setEnabled(body.data?.enabled ?? true);
     } catch {
       // default on
@@ -244,7 +276,7 @@ export default function QueueSettings() {
   const fetchCallDuration = useCallback(async () => {
     try {
       const res = await getCallDisplayDuration();
-      const body = res as any;
+      const body = res as unknown as { data?: { seconds?: number } };
       setCallDuration(body.data?.seconds ?? 10);
     } catch {
       // default 10s
@@ -254,20 +286,50 @@ export default function QueueSettings() {
   const fetchShowArrivalTime = useCallback(async () => {
     try {
       const res = await getShowArrivalTime();
-      const body = res as any;
+      const body = res as unknown as { data?: { show?: boolean } };
       setShowArrivalTime(body.data?.show ?? true);
     } catch {
       // default on
     }
   }, []);
 
+  const fetchApptEnabled = useCallback(async () => {
+    try {
+      const res = await getAppointmentEnabled();
+      const body = res as unknown as { data?: { enabled?: boolean } };
+      setApptEnabled(body.data?.enabled ?? true);
+    } catch {
+      // default on
+    }
+  }, []);
+
+  const fetchApptConfig = useCallback(async () => {
+    try {
+      const res = await getAppointmentConfig();
+      const body = res as unknown as { data?: AppointmentConfig };
+      if (body.data) {
+        setApptConfig(body.data);
+      }
+    } catch {
+      // keep defaults
+    }
+  }, []);
+
+  const fetchSoundEnabled = useCallback(async () => {
+    try {
+      const res = await getCallSoundEnabled();
+      const body = res as unknown as { data?: { enabled?: boolean } };
+      setSoundEnabled(body.data?.enabled ?? true);
+    } catch { /* keep default */ }
+  }, []);
+
   const fetchUsers = useCallback(async () => {
     try {
       const res = await listUsers({ page: 1, size: 200 });
-      const body = res as any;
-      const list = body.data?.list || body.data || [];
+      const body = res as unknown as { data?: { list?: RawUser[] } | RawUser[] };
+      const rawList = Array.isArray(body.data) ? body.data : (body.data as { list?: RawUser[] })?.list ?? [];
       setAllUsers(
-        list.map((u: any) => ({
+        rawList.map((u: RawUser) => ({
           id: u.id,
           real_name: u.real_name || u.username,
           username: u.username,
@@ -283,8 +345,11 @@ export default function QueueSettings() {
     fetchEnabled();
     fetchCallDuration();
     fetchShowArrivalTime();
+    fetchApptEnabled();
+    fetchApptConfig();
+    fetchSoundEnabled();
     fetchUsers();
-  }, [fetchDoctors, fetchEnabled, fetchCallDuration, fetchShowArrivalTime, fetchUsers]);
+  }, [fetchDoctors, fetchEnabled, fetchCallDuration, fetchShowArrivalTime, fetchApptEnabled, fetchApptConfig, fetchSoundEnabled, fetchUsers]);
 
   /* ---- Toggle handler ---- */
   const handleToggle = async (checked: boolean) => {
@@ -326,6 +391,48 @@ export default function QueueSettings() {
       message.error('操作失败');
     } finally {
       setArrivalTimeLoading(false);
+    }
+  };
+
+  /* ---- Call sound toggle handler ---- */
+  const handleToggleSound = async (checked: boolean) => {
+    setSoundLoading(true);
+    try {
+      await apiSetCallSoundEnabled(checked);
+      setSoundEnabled(checked);
+      message.success(checked ? '声音播报已开启' : '声音播报已关闭');
+    } catch {
+      message.error('操作失败');
+    } finally {
+      setSoundLoading(false);
+    }
+  };
+
+  /* ---- Appointment enabled toggle handler ---- */
+  const handleToggleApptEnabled = async (checked: boolean) => {
+    setApptEnabledLoading(true);
+    try {
+      await apiSetAppointmentEnabled(checked);
+      setApptEnabled(checked);
+      await fetchAppointmentEnabled();
+      message.success(checked ? '预约功能已开启' : '预约功能已关闭');
+    } catch {
+      message.error('操作失败');
+    } finally {
+      setApptEnabledLoading(false);
+    }
+  };
+
+  /* ---- Appointment config save handler ---- */
+  const handleSaveApptConfig = async () => {
+    setApptConfigSaving(true);
+    try {
+      await apiSetAppointmentConfig(apptConfig);
+      message.success('预约配置已保存');
+    } catch {
+      message.error('保存失败');
+    } finally {
+      setApptConfigSaving(false);
     }
   };
 
@@ -375,8 +482,10 @@ export default function QueueSettings() {
 
       handleModalCancel();
       fetchDoctors();
-    } catch {
-      // validation or request error
+    } catch (err: unknown) {
+      // validateFields throws without a message when validation fails — ignore those
+      if (err && typeof err === 'object' && 'errorFields' in err) return;
+      message.error('操作失败，请重试');
     } finally {
       setSubmitLoading(false);
     }
@@ -460,25 +569,27 @@ export default function QueueSettings() {
         <div style={{ fontSize: 13, color: '#999', marginBottom: 16 }}>
           每条叫号通知的弹窗展示时长，到期后自动关闭并播放下一条
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 14, color: '#555', flexShrink: 0 }}>叫号通知时长</span>
-          <Slider
-            min={3}
-            max={60}
-            step={1}
-            value={callDuration}
-            onChange={setCallDuration}
-            style={{ flex: 1, minWidth: 160, maxWidth: 300 }}
-            tooltip={{ formatter: (v) => `${v}秒` }}
-          />
-          <InputNumber
-            min={3}
-            max={60}
-            value={callDuration}
-            onChange={(v) => setCallDuration(v ?? 10)}
-            addonAfter="秒"
-            style={{ width: 100 }}
-          />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', flex: 1 }}>
+            <span style={{ fontSize: 14, color: '#555', flexShrink: 0 }}>叫号通知时长</span>
+            <Slider
+              min={3}
+              max={60}
+              step={1}
+              value={callDuration}
+              onChange={setCallDuration}
+              style={{ flex: 1, minWidth: 160, maxWidth: 300 }}
+              tooltip={{ formatter: (v) => `${v}秒` }}
+            />
+            <InputNumber
+              min={3}
+              max={60}
+              value={callDuration}
+              onChange={(v) => setCallDuration(v ?? 10)}
+              addonAfter="秒"
+              style={{ width: 100 }}
+            />
+          </div>
           <Button
             type="primary"
             loading={durationSaving}
@@ -486,6 +597,21 @@ export default function QueueSettings() {
           >
             保存
           </Button>
+        </div>
+
+        {/* Sound enabled toggle */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 16 }}>
+          <div>
+            <div style={{ fontSize: 14, color: '#555' }}>叫号声音播报</div>
+            <div style={{ fontSize: 12, color: '#999', marginTop: 2 }}>
+              开启后叫号时自动朗读患者姓名和诊室，兼容 Android / Windows / macOS
+            </div>
+          </div>
+          <Switch
+            checked={soundEnabled}
+            loading={soundLoading}
+            onChange={handleToggleSound}
+          />
         </div>
       </Card>
 
@@ -510,6 +636,113 @@ export default function QueueSettings() {
             onChange={handleToggleArrivalTime}
           />
         </div>
+      </Card>
+
+      {/* Appointment config card */}
+      <Card style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>预约配置</div>
+        <div style={{ fontSize: 13, color: '#999', marginBottom: 16 }}>
+          配置各医生的可预约时间段及每个时段最大预约人数
+        </div>
+
+        {/* Appointment enabled toggle */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 16,
+            paddingBottom: 16,
+            borderBottom: '1px solid #f0f0f0',
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 500 }}>启用预约功能</div>
+            <div style={{ fontSize: 12, color: '#999', marginTop: 2 }}>
+              关闭后：侧边栏隐藏预约菜单，排队页隐藏预约按钮
+            </div>
+          </div>
+          <Switch
+            checked={apptEnabled}
+            loading={apptEnabledLoading}
+            onChange={handleToggleApptEnabled}
+          />
+        </div>
+
+        {/* Global appointment params (only visible when appointment is enabled) */}
+        {apptEnabled && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 16,
+              marginBottom: 16,
+            }}
+          >
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end' }}>
+              <div>
+                <div style={{ fontSize: 13, color: '#555', marginBottom: 4 }}>时间粒度</div>
+                <Select
+                  value={apptConfig.slot_minutes}
+                  onChange={(v) => setApptConfig((prev) => ({
+                    ...prev,
+                    slot_minutes: v,
+                    max_appt_per_slot: v <= 30 ? 1 : 2,
+                  }))}
+                  style={{ width: 120 }}
+                  options={[
+                    { value: 5,  label: '5 分钟' },
+                    { value: 10, label: '10 分钟' },
+                    { value: 15, label: '15 分钟' },
+                    { value: 30, label: '30 分钟' },
+                    { value: 60, label: '60 分钟' },
+                  ]}
+                />
+              </div>
+              <div>
+                <div style={{ fontSize: 13, color: '#555', marginBottom: 4 }}>每时段最大预约数</div>
+                <InputNumber
+                  min={1}
+                  max={100}
+                  value={apptConfig.max_appt_per_slot}
+                  onChange={(v) => setApptConfig((prev) => ({ ...prev, max_appt_per_slot: v ?? 1 }))}
+                  addonAfter="人"
+                  style={{ width: 120 }}
+                />
+              </div>
+              <div>
+                <div style={{ fontSize: 13, color: '#555', marginBottom: 4 }}>可提前预约天数</div>
+                <InputNumber
+                  min={1}
+                  max={30}
+                  value={apptConfig.advance_days}
+                  onChange={(v) => setApptConfig((prev) => ({ ...prev, advance_days: v ?? 7 }))}
+                  addonAfter="天"
+                  style={{ width: 120 }}
+                />
+              </div>
+            </div>
+            <Button
+              type="primary"
+              loading={apptConfigSaving}
+              onClick={handleSaveApptConfig}
+              style={{ alignSelf: 'flex-end' }}
+            >
+              保存
+            </Button>
+          </div>
+        )}
+
+        <Button
+          type="default"
+          icon={<CalendarOutlined />}
+          onClick={() => navigate('/settings/appointment-slots')}
+          disabled={!apptEnabled}
+        >
+          管理预约时间段
+        </Button>
       </Card>
 
       {/* Doctor list card */}

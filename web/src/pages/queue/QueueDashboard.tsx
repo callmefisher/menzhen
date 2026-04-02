@@ -1,16 +1,56 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Input, Select, Slider, Tooltip, Modal, message } from 'antd';
-import { SoundOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
+import { SoundOutlined, DeleteOutlined, PlusOutlined, CalendarOutlined } from '@ant-design/icons';
 import { listQueue, takeNumber, callNumber, completeVisit, clearQueue, type QueueEntry } from '../../api/queue';
-import { listQueueDoctors, getCallDisplayDuration, getShowArrivalTime, type QueueDoctor as QueueDoctorConfig } from '../../api/queue-doctor';
+import { checkinAppointment } from '../../api/appointment';
+import { listQueueDoctors, getCallDisplayDuration, getShowArrivalTime, getCallSoundEnabled, type QueueDoctor as QueueDoctorConfig } from '../../api/queue-doctor';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { useAuth } from '../../store/auth';
 import useIsMobile from '../../hooks/useIsMobile';
 import CallOverlay from '../../components/CallOverlay';
+import AppointmentModal from '../../components/AppointmentModal';
 import { formatRoom, formatQueueTime, formatQueueTimeFull } from '../../utils/format';
 
 const DOCTOR_COLORS = ['#52c41a', '#faad14', '#722ed1', '#cf1322', '#1677ff', '#13c2c2', '#eb2f96', '#fa541c'];
+
+// Monotonically increasing counter for uniquely identifying each call event within this session.
+let callIdCounter = 0;
+
+/**
+ * Speak a call announcement with natural pauses using multiple utterances.
+ * Segments: "请" → pause → "{seq}号" → pause → "{name}" → pause → "到{room}就诊"
+ * Falls back to a single utterance if speechSynthesis is unavailable.
+ */
+function speakTTS(call: { seq: number; name: string; room: string }, voices: SpeechSynthesisVoice[]) {
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+
+  const zhVoice =
+    voices.find(v => v.lang === 'zh-CN') ??
+    voices.find(v => v.lang === 'zh-TW') ??
+    voices.find(v => v.lang.startsWith('zh')) ??
+    null;
+
+  const roomPart = call.room ? `到${call.room}就诊` : '就诊';
+  // Break into segments that pause naturally between each phrase
+  const segments = [
+    { text: '请', rate: 0.85 },
+    { text: `${call.seq}号`, rate: 0.8 },
+    { text: call.name, rate: 0.85 },
+    { text: roomPart, rate: 0.85 },
+  ];
+
+  segments.forEach(seg => {
+    const utter = new SpeechSynthesisUtterance(seg.text);
+    utter.lang = 'zh-CN';
+    utter.rate = seg.rate;
+    utter.pitch = 1.05;
+    utter.volume = 1.0;
+    if (zhVoice) utter.voice = zhVoice;
+    window.speechSynthesis.speak(utter);
+  });
+}
 
 interface DoctorGroup {
   doctorId: number;
@@ -20,6 +60,7 @@ interface DoctorGroup {
 }
 
 interface CallNotification {
+  callId: number; // monotonically increasing, uniquely identifies each call event
   seq: number;
   name: string;
   room: string;
@@ -38,7 +79,7 @@ interface DoctorOption {
 }
 
 export default function QueueDashboard() {
-  const { hasPermission } = useAuth();
+  const { hasPermission, appointmentEnabled } = useAuth();
   const isMobile = useIsMobile();
   const navigate = useNavigate();
 
@@ -52,7 +93,24 @@ export default function QueueDashboard() {
   const [doctorCallStates, setDoctorCallStates] = useState<Record<number, DoctorCallState>>({});
   const [callDurationMs, setCallDurationMs] = useState(10000);
   const [showArrivalTime, setShowArrivalTime] = useState<boolean | null>(null);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  // Pre-load TTS voices on mount so they're ready when handleCall fires.
+  // getVoices() is synchronous but returns [] until the browser loads the list;
+  // listening to voiceschanged ensures we have voices when the user first clicks.
+  const ttsVoicesRef = useRef<SpeechSynthesisVoice[]>([]);
+  useEffect(() => {
+    if (!window.speechSynthesis) return;
+    const load = () => { ttsVoicesRef.current = window.speechSynthesis.getVoices(); };
+    load();
+    window.speechSynthesis.addEventListener('voiceschanged', load);
+    return () => window.speechSynthesis.removeEventListener('voiceschanged', load);
+  }, []);
+  // Timestamp of the last locally-initiated call. DoctorCard skips TTS for WS
+  // events that arrive within 2 s of a local call (same terminal, same event).
+  const localCallTimestampRef = useRef<number>(0);
   const [doctors, setDoctors] = useState<DoctorOption[]>([]);
+  const [checkinLoading, setCheckinLoading] = useState<Record<number, boolean>>({});
+  const [apptModalOpen, setApptModalOpen] = useState(false);
   const [pageVisible, setPageVisible] = useState(() => {
     // SSR compatibility: check if document is available
     if (typeof document !== 'undefined') {
@@ -77,7 +135,7 @@ export default function QueueDashboard() {
     try {
       setLoading(true);
       const res = await listQueue();
-      const body = res as any;
+      const body = res as unknown as { data?: { list?: QueueEntry[] } };
       const list: QueueEntry[] = body.data?.list || [];
       setEntries(list);
     } catch {
@@ -92,7 +150,7 @@ export default function QueueDashboard() {
     (async () => {
       try {
         const res = await getCallDisplayDuration();
-        const body = res as any;
+        const body = res as unknown as { data?: { seconds?: number } };
         const seconds: number = body.data?.seconds ?? 10;
         setCallDurationMs(seconds * 1000);
       } catch {
@@ -106,10 +164,23 @@ export default function QueueDashboard() {
     (async () => {
       try {
         const res = await getShowArrivalTime();
-        const body = res as any;
+        const body = res as unknown as { data?: { show?: boolean } };
         setShowArrivalTime(body.data?.show ?? true);
       } catch {
         setShowArrivalTime(true);
+      }
+    })();
+  }, []);
+
+  // Fetch call sound enabled setting
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await getCallSoundEnabled();
+        const body = res as unknown as { data?: { enabled?: boolean } };
+        setSoundEnabled(body.data?.enabled ?? true);
+      } catch {
+        // default true
       }
     })();
   }, []);
@@ -144,7 +215,7 @@ export default function QueueDashboard() {
     (async () => {
       try {
         const res = await listQueueDoctors();
-        const body = res as any;
+        const body = res as unknown as { data?: { list?: QueueDoctorConfig[] } };
         const list: QueueDoctorConfig[] = body.data?.list || [];
         const docs: DoctorOption[] = list
           .filter(d => d.enabled)
@@ -169,10 +240,11 @@ export default function QueueDashboard() {
     fetchQueue();
   }, [fetchQueue]));
 
-  useWebSocket('queue_call', useCallback((msg: any) => {
-    const { doctor_id, seq, patient_name, room, doctor_name } = msg.payload || {};
-    if (seq > 0 && doctor_id) {
-      const notification: CallNotification = { seq, name: patient_name, room, doctor: doctor_name };
+  useWebSocket('queue_call', useCallback((msg: unknown) => {
+    const payload = (msg as { payload?: { doctor_id?: number; seq?: number; patient_name?: string; room?: string; doctor_name?: string } })?.payload;
+    const { doctor_id, seq, patient_name, room, doctor_name } = payload || {};
+    if (seq && seq > 0 && doctor_id) {
+      const notification: CallNotification = { callId: ++callIdCounter, seq, name: patient_name ?? '', room: room ?? '', doctor: doctor_name ?? '' };
       setDoctorCallStates(prev => {
         const existing = prev[doctor_id] ?? { queue: [], current: null };
         return { ...prev, [doctor_id]: { ...existing, queue: [...existing.queue, notification] } };
@@ -264,7 +336,7 @@ export default function QueueDashboard() {
         doctor_name: doc.name,
         room: doc.room,
       });
-      const body = res as any;
+      const body = res as unknown as { data?: { seq_number?: number; arrival_time?: string } };
       const entry = body.data;
       const seqStr = String(entry?.seq_number || '').padStart(2, '0');
       let successMsg = `${takeNameValue.trim()} 取号成功 -> ${seqStr}号 - ${doc.name}`;
@@ -274,8 +346,11 @@ export default function QueueDashboard() {
       }
       message.success(successMsg);
       setTakeNameValue('');
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || err?.message || '';
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??
+        (err as { message?: string })?.message ??
+        '';
       if (msg.includes('已在排队')) {
         message.warning(msg);
       } else {
@@ -286,8 +361,17 @@ export default function QueueDashboard() {
     }
   };
 
-  // Handle call
+  // Handle call — speak is invoked synchronously in the click handler to satisfy
+  // browser autoplay policy; async callNumber happens after.
   const handleCall = async (entry: QueueEntry) => {
+    if (soundEnabled) {
+      const voices = ttsVoicesRef.current.length
+        ? ttsVoicesRef.current
+        : window.speechSynthesis?.getVoices() ?? [];
+      speakTTS({ seq: entry.seq_number, name: entry.patient_name, room: entry.room }, voices);
+      // Mark this terminal as the initiator so DoctorCard skips the echoed WS TTS
+      localCallTimestampRef.current = Date.now();
+    }
     try {
       await callNumber(entry.id);
     } catch {
@@ -303,6 +387,19 @@ export default function QueueDashboard() {
       message.error('完成就诊失败');
     }
   };
+
+  // Handle appointment checkin
+  const handleCheckin = useCallback(async (apptId: number, entryId: number) => {
+    setCheckinLoading(prev => ({ ...prev, [entryId]: true }));
+    try {
+      await checkinAppointment(apptId);
+      await fetchQueue();
+    } catch {
+      message.error('签到失败');
+    } finally {
+      setCheckinLoading(prev => ({ ...prev, [entryId]: false }));
+    }
+  }, [fetchQueue]);
 
   // Handle clear
   const handleClear = () => {
@@ -404,7 +501,26 @@ export default function QueueDashboard() {
       >
         取号
       </Button>
+      {hasPermission('appointment:create') && appointmentEnabled && (
+        <Button
+          icon={<CalendarOutlined />}
+          onClick={() => setApptModalOpen(true)}
+          size="middle"
+          style={{ background: '#e6f7ff', borderColor: '#91caff', color: '#0958d9' }}
+        >
+          预约
+        </Button>
+      )}
     </div>
+  );
+
+  const apptModal = (
+    <AppointmentModal
+      open={apptModalOpen}
+      onClose={() => setApptModalOpen(false)}
+      onSuccess={fetchQueue}
+      doctorOptions={doctorOptions}
+    />
   );
 
   if (isMobile) {
@@ -456,6 +572,11 @@ export default function QueueDashboard() {
                 hasWritePermission={hasPermission('queue:update')}
                 pageVisible={pageVisible}
                 showArrivalTime={showArrivalTime}
+                onCheckin={handleCheckin}
+                checkinLoading={checkinLoading}
+                soundEnabled={soundEnabled}
+                ttsVoicesRef={ttsVoicesRef}
+                localCallTimestampRef={localCallTimestampRef}
               />
             ))
           )}
@@ -463,6 +584,7 @@ export default function QueueDashboard() {
 
         {/* Take number bar */}
         {takeNumberBar}
+        {apptModal}
       </div>
     );
   }
@@ -522,12 +644,18 @@ export default function QueueDashboard() {
             hasWritePermission={hasPermission('queue:update')}
             pageVisible={pageVisible}
             showArrivalTime={showArrivalTime}
+            onCheckin={handleCheckin}
+            checkinLoading={checkinLoading}
+            soundEnabled={soundEnabled}
+            ttsVoicesRef={ttsVoicesRef}
+            localCallTimestampRef={localCallTimestampRef}
           />
         ))}
       </div>
 
       {/* Take number bar */}
       {takeNumberBar}
+      {apptModal}
     </div>
   );
 }
@@ -549,7 +677,7 @@ function StatBadge({ count, label, color, bgFrom, bgTo, border }: {
   );
 }
 
-function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall, callDuration, onCallClose, hasWritePermission, pageVisible = true, showArrivalTime }: {
+function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall, callDuration, onCallClose, hasWritePermission, pageVisible = true, showArrivalTime, onCheckin, checkinLoading, soundEnabled, ttsVoicesRef, localCallTimestampRef }: {
   group: DoctorGroup;
   colorIndex: number;
   speed: number;
@@ -561,10 +689,29 @@ function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall,
   hasWritePermission: boolean;
   pageVisible?: boolean;
   showArrivalTime: boolean | null;
+  onCheckin: (apptId: number, entryId: number) => void;
+  checkinLoading: Record<number, boolean>;
+  soundEnabled?: boolean;
+  ttsVoicesRef: React.RefObject<SpeechSynthesisVoice[]>;
+  localCallTimestampRef: React.RefObject<number>;
 }) {
   const color = DOCTOR_COLORS[colorIndex % DOCTOR_COLORS.length];
   const scrollRef = useRef<HTMLDivElement>(null);
   const hoveredRef = useRef(false);
+  const prevCallIdRef = useRef<number>(-1);
+
+  // Speak TTS when a new call arrives from another terminal (via WebSocket).
+  // Each call event has a unique callId, so repeat calls to the same patient
+  // are handled correctly. Skip if this terminal initiated the call within 2 s.
+  useEffect(() => {
+    if (!currentCall || !soundEnabled || !window.speechSynthesis) return;
+    // deduplicate by callId — prevents firing twice on same event
+    if (currentCall.callId === prevCallIdRef.current) return;
+    prevCallIdRef.current = currentCall.callId;
+    // If this terminal fired the call recently, the handleCall already spoke it
+    if (Date.now() - (localCallTimestampRef.current ?? 0) < 2000) return;
+    speakTTS(currentCall, ttsVoicesRef.current ?? []);
+  }, [currentCall, soundEnabled, ttsVoicesRef, localCallTimestampRef]);
 
   // Auto scroll
   useEffect(() => {
@@ -683,6 +830,8 @@ function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall,
             onComplete={onComplete}
             hasWritePermission={hasWritePermission}
             showArrivalTime={showArrivalTime}
+            onCheckin={onCheckin}
+            checkinLoading={checkinLoading}
           />
         )}
         {/* Waiting entries */}
@@ -696,6 +845,8 @@ function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall,
             onComplete={onComplete}
             hasWritePermission={hasWritePermission}
             showArrivalTime={showArrivalTime}
+            onCheckin={onCheckin}
+            checkinLoading={checkinLoading}
           />
         ))}
       </div>
@@ -716,12 +867,13 @@ function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall,
         duration={callDuration}
         onClose={onCallClose}
         isMobile={false}
+        soundEnabled={soundEnabled}
       />
     </div>
   );
 }
 
-function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermission, showArrivalTime }: {
+function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermission, showArrivalTime, onCheckin, checkinLoading }: {
   entry: QueueEntry;
   type: 'seeing' | 'next' | 'waiting';
   position: number;
@@ -729,6 +881,8 @@ function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermissio
   onComplete: (e: QueueEntry) => void;
   hasWritePermission: boolean;
   showArrivalTime: boolean | null;
+  onCheckin: (apptId: number, entryId: number) => void;
+  checkinLoading: Record<number, boolean>;
 }) {
   const seq = String(entry.seq_number).padStart(2, '0');
 
@@ -798,6 +952,20 @@ function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermissio
               style={{ fontWeight: 700, fontSize: 17 }}
             >
               {entry.patient_name}
+              {entry.source === 'appointment' && (
+                <span style={{
+                  display: 'inline-block',
+                  fontSize: 9,
+                  fontWeight: 800,
+                  background: '#1677ff',
+                  color: '#fff',
+                  borderRadius: 3,
+                  padding: '0 3px',
+                  verticalAlign: 'super',
+                  marginLeft: 2,
+                  lineHeight: 1.5,
+                }}>预</span>
+              )}
             </span>
             <span style={{
               fontSize: 12, color: config.tagColor,
@@ -828,6 +996,39 @@ function QueueRow({ entry, type, position, onCall, onComplete, hasWritePermissio
             </div>
           )}
         </div>
+
+        {/* Appointment checkin action */}
+        {entry.source === 'appointment' && (
+          entry.checkin_status === 'done' ? (
+            <span style={{
+              fontSize: 10,
+              padding: '1px 6px',
+              borderRadius: 8,
+              fontWeight: 600,
+              color: '#52c41a',
+              background: '#f6ffed',
+              border: '1px solid #b7eb8f',
+              whiteSpace: 'nowrap',
+            }}>✓ 已到</span>
+          ) : (
+            <Button
+              size="small"
+              type="primary"
+              style={{ background: '#fa8c16', borderColor: '#fa8c16', fontSize: 12 }}
+              loading={checkinLoading[entry.id]}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (entry.appointment_id) {
+                  onCheckin(entry.appointment_id, entry.id);
+                } else {
+                  message.warning('预约数据异常，请刷新后重试');
+                }
+              }}
+            >
+              签到
+            </Button>
+          )
+        )}
 
         {/* Action buttons */}
         {hasWritePermission && type === 'seeing' && (

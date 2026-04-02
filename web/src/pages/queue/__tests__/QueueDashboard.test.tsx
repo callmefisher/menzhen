@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import QueueDashboard from '../QueueDashboard';
+import type { QueueEntry } from '../../../api/queue';
 
 // ── API mocks ──────────────────────────────────────────────────────────────
 
@@ -26,6 +27,18 @@ const mockGetCallDisplayDuration = vi.fn();
 vi.mock('../../../api/queue-doctor', () => ({
   listQueueDoctors: (...args: unknown[]) => mockListQueueDoctors(...args),
   getCallDisplayDuration: (...args: unknown[]) => mockGetCallDisplayDuration(...args),
+  getShowArrivalTime: vi.fn().mockResolvedValue({ data: { show: true } }),
+}));
+
+const mockCheckinAppointment = vi.fn();
+vi.mock('../../../api/appointment', () => ({
+  checkinAppointment: (...args: unknown[]) => mockCheckinAppointment(...args),
+  createAppointment: vi.fn(),
+  getSlots: vi.fn().mockResolvedValue({ data: { data: { list: [] } } }),
+}));
+
+vi.mock('../../../components/AppointmentModal', () => ({
+  default: () => null,
 }));
 
 // ── Auth mock ──────────────────────────────────────────────────────────────
@@ -43,10 +56,10 @@ vi.mock('../../../store/auth', () => ({
 
 // ── WebSocket mock (captures handlers for manual triggering) ───────────────
 
-const wsHandlers: Record<string, (msg: any) => void> = {};
+const wsHandlers: Record<string, (msg: unknown) => void> = {};
 
 vi.mock('../../../hooks/useWebSocket', () => ({
-  useWebSocket: (type: string, handler: (msg: any) => void) => {
+  useWebSocket: (type: string, handler: (msg: unknown) => void) => {
     wsHandlers[type] = handler;
   },
 }));
@@ -73,7 +86,7 @@ vi.mock('antd', async () => {
     ...actual,
     message: { error: vi.fn(), success: vi.fn(), warning: vi.fn() },
     Modal: {
-      ...(actual as any).Modal,
+      ...(actual as unknown as { Modal: Record<string, unknown> }).Modal,
       confirm: vi.fn(),
     },
   };
@@ -81,7 +94,7 @@ vi.mock('antd', async () => {
 
 // ── Fixtures ───────────────────────────────────────────────────────────────
 
-const makeEntry = (overrides: Partial<Record<string, unknown>> = {}) => ({
+const makeEntry = (overrides: Partial<QueueEntry> = {}): QueueEntry => ({
   id: 1,
   tenant_id: 1,
   patient_id: 100,
@@ -116,6 +129,7 @@ describe('QueueDashboard', () => {
     mockListQueue.mockResolvedValue({ data: { list: [] } });
     mockListQueueDoctors.mockResolvedValue({ data: { list: [{ id: 1, user_id: 10, user_name: '张医生', room: '1诊室', enabled: true, sort_order: 0 }] } });
     mockGetCallDisplayDuration.mockResolvedValue({ data: { seconds: 10 } });
+    mockCheckinAppointment.mockResolvedValue({ data: { code: 0 } });
   });
 
   // 1. Doctor cards rendered
@@ -221,6 +235,7 @@ describe('QueueDashboard', () => {
 
     const waitingBadge = screen.getByText('候诊').closest('div');
     expect(waitingBadge).toBeInTheDocument();
+    expect(waitingBadge).toHaveTextContent('2'); // 2 waiting entries
   });
 
   // 8. Page title / header renders
@@ -564,5 +579,65 @@ describe('QueueDashboard', () => {
       expect(screen.getByText('张三叫号')).toBeInTheDocument();
       expect(screen.getByText('李四叫号')).toBeInTheDocument();
     });
+  });
+
+  // 25. Shows 签到 button for appointment entry with pending checkin
+  it('shows 签到 button for appointment entry with checkin_status=pending', async () => {
+    mockListQueue.mockResolvedValue({
+      data: {
+        list: [makeEntry({
+          id: 10,
+          source: 'appointment',
+          checkin_status: 'pending',
+          appointment_id: 5,
+          slot_start: '09:00',
+          slot_end: '09:30',
+        })],
+      },
+    });
+
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByText('张三')).toBeInTheDocument();
+    });
+    // antd v5 auto-inserts a space between Chinese chars in Button text: '签 到'
+    const buttons = screen.getAllByRole('button');
+    const checkinBtn = buttons.find(btn => btn.textContent?.replace(/\s/g, '') === '签到');
+    expect(checkinBtn).toBeDefined();
+    expect(screen.getByText('预')).toBeInTheDocument();
+
+    // Click 签到 button and verify checkinAppointment is called with appointment_id=5
+    fireEvent.click(checkinBtn!);
+
+    await waitFor(() => {
+      expect(mockCheckinAppointment).toHaveBeenCalledWith(5);
+    });
+
+    // After checkin, fetchQueue should be called again (initial load + post-checkin refresh)
+    await waitFor(() => {
+      expect(mockListQueue).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  // 26. Shows ✓ 已到 chip for appointment entry with checkin_status=done
+  it('shows ✓ 已到 chip for appointment entry with checkin_status=done', async () => {
+    mockListQueue.mockResolvedValue({
+      data: {
+        list: [makeEntry({
+          id: 11,
+          source: 'appointment',
+          checkin_status: 'done',
+          appointment_id: 6,
+          slot_start: '09:00',
+          slot_end: '09:30',
+        })],
+      },
+    });
+
+    renderDashboard();
+
+    expect(await screen.findByText('✓ 已到')).toBeInTheDocument();
+    expect(screen.getByText('预')).toBeInTheDocument();
   });
 });

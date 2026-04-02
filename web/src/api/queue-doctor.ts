@@ -12,6 +12,12 @@ export interface QueueDoctor {
   updated_at: string;
 }
 
+export interface AppointmentConfig {
+  slot_minutes: number;
+  max_appt_per_slot: number;
+  advance_days: number;
+}
+
 export const listQueueDoctors = () =>
   request.get('/queue-doctors');
 
@@ -44,3 +50,34 @@ export const getShowArrivalTime = () =>
 
 export const setShowArrivalTime = (show: boolean) =>
   request.put('/tenant/show-arrival-time', { show });
+
+export const getAppointmentEnabled = () =>
+  request.get('/tenant/appointment-enabled');
+
+export const setAppointmentEnabled = (enabled: boolean) =>
+  request.put('/tenant/appointment-enabled', { enabled });
+
+export const getAppointmentConfig = () =>
+  request.get('/tenant/appointment-config');
+
+export const setAppointmentConfig = (data: AppointmentConfig) =>
+  request.put('/tenant/appointment-config', data);
+
+export const getCallSoundEnabled = () =>
+  request.get<{ code: number; data: { enabled: boolean } }>('/tenant/call-sound-enabled');
+
+export const setCallSoundEnabled = (enabled: boolean) =>
+  request.put<{ code: number; data: null }>('/tenant/call-sound-enabled', { enabled });
+
+export interface DoctorScheduleConfig {
+  doctor_id: number;
+  weekdays: number;    // bitmask: bit0=Sun, bit1=Mon, ..., bit6=Sat; 0 = no restriction
+  range_start: number; // days offset from today (>=1)
+  range_end: number;   // days offset from today
+}
+
+export const getDoctorSchedule = (doctorId: number) =>
+  request.get(`/queue-doctors/${doctorId}/schedule`);
+
+export const setDoctorSchedule = (doctorId: number, data: Omit<DoctorScheduleConfig, 'doctor_id'>) =>
+  request.put(`/queue-doctors/${doctorId}/schedule`, data);

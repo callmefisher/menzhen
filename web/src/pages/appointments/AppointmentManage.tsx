@@ -1,0 +1,273 @@
+import { useState, useCallback, useMemo, useEffect } from 'react';
+import {
+  Table,
+  Button,
+  Input,
+  Tag,
+  Space,
+  Typography,
+  message,
+  DatePicker,
+} from 'antd';import { PlusOutlined, SearchOutlined, LeftOutlined, RightOutlined, CalendarOutlined } from '@ant-design/icons';
+import dayjs, { type Dayjs } from 'dayjs';
+import type { ColumnsType } from 'antd/es/table';
+import { listAppointments, cancelAppointment, type Appointment } from '../../api/appointment';
+import { listQueueDoctors, type QueueDoctor } from '../../api/queue-doctor';
+import AppointmentModal from '../../components/AppointmentModal';
+
+
+const STATUS_MAP: Record<string, { color: string; label: string }> = {
+  pending:   { color: 'blue',    label: '待签到' },
+  queued:    { color: 'orange',  label: '已入队' },
+  cancelled: { color: 'default', label: '已取消' },
+  no_show:   { color: 'red',     label: '未到诊' },
+};
+
+export default function AppointmentManage() {
+  const [selectedDate, setSelectedDate] = useState<Dayjs>(() => dayjs().add(1, 'day'));
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [cancelLoading, setCancelLoading] = useState<Record<number, boolean>>({});
+  const [doctorFilter, setDoctorFilter] = useState('');
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
+  const [doctors, setDoctors] = useState<QueueDoctor[]>([]);
+
+  const fetchAppointments = useCallback(async (date: Dayjs) => {
+    setLoading(true);
+    try {
+      const res = await listAppointments(date.format('YYYY-MM-DD'));
+      const body = res as unknown as { data?: { list?: Appointment[] } };
+      setAppointments(body.data?.list ?? []);
+    } catch {
+      message.error('加载预约失败');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAppointments(selectedDate);
+  }, [selectedDate, fetchAppointments]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await listQueueDoctors();
+        const body = res as unknown as { data?: { list?: QueueDoctor[] } };
+        setDoctors((body.data?.list ?? []).filter(d => d.enabled));
+      } catch {
+        // non-critical, modal will still work
+      }
+    })();
+  }, []);
+
+  const handleCancel = useCallback(
+    async (id: number) => {
+      setCancelLoading((prev) => ({ ...prev, [id]: true }));
+      try {
+        await cancelAppointment(id);
+        message.success('预约已取消');
+        fetchAppointments(selectedDate);
+      } catch {
+        message.error('取消失败，请重试');
+      } finally {
+        setCancelLoading((prev) => ({ ...prev, [id]: false }));
+      }
+    },
+    [fetchAppointments, selectedDate],
+  );
+
+  const filteredAppointments = useMemo(() => {
+    if (!doctorFilter.trim()) return appointments;
+    const lower = doctorFilter.trim().toLowerCase();
+    return appointments.filter((a) => a.doctor_name.toLowerCase().includes(lower));
+  }, [appointments, doctorFilter]);
+
+  const columns = useMemo<ColumnsType<Appointment>>(
+    () => [
+      {
+        title: '时间',
+        key: 'slot',
+        width: 100,
+        render: (_: unknown, r: Appointment) => (
+          <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: 12, whiteSpace: 'nowrap' }}>
+            {r.slot_start}–{r.slot_end}
+          </span>
+        ),
+      },
+      {
+        title: '患者',
+        dataIndex: 'patient_name',
+        key: 'patient_name',
+        ellipsis: true,
+      },
+      {
+        title: '医生 / 诊室',
+        key: 'doctor_room',
+        ellipsis: true,
+        render: (_: unknown, r: Appointment) => (
+          <span>
+            {r.doctor_name}
+            {r.room && <span style={{ color: '#999', fontSize: 12, marginLeft: 4 }}>·{r.room}</span>}
+          </span>
+        ),
+      },
+      {
+        title: '状态',
+        key: 'status',
+        width: 80,
+        render: (_: unknown, r: Appointment) => {
+          const s = STATUS_MAP[r.status] ?? { color: 'default', label: r.status };
+          return <Tag color={s.color} style={{ marginInlineEnd: 0 }}>{s.label}</Tag>;
+        },
+      },
+      {
+        title: '操作',
+        key: 'action',
+        width: 120,
+        render: (_: unknown, r: Appointment) =>
+          r.status === 'pending' ? (
+            <Space size={4}>
+              <Button
+                type="link"
+                size="small"
+                style={{ padding: '0 4px' }}
+                onClick={() => { setEditingAppointment(r); setModalOpen(true); }}
+              >
+                编辑
+              </Button>
+              <Button
+                type="link"
+                danger
+                size="small"
+                style={{ padding: '0 4px' }}
+                loading={cancelLoading[r.id]}
+                onClick={() => handleCancel(r.id)}
+              >
+                取消
+              </Button>
+            </Space>
+          ) : null,
+      },
+    ],
+    [cancelLoading, handleCancel],
+  );
+
+  const isToday = selectedDate.isSame(dayjs(), 'day');
+  const isTomorrow = selectedDate.isSame(dayjs().add(1, 'day'), 'day');
+
+  const pendingCount = useMemo(
+    () => appointments.filter((a) => a.status === 'pending' || a.status === 'queued').length,
+    [appointments],
+  );
+
+  return (
+    <div style={{ maxWidth: '100%', overflow: 'hidden' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+        <Typography.Title level={4} style={{ margin: 0 }}>预约管理</Typography.Title>
+        <Button
+          type="primary"
+          icon={<PlusOutlined />}
+          onClick={() => { setEditingAppointment(null); setModalOpen(true); }}
+        >
+          新建预约
+        </Button>
+      </div>
+
+      {/* Toolbar */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+        padding: '10px 12px', background: '#fafafa', borderRadius: 8, marginBottom: 12,
+        border: '1px solid #f0f0f0',
+      }}>
+        {/* Date navigator */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+          <Button
+            size="small"
+            icon={<LeftOutlined />}
+            onClick={() => setSelectedDate((d) => d.subtract(1, 'day'))}
+          />
+          <DatePicker
+            value={selectedDate}
+            onChange={(d) => { if (d) setSelectedDate(d); }}
+            allowClear={false}
+            style={{ width: 130 }}
+            format="MM月DD日"
+            size="small"
+          />
+          <Button
+            size="small"
+            icon={<RightOutlined />}
+            onClick={() => setSelectedDate((d) => d.add(1, 'day'))}
+          />
+          {!isToday && !isTomorrow && (
+            <Button
+              size="small"
+              icon={<CalendarOutlined />}
+              onClick={() => setSelectedDate(dayjs().add(1, 'day'))}
+            >
+              明天
+            </Button>
+          )}
+        </div>
+
+        {/* Date label */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          <span style={{ color: '#666', fontSize: 13 }}>
+            {selectedDate.format('YYYY年MM月DD日')}
+          </span>
+          {isToday && <Tag color="green" style={{ marginInlineEnd: 0 }}>今天</Tag>}
+          {isTomorrow && <Tag color="blue" style={{ marginInlineEnd: 0 }}>明天</Tag>}
+          {pendingCount > 0 && (
+            <Tag color="blue" style={{ marginInlineEnd: 0 }}>待诊 {pendingCount}</Tag>
+          )}
+        </div>
+
+        {/* Doctor filter */}
+        <Input
+          allowClear
+          placeholder="按医生筛选"
+          prefix={<SearchOutlined />}
+          value={doctorFilter}
+          onChange={(e) => setDoctorFilter(e.target.value)}
+          style={{ width: 140, marginLeft: 'auto' }}
+          size="small"
+        />
+      </div>
+
+      {/* Table */}
+      <div style={{ overflowX: 'auto' }}>
+        <Table<Appointment>
+          rowKey="id"
+          loading={loading}
+          dataSource={filteredAppointments}
+          columns={columns}
+          pagination={{ pageSize: 20, showSizeChanger: false, hideOnSinglePage: true }}
+          locale={{ emptyText: '暂无预约' }}
+          size="small"
+          scroll={{ x: 480 }}
+        />
+      </div>
+
+      <AppointmentModal
+        open={modalOpen}
+        doctorOptions={doctors.map(d => ({ id: d.user_id, name: d.user_name, room: d.room }))}
+        initialValues={editingAppointment ? {
+          id: editingAppointment.id,
+          patient_name: editingAppointment.patient_name,
+          patient_id: editingAppointment.patient_id,
+          doctor_id: editingAppointment.doctor_id,
+          doctor_name: editingAppointment.doctor_name,
+          room: editingAppointment.room,
+          appoint_date: editingAppointment.appoint_date,
+          slot_start: editingAppointment.slot_start,
+          slot_end: editingAppointment.slot_end,
+        } : undefined}
+        onSuccess={() => fetchAppointments(selectedDate)}
+        onClose={() => { setModalOpen(false); setEditingAppointment(null); }}
+      />
+    </div>
+  );
+}

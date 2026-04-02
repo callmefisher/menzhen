@@ -11,6 +11,7 @@ interface CallOverlayProps {
   onClose: () => void;
   duration?: number; // ms, default 15000
   isMobile?: boolean;
+  soundEnabled?: boolean; // kept for API compatibility, sound is triggered by caller
 }
 
 export default function CallOverlay({

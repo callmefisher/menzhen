@@ -16,6 +16,10 @@ export interface QueueEntry {
   completed_at?: string;
   source: 'walk_in' | 'appointment';
   queue_date: string;
+  checkin_status?: 'pending' | 'done';
+  appointment_id?: number;
+  slot_start?: string;
+  slot_end?: string;
   created_at: string;
 }
 
