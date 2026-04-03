@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPatientAuthService_Login_NewUser_AutoCreatesPatient(t *testing.T) {
+func TestPatientAuthService_Login_NewUser_NoAutoCreatePatient(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	svc := service.NewPatientAuthService(db)
 
@@ -22,12 +22,9 @@ func TestPatientAuthService_Login_NewUser_AutoCreatesPatient(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "13800138001", pu.Phone)
 	assert.Equal(t, "张三", pu.Name)
-	assert.NotNil(t, pu.PatientID, "should auto-create patient record")
-
-	// Patient record should exist
-	var patient model.Patient
-	require.NoError(t, db.First(&patient, *pu.PatientID).Error)
-	assert.Equal(t, "张三", patient.Name)
+	// Self-registered users have no doctor-created Patient record yet; PatientID stays nil.
+	// (patients.created_by has FK→users.id so auto-create is not safe here)
+	assert.Nil(t, pu.PatientID, "self-registered user should not auto-create a patient record")
 }
 
 func TestPatientAuthService_Login_ExistingPatientLinked(t *testing.T) {
