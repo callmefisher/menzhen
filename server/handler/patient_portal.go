@@ -48,9 +48,21 @@ func (h *PatientPortalHandler) ListDoctors(c *gin.Context) {
 	var doctors []model.QueueDoctor
 	h.db.Where("tenant_id = ? AND enabled = true", tenantID).Order("sort_order").Find(&doctors)
 
-	// Populate UserName from users table for each doctor.
-	for i := range doctors {
-		doctors[i].UserName = h.doctorDisplayName(doctors[i])
+	if len(doctors) > 0 {
+		// Collect all user IDs in one pass, then fetch names in a single query.
+		userIDs := make([]uint, 0, len(doctors))
+		for _, d := range doctors {
+			userIDs = append(userIDs, d.UserID)
+		}
+		var users []model.User
+		h.db.Select("id, real_name").Where("id IN ?", userIDs).Find(&users)
+		nameByID := make(map[uint]string, len(users))
+		for _, u := range users {
+			nameByID[uint(u.ID)] = u.RealName
+		}
+		for i := range doctors {
+			doctors[i].UserName = nameByID[doctors[i].UserID]
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success", "data": doctors})
 }
@@ -390,10 +402,21 @@ func (h *PatientPortalHandler) GetRecord(c *gin.Context) {
 
 	var prescriptions []model.Prescription
 	h.db.Where("record_id = ?", record.ID).Find(&prescriptions)
-	for i := range prescriptions {
-		var items []model.PrescriptionItem
-		h.db.Where("prescription_id = ?", prescriptions[i].ID).Find(&items)
-		prescriptions[i].Items = items
+	if len(prescriptions) > 0 {
+		// Collect all prescription IDs, fetch all items in one query, then assign.
+		prescriptionIDs := make([]uint64, 0, len(prescriptions))
+		for _, p := range prescriptions {
+			prescriptionIDs = append(prescriptionIDs, p.ID)
+		}
+		var allItems []model.PrescriptionItem
+		h.db.Where("prescription_id IN ?", prescriptionIDs).Find(&allItems)
+		itemsByPrescID := make(map[uint64][]model.PrescriptionItem)
+		for _, item := range allItems {
+			itemsByPrescID[item.PrescriptionID] = append(itemsByPrescID[item.PrescriptionID], item)
+		}
+		for i := range prescriptions {
+			prescriptions[i].Items = itemsByPrescID[prescriptions[i].ID]
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
