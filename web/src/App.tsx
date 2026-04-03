@@ -11,6 +11,15 @@ import './styles/accessibility.css';
 import AppLayout from './components/Layout';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import { PatientAuthProvider } from './store/patientAuth';
+import PatientLayout from './components/PatientLayout';
+import PatientLogin from './pages/patient/PatientLogin';
+import PatientHome from './pages/patient/PatientHome';
+import PatientAppointment from './pages/patient/PatientAppointment';
+import PatientQueue from './pages/patient/PatientQueue';
+import PatientRecords from './pages/patient/PatientRecords';
+import PatientRecordDetail from './pages/patient/PatientRecordDetail';
+import PatientBilling from './pages/patient/PatientBilling';
 import RecordList from './pages/records/RecordList';
 import RecordForm from './pages/records/RecordForm';
 import PatientList from './pages/patients/PatientList';
@@ -109,6 +118,25 @@ function AppRoutes() {
         <Route path="settings/queue" element={<QueueSettings />} />
         <Route path="settings/appointment-slots" element={<AppointmentSlots />} />
       </Route>
+      <Route
+        path="/patient"
+        element={
+          <PatientAuthProvider>
+            <Routes>
+              <Route path="login" element={<PatientLogin />} />
+              <Route element={<PatientLayout />}>
+                <Route path="home" element={<PatientHome />} />
+                <Route path="appointments" element={<PatientAppointment />} />
+                <Route path="queue" element={<PatientQueue />} />
+                <Route path="records" element={<PatientRecords />} />
+                <Route path="records/:id" element={<PatientRecordDetail />} />
+                <Route path="billing" element={<PatientBilling />} />
+                <Route index element={<Navigate to="home" replace />} />
+              </Route>
+            </Routes>
+          </PatientAuthProvider>
+        }
+      />
       <Route path="*" element={<Navigate to="/patients" replace />} />
     </Routes>
   );
