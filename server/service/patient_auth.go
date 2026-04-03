@@ -79,13 +79,24 @@ func (s *PatientAuthService) Login(tenantID uint64, phone, name string) (*model.
 	}
 
 	if txErr := s.db.Transaction(func(tx *gorm.DB) error {
-		// Auto-link to existing patient record by phone match (doctor-created records only).
-		// Do NOT auto-create a Patient record here: the patients table requires a valid
-		// created_by (FK → users.id), which doesn't exist in the self-registration flow.
-		// PatientID stays nil until a doctor creates the record and links it.
+		// Auto-link to existing patient record by phone match.
 		var patient model.Patient
 		if tx.Where("tenant_id = ? AND phone = ?", tenantID, phone).First(&patient).Error == nil {
 			pu.PatientID = &patient.ID
+		} else {
+			// Auto-create a new patient record. created_by=0 means system-created.
+			// The fk_patients_creator constraint has been dropped to allow this.
+			newPatient := model.Patient{
+				TenantID:  tenantID,
+				Name:      name,
+				Phone:     phone,
+				Gender:    0,
+				CreatedBy: 0,
+			}
+			if err := tx.Create(&newPatient).Error; err != nil {
+				return err
+			}
+			pu.PatientID = &newPatient.ID
 		}
 		return tx.Create(&pu).Error
 	}); txErr != nil {
