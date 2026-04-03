@@ -92,6 +92,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	authenticated.Use(middleware.AuthMiddleware(cfg.JWTSecret))
 	authenticated.Use(middleware.TokenVersionMiddleware(db))
 	authenticated.Use(middleware.TenantStatusMiddleware(db))
+	authenticated.Use(middleware.SuperAdminTenantOverrideMiddleware(db))
 	{
 		// File download route (authenticated, tenant-isolated).
 		authenticated.GET("/files/*key", uploadHandler.GetFile)
@@ -343,6 +344,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			appt.POST("", middleware.RequirePermission(db, "appointment:create"), apptHandler.Create)
 			appt.GET("", middleware.RequirePermission(db, "appointment:read"), apptHandler.List)
 			appt.GET("/slots", middleware.RequirePermission(db, "appointment:read"), apptHandler.Slots)
+			appt.POST("/enqueue-today", middleware.RequirePermission(db, "appointment:update"), apptHandler.EnqueueToday)
 			appt.PUT("/:id", middleware.RequirePermission(db, "appointment:update"), apptHandler.Update)
 			appt.POST("/:id/checkin", middleware.RequirePermission(db, "appointment:checkin"), apptHandler.Checkin)
 			appt.POST("/:id/cancel", middleware.RequirePermission(db, "appointment:update"), apptHandler.Cancel)
@@ -467,6 +469,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	{
 		patientPublic.POST("/auth/login", patientAuthHandler.Login)
 		patientPublic.GET("/auth/tenant-list", patientAuthHandler.ListTenantsByPhone)
+		patientPublic.GET("/auth/tenant-info", patientAuthHandler.GetTenantInfo)
 	}
 
 	// Authenticated patient routes (patient JWT required).
@@ -475,6 +478,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	{
 		patientAuth.GET("/me", patientAuthHandler.Me)
 		patientAuth.GET("/doctors", patientPortalHandler.ListDoctors)
+		patientAuth.GET("/doctors/:id/schedule", patientPortalHandler.GetDoctorSchedule)
 
 		// Appointments
 		patientAuth.GET("/appointments", patientPortalHandler.ListAppointments)

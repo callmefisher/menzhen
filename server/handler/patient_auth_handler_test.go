@@ -38,6 +38,7 @@ func setupPatientAuthRouter(db *gorm.DB) *gin.Engine {
 	patientPublic := v1.Group("/patient")
 	patientPublic.POST("/auth/login", authHandler.Login)
 	patientPublic.GET("/auth/tenant-list", authHandler.ListTenantsByPhone)
+	patientPublic.GET("/auth/tenant-info", authHandler.GetTenantInfo)
 
 	// Patient-authenticated routes
 	patientAuthed := v1.Group("/patient")
@@ -335,4 +336,65 @@ func TestPatientMe_IncludesTenantName(t *testing.T) {
 	assert.Equal(t, "我的诊所", data["tenant_name"])
 	assert.Equal(t, float64(tenant.ID), data["tenant_id"])
 	assert.Equal(t, "孙七", data["name"])
+}
+
+// ─── GetTenantInfo tests ───────────────────────────────────────────────────
+
+func TestGetTenantInfo_Success(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	router := setupPatientAuthRouter(db)
+
+	tenant := testutil.SeedTestTenant(t, db, "成功诊所", "success-clinic")
+
+	w := doPublicGet(router, "/api/v1/patient/auth/tenant-info?code=success-clinic")
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	body := parseJSON(w)
+	assert.Equal(t, float64(0), body["code"])
+	assert.Equal(t, "success", body["message"])
+	data, ok := body["data"].(map[string]interface{})
+	require.True(t, ok, "data should be an object")
+	assert.Equal(t, tenant.Name, data["tenant_name"])
+	assert.Equal(t, tenant.Code, data["tenant_code"])
+}
+
+func TestGetTenantInfo_NotFound(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	router := setupPatientAuthRouter(db)
+
+	w := doPublicGet(router, "/api/v1/patient/auth/tenant-info?code=nonexistent-code")
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	body := parseJSON(w)
+	assert.Equal(t, float64(404), body["code"])
+	assert.Equal(t, "诊所不存在或已禁用", body["message"])
+}
+
+func TestGetTenantInfo_EmptyCode(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	router := setupPatientAuthRouter(db)
+
+	// No code param at all
+	w := doPublicGet(router, "/api/v1/patient/auth/tenant-info")
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	body := parseJSON(w)
+	assert.Equal(t, float64(400), body["code"])
+	assert.Equal(t, "参数校验失败", body["message"])
+}
+
+func TestGetTenantInfo_DisabledTenant(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	router := setupPatientAuthRouter(db)
+
+	// Seed tenant with status=0 (disabled)
+	disabled := model.Tenant{Name: "停用诊所", Code: "disabled-clinic", Status: 0}
+	require.NoError(t, db.Create(&disabled).Error)
+
+	w := doPublicGet(router, "/api/v1/patient/auth/tenant-info?code=disabled-clinic")
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	body := parseJSON(w)
+	assert.Equal(t, float64(404), body["code"])
+	assert.Equal(t, "诊所不存在或已禁用", body["message"])
 }

@@ -159,6 +159,34 @@ func (h *PatientAuthHandler) ListTenantsByPhone(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success", "data": items})
 }
 
+// GetTenantInfo handles GET /api/v1/patient/auth/tenant-info?code=XXX.
+// Public endpoint — no auth required.
+// Returns basic clinic info (name + code) for QR code landing page display.
+func (h *PatientAuthHandler) GetTenantInfo(c *gin.Context) {
+	code := strings.TrimSpace(c.Query("code"))
+	if code == "" || len(code) > 50 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "参数校验失败"})
+		return
+	}
+	var tenant model.Tenant
+	if err := h.db.Where("code = ? AND status = 1", code).First(&tenant).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"code": 404, "message": "诊所不存在或已禁用"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "服务错误"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data": gin.H{
+			"tenant_name": tenant.Name,
+			"tenant_code": tenant.Code,
+		},
+	})
+}
+
 // Me handles GET /api/v1/patient/me.
 func (h *PatientAuthHandler) Me(c *gin.Context) {
 	patientUserID := middleware.GetPatientUserID(c)
