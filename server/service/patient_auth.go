@@ -78,27 +78,28 @@ func (s *PatientAuthService) Login(tenantID uint64, phone, name string) (*model.
 		PasswordHash: string(hash),
 	}
 
-	// Auto-link to existing patient record by phone match.
-	var patient model.Patient
-	if s.db.Where("tenant_id = ? AND phone = ? AND deleted_at IS NULL", tenantID, phone).First(&patient).Error == nil {
-		pu.PatientID = &patient.ID
-	} else {
-		// Auto-create a new patient record.
-		newPatient := model.Patient{
-			TenantID:  tenantID,
-			Name:      name,
-			Phone:     phone,
-			Gender:    0,
-			CreatedBy: 0, // 0 = system-created via patient self-registration
+	if txErr := s.db.Transaction(func(tx *gorm.DB) error {
+		// Auto-link to existing patient record by phone match.
+		var patient model.Patient
+		if tx.Where("tenant_id = ? AND phone = ?", tenantID, phone).First(&patient).Error == nil {
+			pu.PatientID = &patient.ID
+		} else {
+			// Auto-create a new patient record.
+			newPatient := model.Patient{
+				TenantID:  tenantID,
+				Name:      name,
+				Phone:     phone,
+				Gender:    0,
+				CreatedBy: 0, // 0 = system-created via patient self-registration
+			}
+			if err := tx.Create(&newPatient).Error; err != nil {
+				return err
+			}
+			pu.PatientID = &newPatient.ID
 		}
-		if createErr := s.db.Create(&newPatient).Error; createErr != nil {
-			return nil, createErr
-		}
-		pu.PatientID = &newPatient.ID
-	}
-
-	if createErr := s.db.Create(&pu).Error; createErr != nil {
-		return nil, createErr
+		return tx.Create(&pu).Error
+	}); txErr != nil {
+		return nil, txErr
 	}
 	return &pu, nil
 }
