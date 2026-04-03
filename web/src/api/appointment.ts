@@ -76,8 +76,8 @@ export interface MatrixDoctor {
 export interface WeeklyMatrixResult {
   doctors: MatrixDoctor[];
   days: string[];                                   // ["2026-04-07", ..., "2026-04-13"]
-  counts: Record<number, Record<string, number>>;   // counts[doctorId][date]
-  row_totals: Record<number, number>;               // row_totals[doctorId]
+  counts: Record<string, Record<string, number>>;   // counts[doctorId][date]
+  row_totals: Record<string, number>;               // row_totals[doctorId]
   col_totals: Record<string, number>;               // col_totals[date]
   grand_total: number;
 }

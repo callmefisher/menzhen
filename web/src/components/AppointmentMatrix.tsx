@@ -59,6 +59,8 @@ export default function AppointmentMatrix({ selectedDate, onDateChange }: Props)
     if (!monday.isSame(weekStart, 'day')) {
       setWeekStart(monday);
     }
+  // weekStart intentionally excluded: adding it would re-fire on every manual
+  // week-nav click, overwriting the user's navigation with selectedDate's week.
   }, [selectedDate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePrevWeek = () => setWeekStart((w) => w.subtract(7, 'day'));
@@ -125,7 +127,7 @@ export default function AppointmentMatrix({ selectedDate, onDateChange }: Props)
 
       {/* Matrix table */}
       <Spin spinning={loading} size="small">
-        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
+        <div style={{ overflowX: 'auto', overflowY: 'visible', WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
           <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', minWidth: 480 }}>
             <thead>
               <tr>
@@ -184,7 +186,7 @@ export default function AppointmentMatrix({ selectedDate, onDateChange }: Props)
                     {doc.doctor_name}
                   </td>
                   {(data?.days ?? []).map((day) => {
-                    const count = data?.counts[doc.doctor_id]?.[day] ?? 0;
+                    const count = data?.counts[String(doc.doctor_id)]?.[day] ?? 0;
                     const { bg, color } = heatColor(count);
                     const d = dayjs(day);
                     const isSelected = d.isSame(selectedDate, 'day');
@@ -227,7 +229,7 @@ export default function AppointmentMatrix({ selectedDate, onDateChange }: Props)
                     background: '#fafafa', borderLeft: '1px solid #e8e8e8',
                     borderBottom: '1px solid #fafafa',
                   }}>
-                    {data?.row_totals[doc.doctor_id] ?? 0}
+                    {data?.row_totals[String(doc.doctor_id)] ?? 0}
                   </td>
                 </tr>
               ))}
