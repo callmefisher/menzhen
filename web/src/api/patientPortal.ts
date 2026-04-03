@@ -65,6 +65,7 @@ export interface PatientPortalConfig {
   appointment_enabled: boolean;
   queue_enabled: boolean;
   records_enabled: boolean;
+  tenant_code?: string;
 }
 
 // --- API calls ---

@@ -24,3 +24,13 @@ export function patientLogin(data: {
 export function getPatientMe(): Promise<{ code: number; data: PatientUserDTO }> {
   return patientRequest.get('/me') as Promise<{ code: number; data: PatientUserDTO }>;
 }
+
+export interface TenantItem {
+  tenant_id: number;
+  tenant_name: string;
+  tenant_code: string;
+}
+
+export function listTenantsByPhone(phone: string): Promise<{ code: number; data: TenantItem[] }> {
+  return patientRequest.get(`/auth/tenant-list?phone=${encodeURIComponent(phone)}`) as Promise<{ code: number; data: TenantItem[] }>;
+}
