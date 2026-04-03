@@ -9,6 +9,7 @@ import (
 	"github.com/callmefisher/menzhen/server/middleware"
 	"github.com/callmefisher/menzhen/server/model"
 	"github.com/callmefisher/menzhen/server/service"
+	"github.com/callmefisher/menzhen/server/ws"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -374,6 +375,14 @@ func (h *PatientPortalHandler) TakeNumber(c *gin.Context) {
 		Where("tenant_id = ? AND doctor_id = ? AND queue_date = ? AND status = ? AND seq_number < ?",
 			tenantIDUint, req.DoctorID, today, model.QueueStatusWaiting, entry.SeqNumber).
 		Count(&waitingAhead)
+
+	// Notify admin dashboard to refresh queue.
+	if ws.DefaultHub != nil {
+		ws.DefaultHub.Broadcast(uint64(tenantIDUint), ws.Message{
+			Type:    "queue_update",
+			Payload: gin.H{"action": "take", "entry": entry},
+		})
+	}
 
 	c.JSON(http.StatusCreated, gin.H{
 		"code":    0,
