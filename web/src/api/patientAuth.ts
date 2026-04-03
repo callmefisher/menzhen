@@ -26,11 +26,12 @@ export function getPatientMe(): Promise<{ code: number; data: PatientUserDTO }> 
 }
 
 export interface TenantItem {
+  // tenant_id comes from Go uint64; safe in JS for values < 2^53 (actual IDs are small)
   tenant_id: number;
   tenant_name: string;
   tenant_code: string;
 }
 
 export function listTenantsByPhone(phone: string): Promise<{ code: number; data: TenantItem[] }> {
-  return patientRequest.get(`/auth/tenant-list?phone=${encodeURIComponent(phone)}`) as Promise<{ code: number; data: TenantItem[] }>;
+  return patientRequest.get('/auth/tenant-list', { params: { phone } }) as Promise<{ code: number; data: TenantItem[] }>;
 }

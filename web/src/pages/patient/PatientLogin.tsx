@@ -54,7 +54,7 @@ export default function PatientLogin() {
           setTenantModalOpen(true);
         }
       } catch {
-        // error handled by interceptor
+        message.error('网络错误，请稍后重试');
       } finally {
         setLoading(false);
       }
@@ -68,12 +68,13 @@ export default function PatientLogin() {
     try {
       await login(tenantCode, pendingValues.phone, pendingValues.name);
       message.success('登录成功');
+      setPendingValues(null);
       navigate('/patient/home', { replace: true });
     } catch {
-      // error handled by interceptor
+      // interceptor shows error toast; re-open modal so user can try again
+      setTenantModalOpen(true);
     } finally {
       setLoading(false);
-      setPendingValues(null);
     }
   };
 
@@ -98,7 +99,7 @@ export default function PatientLogin() {
           <Form.Item name="phone" label="手机号" rules={[{ required: true, message: '请输入手机号' }, { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号' }]}>
             <Input prefix="📱" placeholder="请输入手机号" />
           </Form.Item>
-          <Form.Item name="name" label="真实姓名" rules={[{ required: true, message: '请输入真实姓名' }]}>
+          <Form.Item name="name" label="真实姓名" rules={[{ required: true, message: '请输入真实姓名' }, { max: 50, message: '姓名不超过50个字符' }]}>
             <Input prefix="👤" placeholder="请输入就诊时使用的真实姓名" />
           </Form.Item>
           <Form.Item style={{ marginTop: 8 }}>

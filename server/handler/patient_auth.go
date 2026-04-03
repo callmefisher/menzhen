@@ -135,9 +135,9 @@ func (h *PatientAuthHandler) ListTenantsByPhone(c *gin.Context) {
 		return
 	}
 	// Audit log — log phone suffix for security monitoring (not full phone per privacy rules).
-	suffix := phone[len(phone)-4:]
-	if len(phone) < 4 {
-		suffix = phone
+	suffix := phone
+	if len(phone) >= 4 {
+		suffix = phone[len(phone)-4:]
 	}
 	log.Printf("[audit] tenant-list lookup for phone suffix ...%s from %s", suffix, c.ClientIP())
 	var items []TenantListItem
@@ -150,6 +150,7 @@ func (h *PatientAuthHandler) ListTenantsByPhone(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "查询失败"})
 		return
 	}
+	// Ensure JSON encodes as [] not null when no records found.
 	if items == nil {
 		items = []TenantListItem{}
 	}

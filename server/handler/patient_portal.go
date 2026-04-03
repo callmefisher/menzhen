@@ -25,7 +25,11 @@ func NewPatientPortalHandler(db *gorm.DB, svc *service.PatientAuthService) *Pati
 // portalEnabled aborts with 403 if a specific feature switch is off.
 func (h *PatientPortalHandler) portalEnabled(c *gin.Context, check func(model.PatientPortalConfig) bool) bool {
 	tenantID := middleware.GetPatientTenantID(c)
-	cfg := h.patientAuthSvc.GetPortalConfig(tenantID)
+	cfg, err := h.patientAuthSvc.GetPortalConfig(tenantID)
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "服务错误"})
+		return false
+	}
 	if !check(cfg) {
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"code": 403, "message": "该功能暂未开放"})
 		return false

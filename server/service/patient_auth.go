@@ -106,7 +106,7 @@ func (s *PatientAuthService) Login(tenantID uint64, phone, name string) (*model.
 
 // GetPortalConfig returns the portal config for a tenant.
 // Returns all-enabled defaults when no config row exists.
-func (s *PatientAuthService) GetPortalConfig(tenantID uint64) model.PatientPortalConfig {
+func (s *PatientAuthService) GetPortalConfig(tenantID uint64) (model.PatientPortalConfig, error) {
 	cfg := model.PatientPortalConfig{
 		TenantID:           tenantID,
 		LoginEnabled:       true,
@@ -115,8 +115,11 @@ func (s *PatientAuthService) GetPortalConfig(tenantID uint64) model.PatientPorta
 		QueueEnabled:       true,
 		RecordsEnabled:     true,
 	}
-	s.db.Where("tenant_id = ?", tenantID).First(&cfg)
-	return cfg
+	result := s.db.Where("tenant_id = ?", tenantID).First(&cfg)
+	if result.Error != nil && !errors.Is(result.Error, gorm.ErrRecordNotFound) {
+		return cfg, result.Error
+	}
+	return cfg, nil
 }
 
 // SavePortalConfig upserts the portal config for a tenant.

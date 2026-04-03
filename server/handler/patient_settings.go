@@ -30,13 +30,46 @@ func NewPatientSettingsHandler(svc *service.PatientAuthService, db *gorm.DB) *Pa
 // GetPortalConfig handles GET /api/v1/tenant/patient-portal-config.
 func (h *PatientSettingsHandler) GetPortalConfig(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
-	cfg := h.patientAuthSvc.GetPortalConfig(tenantID)
-	var t model.Tenant
-	if err := h.db.Select("code").Where("id = ?", tenantID).First(&t).Error; err != nil {
+
+	// Single query: tenant code + portal config via LEFT JOIN.
+	// If no portal config row exists, bool columns are NULL → defaults applied in Go.
+	type rawRow struct {
+		TenantCode         string `gorm:"column:tenant_code"`
+		LoginEnabled       *bool  `gorm:"column:login_enabled"`
+		RegisterEnabled    *bool  `gorm:"column:register_enabled"`
+		AppointmentEnabled *bool  `gorm:"column:appointment_enabled"`
+		QueueEnabled       *bool  `gorm:"column:queue_enabled"`
+		RecordsEnabled     *bool  `gorm:"column:records_enabled"`
+	}
+	var row rawRow
+	if err := h.db.Table("tenants").
+		Select("tenants.code AS tenant_code, ppc.login_enabled, ppc.register_enabled, ppc.appointment_enabled, ppc.queue_enabled, ppc.records_enabled").
+		Joins("LEFT JOIN patient_portal_configs ppc ON ppc.tenant_id = tenants.id").
+		Where("tenants.id = ?", tenantID).
+		Scan(&row).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "服务错误"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success", "data": GetPortalConfigResponse{PatientPortalConfig: cfg, TenantCode: t.Code}})
+
+	boolVal := func(p *bool, def bool) bool {
+		if p == nil {
+			return def
+		}
+		return *p
+	}
+
+	resp := GetPortalConfigResponse{
+		PatientPortalConfig: model.PatientPortalConfig{
+			TenantID:           tenantID,
+			LoginEnabled:       boolVal(row.LoginEnabled, true),
+			RegisterEnabled:    boolVal(row.RegisterEnabled, true),
+			AppointmentEnabled: boolVal(row.AppointmentEnabled, true),
+			QueueEnabled:       boolVal(row.QueueEnabled, true),
+			RecordsEnabled:     boolVal(row.RecordsEnabled, true),
+		},
+		TenantCode: row.TenantCode,
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success", "data": resp})
 }
 
 // UpdatePortalConfig handles PUT /api/v1/tenant/patient-portal-config.
