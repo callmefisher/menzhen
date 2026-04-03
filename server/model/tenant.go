@@ -8,7 +8,7 @@ type Tenant struct {
 	Name         string    `gorm:"column:name;type:varchar(100);not null" json:"name"`
 	Code         string    `gorm:"column:code;type:varchar(50);uniqueIndex;not null" json:"code"`
 	Status       int8      `gorm:"column:status;type:tinyint;default:1;not null;comment:1=enabled 0=disabled" json:"status"`
-	GroupName    string    `gorm:"column:group_name;type:varchar(100);not null;default:'default'" json:"group_name"`
+	GroupName    string    `gorm:"column:group_name;type:varchar(100);not null;default:default" json:"group_name"`
 	QueueEnabled              *bool `gorm:"column:queue_enabled;default:true" json:"queue_enabled"`
 	CallDisplayDuration       *int  `gorm:"column:call_display_duration;default:6" json:"call_display_duration"`
 	ShowArrivalTime           *bool `gorm:"column:show_arrival_time;default:true" json:"show_arrival_time"`
