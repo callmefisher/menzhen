@@ -490,6 +490,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		// Queue
 		patientAuth.POST("/queue/take", patientPortalHandler.TakeNumber)
 		patientAuth.GET("/queue/my-status", patientPortalHandler.GetMyQueueStatus)
+		patientAuth.GET("/queue/list", patientPortalHandler.ListQueue)
 
 		// Records (read-only)
 		patientAuth.GET("/records", patientPortalHandler.ListRecords)

@@ -33,10 +33,11 @@ export interface SlotInfo {
 export interface QueueEntry {
   id: number;
   seq_number: number;
-  status: string;
+  doctor_id: number;
+  patient_name: string;
   doctor_name: string;
   room: string;
-  queue_date: string;
+  status: string;
 }
 
 export interface MedicalRecord {
@@ -66,11 +67,17 @@ export interface PatientPortalConfig {
   queue_enabled: boolean;
   records_enabled: boolean;
   tenant_code?: string;
+  tenant_name?: string;
 }
 
 // --- API calls ---
 export const listDoctors = () =>
   patientRequest.get('/doctors') as Promise<{ data: Doctor[] }>;
+
+export const getDoctorSchedule = (doctorId: number) =>
+  patientRequest.get(`/doctors/${doctorId}/schedule`) as Promise<{
+    data: { weekdays: number; range_start: number; range_end: number };
+  }>;
 
 export const listAppointments = () =>
   patientRequest.get('/appointments') as Promise<{ data: Appointment[] }>;
@@ -94,6 +101,9 @@ export const takeQueueNumber = (doctorId: number) =>
 export const getMyQueueStatus = () =>
   patientRequest.get('/queue/my-status');
 
+export const listPatientQueue = (doctorId: number) =>
+  patientRequest.get('/queue/list', { params: { doctor_id: doctorId } }) as Promise<{ data: QueueEntry[] }>;
+
 export const listRecords = () =>
   patientRequest.get('/records') as Promise<{ data: MedicalRecord[] }>;
 
@@ -104,8 +114,8 @@ export const listBillings = () =>
   patientRequest.get('/billings') as Promise<{ data: Billing[] }>;
 
 // Admin portal config (uses main request instance)
-export const getPatientPortalConfig = () =>
-  request.get('/tenant/patient-portal-config') as Promise<{ data: PatientPortalConfig }>;
+export const getPatientPortalConfig = (tenantId?: number) =>
+  request.get('/tenant/patient-portal-config', { params: tenantId ? { tenant_id: tenantId } : {} }) as Promise<{ data: PatientPortalConfig }>;
 
-export const updatePatientPortalConfig = (data: Partial<PatientPortalConfig>) =>
-  request.put('/tenant/patient-portal-config', data);
+export const updatePatientPortalConfig = (data: Partial<PatientPortalConfig>, tenantId?: number) =>
+  request.put('/tenant/patient-portal-config', data, { params: tenantId ? { tenant_id: tenantId } : {} });

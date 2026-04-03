@@ -1,8 +1,26 @@
 import { useEffect, useState } from 'react';
 import { List, Card, Tag, Button, Modal, Select, DatePicker, message, Empty, Spin } from 'antd';
-import dayjs from 'dayjs';
-import { listAppointments, listDoctors, getAppointmentSlots, createAppointment, cancelAppointment } from '../../api/patientPortal';
+import dayjs, { type Dayjs } from 'dayjs';
+import { listAppointments, listDoctors, getAppointmentSlots, createAppointment, cancelAppointment, getDoctorSchedule } from '../../api/patientPortal';
 import type { Appointment, Doctor, SlotInfo } from '../../api/patientPortal';
+
+/** Returns a disabledDate predicate from doctor's schedule config.
+ *  bit0=Sun, bit1=Mon, ..., bit6=Sat.  weekdays=0 means no restriction. */
+function makePatientDisabledDate(weekdays: number, rangeStart: number, rangeEnd: number) {
+  return (d: Dayjs) => {
+    const today = dayjs();
+    // Allow today when range_start=0; otherwise require d to be after today.
+    if (rangeStart > 0 && !d.isAfter(today, 'day')) return true;
+    if (rangeStart === 0 && d.isBefore(today, 'day')) return true;
+    if (d.isBefore(today.add(rangeStart, 'day'), 'day')) return true;
+    if (d.isAfter(today.add(rangeEnd, 'day'), 'day')) return true;
+    if (weekdays !== 0) {
+      const dow = d.day(); // 0=Sun, 1=Mon, ..., 6=Sat
+      if (!((weekdays >> dow) & 1)) return true;
+    }
+    return false;
+  };
+}
 
 export default function PatientAppointment() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -14,6 +32,7 @@ export default function PatientAppointment() {
   const [slots, setSlots] = useState<SlotInfo[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<SlotInfo | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [scheduleConfig, setScheduleConfig] = useState({ weekdays: 0, range_start: 1, range_end: 30 });
 
   const fetchData = () => {
     setLoading(true);
@@ -30,6 +49,20 @@ export default function PatientAppointment() {
       getAppointmentSlots(selectedDoctor, selectedDate).then((res) => setSlots(res.data));
     }
   }, [selectedDoctor, selectedDate]);
+
+  // Load doctor schedule when doctor changes, reset date/slot to avoid invalid selections.
+  useEffect(() => {
+    if (!selectedDoctor) return;
+    setSelectedDate(null);
+    setSelectedSlot(null);
+    setSlots([]);
+    getDoctorSchedule(selectedDoctor)
+      .then((res) => {
+        const d = res.data;
+        setScheduleConfig({ weekdays: d.weekdays, range_start: d.range_start, range_end: d.range_end });
+      })
+      .catch(() => setScheduleConfig({ weekdays: 0, range_start: 1, range_end: 30 }));
+  }, [selectedDoctor]);
 
   const handleBook = async () => {
     if (!selectedDoctor || !selectedDate || !selectedSlot) { message.warning('请选择医生、日期和时段'); return; }
@@ -66,7 +99,11 @@ export default function PatientAppointment() {
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                 <Tag color={statusColor[a.status]}>{statusLabel[a.status] ?? a.status}</Tag>
                 {a.status === 'pending' && (
-                  <Button size="small" danger onClick={() => cancelAppointment(a.id).then(() => { message.success('已取消'); fetchData(); })}>取消</Button>
+                  <Button size="small" danger onClick={() =>
+                    cancelAppointment(a.id)
+                      .then(() => { message.success('已取消'); fetchData(); })
+                      .catch(() => message.error('取消失败，请重试'))
+                  }>取消</Button>
                 )}
               </div>
             </div>
@@ -81,8 +118,14 @@ export default function PatientAppointment() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 8 }}>
           <Select placeholder="选择医生" style={{ width: '100%' }} onChange={setSelectedDoctor}
             options={doctors.map(d => ({ value: d.id, label: `${d.doctor_name}${d.room ? ` · ${d.room}` : ''}` }))} />
-          <DatePicker style={{ width: '100%' }} disabledDate={(d) => d.isBefore(dayjs(), 'day')}
+          <DatePicker style={{ width: '100%' }}
+            disabledDate={makePatientDisabledDate(scheduleConfig.weekdays, scheduleConfig.range_start, scheduleConfig.range_end)}
             onChange={(_, ds) => { setSelectedDate(ds as string); setSelectedSlot(null); }} />
+          {selectedDoctor && selectedDate && slots.length === 0 && (
+            <div style={{ textAlign: 'center', color: '#aaa', fontSize: 13, padding: '12px 0' }}>
+              该日期暂无可用时段
+            </div>
+          )}
           {slots.length > 0 && (
             <div>
               <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>选择时段</div>

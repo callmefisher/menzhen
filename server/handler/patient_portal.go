@@ -313,6 +313,21 @@ func (h *PatientPortalHandler) TakeNumber(c *gin.Context) {
 	today := time.Now().Format("2006-01-02")
 	tenantIDUint := uint(tenantID)
 
+	// Prevent duplicate: one active queue entry per patient per day (any doctor).
+	var activeCount int64
+	dupQuery := h.db.Model(&model.QueueEntry{}).
+		Where("tenant_id = ? AND queue_date = ? AND patient_name = ? AND status IN ?",
+			tenantIDUint, today, pu.Name, []string{model.QueueStatusWaiting, model.QueueStatusSeeing})
+	if pu.PatientID != nil {
+		dupQuery = h.db.Model(&model.QueueEntry{}).
+			Where("tenant_id = ? AND queue_date = ? AND patient_id = ? AND status IN ?",
+				tenantIDUint, today, uint(*pu.PatientID), []string{model.QueueStatusWaiting, model.QueueStatusSeeing})
+	}
+	if err := dupQuery.Count(&activeCount).Error; err == nil && activeCount > 0 {
+		c.JSON(http.StatusConflict, gin.H{"code": 409, "message": "您今日已在排队中，请勿重复取号"})
+		return
+	}
+
 	var entry model.QueueEntry
 	err := h.db.Transaction(func(tx *gorm.DB) error {
 		var seq model.QueueSeq
@@ -528,4 +543,48 @@ func (h *PatientPortalHandler) GetDoctorSchedule(c *gin.Context) {
 		"range_start": cfg.RangeStart,
 		"range_end":   cfg.RangeEnd,
 	}})
+}
+
+// patientQueueEntryDTO is the patient-facing queue entry (no PII beyond patient's own name).
+type patientQueueEntryDTO struct {
+	ID          uint   `json:"id"`
+	SeqNumber   int    `json:"seq_number"`
+	PatientName string `json:"patient_name"`
+	DoctorName  string `json:"doctor_name"`
+	Room        string `json:"room"`
+	Status      string `json:"status"`
+}
+
+// ListQueue handles GET /api/v1/patient/queue/list?doctor_id=.
+// Returns today's waiting/seeing entries for the given doctor, for queue position display.
+func (h *PatientPortalHandler) ListQueue(c *gin.Context) {
+	if !h.portalEnabled(c, func(cfg model.PatientPortalConfig) bool { return cfg.QueueEnabled }) {
+		return
+	}
+	tenantID := middleware.GetPatientTenantID(c)
+	doctorIDStr := c.Query("doctor_id")
+	if doctorIDStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "doctor_id 必填"})
+		return
+	}
+
+	today := time.Now().Format("2006-01-02")
+	var entries []model.QueueEntry
+	h.db.Where("tenant_id = ? AND doctor_id = ? AND queue_date = ? AND status IN ?",
+		uint(tenantID), doctorIDStr, today, []string{model.QueueStatusWaiting, model.QueueStatusSeeing}).
+		Order("seq_number ASC").
+		Find(&entries)
+
+	result := make([]patientQueueEntryDTO, 0, len(entries))
+	for _, e := range entries {
+		result = append(result, patientQueueEntryDTO{
+			ID:          uint(e.ID),
+			SeqNumber:   e.SeqNumber,
+			PatientName: e.PatientName,
+			DoctorName:  e.DoctorName,
+			Room:        e.Room,
+			Status:      e.Status,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success", "data": result})
 }
