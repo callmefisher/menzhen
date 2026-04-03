@@ -33,6 +33,7 @@ import SystemConfig from './pages/settings/SystemConfig';
 import BackupRestore from './pages/settings/BackupRestore';
 import QueueSettings from './pages/settings/QueueSettings';
 import AppointmentSlots from './pages/settings/AppointmentSlots';
+import PatientPortalSettings from './pages/settings/PatientPortalSettings';
 import HerbSearch from './pages/herbs/HerbSearch';
 import FormulaSearch from './pages/formulas/FormulaSearch';
 import PulseList from './pages/pulses/PulseList';
@@ -117,6 +118,7 @@ function AppRoutes() {
         <Route path="settings/backup" element={<BackupRestore />} />
         <Route path="settings/queue" element={<QueueSettings />} />
         <Route path="settings/appointment-slots" element={<AppointmentSlots />} />
+        <Route path="settings/patient-portal" element={<PatientPortalSettings />} />
       </Route>
       <Route
         path="/patient"

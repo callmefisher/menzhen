@@ -31,6 +31,7 @@ import {
   FontSizeOutlined,
   BgColorsOutlined,
   SoundOutlined,
+  MobileOutlined,
 } from '@ant-design/icons';
 import type { MenuProps as AntMenuProps } from 'antd';
 import { useAuth } from '../store/auth';
@@ -416,6 +417,11 @@ export default function AppLayout() {
           label: '软件配置',
         });
         settingsChildren.push({
+          key: '/settings/patient-portal',
+          icon: <MobileOutlined />,
+          label: '患者端管理',
+        });
+        settingsChildren.push({
           key: '/settings/backup',
           icon: <CloudSyncOutlined />,
           label: '备份与恢复',
@@ -450,6 +456,7 @@ export default function AppLayout() {
     if (path.startsWith('/settings/backup')) return ['/settings/backup'];
     if (path.startsWith('/settings/queue')) return ['/settings/queue'];
     if (path.startsWith('/settings/appointment-slots')) return ['/settings/appointment-slots'];
+    if (path.startsWith('/settings/patient-portal')) return ['/settings/patient-portal'];
     if (path.startsWith('/patients')) return ['/patients'];
     if (path.startsWith('/queue')) return ['/queue'];
     if (path.startsWith('/appointments')) return ['/appointments'];
