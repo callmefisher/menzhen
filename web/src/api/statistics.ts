@@ -92,10 +92,10 @@ export interface GlobalSummary {
   total_patients: number;
   avg_revenue_per_record: number;
   tenant_count: number;
-  total: number; // total tenants for pagination
 }
 
 export interface GlobalStatsData {
+  total: number; // total tenant count for pagination (from GlobalStatsResult.Total)
   summary: GlobalSummary;
   tenants: GlobalTenantItem[];
 }

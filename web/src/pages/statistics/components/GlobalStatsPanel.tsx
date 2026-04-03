@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Select, Button, Table, Skeleton, Empty } from 'antd';
+import { Select, Button, Table, Skeleton, Empty, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { getGlobalStats } from '../../../api/statistics';
 import type { GlobalStatsData, GlobalTenantItem } from '../../../api/statistics';
@@ -83,6 +83,35 @@ function SummaryCards({ data, isMobile }: { data: GlobalStatsData; isMobile: boo
   );
 }
 
+interface ExpandDetailProps {
+  item: GlobalTenantItem;
+  isMobile: boolean;
+  onViewDetail: (tenantId: number, tenantName: string) => void;
+}
+
+function ExpandDetail({ item, isMobile, onViewDetail }: ExpandDetailProps) {
+  return (
+    <div style={{ padding: '12px 16px', background: '#f6ffed', borderLeft: '3px solid #52c41a', borderRadius: '0 6px 6px 0' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4,1fr)', gap: 8, marginBottom: 10 }}>
+        {[
+          { label: '总收入', value: `¥ ${Math.round(item.revenue).toLocaleString()}`, color: '#1890ff' },
+          { label: '接诊记录', value: String(item.records), color: '#52c41a' },
+          { label: '患者人次', value: String(item.patients), color: '#722ed1' },
+          { label: '客单价', value: `¥ ${item.avg_per_record.toFixed(1)}`, color: '#fa8c16' },
+        ].map(c => (
+          <div key={c.label} style={{ background: '#fff', borderRadius: 6, padding: '8px 10px', border: '1px solid #e8e8e8', textAlign: 'center' }}>
+            <div style={{ fontSize: 11, color: '#888', marginBottom: 3 }}>{c.label}</div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: c.color }}>{c.value}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ textAlign: 'right' }}>
+        <Button size="small" type="primary" onClick={() => onViewDetail(item.tenant_id, item.tenant_name)}>查看完整报表</Button>
+      </div>
+    </div>
+  );
+}
+
 export default function GlobalStatsPanel({ startDate, endDate, onViewDetail }: Props) {
   const isMobile = useIsMobile();
   const [data, setData] = useState<GlobalStatsData | null>(null);
@@ -103,7 +132,7 @@ export default function GlobalStatsPanel({ startDate, endDate, onViewDetail }: P
       const body = axiosBody.data ?? directBody;
       if (body.code === 0) setData(body.data);
     } catch {
-      // silently handle
+      message.error('获取全局统计数据失败，请稍后重试');
     } finally {
       setLoading(false);
     }
@@ -156,27 +185,6 @@ export default function GlobalStatsPanel({ startDate, endDate, onViewDetail }: P
   }
 
   if (!data) return <Empty description="暂无全局统计数据" />;
-
-  const ExpandDetail = ({ item }: { item: GlobalTenantItem }) => (
-    <div style={{ padding: '12px 16px', background: '#f6ffed', borderLeft: '3px solid #52c41a', borderRadius: '0 6px 6px 0' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4,1fr)', gap: 8, marginBottom: 10 }}>
-        {[
-          { label: '总收入', value: `¥ ${Math.round(item.revenue).toLocaleString()}`, color: '#1890ff' },
-          { label: '接诊记录', value: String(item.records), color: '#52c41a' },
-          { label: '患者人次', value: String(item.patients), color: '#722ed1' },
-          { label: '客单价', value: `¥ ${item.avg_per_record.toFixed(1)}`, color: '#fa8c16' },
-        ].map(c => (
-          <div key={c.label} style={{ background: '#fff', borderRadius: 6, padding: '8px 10px', border: '1px solid #e8e8e8', textAlign: 'center' }}>
-            <div style={{ fontSize: 11, color: '#888', marginBottom: 3 }}>{c.label}</div>
-            <div style={{ fontSize: 17, fontWeight: 700, color: c.color }}>{c.value}</div>
-          </div>
-        ))}
-      </div>
-      <div style={{ textAlign: 'right' }}>
-        <Button size="small" type="primary" onClick={() => onViewDetail(item.tenant_id, item.tenant_name)}>查看完整报表</Button>
-      </div>
-    </div>
-  );
 
   // ── Mobile: card list ──────────────────────────────────────────────────────
   if (isMobile) {
@@ -239,7 +247,7 @@ export default function GlobalStatsPanel({ startDate, endDate, onViewDetail }: P
                 </div>
                 <div style={{ fontSize: 14, fontWeight: 700, color: '#1890ff', flexShrink: 0 }}>¥ {Math.round(item.revenue).toLocaleString()}</div>
               </div>
-              {expandedId === item.tenant_id && <ExpandDetail item={item} />}
+              {expandedId === item.tenant_id && <ExpandDetail item={item} isMobile={isMobile} onViewDetail={onViewDetail} />}
             </div>
           ))}
         </div>
@@ -307,7 +315,7 @@ export default function GlobalStatsPanel({ startDate, endDate, onViewDetail }: P
           expandable={{
             expandedRowKeys: expandedId ? [expandedId] : [],
             onExpand: (_, record) => setExpandedId(expandedId === record.tenant_id ? null : record.tenant_id),
-            expandedRowRender: (record) => <ExpandDetail item={record} />,
+            expandedRowRender: (record) => <ExpandDetail item={record} isMobile={isMobile} onViewDetail={onViewDetail} />,
             showExpandColumn: false,
           }}
           onRow={(record) => ({
@@ -317,7 +325,7 @@ export default function GlobalStatsPanel({ startDate, endDate, onViewDetail }: P
           pagination={{
             current: page,
             pageSize,
-            total: data.summary.total,
+            total: data.total,
             onChange: (p) => { setPage(p); fetchData(p); },
             showSizeChanger: false,
             showTotal: (total) => `共 ${total} 家诊所`,
