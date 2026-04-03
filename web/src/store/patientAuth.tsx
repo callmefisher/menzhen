@@ -9,12 +9,12 @@ interface PatientAuthState {
   user: PatientUserDTO | null;
   token: string | null;
   loading: boolean;
-  tenantName: string | null;
 }
 
 interface PatientAuthContextValue extends PatientAuthState {
   login: (tenantCode: string, phone: string, name: string) => Promise<void>;
   logout: () => void;
+  tenantName: string | null;  // derived from user?.tenant_name
 }
 
 const PatientAuthContext = createContext<PatientAuthContextValue | null>(null);
@@ -24,18 +24,17 @@ export function PatientAuthProvider({ children }: { children: ReactNode }) {
     user: null,
     token: localStorage.getItem('patient_token'),
     loading: true,
-    tenantName: null,
   });
 
   useEffect(() => {
     if (state.token) {
       getPatientMe()
         .then((res) => {
-          setState((prev) => ({ ...prev, user: res.data, tenantName: res.data.tenant_name, loading: false }));
+          setState((prev) => ({ ...prev, user: res.data, loading: false }));
         })
         .catch(() => {
           localStorage.removeItem('patient_token');
-          setState({ user: null, token: null, loading: false, tenantName: null });
+          setState({ user: null, token: null, loading: false });
         });
     } else {
       setState((prev) => ({ ...prev, loading: false }));
@@ -50,17 +49,23 @@ export function PatientAuthProvider({ children }: { children: ReactNode }) {
       user: res.data.patient_user,
       token: res.data.token,
       loading: false,
-      tenantName: res.data.patient_user.tenant_name,
     });
   }, []);
 
   const logout = useCallback(() => {
     localStorage.removeItem('patient_token');
-    setState({ user: null, token: null, loading: false, tenantName: null });
+    setState({ user: null, token: null, loading: false });
   }, []);
 
+  const value: PatientAuthContextValue = {
+    ...state,
+    login,
+    logout,
+    tenantName: state.user?.tenant_name ?? null,
+  };
+
   return (
-    <PatientAuthContext.Provider value={{ ...state, login, logout }}>
+    <PatientAuthContext.Provider value={value}>
       {children}
     </PatientAuthContext.Provider>
   );
