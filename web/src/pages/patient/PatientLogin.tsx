@@ -1,10 +1,14 @@
 import { useState, useEffect } from 'react';
-import { Form, Input, Button, message } from 'antd';
+import { Form, Input, Button, message, Modal } from 'antd';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { usePatientAuth } from '../../store/patientAuth';
+import { listTenantsByPhone, type TenantItem } from '../../api/patientAuth';
 
 export default function PatientLogin() {
   const [loading, setLoading] = useState(false);
+  const [tenantList, setTenantList] = useState<TenantItem[]>([]);
+  const [tenantModalOpen, setTenantModalOpen] = useState(false);
+  const [pendingValues, setPendingValues] = useState<{ phone: string; name: string } | null>(null);
   const { login, token } = usePatientAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -19,16 +23,57 @@ export default function PatientLogin() {
     if (token) navigate('/patient/home', { replace: true });
   }, [token, navigate]);
 
-  const onFinish = async (values: { tenant_code: string; phone: string; name: string }) => {
+  const onFinish = async (values: { tenant_code?: string; phone: string; name: string }) => {
+    if (values.tenant_code) {
+      // QR code path or user manually typed tenant code
+      setLoading(true);
+      try {
+        await login(values.tenant_code, values.phone, values.name);
+        message.success('登录成功');
+        navigate('/patient/home', { replace: true });
+      } catch {
+        // error handled by interceptor
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      // No tenant code — look up by phone
+      setLoading(true);
+      try {
+        const res = await listTenantsByPhone(values.phone);
+        const results = res.data ?? [];
+        if (results.length === 0) {
+          message.warning('未找到就诊记录，请扫描诊所二维码注册');
+        } else if (results.length === 1) {
+          await login(results[0].tenant_code, values.phone, values.name);
+          message.success('登录成功');
+          navigate('/patient/home', { replace: true });
+        } else {
+          setPendingValues({ phone: values.phone, name: values.name });
+          setTenantList(results);
+          setTenantModalOpen(true);
+        }
+      } catch {
+        // error handled by interceptor
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
+  const handleSelectTenant = async (tenantCode: string) => {
+    if (!pendingValues) return;
+    setTenantModalOpen(false);
     setLoading(true);
     try {
-      await login(values.tenant_code, values.phone, values.name);
+      await login(tenantCode, pendingValues.phone, pendingValues.name);
       message.success('登录成功');
       navigate('/patient/home', { replace: true });
     } catch {
       // error handled by interceptor
     } finally {
       setLoading(false);
+      setPendingValues(null);
     }
   };
 
@@ -47,8 +92,8 @@ export default function PatientLogin() {
       </div>
       <div style={{ padding: '32px 20px 20px' }}>
         <Form form={form} onFinish={onFinish} layout="vertical" size="large">
-          <Form.Item name="tenant_code" label="诊所代码" rules={[{ required: true, message: '请输入诊所代码' }]}>
-            <Input prefix="🏥" placeholder="由诊所提供（扫码自动填写）" />
+          <Form.Item name="tenant_code" label="诊所代码">
+            <Input prefix="🏥" placeholder="扫码自动填写（可选）" />
           </Form.Item>
           <Form.Item name="phone" label="手机号" rules={[{ required: true, message: '请输入手机号' }, { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号' }]}>
             <Input prefix="📱" placeholder="请输入手机号" />
@@ -67,6 +112,31 @@ export default function PatientLogin() {
           首次使用自动注册 · 无需设置密码
         </div>
       </div>
+
+      <Modal
+        open={tenantModalOpen}
+        onCancel={() => setTenantModalOpen(false)}
+        footer={null}
+        title="请选择诊所"
+      >
+        {tenantList.map((tenant) => (
+          <div
+            key={tenant.tenant_id}
+            onClick={() => handleSelectTenant(tenant.tenant_code)}
+            style={{
+              display: 'flex', alignItems: 'center', padding: '12px 0',
+              borderBottom: '1px solid #f5f5f5', cursor: 'pointer', gap: 12,
+            }}
+          >
+            <span style={{ fontSize: 24 }}>🏥</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600 }}>{tenant.tenant_name}</div>
+              <div style={{ fontSize: 12, color: '#888' }}>{tenant.tenant_code}</div>
+            </div>
+            <span style={{ color: '#52C41A' }}>→</span>
+          </div>
+        ))}
+      </Modal>
     </div>
   );
 }
