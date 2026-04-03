@@ -57,6 +57,13 @@ func NewAdminStatisticsService(db *gorm.DB) *AdminStatisticsService {
 // Results are cached in memory for 5 minutes to reduce DB load at large scale.
 // page and size control the returned tenants slice; Summary.Total reflects all tenants.
 func (s *AdminStatisticsService) GetGlobalStats(startDate, endDate time.Time, page, size int) (*GlobalStatsResult, error) {
+	if page <= 0 {
+		page = 1
+	}
+	if size <= 0 {
+		size = 50
+	}
+
 	cacheKey := fmt.Sprintf("%s:%s:%d:%d",
 		startDate.Format("2006-01-02"), endDate.Format("2006-01-02"), page, size)
 
@@ -77,14 +84,16 @@ func (s *AdminStatisticsService) GetGlobalStats(startDate, endDate time.Time, pa
 	}
 
 	var totalCount int64
-	s.db.Model(&model.DailyStats{}).
+	if err := s.db.Model(&model.DailyStats{}).
 		Where("stat_date >= ? AND stat_date <= ?", startDate, endDate).
 		Distinct("tenant_id").
-		Count(&totalCount)
+		Count(&totalCount).Error; err != nil {
+		return nil, fmt.Errorf("count tenants: %w", err)
+	}
 
 	var rows []row
 	offset := (page - 1) * size
-	s.db.Model(&model.DailyStats{}).
+	if err := s.db.Model(&model.DailyStats{}).
 		Select("daily_stats.tenant_id, tenants.name AS tenant_name, "+
 			"SUM(daily_stats.revenue) AS revenue, "+
 			"SUM(daily_stats.record_count) AS records, "+
@@ -94,7 +103,9 @@ func (s *AdminStatisticsService) GetGlobalStats(startDate, endDate time.Time, pa
 		Group("daily_stats.tenant_id, tenants.name").
 		Order("revenue DESC").
 		Limit(size).Offset(offset).
-		Scan(&rows)
+		Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("query tenants: %w", err)
+	}
 
 	type totalRow struct {
 		TotalRevenue  float64
@@ -102,26 +113,28 @@ func (s *AdminStatisticsService) GetGlobalStats(startDate, endDate time.Time, pa
 		TotalPatients int
 	}
 	var totals totalRow
-	s.db.Model(&model.DailyStats{}).
+	if err := s.db.Model(&model.DailyStats{}).
 		Select("SUM(revenue) AS total_revenue, SUM(record_count) AS total_records, "+
 			"SUM(new_patient_count + returning_patient_count) AS total_patients").
 		Where("stat_date >= ? AND stat_date <= ?", startDate, endDate).
-		Scan(&totals)
+		Scan(&totals).Error; err != nil {
+		return nil, fmt.Errorf("query totals: %w", err)
+	}
 
 	var avgPerRecord float64
 	if totals.TotalRecords > 0 {
-		avgPerRecord = math.Round(totals.TotalRevenue/float64(totals.TotalRecords)*100) / 100
+		avgPerRecord = math.Round(totals.TotalRevenue/float64(totals.TotalRecords)*100) / 100 // round to 2 decimal places
 	}
 
 	tenants := make([]GlobalTenantItem, len(rows))
 	for i, r := range rows {
 		var avg float64
 		if r.Records > 0 {
-			avg = math.Round(r.Revenue/float64(r.Records)*100) / 100
+			avg = math.Round(r.Revenue/float64(r.Records)*100) / 100 // round to 2 decimal places
 		}
 		var pct float64
 		if totals.TotalRevenue > 0 {
-			pct = math.Round(r.Revenue/totals.TotalRevenue*1000) / 10
+			pct = math.Round(r.Revenue/totals.TotalRevenue*1000) / 10 // round to 1 decimal place
 		}
 		tenants[i] = GlobalTenantItem{
 			TenantID:       r.TenantID,
