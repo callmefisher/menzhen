@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/callmefisher/menzhen/server/model"
@@ -170,12 +171,15 @@ func (s *AppointmentService) EnqueueAppointment(tenantID, apptID uint, queueSvc 
 		}
 
 		// Only enqueue appointments for today; skip past/future dates silently.
-		if appt.AppointDate != time.Now().Format("2006-01-02") {
+		// Use HasPrefix because Raw().Scan() on a DATE column may return a full
+		// RFC3339 string (e.g. "2026-04-03T00:00:00+08:00") rather than "2026-04-03".
+		today := time.Now().Format("2006-01-02")
+		if !strings.HasPrefix(appt.AppointDate, today) {
 			return nil
 		}
 
-		txQueueSvc := &QueueService{DB: tx}
-		seq, err := txQueueSvc.NextSeq(tenantID)
+		// NextSeq must run on the same tx connection (not a nested transaction).
+		seq, err := nextSeqOnConn(tx, tenantID)
 		if err != nil {
 			return fmt.Errorf("next seq: %w", err)
 		}
@@ -338,6 +342,25 @@ func (s *AppointmentService) ListSlots(tenantID uint, date string, doctorID uint
 	return result, nil
 }
 
+// AutoEnqueueTodayForTenant enqueues all pending appointments for today for a single tenant.
+func (s *AppointmentService) AutoEnqueueTodayForTenant(tenantID uint, queueSvc *QueueService) (failedIDs []uint, successCount int) {
+	var appts []model.Appointment
+	if err := s.DB.Where("tenant_id = ? AND appoint_date = ? AND status = ?",
+		tenantID, time.Now().Format("2006-01-02"), model.AppointmentStatusPending).
+		Find(&appts).Error; err != nil {
+		log.Printf("auto_enqueue_today_tenant %d: failed to load appointments: %v", tenantID, err)
+		return nil, 0
+	}
+	for _, appt := range appts {
+		if err := s.EnqueueAppointment(appt.TenantID, appt.ID, queueSvc); err != nil {
+			failedIDs = append(failedIDs, appt.ID)
+		} else {
+			successCount++
+		}
+	}
+	return failedIDs, successCount
+}
+
 // AutoEnqueueToday enqueues all pending appointments for today.
 // Returns (failedIDs, successCount). Per-item failures don't stop others.
 func (s *AppointmentService) AutoEnqueueToday(queueSvc *QueueService) (failedIDs []uint, successCount int) {
@@ -357,4 +380,91 @@ func (s *AppointmentService) AutoEnqueueToday(queueSvc *QueueService) (failedIDs
 		}
 	}
 	return failedIDs, successCount
+}
+
+// MatrixRow is a (doctor_id, doctor_name, appoint_date) count row from the DB.
+type MatrixRow struct {
+	DoctorID    uint
+	DoctorName  string
+	AppointDate string
+	Count       int
+}
+
+// MatrixDoctor is a distinct doctor entry for the matrix header.
+type MatrixDoctor struct {
+	DoctorID   uint   `json:"doctor_id"`
+	DoctorName string `json:"doctor_name"`
+}
+
+// WeeklyMatrixResult holds all data needed to render the heat matrix.
+type WeeklyMatrixResult struct {
+	Doctors    []MatrixDoctor          `json:"doctors"`
+	Days       []string                `json:"days"`
+	Counts     map[uint]map[string]int `json:"counts"`
+	RowTotals  map[uint]int            `json:"row_totals"`
+	ColTotals  map[string]int          `json:"col_totals"`
+	GrandTotal int                     `json:"grand_total"`
+}
+
+// WeeklyMatrix returns appointment counts grouped by doctor and date for a 7-day window
+// starting from startDate (inclusive). Only pending and queued appointments are counted.
+// startDate must be "YYYY-MM-DD".
+func (s *AppointmentService) WeeklyMatrix(tenantID uint, startDate string) (WeeklyMatrixResult, error) {
+	start, err := time.Parse("2006-01-02", startDate)
+	if err != nil {
+		return WeeklyMatrixResult{}, fmt.Errorf("WeeklyMatrix: parse startDate: %w", err)
+	}
+	end := start.AddDate(0, 0, 6)
+	endStr := end.Format("2006-01-02")
+
+	days := make([]string, 7)
+	for i := 0; i < 7; i++ {
+		days[i] = start.AddDate(0, 0, i).Format("2006-01-02")
+	}
+
+	var rows []MatrixRow
+	err = s.DB.Model(&model.Appointment{}).
+		Select("doctor_id, doctor_name, appoint_date, COUNT(*) as count").
+		Where("tenant_id = ? AND appoint_date >= ? AND appoint_date <= ? AND status IN (?,?)",
+			tenantID, startDate, endStr,
+			model.AppointmentStatusPending, model.AppointmentStatusQueued).
+		Group("doctor_id, doctor_name, appoint_date").
+		Order("doctor_name ASC, appoint_date ASC").
+		Scan(&rows).Error
+	if err != nil {
+		return WeeklyMatrixResult{}, fmt.Errorf("WeeklyMatrix: query: %w", err)
+	}
+
+	doctorOrder := make([]uint, 0)
+	doctorMap := make(map[uint]string)
+	counts := make(map[uint]map[string]int)
+	rowTotals := make(map[uint]int)
+	colTotals := make(map[string]int)
+	grandTotal := 0
+
+	for _, r := range rows {
+		if _, seen := doctorMap[r.DoctorID]; !seen {
+			doctorOrder = append(doctorOrder, r.DoctorID)
+			doctorMap[r.DoctorID] = r.DoctorName
+			counts[r.DoctorID] = make(map[string]int)
+		}
+		counts[r.DoctorID][r.AppointDate] = r.Count
+		rowTotals[r.DoctorID] += r.Count
+		colTotals[r.AppointDate] += r.Count
+		grandTotal += r.Count
+	}
+
+	doctors := make([]MatrixDoctor, 0, len(doctorOrder))
+	for _, id := range doctorOrder {
+		doctors = append(doctors, MatrixDoctor{DoctorID: id, DoctorName: doctorMap[id]})
+	}
+
+	return WeeklyMatrixResult{
+		Doctors:    doctors,
+		Days:       days,
+		Counts:     counts,
+		RowTotals:  rowTotals,
+		ColTotals:  colTotals,
+		GrandTotal: grandTotal,
+	}, nil
 }

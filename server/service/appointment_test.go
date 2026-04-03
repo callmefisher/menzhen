@@ -375,16 +375,18 @@ func TestMarkNoShow_MarksQueuedPastAppointments(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	tenant := testutil.SeedTestTenant(t, db, "诊所", "clinic")
 	svc := service.NewAppointmentService(db)
-	queueSvc := service.NewQueueService(db)
 
-	// Create a pending appointment for yesterday and enqueue it
+	// Create a pending appointment for yesterday, then force it to queued status
+	// via direct DB update (EnqueueAppointment would silently skip non-today dates).
 	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
 	appt, err := svc.CreateAppointment(uint(tenant.ID), service.CreateAppointmentInput{
 		PatientName: "张三", DoctorID: 1, DoctorName: "李医生",
 		AppointDate: yesterday, SlotStart: "09:00", SlotEnd: "09:30",
 	})
 	require.NoError(t, err)
-	require.NoError(t, svc.EnqueueAppointment(uint(tenant.ID), appt.ID, queueSvc))
+	// Force queued status directly — bypassing the date guard
+	require.NoError(t, db.Model(&model.Appointment{}).Where("id = ?", appt.ID).
+		Updates(map[string]interface{}{"status": model.AppointmentStatusQueued, "queue_entry_id": 999}).Error)
 
 	affected, err := svc.MarkNoShowAllTenantsForPastDates()
 	require.NoError(t, err)
@@ -393,6 +395,27 @@ func TestMarkNoShow_MarksQueuedPastAppointments(t *testing.T) {
 	var updated model.Appointment
 	require.NoError(t, db.First(&updated, appt.ID).Error)
 	assert.Equal(t, model.AppointmentStatusNoShow, updated.Status)
+}
+
+// TestEnqueueAppointment_UpdatesStatus verifies that EnqueueAppointment changes
+// the appointment status from pending to queued and sets queue_entry_id.
+// This guards against the silent-skip bug where date comparison failed.
+func TestEnqueueAppointment_UpdatesStatus(t *testing.T) {
+	svc, tid := setupApptService(t)
+	appt, err := svc.CreateAppointment(tid, service.CreateAppointmentInput{
+		PatientName: "入队测试", DoctorID: 1, DoctorName: "李医生",
+		AppointDate: time.Now().Format("2006-01-02"), SlotStart: "09:00", SlotEnd: "09:30",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, model.AppointmentStatusPending, appt.Status)
+
+	queueSvc := service.NewQueueService(svc.DB)
+	require.NoError(t, svc.EnqueueAppointment(tid, appt.ID, queueSvc))
+
+	var updated model.Appointment
+	require.NoError(t, svc.DB.First(&updated, appt.ID).Error)
+	assert.Equal(t, model.AppointmentStatusQueued, updated.Status, "EnqueueAppointment must change status to queued")
+	assert.NotNil(t, updated.QueueEntryID, "EnqueueAppointment must set queue_entry_id")
 }
 
 func TestMarkNoShow_MarksPendingPastAppointments(t *testing.T) {
@@ -437,4 +460,63 @@ func TestMarkNoShow_PreservesTodayPendingAppointments(t *testing.T) {
 	var updated model.Appointment
 	require.NoError(t, db.First(&updated, appt.ID).Error)
 	assert.Equal(t, model.AppointmentStatusPending, updated.Status)
+}
+
+func TestWeeklyMatrix(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	svc := service.NewAppointmentService(db)
+	tenantID := uint(1)
+
+	_ = db.Create(&model.Appointment{
+		TenantID: tenantID, DoctorID: 10, DoctorName: "王医生",
+		AppointDate: "2026-04-07", SlotStart: "09:00", SlotEnd: "09:30",
+		PatientName: "张三", Status: model.AppointmentStatusPending,
+	})
+	_ = db.Create(&model.Appointment{
+		TenantID: tenantID, DoctorID: 10, DoctorName: "王医生",
+		AppointDate: "2026-04-07", SlotStart: "09:30", SlotEnd: "10:00",
+		PatientName: "李四", Status: model.AppointmentStatusQueued,
+	})
+	_ = db.Create(&model.Appointment{
+		TenantID: tenantID, DoctorID: 20, DoctorName: "赵医生",
+		AppointDate: "2026-04-08", SlotStart: "10:00", SlotEnd: "10:30",
+		PatientName: "王五", Status: model.AppointmentStatusPending,
+	})
+	// cancelled — must NOT be counted
+	_ = db.Create(&model.Appointment{
+		TenantID: tenantID, DoctorID: 10, DoctorName: "王医生",
+		AppointDate: "2026-04-07", SlotStart: "11:00", SlotEnd: "11:30",
+		PatientName: "取消人", Status: model.AppointmentStatusCancelled,
+	})
+
+	result, err := svc.WeeklyMatrix(tenantID, "2026-04-07")
+	assert.NoError(t, err)
+	assert.Len(t, result.Doctors, 2)
+	assert.Len(t, result.Days, 7)
+	assert.Equal(t, "2026-04-07", result.Days[0])
+	assert.Equal(t, "2026-04-13", result.Days[6])
+	assert.Equal(t, 2, result.Counts[10]["2026-04-07"])
+	assert.Equal(t, 1, result.Counts[20]["2026-04-08"])
+	assert.Equal(t, 0, result.Counts[10]["2026-04-08"])
+	assert.Equal(t, 2, result.RowTotals[10])
+	assert.Equal(t, 1, result.RowTotals[20])
+	assert.Equal(t, 2, result.ColTotals["2026-04-07"])
+	assert.Equal(t, 1, result.ColTotals["2026-04-08"])
+	assert.Equal(t, 3, result.GrandTotal)
+}
+
+func TestWeeklyMatrix_OtherTenantIsolation(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	svc := service.NewAppointmentService(db)
+
+	_ = db.Create(&model.Appointment{
+		TenantID: 2, DoctorID: 99, DoctorName: "他院医生",
+		AppointDate: "2026-04-07", SlotStart: "09:00", SlotEnd: "09:30",
+		PatientName: "隔离患者", Status: model.AppointmentStatusPending,
+	})
+
+	result, err := svc.WeeklyMatrix(1, "2026-04-07")
+	assert.NoError(t, err)
+	assert.Len(t, result.Doctors, 0)
+	assert.Equal(t, 0, result.GrandTotal)
 }
