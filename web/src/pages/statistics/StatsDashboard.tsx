@@ -89,7 +89,7 @@ export function aggregateForCharts(data: DailyTrendItem[], range: QuickRange): D
 
 export default function StatsDashboard() {
   const isMobile = useIsMobile();
-  const { isSuperAdmin } = useAuth();
+  const { isSuperAdmin, isPowerAdmin } = useAuth();
   const [quickRange, setQuickRange] = useState<QuickRange>('month');
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs]>(getDateRange('month'));
   const [data, setData] = useState<DashboardData | null>(null);
@@ -215,13 +215,13 @@ export default function StatsDashboard() {
   ) : null;
 
   const tabItems = [
-    { key: 'overview', label: '数据概览', children: <>{tenantAlert}{overviewContent}</> },
+    { key: 'overview', label: '诊所统计', children: <>{tenantAlert}{overviewContent}</> },
     {
       key: 'staff',
-      label: '人员收费',
+      label: '人员统计',
       children: <StaffRevenuePanel startDate={startDateStr} endDate={endDateStr} />,
     },
-    ...(isSuperAdmin ? [{
+    ...((isSuperAdmin || isPowerAdmin) ? [{
       key: 'global',
       label: <span>全局总览 <span style={{ display: 'inline-block', background: '#ff4d4f', color: '#fff', fontSize: 9, borderRadius: 8, padding: '1px 4px', marginLeft: 2, verticalAlign: 'middle' }}>Admin</span></span>,
       children: (

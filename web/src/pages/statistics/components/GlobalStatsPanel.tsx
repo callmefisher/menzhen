@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Select, Button, Table, Skeleton, Empty, message } from 'antd';
+import { Select, Button, Table, Skeleton, Empty, message, Alert } from 'antd';
+import { useAuth } from '../../../store/auth';
 import type { ColumnsType } from 'antd/es/table';
 import { getGlobalStats } from '../../../api/statistics';
 import type { GlobalStatsData, GlobalTenantItem } from '../../../api/statistics';
@@ -114,6 +115,7 @@ function ExpandDetail({ item, isMobile, onViewDetail }: ExpandDetailProps) {
 
 export default function GlobalStatsPanel({ startDate, endDate, onViewDetail }: Props) {
   const isMobile = useIsMobile();
+  const { isPowerAdmin, managedGroups } = useAuth();
   const [data, setData] = useState<GlobalStatsData | null>(null);
   const [loading, setLoading] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>('revenue');
@@ -184,10 +186,20 @@ export default function GlobalStatsPanel({ startDate, endDate, onViewDetail }: P
 
   if (!data) return <Empty description="暂无全局统计数据" />;
 
+  const powerAdminBanner = isPowerAdmin ? (
+    <Alert
+      type="info"
+      showIcon
+      style={{ marginBottom: 16 }}
+      message={`当前显示您管理的 ${managedGroups.length} 个分组的汇总数据（${managedGroups.join('、')}）`}
+    />
+  ) : null;
+
   // ── Mobile: card list ──────────────────────────────────────────────────────
   if (isMobile) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {powerAdminBanner}
         <SummaryCards data={data} isMobile={isMobile} />
 
         {/* Search */}
@@ -258,6 +270,7 @@ export default function GlobalStatsPanel({ startDate, endDate, onViewDetail }: P
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {powerAdminBanner}
       <SummaryCards data={data} isMobile={isMobile} />
 
       {/* Search bar */}
