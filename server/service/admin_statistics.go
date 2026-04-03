@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -66,7 +67,10 @@ func (s *AdminStatisticsService) GetGlobalStats(startDate, endDate time.Time, pa
 		size = 50
 	}
 
-	groupKey := strings.Join(groupNames, ",")
+	sortedGroups := make([]string, len(groupNames))
+	copy(sortedGroups, groupNames)
+	sort.Strings(sortedGroups)
+	groupKey := strings.Join(sortedGroups, "|")
 	cacheKey := fmt.Sprintf("%s:%s:%d:%d:%s",
 		startDate.Format("2006-01-02"), endDate.Format("2006-01-02"), page, size, groupKey)
 

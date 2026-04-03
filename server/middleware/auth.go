@@ -189,6 +189,30 @@ func SuperAdminTenantOverrideMiddleware(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
+// RequireSuperOrPowerAdmin rejects requests that are neither from a superAdmin
+// (username=="admin" with user:manage permission) nor from a powerAdmin
+// (has at least one managed group in the JWT). Regular authenticated users get 403.
+// This is a route-level guard for endpoints accessible to both roles.
+func RequireSuperOrPowerAdmin(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		username := GetUsername(c)
+		if username == "admin" {
+			// superAdmin fast-path — detailed check done inside handler
+			c.Next()
+			return
+		}
+		if len(GetManagedGroups(c)) > 0 {
+			// powerAdmin fast-path
+			c.Next()
+			return
+		}
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+			"code":    403,
+			"message": "仅超级管理员或授权管理员可访问",
+		})
+	}
+}
+
 // TokenVersionMiddleware checks that the JWT's token_version matches the DB.
 // Returns HTTP 409 with "token_refresh_required" when mismatched, signalling
 // the frontend to call /auth/refresh.

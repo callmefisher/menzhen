@@ -444,9 +444,12 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		adminStatsHandler := handler.NewAdminStatisticsHandler(db)
 		adminStats := authenticated.Group("/admin/statistics")
 		{
-			// /global uses internal handler-level auth (supports both superAdmin and powerAdmin).
-			// Access is controlled inside GetGlobal via IsProtectedAdminAccount + GetManagedGroups.
-			adminStats.GET("/global", adminStatsHandler.GetGlobal)
+			// /global is accessible to superAdmin (any tenant) and powerAdmin (filtered by managed groups).
+			// Route-level guard: RequireSuperOrPowerAdmin. Handler applies the group filter.
+			adminStats.GET("/global",
+				middleware.RequireSuperOrPowerAdmin(db),
+				adminStatsHandler.GetGlobal,
+			)
 		}
 
 		// PowerAdmin management (superAdmin only).

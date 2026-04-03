@@ -8,6 +8,12 @@ import {
   listPowerAdmins, deletePowerAdmin,
   assignPowerAdminGroups, listAllGroups, type PowerAdminItem,
 } from '../../api/powerAdmin';
+import { listUsers } from '../../api/user';
+
+interface UserOption {
+  value: number;
+  label: string;
+}
 
 export default function PowerAdminList() {
   const [data, setData] = useState<PowerAdminItem[]>([]);
@@ -19,6 +25,13 @@ export default function PowerAdminList() {
   const [assignTarget, setAssignTarget] = useState<PowerAdminItem | null>(null);
   const [assignForm] = Form.useForm();
   const [assignLoading, setAssignLoading] = useState(false);
+
+  // Add powerAdmin modal
+  const [addVisible, setAddVisible] = useState(false);
+  const [addForm] = Form.useForm();
+  const [addLoading, setAddLoading] = useState(false);
+  const [userOptions, setUserOptions] = useState<UserOption[]>([]);
+  const [userOptionsLoading, setUserOptionsLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -71,6 +84,42 @@ export default function PowerAdminList() {
       fetchData();
     } catch { /* validation or API error */ } finally {
       setAssignLoading(false);
+    }
+  };
+
+  const fetchUserOptions = useCallback(async () => {
+    setUserOptionsLoading(true);
+    try {
+      const res = await listUsers({ page: 1, size: 200 });
+      const body = res as unknown as { code: number; data: { list: Array<{ id: number; username: string; real_name: string }> } };
+      const existingIds = new Set(data.map(d => d.user_id));
+      const options: UserOption[] = (body.data?.list || [])
+        .filter(u => !existingIds.has(u.id))
+        .map(u => ({
+          value: u.id,
+          label: u.real_name ? `${u.username}（${u.real_name}）` : u.username,
+        }));
+      setUserOptions(options);
+    } catch { /* ignore */ } finally {
+      setUserOptionsLoading(false);
+    }
+  }, [data]);
+
+  const handleAddOpen = () => {
+    addForm.resetFields();
+    setAddVisible(true);
+  };
+
+  const handleAddSubmit = async () => {
+    try {
+      const values = await addForm.validateFields();
+      setAddLoading(true);
+      await assignPowerAdminGroups(values.user_id, []);
+      message.success('创建成功，请分配授权分组');
+      setAddVisible(false);
+      fetchData();
+    } catch { /* validation or API error */ } finally {
+      setAddLoading(false);
     }
   };
 
@@ -131,7 +180,14 @@ export default function PowerAdminList() {
   ], [allGroups]);
 
   return (
-    <Card title="超级管理员管理">
+    <Card
+      title="超级管理员管理"
+      extra={
+        <Button type="primary" onClick={handleAddOpen}>
+          ＋ 新增管理员
+        </Button>
+      }
+    >
       <Table
         rowKey="user_id"
         columns={columns}
@@ -166,6 +222,40 @@ export default function PowerAdminList() {
           </Form.Item>
           <div style={{ fontSize: 12, color: '#1677ff' }}>
             修改授权后，该用户下次操作时将自动刷新 Token，无需重新登录。
+          </div>
+        </Form>
+      </Modal>
+
+      {/* Add PowerAdmin Modal */}
+      <Modal
+        title="新增管理员"
+        open={addVisible}
+        onOk={handleAddSubmit}
+        onCancel={() => { setAddVisible(false); addForm.resetFields(); }}
+        confirmLoading={addLoading}
+        width={480}
+        destroyOnClose
+      >
+        <Form form={addForm} layout="vertical">
+          <Form.Item
+            name="user_id"
+            label="选择用户"
+            rules={[{ required: true, message: '请选择用户' }]}
+          >
+            <Select
+              showSearch
+              placeholder="搜索用户名或姓名"
+              loading={userOptionsLoading}
+              options={userOptions}
+              filterOption={(input, option) =>
+                (option?.label as string ?? '').toLowerCase().includes(input.toLowerCase())
+              }
+              onFocus={fetchUserOptions}
+              allowClear
+            />
+          </Form.Item>
+          <div style={{ fontSize: 12, color: '#999' }}>
+            创建后请在列表中为该管理员分配授权分组。
           </div>
         </Form>
       </Modal>

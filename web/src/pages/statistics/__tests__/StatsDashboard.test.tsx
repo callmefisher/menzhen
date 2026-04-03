@@ -57,7 +57,7 @@ vi.mock('../../../hooks/useIsMobile', () => ({
 }));
 
 vi.mock('../../../store/auth', () => ({
-  useAuth: vi.fn().mockReturnValue({ isSuperAdmin: false }),
+  useAuth: vi.fn().mockReturnValue({ isSuperAdmin: false, isPowerAdmin: false, managedGroups: [] }),
 }));
 
 vi.mock('echarts-for-react', () => ({
@@ -138,10 +138,10 @@ describe('StatsDashboard', () => {
     });
   });
 
-  it('renders Tabs with 数据概览 and 人员收费', () => {
+  it('renders Tabs with 诊所统计 and 人员统计', () => {
     renderWithRouter();
-    expect(screen.getByText('数据概览')).toBeInTheDocument();
-    expect(screen.getByText('人员收费')).toBeInTheDocument();
+    expect(screen.getByText('诊所统计')).toBeInTheDocument();
+    expect(screen.getByText('人员统计')).toBeInTheDocument();
   });
 });
 
@@ -160,6 +160,8 @@ describe('StatsDashboard global tab visibility', () => {
   it('shows 全局总览 tab for superAdmin', () => {
     vi.spyOn(authStore, 'useAuth').mockReturnValue({
       isSuperAdmin: true,
+      isPowerAdmin: false,
+      managedGroups: [],
       user: { id: 1, username: 'admin', real_name: '管理员', tenant_id: 1 },
       permissions: ['user:manage'],
       token: 'mock',
@@ -181,6 +183,8 @@ describe('StatsDashboard global tab visibility', () => {
     // explicitly set isSuperAdmin: false to override the spy from previous test
     vi.spyOn(authStore, 'useAuth').mockReturnValue({
       isSuperAdmin: false,
+      isPowerAdmin: false,
+      managedGroups: [],
       user: { id: 1, username: 'user', real_name: '普通用户', tenant_id: 1 },
       permissions: [],
       token: 'mock',
