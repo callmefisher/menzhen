@@ -2,32 +2,33 @@ import { useEffect, useRef, useCallback } from 'react';
 
 interface WSMessage {
   type: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   payload: any;
 }
 
 type MessageHandler = (msg: WSMessage) => void;
 
+// Module-level singleton — shared across all usePatientWebSocket callers.
 const listeners = new Map<string, Set<MessageHandler>>();
 let socket: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectDelay = 1000;
 
-function getWSUrl() {
+function getPatientWSUrl() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-  return `${proto}//${location.host}/api/v1/ws?token=${token}`;
+  const token = localStorage.getItem('patient_token');
+  return `${proto}//${location.host}/api/v1/patient/ws?token=${token}`;
 }
 
 function connect() {
   if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) return;
-  const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+  const token = localStorage.getItem('patient_token');
   if (!token) return;
 
-  socket = new WebSocket(getWSUrl());
+  socket = new WebSocket(getPatientWSUrl());
 
   socket.onopen = () => {
     reconnectDelay = 1000;
-    // Notify all listeners to refetch (DB is truth source)
     listeners.get('_reconnect')?.forEach(fn => fn({ type: '_reconnect', payload: null }));
   };
 
@@ -46,26 +47,22 @@ function connect() {
     }, reconnectDelay);
   };
 
-  socket.onerror = () => {
-    socket?.close();
-  };
+  socket.onerror = () => { socket?.close(); };
 }
 
 function disconnect() {
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer);
-    reconnectTimer = null;
-  }
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
   socket?.close();
   socket = null;
+  reconnectDelay = 1000;
+  listeners.clear();
 }
 
 /**
- * Public WebSocket hook — reusable for prescription notifications, appointment queues, etc.
- * @param type Message type to listen for (rx_notify, rx_done, rx_cleanup, _reconnect)
- * @param handler Callback when message of this type arrives
+ * Patient-side WebSocket hook — uses patient_token from localStorage.
+ * Connects to /api/v1/patient/ws and listens for server-pushed messages.
  */
-export function useWebSocket(type: string, handler: MessageHandler) {
+export function usePatientWebSocket(type: string, handler: MessageHandler) {
   const handlerRef = useRef(handler);
   handlerRef.current = handler;
 
@@ -79,8 +76,11 @@ export function useWebSocket(type: string, handler: MessageHandler) {
     connect();
 
     return () => {
-      listeners.get(type)?.delete(stableHandler);
-      // Disconnect when no listeners remain
+      const set = listeners.get(type);
+      if (set) {
+        set.delete(stableHandler);
+        if (set.size === 0) listeners.delete(type);
+      }
       let total = 0;
       listeners.forEach(s => (total += s.size));
       if (total === 0) disconnect();

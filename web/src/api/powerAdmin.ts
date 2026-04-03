@@ -23,8 +23,13 @@ export function assignPowerAdminGroups(userId: number, groups: string[]) {
   return request.put(`/settings/power-admins/${userId}/groups`, { groups });
 }
 
+export interface GroupInfo {
+  name: string;
+  count: number;
+}
+
 export function listAllGroups() {
-  return request.get<{ code: number; data: string[] }>(
+  return request.get<{ code: number; data: GroupInfo[] }>(
     '/settings/power-admins/groups',
   );
 }

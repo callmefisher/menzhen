@@ -1,10 +1,13 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { StyleProvider, legacyLogicalPropertiesTransformer } from '@ant-design/cssinjs'
 import './index.css'
 import App from './App.tsx'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <StyleProvider transformers={[legacyLogicalPropertiesTransformer]}>
+      <App />
+    </StyleProvider>
   </StrictMode>,
 )

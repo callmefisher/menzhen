@@ -268,7 +268,7 @@ func TestQueueDoctorUpdateSortOtherTenantIgnored(t *testing.T) {
 	assert.NotEqual(t, 99, docsB[0].SortOrder, "other tenant's sort_order must not be modified")
 }
 
-// TestGetCallDisplayDuration_Default verifies the default value (10) when the column is NULL.
+// TestGetCallDisplayDuration_Default verifies the default value (6) when the column is NULL.
 func TestGetCallDisplayDuration_Default(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	tenant := testutil.SeedTestTenant(t, db, "诊所NULL", "qd-calldur-null-"+t.Name())
@@ -280,7 +280,7 @@ func TestGetCallDisplayDuration_Default(t *testing.T) {
 	svc := service.NewQueueDoctorService(db)
 	seconds, err := svc.GetCallDisplayDuration(uint(tenant.ID))
 	require.NoError(t, err)
-	assert.Equal(t, 10, seconds, "NULL call_display_duration should default to 10")
+	assert.Equal(t, 6, seconds, "NULL call_display_duration should default to 6")
 }
 
 // TestGetCallDisplayDuration_Custom verifies that a saved value is returned correctly.
@@ -443,8 +443,8 @@ func TestAppointmentConfig_Defaults(t *testing.T) {
 	cfg, err := svc.GetAppointmentConfig(uint(tenant.ID))
 	require.NoError(t, err)
 	assert.Equal(t, 30, cfg.SlotMinutes, "slot_minutes default should be 30")
-	assert.Equal(t, 10, cfg.MaxPerSlot, "max_appt_per_slot default should be 10")
-	assert.Equal(t, 7, cfg.AdvanceDays, "advance_days default should be 7")
+	assert.Equal(t, 1, cfg.MaxPerSlot, "max_appt_per_slot default should be 1")
+	assert.Equal(t, 30, cfg.AdvanceDays, "advance_days default should be 30")
 }
 
 // TestAppointmentConfig_RoundTrip verifies SetAppointmentConfig → GetAppointmentConfig round-trip.
@@ -518,4 +518,41 @@ func TestAppointmentConfig_NotFound(t *testing.T) {
 
 	err = svc.SetAppointmentConfig(99999, service.AppointmentConfig{SlotMinutes: 30, MaxPerSlot: 10, AdvanceDays: 7})
 	assert.ErrorIs(t, err, service.ErrTenantNotFound)
+}
+
+// TestAppointmentConfig_NewTenantDefaults verifies that a freshly created tenant (with GORM
+// column defaults applied, not NULL) returns the new intended defaults: MaxPerSlot=1, AdvanceDays=30.
+func TestAppointmentConfig_NewTenantDefaults(t *testing.T) {
+	svc, tenantID := makeQueueDoctorSvc(t)
+
+	cfg, err := svc.GetAppointmentConfig(tenantID)
+	require.NoError(t, err)
+	assert.Equal(t, 1, cfg.MaxPerSlot, "new tenant max_appt_per_slot should default to 1 (not 10)")
+	assert.Equal(t, 30, cfg.AdvanceDays, "new tenant advance_days should default to 30 (not 7)")
+	assert.Equal(t, 30, cfg.SlotMinutes, "new tenant slot_minutes should default to 30")
+}
+
+// TestCallDisplayDuration_NewTenantDefault verifies that a freshly created tenant (with GORM
+// column defaults applied, not NULL) returns the new default call duration of 6 seconds.
+func TestCallDisplayDuration_NewTenantDefault(t *testing.T) {
+	svc, tenantID := makeQueueDoctorSvc(t)
+
+	seconds, err := svc.GetCallDisplayDuration(tenantID)
+	require.NoError(t, err)
+	assert.Equal(t, 6, seconds, "new tenant call_display_duration should default to 6 (not 10)")
+}
+
+// TestAppointmentConfig_DefaultsNotOldValues is a regression guard ensuring the old default
+// values (max_per_slot=10, advance_days=7, call_duration=10) are no longer returned for new tenants.
+func TestAppointmentConfig_DefaultsNotOldValues(t *testing.T) {
+	svc, tenantID := makeQueueDoctorSvc(t)
+
+	cfg, err := svc.GetAppointmentConfig(tenantID)
+	require.NoError(t, err)
+	assert.NotEqual(t, 10, cfg.MaxPerSlot, "old default 10 must not be returned for new tenants")
+	assert.NotEqual(t, 7, cfg.AdvanceDays, "old default 7 must not be returned for new tenants")
+
+	seconds, err := svc.GetCallDisplayDuration(tenantID)
+	require.NoError(t, err)
+	assert.NotEqual(t, 10, seconds, "old default 10s must not be returned for new tenants")
 }

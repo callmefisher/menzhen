@@ -504,13 +504,13 @@ func (h *QueueDoctorHandler) GetDoctorSchedule(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": "invalid doctor id"})
 		return
 	}
-	// Verify the doctor belongs to this tenant
+	// Verify the doctor belongs to this tenant (doctorID is queue_doctor.id, not user_id)
 	var qd model.QueueDoctor
-	if err := h.db.Where("user_id = ? AND tenant_id = ?", doctorID, tenantID).First(&qd).Error; err != nil {
+	if err := h.db.Where("id = ? AND tenant_id = ?", doctorID, tenantID).First(&qd).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": "doctor not found"})
 		return
 	}
-	cfg, err := h.schedSvc.Get(tenantID, uint(doctorID))
+	cfg, err := h.schedSvc.Get(tenantID, qd.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "internal server error"})
 		return
@@ -530,9 +530,9 @@ func (h *QueueDoctorHandler) SetDoctorSchedule(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": "invalid doctor id"})
 		return
 	}
-	// Verify the doctor belongs to this tenant
+	// Verify the doctor belongs to this tenant (doctorID is queue_doctor.id, not user_id)
 	var qd model.QueueDoctor
-	if err := h.db.Where("user_id = ? AND tenant_id = ?", doctorID, tenantID).First(&qd).Error; err != nil {
+	if err := h.db.Where("id = ? AND tenant_id = ?", doctorID, tenantID).First(&qd).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": "doctor not found"})
 		return
 	}
@@ -541,7 +541,7 @@ func (h *QueueDoctorHandler) SetDoctorSchedule(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": err.Error()})
 		return
 	}
-	cfg, err := h.schedSvc.Upsert(tenantID, uint(doctorID), req)
+	cfg, err := h.schedSvc.Upsert(tenantID, qd.ID, req)
 	if err != nil {
 		if errors.Is(err, service.ErrInvalidRange) || errors.Is(err, service.ErrInvalidWeekdays) {
 			c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": err.Error()})

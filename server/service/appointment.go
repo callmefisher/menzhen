@@ -242,7 +242,9 @@ func (s *AppointmentService) Checkin(tenantID, apptID uint) (*model.QueueEntry, 
 		return nil, ErrNotQueued
 	}
 	now := time.Now()
-	if appt.AppointDate != now.Format("2006-01-02") {
+	// Use HasPrefix because parseTime=True in the DSN causes GORM to scan DATE
+	// columns as a full timestamp string (e.g. "2026-04-04 00:00:00 +0800 CST").
+	if !strings.HasPrefix(appt.AppointDate, now.Format("2006-01-02")) {
 		return nil, ErrCheckinWrongDate
 	}
 	var entry model.QueueEntry

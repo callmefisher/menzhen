@@ -10,10 +10,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// GetPortalConfigResponse embeds PatientPortalConfig and adds the tenant code.
+// GetPortalConfigResponse embeds PatientPortalConfig and adds the tenant code and name.
 type GetPortalConfigResponse struct {
 	model.PatientPortalConfig
 	TenantCode string `json:"tenant_code"`
+	TenantName string `json:"tenant_name"`
 }
 
 // PatientSettingsHandler handles admin-side patient portal config.
@@ -35,6 +36,7 @@ func (h *PatientSettingsHandler) GetPortalConfig(c *gin.Context) {
 	// If no portal config row exists, bool columns are NULL → defaults applied in Go.
 	type rawRow struct {
 		TenantCode         string `gorm:"column:tenant_code"`
+		TenantName         string `gorm:"column:tenant_name"`
 		LoginEnabled       *bool  `gorm:"column:login_enabled"`
 		RegisterEnabled    *bool  `gorm:"column:register_enabled"`
 		AppointmentEnabled *bool  `gorm:"column:appointment_enabled"`
@@ -43,11 +45,17 @@ func (h *PatientSettingsHandler) GetPortalConfig(c *gin.Context) {
 	}
 	var row rawRow
 	if err := h.db.Table("tenants").
-		Select("tenants.code AS tenant_code, ppc.login_enabled, ppc.register_enabled, ppc.appointment_enabled, ppc.queue_enabled, ppc.records_enabled").
+		Select("tenants.code AS tenant_code, tenants.name AS tenant_name, ppc.login_enabled, ppc.register_enabled, ppc.appointment_enabled, ppc.queue_enabled, ppc.records_enabled").
 		Joins("LEFT JOIN patient_portal_configs ppc ON ppc.tenant_id = tenants.id").
 		Where("tenants.id = ?", tenantID).
 		Scan(&row).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "服务错误"})
+		return
+	}
+
+	// If tenant doesn't exist, TenantCode will be empty string (Scan returns no rows without error).
+	if row.TenantCode == "" {
+		c.JSON(http.StatusNotFound, gin.H{"code": 404, "message": "诊所不存在"})
 		return
 	}
 
@@ -68,6 +76,7 @@ func (h *PatientSettingsHandler) GetPortalConfig(c *gin.Context) {
 			RecordsEnabled:     boolVal(row.RecordsEnabled, true),
 		},
 		TenantCode: row.TenantCode,
+		TenantName: row.TenantName,
 	}
 	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success", "data": resp})
 }

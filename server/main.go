@@ -12,6 +12,14 @@ import (
 )
 
 func main() {
+	// Force Asia/Shanghai timezone for all time.Now() calls (appointment enqueue date checks).
+	// The container TZ env var is the primary mechanism; this is a belt-and-suspenders fallback.
+	if loc, err := time.LoadLocation("Asia/Shanghai"); err == nil {
+		time.Local = loc
+	} else {
+		log.Printf("WARNING: failed to load Asia/Shanghai timezone: %v — time.Now() will use UTC", err)
+	}
+
 	cfg := config.Load()
 
 	// Database

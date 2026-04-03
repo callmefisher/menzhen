@@ -10,7 +10,7 @@ export default function PatientLogin() {
   const [tenantModalOpen, setTenantModalOpen] = useState(false);
   const [pendingValues, setPendingValues] = useState<{ phone: string; name: string } | null>(null);
   const [clinicName, setClinicName] = useState<string | null>(null);
-  const { login, token } = usePatientAuth();
+  const { login, token, loading: authLoading } = usePatientAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [form] = Form.useForm();
@@ -30,8 +30,8 @@ export default function PatientLogin() {
   }, [searchParams, form]);
 
   useEffect(() => {
-    if (token) navigate('/patient/home', { replace: true });
-  }, [token, navigate]);
+    if (!authLoading && token) navigate('/patient/home', { replace: true });
+  }, [authLoading, token, navigate]);
 
   const onFinish = async (values: { tenant_code?: string; phone: string; name: string }) => {
     if (values.tenant_code) {

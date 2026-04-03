@@ -19,6 +19,7 @@ export interface Appointment {
   slot_start: string;
   slot_end: string;
   status: string;
+  checkin_status: string; // 'pending' | 'done' — populated for today's queued appointments
   created_at: string;
 }
 
@@ -94,6 +95,9 @@ export const getAppointmentSlots = (doctorId: number, date: string) =>
 
 export const cancelAppointment = (id: number) =>
   patientRequest.post(`/appointments/${id}/cancel`);
+
+export const checkinAppointment = (id: number) =>
+  patientRequest.post(`/appointments/${id}/checkin`) as Promise<{ data: { id: number } }>;
 
 export const takeQueueNumber = (doctorId: number) =>
   patientRequest.post('/queue/take', { doctor_id: doctorId });

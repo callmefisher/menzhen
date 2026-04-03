@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Card, Switch, message, Spin, Typography, Alert, QRCode, Button } from 'antd';
+import { Card, Switch, message, Spin, Typography, Alert, QRCode, Button, Input } from 'antd';
 import { getPatientPortalConfig, updatePatientPortalConfig } from '../../api/patientPortal';
 import type { PatientPortalConfig } from '../../api/patientPortal';
 import { useAuth } from '../../store/auth';
@@ -22,7 +22,12 @@ export default function PatientPortalSettings() {
   const [loading, setLoading] = useState(true);
 
   const qrContainerRef = useRef<HTMLDivElement>(null);
+  const [baseUrl, setBaseUrl] = useState(
+    () => localStorage.getItem('portal_base_url') || window.location.origin
+  );
   const tenantIdParam = isSuperAdmin ? (selectedTenantId || undefined) : undefined;
+
+  const isValidBaseUrl = /^https?:\/\/.+/.test(baseUrl.replace(/\/+$/, ''));
 
   useEffect(() => {
     setLoading(true);
@@ -47,9 +52,8 @@ export default function PatientPortalSettings() {
 
   const sections = [...new Set(SWITCHES.map(s => s.section))];
 
-  // window.location.origin works for production; in local dev use the server's public URL.
-  const qrUrl = config?.tenant_code
-    ? `${window.location.origin}/patient/login?code=${encodeURIComponent(config.tenant_code)}`
+  const qrUrl = config?.tenant_code && isValidBaseUrl
+    ? `${baseUrl.replace(/\/+$/, '')}/patient/login?code=${encodeURIComponent(config.tenant_code)}`
     : '';
 
   const handleDownloadQRCode = () => {
@@ -105,13 +109,27 @@ export default function PatientPortalSettings() {
                 <div style={{ marginBottom: 12, color: '#555', lineHeight: '1.6' }}>
                   患者扫描此码即可直接进入本诊所患者端
                 </div>
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>访问地址（可修改为外网域名）</div>
+                  <Input
+                    size="small"
+                    value={baseUrl}
+                    onChange={e => {
+                      setBaseUrl(e.target.value);
+                      localStorage.setItem('portal_base_url', e.target.value);
+                    }}
+                    placeholder="https://your-domain.com"
+                    style={{ fontFamily: 'monospace' }}
+                    status={!isValidBaseUrl ? 'error' : ''}
+                  />
+                </div>
                 {qrUrl && (
                   <Button size="small" onClick={handleDownloadQRCode}>
                     下载二维码
                   </Button>
                 )}
                 <div style={{ marginTop: 12, fontSize: 12, color: '#888' }}>
-                  诊所代码: {config.tenant_code || '—'}
+                  诊所代码: {config.tenant_code || '—'}{config.tenant_name ? ` · ${config.tenant_name}` : ''}
                 </div>
               </div>
             </div>

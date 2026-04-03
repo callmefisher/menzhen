@@ -41,6 +41,7 @@ import useIsMobile from '../../hooks/useIsMobile';
 import useRowHighlight from '../../hooks/useRowHighlight';
 import { useAccessibleColumns, type AccessibleColumnsType } from '../../hooks/useAccessibleColumns';
 import HiddenColumnsHint from '../../components/HiddenColumnsHint';
+import TenantSelector from '../../components/TenantSelector';
 
 interface TenantItem {
   id: number;
@@ -77,6 +78,7 @@ export default function UserList() {
   const [params, setParams] = useState<ListParams>({ page: 1, size: 20 });
   const isMobile = useIsMobile();
   const { user: currentUser, isSuperAdmin } = useAuth();
+  const [selectedTenantId, setSelectedTenantId] = useState<number>(currentUser?.tenant_id ?? 0);
 
   const highlight = useRowHighlight({
     data,
@@ -117,7 +119,7 @@ export default function UserList() {
     setLoading(true);
     try {
       const res = isSuperAdmin
-        ? await listUsers({ page: query.page, size: query.size })
+        ? await listUsers({ page: query.page, size: query.size, tenant_id: selectedTenantId || undefined })
         : await listTenantUsers({ page: query.page, size: query.size });
       const body = res as unknown as {
         data: {
@@ -132,7 +134,7 @@ export default function UserList() {
     } finally {
       setLoading(false);
     }
-  }, [isSuperAdmin]);
+  }, [isSuperAdmin, selectedTenantId]);
 
   useEffect(() => {
     fetchData(params);
@@ -525,7 +527,14 @@ export default function UserList() {
 
   return (
     <Card>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+        <TenantSelector
+          value={selectedTenantId}
+          onChange={(id) => {
+            setSelectedTenantId(id);
+            setParams({ page: 1, size: params.size });
+          }}
+        />
         <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>
           新增用户
         </Button>

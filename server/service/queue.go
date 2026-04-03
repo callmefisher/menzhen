@@ -30,9 +30,18 @@ func today() string {
 // Wraps UPSERT + SELECT in a transaction so both run on the same connection,
 // avoiding the LAST_INSERT_ID auto-increment override on new-day INSERT.
 func (s *QueueService) NextSeq(tenantID uint) (int, error) {
+	return nextSeqOnConn(s.DB, tenantID)
+}
+
+// nextSeqOnConn executes the NextSeq UPSERT+SELECT on the given db handle (which
+// may be a plain *gorm.DB or an in-progress transaction).  Using a nested
+// s.DB.Transaction() inside an existing transaction creates a savepoint that can
+// silently swallow the write on MySQL InnoDB, so callers inside a transaction
+// must pass tx directly rather than wrapping QueueService.
+func nextSeqOnConn(db *gorm.DB, tenantID uint) (int, error) {
 	date := today()
 	var seq int
-	err := s.DB.Transaction(func(tx *gorm.DB) error {
+	err := db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec(`
 			INSERT INTO queue_seqs (tenant_id, queue_date, last_seq)
 			VALUES (?, ?, 1)
@@ -145,8 +154,10 @@ func (s *QueueService) ListToday(tenantID uint, doctorID *uint) ([]model.QueueEn
 
 // Call handles a manual call for a queue entry.
 //   - Already seeing: re-call, no status change (statusChanged=false).
+//   - Waiting + appointment source + checkin_status=pending: notify only, no status change (patient not yet checked in).
 //   - Waiting + no one is seeing for this doctor: transition to seeing (statusChanged=true).
 //   - Waiting + someone else is already seeing: notify only, no status change (statusChanged=false).
+//
 // Returns ErrInvalidStatus if the entry is done/missed.
 func (s *QueueService) Call(tenantID, entryID uint) (entry *model.QueueEntry, statusChanged bool, err error) {
 	var e model.QueueEntry
@@ -167,33 +178,90 @@ func (s *QueueService) Call(tenantID, entryID uint) (entry *model.QueueEntry, st
 		return nil, false, ErrInvalidStatus
 	}
 
-	// Check if anyone is already seeing for this doctor today
-	var seeingCount int64
-	if err := s.DB.Model(&model.QueueEntry{}).
-		Where("tenant_id = ? AND queue_date = ? AND doctor_id = ? AND status = ?",
-			tenantID, today(), e.DoctorID, model.QueueStatusSeeing).
-		Count(&seeingCount).Error; err != nil {
-		return nil, false, err
-	}
-
-	if seeingCount > 0 {
-		// Someone is already seeing — notify only, no status change
+	// Appointment patient not yet checked in — display notification only, no status transition.
+	if e.Source == "appointment" && e.CheckinStatus == model.CheckinStatusPending {
 		return &e, false, nil
 	}
 
-	// No one seeing — transition this entry to seeing
-	now := time.Now()
-	result := s.DB.Model(&e).Updates(map[string]interface{}{
-		"status":    model.QueueStatusSeeing,
-		"called_at": now,
-	})
-	if result.Error != nil {
-		return nil, false, result.Error
-	}
+	// Fetch seeing entries and classify inside a transaction to prevent TOCTOU:
+	// two concurrent Call requests for the same doctor could both observe zero real
+	// seeing entries and both transition to seeing, producing two simultaneous seeing rows.
+	txErr := s.DB.Transaction(func(tx *gorm.DB) error {
+		// Re-fetch target entry inside transaction for consistent snapshot.
+		if err := tx.Where("id = ? AND tenant_id = ? AND queue_date = ?", entryID, tenantID, today()).
+			First(&e).Error; err != nil {
+			return err
+		}
+		// Re-check guards inside transaction (status may have changed between the outer
+		// fetch and now under concurrent load).
+		if e.Status == model.QueueStatusSeeing {
+			return nil // re-call: statusChanged stays false
+		}
+		if e.Status != model.QueueStatusWaiting {
+			return ErrInvalidStatus
+		}
+		if e.Source == "appointment" && e.CheckinStatus == model.CheckinStatusPending {
+			return nil // unchecked appointment: notify only, no transition
+		}
 
-	e.Status = model.QueueStatusSeeing
-	e.CalledAt = &now
-	return &e, true, nil
+		// Check if anyone is already seeing for this doctor today.
+		// Ghost seeing entries (unchecked appointments that ended up in seeing status due to
+		// old code) must not block real patients — auto-move them to missed first.
+		var seeingEntries []model.QueueEntry
+		if err := tx.Where("tenant_id = ? AND queue_date = ? AND doctor_id = ? AND status = ?",
+			tenantID, today(), e.DoctorID, model.QueueStatusSeeing).
+			Find(&seeingEntries).Error; err != nil {
+			return err
+		}
+
+		var realSeeing []model.QueueEntry
+		var ghostSeeing []model.QueueEntry
+		for _, se := range seeingEntries {
+			if se.Source == "appointment" && se.CheckinStatus == model.CheckinStatusPending {
+				ghostSeeing = append(ghostSeeing, se)
+			} else {
+				realSeeing = append(realSeeing, se)
+			}
+		}
+
+		if len(realSeeing) > 0 {
+			// A real patient is already being seen — notify only, no status change
+			return nil
+		}
+
+		// Auto-move ghost seeing entries (unchecked appointments) to missed
+		if len(ghostSeeing) > 0 {
+			ghostIDs := make([]uint, 0, len(ghostSeeing))
+			for _, g := range ghostSeeing {
+				ghostIDs = append(ghostIDs, g.ID)
+			}
+			if err := tx.Model(&model.QueueEntry{}).
+				Where("id IN ?", ghostIDs).
+				Update("status", model.QueueStatusMissed).Error; err != nil {
+				return err
+			}
+		}
+
+		// No real patient seeing — transition this entry to seeing
+		now := time.Now()
+		if err := tx.Model(&e).Updates(map[string]interface{}{
+			"status":    model.QueueStatusSeeing,
+			"called_at": now,
+		}).Error; err != nil {
+			return err
+		}
+		e.Status = model.QueueStatusSeeing
+		e.CalledAt = &now
+		statusChanged = true
+		return nil
+	})
+	if txErr != nil {
+		if errors.Is(txErr, ErrInvalidStatus) {
+			return nil, false, ErrInvalidStatus
+		}
+		return nil, false, txErr
+	}
+	return &e, statusChanged, nil
 }
 
 // Complete changes a seeing entry to done and sets CompletedAt.
@@ -228,10 +296,12 @@ func (s *QueueService) Complete(tenantID, entryID uint) (*model.QueueEntry, *mod
 		entry.Status = model.QueueStatusDone
 		entry.CompletedAt = &now
 
-		// Auto-call next waiting patient for the same doctor
+		// Auto-call next waiting patient for the same doctor.
+		// Skip appointment patients who have not yet checked in.
 		var next model.QueueEntry
-		err := tx.Where("tenant_id = ? AND queue_date = ? AND doctor_id = ? AND status = ?",
-			tenantID, today(), entry.DoctorID, model.QueueStatusWaiting).
+		err := tx.Where(
+			"tenant_id = ? AND queue_date = ? AND doctor_id = ? AND status = ? AND NOT (source = 'appointment' AND checkin_status = ?)",
+			tenantID, today(), entry.DoctorID, model.QueueStatusWaiting, model.CheckinStatusPending).
 			Order("seq_number ASC").
 			First(&next).Error
 

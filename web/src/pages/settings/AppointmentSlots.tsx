@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   Card, Table, Button, Modal, Form, Select, InputNumber, TimePicker, Space, message, Typography, Tag, Alert, Divider, Checkbox
 } from 'antd';
@@ -11,6 +11,8 @@ import {
 import {
   listQueueDoctors, getAppointmentConfig, getDoctorSchedule, setDoctorSchedule, type QueueDoctor, type DoctorScheduleConfig
 } from '../../api/queue-doctor';
+import { useAuth } from '../../store/auth';
+import TenantSelector from '../../components/TenantSelector';
 
 // Weekday bitmask helpers (bit0=Sun, bit1=Mon, ..., bit6=Sat — matches JS Date.getDay())
 const WEEKDAY_OPTIONS = [
@@ -24,10 +26,14 @@ const WEEKDAY_OPTIONS = [
 ];
 const fromBitmask = (mask: number): number[] => WEEKDAY_OPTIONS.map(o => o.value).filter(d => (mask >> d) & 1);
 const toBitmask = (days: number[]): number => days.reduce((acc, d) => acc | (1 << d), 0);
+const DEFAULT_WEEKDAYS_MASK = 0b0111110; // Mon–Fri
 
 const { Title } = Typography;
 
 export default function AppointmentSlots() {
+  const { user: currentUser, isSuperAdmin } = useAuth();
+  const [selectedTenantId, setSelectedTenantId] = useState<number>(currentUser?.tenant_id ?? 0);
+  const tenantIdParam = isSuperAdmin ? (selectedTenantId || undefined) : undefined;
   const [doctors, setDoctors] = useState<QueueDoctor[]>([]);
   const [selectedDoctorId, setSelectedDoctorId] = useState<number | undefined>();
   const [slots, setSlots] = useState<SlotConfig[]>([]);
@@ -50,7 +56,7 @@ export default function AppointmentSlots() {
   const fetchGlobalSlots = useCallback(async () => {
     setGlobalLoading(true);
     try {
-      const res = await listSlotConfigs(0);
+      const res = await listSlotConfigs(0, tenantIdParam);
       const body = res as unknown as { data?: { list?: SlotConfig[] } };
       setGlobalSlots(body.data?.list ?? []);
     } catch {
@@ -58,27 +64,32 @@ export default function AppointmentSlots() {
     } finally {
       setGlobalLoading(false);
     }
-  }, []);
+  }, [tenantIdParam]);
 
   useEffect(() => {
     fetchGlobalSlots();
+    setSelectedDoctorId(undefined);
+    let cancelled = false;
     (async () => {
       try {
-        const res = await listQueueDoctors();
+        const res = await listQueueDoctors(tenantIdParam);
         const body = res as unknown as { data?: { list?: QueueDoctor[] } };
         const list = (body.data?.list ?? []).filter(d => d.enabled);
-        setDoctors(list);
-        if (list.length > 0) setSelectedDoctorId(list[0].user_id);
+        if (!cancelled) {
+          setDoctors(list);
+          if (list.length > 0) setSelectedDoctorId(list[0].id);
+        }
       } catch {
-        message.error('加载医生列表失败');
+        if (!cancelled) message.error('加载医生列表失败');
       }
     })();
-  }, [fetchGlobalSlots]);
+    return () => { cancelled = true; };
+  }, [fetchGlobalSlots, tenantIdParam]);
 
   const fetchSlots = useCallback(async (doctorId: number) => {
     setLoading(true);
     try {
-      const res = await listSlotConfigs(doctorId);
+      const res = await listSlotConfigs(doctorId, tenantIdParam);
       const body = res as unknown as { data?: { list?: SlotConfig[] } };
       setSlots(body.data?.list ?? []);
     } catch {
@@ -86,11 +97,19 @@ export default function AppointmentSlots() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [tenantIdParam]);
 
+  const fetchSlotsRef = useRef(fetchSlots);
+  fetchSlotsRef.current = fetchSlots;
+  const tenantIdRef = useRef(tenantIdParam);
+  tenantIdRef.current = tenantIdParam;
+
+  // Only re-run when selectedDoctorId changes (not when fetchSlots ref changes due to
+  // tenant switch). fetchSlotsRef.current always has the latest tenantIdParam via closure,
+  // so we never use a stale tenant when the doctor ID is correct.
   useEffect(() => {
-    if (selectedDoctorId) fetchSlots(selectedDoctorId);
-  }, [selectedDoctorId, fetchSlots]);
+    if (selectedDoctorId) fetchSlotsRef.current(selectedDoctorId);
+  }, [selectedDoctorId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load doctor schedule config when selected doctor changes
   useEffect(() => {
@@ -100,25 +119,25 @@ export default function AppointmentSlots() {
     setSelectedWeekdays([]);
     setRangeStart(1);
     setRangeEnd(30);
-    getDoctorSchedule(selectedDoctorId)
+    getDoctorSchedule(selectedDoctorId, tenantIdRef.current)
       .then(res => {
         if (cancelled) return;
         const body = res as unknown as { data?: DoctorScheduleConfig };
-        const cfg = body.data ?? { doctor_id: selectedDoctorId, weekdays: 0, range_start: 1, range_end: 30 };
+        const cfg = body.data ?? { doctor_id: selectedDoctorId, weekdays: DEFAULT_WEEKDAYS_MASK, range_start: 1, range_end: 30 };
         setSelectedWeekdays(fromBitmask(cfg.weekdays));
         setRangeStart(cfg.range_start);
         setRangeEnd(cfg.range_end);
       })
       .catch(() => {
         if (!cancelled) {
-          setSelectedWeekdays([]);
+          setSelectedWeekdays(fromBitmask(DEFAULT_WEEKDAYS_MASK));
           setRangeStart(1);
           setRangeEnd(30);
         }
       })
       .finally(() => { if (!cancelled) setScheduleLoading(false); });
     return () => { cancelled = true; };
-  }, [selectedDoctorId]);
+  }, [selectedDoctorId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSaveSchedule = useCallback(async () => {
     if (!selectedDoctorId) return;
@@ -132,14 +151,14 @@ export default function AppointmentSlots() {
         weekdays: toBitmask(selectedWeekdays),
         range_start: rangeStart,
         range_end: rangeEnd,
-      });
+      }, tenantIdParam);
       message.success('出诊日期规则已保存');
     } catch {
       message.error('保存失败，请重试');
     } finally {
       setScheduleSaving(false);
     }
-  }, [selectedDoctorId, selectedWeekdays, rangeStart, rangeEnd]);
+  }, [selectedDoctorId, selectedWeekdays, rangeStart, rangeEnd, tenantIdParam]);
 
   const openModal = useCallback((forGlobal: boolean, slot: SlotConfig | null = null) => {
     setIsAddingGlobal(forGlobal);
@@ -166,7 +185,7 @@ export default function AppointmentSlots() {
       okButtonProps: { danger: true },
       onOk: async () => {
         try {
-          await deleteSlotConfig(slot.id);
+          await deleteSlotConfig(slot.id, tenantIdParam);
           message.success('已删除');
           if (forGlobal) {
             fetchGlobalSlots();
@@ -178,7 +197,7 @@ export default function AppointmentSlots() {
         }
       },
     });
-  }, [selectedDoctorId, fetchSlots, fetchGlobalSlots]);
+  }, [selectedDoctorId, fetchSlots, fetchGlobalSlots, tenantIdParam]);
 
   const handleSubmit = useCallback(async () => {
     let values: { slot_start: Dayjs; slot_end: Dayjs; max_count: number };
@@ -205,7 +224,7 @@ export default function AppointmentSlots() {
           slot_start: startStr,
           slot_end: endStr,
           max_count: values.max_count,
-        });
+        }, tenantIdParam);
         message.success('已更新');
       } else {
         await createSlotConfig({
@@ -213,7 +232,7 @@ export default function AppointmentSlots() {
           slot_start: startStr,
           slot_end: endStr,
           max_count: values.max_count,
-        });
+        }, tenantIdParam);
         message.success('已添加');
       }
       setModalOpen(false);
@@ -230,7 +249,7 @@ export default function AppointmentSlots() {
     } finally {
       setSubmitLoading(false);
     }
-  }, [form, editingSlot, isAddingGlobal, selectedDoctorId, fetchGlobalSlots, fetchSlots]);
+  }, [form, editingSlot, isAddingGlobal, selectedDoctorId, fetchGlobalSlots, fetchSlots, tenantIdParam]);
 
   const [initLoading, setInitLoading] = useState(false);
   const [copyLoading, setCopyLoading] = useState(false);
@@ -252,7 +271,7 @@ export default function AppointmentSlots() {
               slot_start: s.slot_start,
               slot_end: s.slot_end,
               max_count: s.max_count,
-            }))
+            }, tenantIdParam))
           );
           const failed = results.filter(r => r.status === 'rejected').length;
           if (failed === 0) {
@@ -268,13 +287,13 @@ export default function AppointmentSlots() {
         }
       },
     });
-  }, [selectedDoctorId, globalSlots, fetchSlots]);
+  }, [selectedDoctorId, globalSlots, fetchSlots, tenantIdParam]);
 
   // Auto-seed global slots: 08:00–17:00 based on slot_minutes config, max_count=10
   const handleInitGlobalSlots = useCallback(async () => {
     setInitLoading(true);
     try {
-      const cfgRes = await getAppointmentConfig();
+      const cfgRes = await getAppointmentConfig(tenantIdParam);
       const cfgBody = cfgRes as unknown as { data?: { slot_minutes?: number } };
       const mins = cfgBody.data?.slot_minutes ?? 30;
       // Generate slots from 08:00 to 17:00, skip 12:00–13:00 lunch break
@@ -298,7 +317,7 @@ export default function AppointmentSlots() {
       }
       const maxCount = 1;
       const results = await Promise.allSettled(
-        slots.map(s => createSlotConfig({ doctor_id: 0, slot_start: s.slot_start, slot_end: s.slot_end, max_count: maxCount }))
+        slots.map(s => createSlotConfig({ doctor_id: 0, slot_start: s.slot_start, slot_end: s.slot_end, max_count: maxCount }, tenantIdParam))
       );
       const failed = results.filter(r => r.status === 'rejected').length;
       if (failed === 0) {
@@ -312,7 +331,7 @@ export default function AppointmentSlots() {
     } finally {
       setInitLoading(false);
     }
-  }, [fetchGlobalSlots]);
+  }, [fetchGlobalSlots, tenantIdParam]);
 
   const slotColumns = useCallback((forGlobal: boolean): ColumnsType<SlotConfig> => [
     {
@@ -363,6 +382,10 @@ export default function AppointmentSlots() {
 
   return (
     <div style={{ maxWidth: 900, margin: '0 auto' }}>
+      <TenantSelector
+        value={selectedTenantId}
+        onChange={(id) => setSelectedTenantId(id)}
+      />
       <Title level={4} style={{ marginBottom: 16 }}>预约时间段配置</Title>
 
       {/* Global defaults section */}
@@ -442,7 +465,7 @@ export default function AppointmentSlots() {
             value={selectedDoctorId}
             onChange={setSelectedDoctorId}
             style={{ width: 200 }}
-            options={doctors.map(d => ({ value: d.user_id, label: d.user_name }))}
+            options={doctors.map(d => ({ value: d.id, label: d.user_name }))}
           />
         </div>
 

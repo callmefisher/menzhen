@@ -84,8 +84,9 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 }
 
 // List handles GET /api/v1/users.
-// Super admin (username=admin + user:manage) sees all users across tenants.
-// Other users see only their own tenant's users.
+// Always returns users scoped to the effective tenant (from JWT or superAdmin override).
+// Super admin may pass ?tenant_id=X to view another tenant's users via the
+// SuperAdminTenantOverrideMiddleware which updates the context tenant_id.
 func (h *UserHandler) List(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	if page < 1 {
@@ -97,20 +98,10 @@ func (h *UserHandler) List(c *gin.Context) {
 	}
 
 	svc := service.NewUserService(h.db)
+	tenantID := middleware.GetTenantID(c)
 	currentUserID := middleware.GetUserID(c)
-	isSuperAdmin := service.IsProtectedAdminAccount(h.db, currentUserID)
 
-	var users []model.User
-	var total int64
-	var err error
-
-	if isSuperAdmin {
-		users, total, err = svc.ListUsers(page, size, currentUserID)
-	} else {
-		tenantID := middleware.GetTenantID(c)
-		users, total, err = svc.ListUsersByTenant(tenantID, page, size, currentUserID)
-	}
-
+	users, total, err := svc.ListUsersByTenant(tenantID, page, size, currentUserID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,

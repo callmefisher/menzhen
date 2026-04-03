@@ -102,7 +102,8 @@ export default function AppointmentModal({ open, onClose, onSuccess, doctorOptio
       .finally(() => setSlotsLoading(false));
   }, [doctorId, appointDateStr, initialValues?.slot_start]);
 
-  // Load doctor schedule config when doctor changes
+  // Load doctor schedule config when doctor changes.
+  // After loading, clear the selected date if it no longer satisfies the new schedule.
   useEffect(() => {
     if (!doctorId) return;
     let cancelled = false;
@@ -111,17 +112,28 @@ export default function AppointmentModal({ open, onClose, onSuccess, doctorOptio
         if (cancelled) return;
         const body = res as unknown as { data?: { weekdays?: number; range_start?: number; range_end?: number } };
         const d = body.data;
-        setScheduleConfig({
+        const newConfig = {
           weekdays: d?.weekdays ?? 0,
           range_start: d?.range_start ?? 1,
           range_end: d?.range_end ?? 30,
-        });
+        };
+        setScheduleConfig(newConfig);
+        // Clear date if the current form value is disabled under the new schedule.
+        const currentDate = form.getFieldValue('appoint_date') as import('dayjs').Dayjs | undefined;
+        if (currentDate && !isEdit) {
+          const isDisabled = makeDisabledDate(dayjs(), newConfig.range_start, newConfig.range_end, newConfig.weekdays);
+          if (isDisabled(currentDate)) {
+            form.setFieldValue('appoint_date', undefined);
+            setSelectedSlot(null);
+            setSlots([]);
+          }
+        }
       })
       .catch(() => {
         if (!cancelled) setScheduleConfig({ weekdays: 0, range_start: 1, range_end: 30 });
       });
     return () => { cancelled = true; };
-  }, [doctorId]);
+  }, [doctorId, form, isEdit]);
 
   const handleClose = () => {
     form.resetFields();

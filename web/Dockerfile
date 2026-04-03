@@ -2,9 +2,9 @@ FROM node:20-alpine AS builder
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --registry https://registry.npmmirror.com
+RUN npm ci --registry https://registry.npmmirror.com --legacy-peer-deps
 COPY . .
-RUN npm run build
+RUN NODE_OPTIONS="--max-old-space-size=4096" npm run build
 
 FROM nginx:alpine
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories

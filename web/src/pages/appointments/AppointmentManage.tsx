@@ -298,7 +298,7 @@ export default function AppointmentManage() {
 
       <AppointmentModal
         open={modalOpen}
-        doctorOptions={doctors.map(d => ({ id: d.user_id, name: d.user_name, room: d.room }))}
+        doctorOptions={doctors.map(d => ({ id: d.id, name: d.user_name, room: d.room }))}
         initialValues={editingAppointment ? {
           id: editingAppointment.id,
           patient_name: editingAppointment.patient_name,

@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Card, Button, Select, message, Spin, Tag } from 'antd';
 import { takeQueueNumber, getMyQueueStatus, listDoctors, listPatientQueue } from '../../api/patientPortal';
 import type { Doctor, QueueEntry } from '../../api/patientPortal';
+import { usePatientWebSocket } from '../../hooks/usePatientWebSocket';
 
 export default function PatientQueue() {
   const [doctors, setDoctors] = useState<Doctor[]>([]);
@@ -39,6 +40,17 @@ export default function PatientQueue() {
       setQueueList([]);
     }
   }, [myEntry]);
+
+  // Real-time: re-fetch status + queue when admin updates queue.
+  usePatientWebSocket('queue_update', useCallback(() => {
+    fetchStatus().then((entry) => {
+      if (entry && (entry.queue_entry.status === 'waiting' || entry.queue_entry.status === 'seeing')) {
+        listPatientQueue(entry.queue_entry.doctor_id)
+          .then((res) => setQueueList(res.data))
+          .catch(() => setQueueList([]));
+      }
+    });
+  }, [fetchStatus]));
 
   const handleTake = async () => {
     if (!selectedDoctor) { message.warning('请先选择医生'); return; }

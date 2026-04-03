@@ -87,14 +87,21 @@ func TestPowerAdminService_GetAllGroups(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	svc := service.NewPowerAdminService(db)
 
+	// 3 named groups (1 tenant each) + 1 tenant falling into "default" group
 	require.NoError(t, db.Create(&model.Tenant{Name: "T_bj", Code: "g_bj", Status: 1, GroupName: "华北"}).Error)
 	require.NoError(t, db.Create(&model.Tenant{Name: "T_sh", Code: "g_sh", Status: 1, GroupName: "华南"}).Error)
 	require.NoError(t, db.Create(&model.Tenant{Name: "T_cd", Code: "g_cd", Status: 1, GroupName: "西南"}).Error)
-	require.NoError(t, db.Create(&model.Tenant{Name: "T_def", Code: "g_def", Status: 1}).Error)
+	require.NoError(t, db.Create(&model.Tenant{Name: "T_def", Code: "g_def", Status: 1}).Error) // GroupName defaults to "default"
 
 	groups, err := svc.GetAllGroups()
 	require.NoError(t, err)
-	assert.Contains(t, groups, "华北")
-	assert.Contains(t, groups, "华南")
-	assert.Contains(t, groups, "西南")
+
+	byName := make(map[string]service.GroupInfo)
+	for _, g := range groups {
+		byName[g.Name] = g
+	}
+	assert.Equal(t, 1, byName["华北"].Count, "华北 should have 1 tenant")
+	assert.Equal(t, 1, byName["华南"].Count, "华南 should have 1 tenant")
+	assert.Equal(t, 1, byName["西南"].Count, "西南 should have 1 tenant")
+	assert.Equal(t, 1, byName["default"].Count, "default group should have 1 tenant")
 }

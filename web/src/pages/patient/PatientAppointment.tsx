@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { List, Card, Tag, Button, Modal, Select, DatePicker, message, Empty, Spin } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
-import { listAppointments, listDoctors, getAppointmentSlots, createAppointment, cancelAppointment, getDoctorSchedule } from '../../api/patientPortal';
+import { listAppointments, listDoctors, getAppointmentSlots, createAppointment, cancelAppointment, checkinAppointment, getDoctorSchedule } from '../../api/patientPortal';
 import type { Appointment, Doctor, SlotInfo } from '../../api/patientPortal';
 
 /** Returns a disabledDate predicate from doctor's schedule config.
@@ -32,6 +32,8 @@ export default function PatientAppointment() {
   const [slots, setSlots] = useState<SlotInfo[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<SlotInfo | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [checkinLoading, setCheckinLoading] = useState<Record<number, boolean>>({});
   const [scheduleConfig, setScheduleConfig] = useState({ weekdays: 0, range_start: 1, range_end: 30 });
 
   const fetchData = () => {
@@ -46,7 +48,11 @@ export default function PatientAppointment() {
 
   useEffect(() => {
     if (selectedDoctor && selectedDate) {
-      getAppointmentSlots(selectedDoctor, selectedDate).then((res) => setSlots(res.data));
+      setSlotsLoading(true);
+      getAppointmentSlots(selectedDoctor, selectedDate)
+        .then((res) => setSlots(res.data))
+        .catch(() => setSlots([]))
+        .finally(() => setSlotsLoading(false));
     }
   }, [selectedDoctor, selectedDate]);
 
@@ -73,9 +79,27 @@ export default function PatientAppointment() {
       setModalOpen(false);
       setSelectedDoctor(null); setSelectedDate(null); setSelectedSlot(null); setSlots([]);
       fetchData();
+    } catch (err: unknown) {
+      const errMsg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      message.error(errMsg ?? '预约失败，请稍后重试');
     } finally { setSubmitting(false); }
   };
 
+  const handleCheckin = async (id: number) => {
+    setCheckinLoading((prev) => ({ ...prev, [id]: true }));
+    try {
+      await checkinAppointment(id);
+      message.success('签到成功，已加入队列');
+      fetchData();
+    } catch (err: unknown) {
+      const errMsg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      message.error(errMsg ?? '签到失败，请稍后重试');
+    } finally {
+      setCheckinLoading((prev) => ({ ...prev, [id]: false }));
+    }
+  };
+
+  const today = dayjs().format('YYYY-MM-DD');
   const statusColor: Record<string, string> = { pending: 'blue', queued: 'green', cancelled: 'default', no_show: 'red' };
   const statusLabel: Record<string, string> = { pending: '已预约', queued: '已入队', cancelled: '已取消', no_show: '未到' };
 
@@ -98,6 +122,14 @@ export default function PatientAppointment() {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                 <Tag color={statusColor[a.status]}>{statusLabel[a.status] ?? a.status}</Tag>
+                {(a.status === 'pending' || a.status === 'queued') && a.appoint_date === today && a.checkin_status !== 'done' && (
+                  <Button size="small" type="primary"
+                    style={{ background: '#52C41A', borderColor: '#52C41A' }}
+                    loading={checkinLoading[a.id]}
+                    onClick={() => handleCheckin(a.id)}>
+                    签到
+                  </Button>
+                )}
                 {a.status === 'pending' && (
                   <Button size="small" danger onClick={() =>
                     cancelAppointment(a.id)
@@ -119,14 +151,18 @@ export default function PatientAppointment() {
           <Select placeholder="选择医生" style={{ width: '100%' }} onChange={setSelectedDoctor}
             options={doctors.map(d => ({ value: d.id, label: `${d.doctor_name}${d.room ? ` · ${d.room}` : ''}` }))} />
           <DatePicker style={{ width: '100%' }}
+            getPopupContainer={(trigger) => trigger.parentElement ?? document.body}
             disabledDate={makePatientDisabledDate(scheduleConfig.weekdays, scheduleConfig.range_start, scheduleConfig.range_end)}
             onChange={(_, ds) => { setSelectedDate(ds as string); setSelectedSlot(null); }} />
-          {selectedDoctor && selectedDate && slots.length === 0 && (
+          {selectedDoctor && selectedDate && slotsLoading && (
+            <div style={{ textAlign: 'center', padding: '12px 0' }}><Spin size="small" /></div>
+          )}
+          {selectedDoctor && selectedDate && !slotsLoading && slots.length === 0 && (
             <div style={{ textAlign: 'center', color: '#aaa', fontSize: 13, padding: '12px 0' }}>
               该日期暂无可用时段
             </div>
           )}
-          {slots.length > 0 && (
+          {slots.length > 0 && !slotsLoading && (
             <div>
               <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>选择时段</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>

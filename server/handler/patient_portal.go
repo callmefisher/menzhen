@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/callmefisher/menzhen/server/middleware"
@@ -97,6 +99,12 @@ func (h *PatientPortalHandler) ListDoctors(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success", "data": result})
 }
 
+// apptListItem is the response shape for patient appointment list, adding checkin_status.
+type apptListItem struct {
+	model.Appointment
+	CheckinStatus string `json:"checkin_status"`
+}
+
 // ListAppointments handles GET /api/v1/patient/appointments.
 func (h *PatientPortalHandler) ListAppointments(c *gin.Context) {
 	if !h.portalEnabled(c, func(cfg model.PatientPortalConfig) bool { return cfg.AppointmentEnabled }) {
@@ -105,7 +113,7 @@ func (h *PatientPortalHandler) ListAppointments(c *gin.Context) {
 	tenantID := middleware.GetPatientTenantID(c)
 	patientID := middleware.GetPatientIDFromCtx(c)
 	if patientID == nil {
-		c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success", "data": []model.Appointment{}})
+		c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success", "data": []apptListItem{}})
 		return
 	}
 	var appts []model.Appointment
@@ -113,7 +121,33 @@ func (h *PatientPortalHandler) ListAppointments(c *gin.Context) {
 	h.db.Where("tenant_id = ? AND patient_id = ?", tenantID, patientIDUint).
 		Order("appoint_date DESC, slot_start DESC").
 		Limit(50).Find(&appts)
-	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success", "data": appts})
+
+	// Populate checkin_status for today's queued appointments via single IN query.
+	today := time.Now().Format("2006-01-02")
+	var entryIDs []uint
+	entryIdx := map[uint]int{} // queueEntryID → index in appts
+	for i, a := range appts {
+		if a.QueueEntryID != nil && strings.HasPrefix(a.AppointDate, today) {
+			entryIDs = append(entryIDs, *a.QueueEntryID)
+			entryIdx[*a.QueueEntryID] = i
+		}
+	}
+	checkinByAppt := make(map[int]string) // appts index → checkin_status
+	if len(entryIDs) > 0 {
+		var entries []model.QueueEntry
+		h.db.Select("id, checkin_status").Where("id IN ?", entryIDs).Find(&entries)
+		for _, e := range entries {
+			if idx, ok := entryIdx[e.ID]; ok {
+				checkinByAppt[idx] = e.CheckinStatus
+			}
+		}
+	}
+
+	result := make([]apptListItem, len(appts))
+	for i, a := range appts {
+		result[i] = apptListItem{Appointment: a, CheckinStatus: checkinByAppt[i]}
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success", "data": result})
 }
 
 // CreateAppointmentRequest is the body for POST /api/v1/patient/appointments.
@@ -205,6 +239,14 @@ func (h *PatientPortalHandler) CreateAppointment(c *gin.Context) {
 		log.Printf("patient portal: enqueue appointment %d failed: %v", appt.ID, err)
 	}
 
+	// Notify admin dashboard to refresh — no PII in payload (all tenant clients receive this).
+	if ws.DefaultHub != nil {
+		ws.DefaultHub.Broadcast(uint64(uint(tenantID)), ws.Message{
+			Type:    "appt_created",
+			Payload: gin.H{"action": "refresh"},
+		})
+	}
+
 	c.JSON(http.StatusCreated, gin.H{"code": 0, "message": "预约成功", "data": appt})
 }
 
@@ -221,31 +263,19 @@ func (h *PatientPortalHandler) GetAppointmentSlots(c *gin.Context) {
 		return
 	}
 
-	var slotConfigs []model.AppointmentSlotConfig
-	h.db.Where("tenant_id = ? AND doctor_id = ?", tenantID, doctorID).Find(&slotConfigs)
-
-	type SlotInfo struct {
-		SlotStart   string `json:"slot_start"`
-		SlotEnd     string `json:"slot_end"`
-		MaxCount    int    `json:"max_count"`
-		BookedCount int64  `json:"booked_count"`
-		Available   bool   `json:"available"`
+	if _, err := time.Parse("2006-01-02", date); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "日期格式无效，应为 YYYY-MM-DD"})
+		return
 	}
-
-	slots := make([]SlotInfo, 0, len(slotConfigs))
-	for _, sc := range slotConfigs {
-		var booked int64
-		h.db.Model(&model.Appointment{}).
-			Where("tenant_id = ? AND doctor_id = ? AND appoint_date = ? AND slot_start = ? AND status != ?",
-				tenantID, doctorID, date, sc.SlotStart, model.AppointmentStatusCancelled).
-			Count(&booked)
-		slots = append(slots, SlotInfo{
-			SlotStart:   sc.SlotStart,
-			SlotEnd:     sc.SlotEnd,
-			MaxCount:    sc.MaxCount,
-			BookedCount: booked,
-			Available:   booked < int64(sc.MaxCount),
-		})
+	doctorIDUint, err := strconv.ParseUint(doctorID, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "无效的 doctor_id"})
+		return
+	}
+	slots, err := h.appointmentSvc.ListSlots(uint(tenantID), date, uint(doctorIDUint))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "获取时段失败"})
+		return
 	}
 	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success", "data": slots})
 }
@@ -392,6 +422,72 @@ func (h *PatientPortalHandler) TakeNumber(c *gin.Context) {
 			"waiting_ahead": waitingAhead,
 		},
 	})
+}
+
+// PatientCheckin handles POST /api/v1/patient/appointments/:id/checkin.
+// Patient self-checkin: enqueues the appointment if still pending, then marks arrival.
+// Broadcasts queue_update so admin dashboard and patient queue page refresh in real time.
+func (h *PatientPortalHandler) PatientCheckin(c *gin.Context) {
+	if !h.portalEnabled(c, func(cfg model.PatientPortalConfig) bool { return cfg.AppointmentEnabled }) {
+		return
+	}
+	tenantID := middleware.GetPatientTenantID(c)
+	patientUserID := middleware.GetPatientUserID(c)
+
+	idStr := c.Param("id")
+	apptID, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "无效的预约 ID"})
+		return
+	}
+
+	// Load patient user to validate ownership by name.
+	var pu model.PatientUser
+	if err := h.db.First(&pu, patientUserID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "患者信息获取失败"})
+		return
+	}
+
+	// Validate the appointment belongs to this patient's tenant and name.
+	var appt model.Appointment
+	if err := h.db.Where("id = ? AND tenant_id = ? AND patient_name = ?",
+		uint(apptID), uint(tenantID), pu.Name).First(&appt).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"code": 404, "message": "预约不存在"})
+		return
+	}
+
+	// EnqueueAppointment is idempotent — safe if already queued; no-op if not today.
+	if err := h.appointmentSvc.EnqueueAppointment(uint(tenantID), uint(apptID), h.queueSvc); err != nil {
+		if errors.Is(err, service.ErrAppointmentNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"code": 404, "message": "预约不存在"})
+			return
+		}
+		log.Printf("patient checkin: enqueue appt %d: %v", apptID, err)
+	}
+
+	entry, err := h.appointmentSvc.Checkin(uint(tenantID), uint(apptID))
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrAppointmentNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"code": 404, "message": "预约不存在"})
+		case errors.Is(err, service.ErrNotQueued):
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "仅当天预约可签到"})
+		case errors.Is(err, service.ErrCheckinWrongDate):
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "仅当天预约可签到"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "签到失败，请稍后重试"})
+		}
+		return
+	}
+
+	if ws.DefaultHub != nil {
+		ws.DefaultHub.Broadcast(uint64(tenantID), ws.Message{
+			Type:    "queue_update",
+			Payload: gin.H{"action": "checkin"},
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "签到成功", "data": entry})
 }
 
 // GetMyQueueStatus handles GET /api/v1/patient/queue/my-status.
@@ -578,9 +674,15 @@ func (h *PatientPortalHandler) ListQueue(c *gin.Context) {
 	}
 
 	today := time.Now().Format("2006-01-02")
+	// Validate that the doctor belongs to this tenant.
+	var doctor model.QueueDoctor
+	if err := h.db.Where("id = ? AND tenant_id = ?", doctorIDStr, uint(tenantID)).First(&doctor).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "医生不存在"})
+		return
+	}
 	var entries []model.QueueEntry
 	h.db.Where("tenant_id = ? AND doctor_id = ? AND queue_date = ? AND status IN ?",
-		uint(tenantID), doctorIDStr, today, []string{model.QueueStatusWaiting, model.QueueStatusSeeing}).
+		uint(tenantID), doctor.ID, today, []string{model.QueueStatusWaiting, model.QueueStatusSeeing}).
 		Order("seq_number ASC").
 		Find(&entries)
 

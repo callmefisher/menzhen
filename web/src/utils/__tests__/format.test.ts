@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fmtTotal, chunkToRows, formatRoom } from '../format';
+import { fmtTotal, chunkToRows, formatRoom, buildRoomSpeechText } from '../format';
 
 describe('fmtTotal', () => {
   it('returns integer string when result is whole number', () => {
@@ -171,6 +171,66 @@ describe('formatRoom', () => {
 
     it('handles Chinese number that is not pure digit', () => {
       expect(formatRoom('一诊室')).toBe('一诊室');
+    });
+  });
+});
+
+describe('buildRoomSpeechText', () => {
+  describe('1-2 digit runs — left as-is for natural TTS reading', () => {
+    it('single digit unchanged', () => {
+      expect(buildRoomSpeechText('5')).toBe('5');
+    });
+
+    it('two digits unchanged', () => {
+      expect(buildRoomSpeechText('12')).toBe('12');
+    });
+
+    it('room name with 1-digit number unchanged', () => {
+      expect(buildRoomSpeechText('诊室5')).toBe('诊室5');
+    });
+
+    it('room name with 2-digit number unchanged', () => {
+      expect(buildRoomSpeechText('诊室12')).toBe('诊室12');
+    });
+  });
+
+  describe('3+ digit runs — expanded to individual Chinese characters', () => {
+    it('3 digits: "101" → "一零一"', () => {
+      expect(buildRoomSpeechText('101')).toBe('一零一');
+    });
+
+    it('4 digits: "1234" → "一二三四"', () => {
+      expect(buildRoomSpeechText('1234')).toBe('一二三四');
+    });
+
+    it('all zeros: "000" → "零零零"', () => {
+      expect(buildRoomSpeechText('000')).toBe('零零零');
+    });
+
+    it('room name prefix preserved: "诊室101" → "诊室一零一"', () => {
+      expect(buildRoomSpeechText('诊室101')).toBe('诊室一零一');
+    });
+
+    it('all ten digits: "1234567890" → "一二三四五六七八九零"', () => {
+      expect(buildRoomSpeechText('1234567890')).toBe('一二三四五六七八九零');
+    });
+  });
+
+  describe('mixed content', () => {
+    it('text with two 2-digit numbers: both unchanged', () => {
+      expect(buildRoomSpeechText('A12B34')).toBe('A12B34');
+    });
+
+    it('text with one 3-digit number: only that run expanded', () => {
+      expect(buildRoomSpeechText('区A101诊室')).toBe('区A一零一诊室');
+    });
+
+    it('empty string returns empty string', () => {
+      expect(buildRoomSpeechText('')).toBe('');
+    });
+
+    it('no digits: string unchanged', () => {
+      expect(buildRoomSpeechText('专家门诊')).toBe('专家门诊');
     });
   });
 });

@@ -3,7 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <!-- WeChat WebView: force X5/Blink rendering engine, disable font adjustment -->
+    <meta name="x5-page-mode" content="app" />
+    <meta name="format-detection" content="telephone=no" />
+    <style>
+      /* Prevent WeChat WebView from overriding font size */
+      * { -webkit-text-size-adjust: 100% !important; text-size-adjust: 100% !important; }
+    </style>
     <title>门诊管理系统</title>
   </head>
   <body>

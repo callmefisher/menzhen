@@ -89,6 +89,41 @@ func TestDoctorScheduleUpsert_RangeEndLessThanStart(t *testing.T) {
 	assert.ErrorIs(t, err, service.ErrInvalidRange)
 }
 
+// ── Doctor-ID regression: schedule is keyed by queue_doctor.id (PK) ──────────
+
+// TestDoctorSchedule_KeyedByQueueDoctorPK guards that DoctorScheduleService
+// stores and retrieves configs by queue_doctor.id (PK), not by user_id.
+// The handler fix (GetDoctorSchedule / SetDoctorSchedule) ensures the :id URL
+// param is interpreted as queue_doctor.id so it matches this service expectation.
+func TestDoctorSchedule_KeyedByQueueDoctorPK(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	tenant := testutil.SeedTestTenant(t, db, "PK出诊规则测试", "sched-pk-"+t.Name())
+	tid := uint(tenant.ID)
+	svc := service.NewDoctorScheduleService(db)
+
+	const queueDoctorPK uint = 7 // queue_doctor.id (PK)
+	const userID uint = 99        // user_id — different number
+
+	saved, err := svc.Upsert(tid, queueDoctorPK, service.UpsertScheduleInput{
+		Weekdays: 0b0011110, RangeStart: 3, RangeEnd: 21,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, queueDoctorPK, saved.DoctorID)
+
+	// Lookup by queue_doctor.id → should find the saved config.
+	gotByPK, err := svc.Get(tid, queueDoctorPK)
+	require.NoError(t, err)
+	assert.Equal(t, uint8(0b0011110), gotByPK.Weekdays, "Get(queueDoctorId) must return the saved config")
+	assert.Equal(t, 3, gotByPK.RangeStart)
+
+	// Lookup by user_id → must return the DEFAULT (not the saved config).
+	gotByUserID, err := svc.Get(tid, userID)
+	require.NoError(t, err)
+	assert.Equal(t, uint(0), gotByUserID.ID,
+		"Get(userId=%d) must return default config (ID=0), not the config saved for doctorPK=%d", userID, queueDoctorPK)
+	assert.Equal(t, 30, gotByUserID.RangeEnd, "Get(userId) must return default range_end=30")
+}
+
 // ── Tenant Isolation ──────────────────────────────────────────────────────────
 
 func TestDoctorScheduleTenantIsolation(t *testing.T) {

@@ -112,14 +112,30 @@ func (s *PowerAdminService) ListPowerAdmins() ([]PowerAdminItem, error) {
 	return items, nil
 }
 
-// GetAllGroups returns all distinct non-empty group names from the tenants table.
-func (s *PowerAdminService) GetAllGroups() ([]string, error) {
-	var groups []string
+// GroupInfo holds a group name and its tenant count.
+type GroupInfo struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
+// GetAllGroups returns all distinct non-empty group names with tenant counts.
+func (s *PowerAdminService) GetAllGroups() ([]GroupInfo, error) {
+	type row struct {
+		GroupName string
+		Count     int
+	}
+	var rows []row
 	if err := s.db.Model(&model.Tenant{}).
+		Select("group_name, COUNT(*) as count").
 		Where("group_name != ''").
-		Distinct("group_name").
-		Pluck("group_name", &groups).Error; err != nil {
+		Group("group_name").
+		Order("group_name").
+		Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("get all groups: %w", err)
 	}
-	return groups, nil
+	result := make([]GroupInfo, len(rows))
+	for i, r := range rows {
+		result[i] = GroupInfo{Name: r.GroupName, Count: r.Count}
+	}
+	return result, nil
 }

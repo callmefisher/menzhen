@@ -506,6 +506,84 @@ func TestWeeklyMatrix(t *testing.T) {
 	assert.Equal(t, 3, result.GrandTotal)
 }
 
+// ── Doctor-ID regression tests ────────────────────────────────────────────────
+
+// TestCheckin_ParseTimeFormat_Regression guards against the "只能在预约当日签到"
+// false-positive caused by parseTime=True in the MySQL DSN.  When the DSN has
+// parseTime=True, GORM scans DATE columns as full timestamp strings such as
+// "2026-04-04 00:00:00 +0800 CST".  The fix uses strings.HasPrefix so both
+// the plain "2026-04-04" and the full-timestamp form are accepted.
+func TestCheckin_ParseTimeFormat_Regression(t *testing.T) {
+	svc, tid := setupApptService(t)
+	appt, err := svc.CreateAppointment(tid, service.CreateAppointmentInput{
+		PatientName: "parseTime测试患者", DoctorID: 1, DoctorName: "李医生",
+		AppointDate: time.Now().Format("2006-01-02"), SlotStart: "10:00", SlotEnd: "10:30",
+	})
+	require.NoError(t, err)
+	queueSvc := service.NewQueueService(svc.DB)
+	require.NoError(t, svc.EnqueueAppointment(tid, appt.ID, queueSvc))
+
+	// Simulate MySQL parseTime=True: overwrite appoint_date in DB with a full
+	// timestamp string so that Go scans it as "YYYY-MM-DD 00:00:00 +0800 CST".
+	today := time.Now().Format("2006-01-02")
+	fullTS := today + " 00:00:00 +0800 CST"
+	require.NoError(t, svc.DB.Exec("UPDATE appointments SET appoint_date = ? WHERE id = ?", fullTS, appt.ID).Error)
+
+	_, err = svc.Checkin(tid, appt.ID)
+	assert.NoError(t, err, "Checkin must succeed when appoint_date is stored as a full timestamp (parseTime=True DSN)")
+}
+
+// TestEnqueueAppointment_QueueEntryUsesDoctorPK guards that queue_entry.doctor_id
+// stores queue_doctor.id (the PK of queue_doctors), NOT user_id.
+func TestEnqueueAppointment_QueueEntryUsesDoctorPK(t *testing.T) {
+	svc, tid := setupApptService(t)
+
+	qd := &model.QueueDoctor{TenantID: tid, UserID: 100, Room: "1诊室", Enabled: true, SortOrder: 1}
+	require.NoError(t, svc.DB.Create(qd).Error)
+
+	// Create appointment with doctor_id = qd.ID (queue_doctor.id PK, not user_id)
+	appt, err := svc.CreateAppointment(tid, service.CreateAppointmentInput{
+		PatientName: "PK测试患者", DoctorID: uint(qd.ID), DoctorName: "测试医生",
+		AppointDate: time.Now().Format("2006-01-02"), SlotStart: "09:00", SlotEnd: "09:30",
+	})
+	require.NoError(t, err)
+
+	queueSvc := service.NewQueueService(svc.DB)
+	require.NoError(t, svc.EnqueueAppointment(tid, appt.ID, queueSvc))
+
+	var entry model.QueueEntry
+	require.NoError(t, svc.DB.Where("appointment_id = ?", appt.ID).First(&entry).Error)
+	assert.Equal(t, uint(qd.ID), entry.DoctorID,
+		"queue_entry.doctor_id must be queue_doctor.id (PK=%d), not user_id (%d)", qd.ID, qd.UserID)
+	assert.NotEqual(t, qd.UserID, entry.DoctorID,
+		"queue_entry.doctor_id must NOT be user_id")
+}
+
+// TestEnqueueAppointment_FallbackUserIdToDoctorPK guards the normalization code
+// that handles legacy appointments where doctor_id was stored as user_id
+// (e.g. created via the old admin panel before the d.user_id→d.id fix).
+func TestEnqueueAppointment_FallbackUserIdToDoctorPK(t *testing.T) {
+	svc, tid := setupApptService(t)
+
+	qd := &model.QueueDoctor{TenantID: tid, UserID: 200, Room: "2诊室", Enabled: true, SortOrder: 1}
+	require.NoError(t, svc.DB.Create(qd).Error)
+
+	// Simulate old bug: appointment stores user_id (200) instead of queue_doctor.id
+	appt, err := svc.CreateAppointment(tid, service.CreateAppointmentInput{
+		PatientName: "旧数据患者", DoctorID: uint(qd.UserID), DoctorName: "测试医生",
+		AppointDate: time.Now().Format("2006-01-02"), SlotStart: "09:00", SlotEnd: "09:30",
+	})
+	require.NoError(t, err)
+
+	queueSvc := service.NewQueueService(svc.DB)
+	require.NoError(t, svc.EnqueueAppointment(tid, appt.ID, queueSvc))
+
+	var entry model.QueueEntry
+	require.NoError(t, svc.DB.Where("appointment_id = ?", appt.ID).First(&entry).Error)
+	assert.Equal(t, uint(qd.ID), entry.DoctorID,
+		"EnqueueAppointment must normalize user_id (%d) → queue_doctor.id (PK=%d)", qd.UserID, qd.ID)
+}
+
 func TestWeeklyMatrix_OtherTenantIsolation(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	svc := service.NewAppointmentService(db)

@@ -32,7 +32,7 @@ func defaultSchedule(tenantID, doctorID uint) *model.DoctorScheduleConfig {
 	return &model.DoctorScheduleConfig{
 		TenantID:   tenantID,
 		DoctorID:   doctorID,
-		Weekdays:   0,
+		Weekdays:   0b0111110, // Mon–Fri (bits 1-5)
 		RangeStart: 1,
 		RangeEnd:   30,
 	}
