@@ -183,11 +183,27 @@ func (s *AppointmentService) EnqueueAppointment(tenantID, apptID uint, queueSvc 
 		if err != nil {
 			return fmt.Errorf("next seq: %w", err)
 		}
+		// Resolve queue_doctor.id from appt.DoctorID.
+		// appointments.doctor_id may store either queue_doctor.id or user_id depending on
+		// which path created the appointment (patient portal uses queue_doctor.id; admin
+		// panel may use user_id). Normalize to queue_doctor.id here so all queue_entries
+		// use a consistent doctor_id (queue_doctor.id), matching how the dashboard groups.
+		queueDoctorID := appt.DoctorID
+		var qd model.QueueDoctor
+		if err := tx.Where("id = ? AND tenant_id = ?", appt.DoctorID, tenantID).First(&qd).Error; err != nil {
+			// Not found by queue_doctor.id — try looking up by user_id instead.
+			if err2 := tx.Where("user_id = ? AND tenant_id = ?", appt.DoctorID, tenantID).First(&qd).Error; err2 == nil {
+				queueDoctorID = uint(qd.ID)
+			}
+		} else {
+			queueDoctorID = uint(qd.ID)
+		}
+
 		entry := &model.QueueEntry{
 			TenantID:      tenantID,
 			PatientID:     appt.PatientID,
 			PatientName:   appt.PatientName,
-			DoctorID:      appt.DoctorID,
+			DoctorID:      queueDoctorID,
 			DoctorName:    appt.DoctorName,
 			Room:          appt.Room,
 			SeqNumber:     seq,
