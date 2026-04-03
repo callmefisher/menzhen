@@ -1,5 +1,6 @@
-import { Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { Outlet, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { CalendarOutlined, NumberOutlined, UserOutlined, HomeOutlined } from '@ant-design/icons';
+import { usePatientAuth } from '../store/patientAuth';
 
 const TABS = [
   { path: '/patient/home', icon: <HomeOutlined />, label: '首页' },
@@ -11,9 +12,27 @@ const TABS = [
 export default function PatientLayout() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { token, loading, tenantName } = usePatientAuth();
+
+  if (loading) return null;
+  if (!token) return <Navigate to="/patient/login" replace />;
+
+  const displayName = tenantName || '患者服务中心';
 
   return (
     <div style={{ maxWidth: 480, margin: '0 auto', minHeight: '100vh', display: 'flex', flexDirection: 'column', background: '#f5f7fa' }}>
+      <div style={{
+        background: 'linear-gradient(135deg, #52C41A, #389E0D)',
+        color: '#fff',
+        padding: '10px 16px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        flexShrink: 0,
+      }}>
+        <span style={{ fontSize: 18 }}>🌿</span>
+        <span style={{ fontSize: 15, fontWeight: 600 }}>{displayName}</span>
+      </div>
       <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 56 }}>
         <Outlet />
       </div>

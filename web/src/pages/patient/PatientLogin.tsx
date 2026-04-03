@@ -2,13 +2,14 @@ import { useState, useEffect } from 'react';
 import { Form, Input, Button, message, Modal } from 'antd';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { usePatientAuth } from '../../store/patientAuth';
-import { listTenantsByPhone, type TenantItem } from '../../api/patientAuth';
+import { listTenantsByPhone, getTenantInfo, type TenantItem } from '../../api/patientAuth';
 
 export default function PatientLogin() {
   const [loading, setLoading] = useState(false);
   const [tenantList, setTenantList] = useState<TenantItem[]>([]);
   const [tenantModalOpen, setTenantModalOpen] = useState(false);
   const [pendingValues, setPendingValues] = useState<{ phone: string; name: string } | null>(null);
+  const [clinicName, setClinicName] = useState<string | null>(null);
   const { login, token } = usePatientAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -16,7 +17,16 @@ export default function PatientLogin() {
 
   useEffect(() => {
     const code = searchParams.get('code');
-    if (code) form.setFieldValue('tenant_code', code);
+    if (code) {
+      form.setFieldValue('tenant_code', code);
+      getTenantInfo(code)
+        .then((res) => {
+          if (res.data?.tenant_name) setClinicName(res.data.tenant_name);
+        })
+        .catch(() => {
+          // silently fall back to default title
+        });
+    }
   }, [searchParams, form]);
 
   useEffect(() => {
@@ -85,7 +95,14 @@ export default function PatientLogin() {
         padding: '32px 20px 48px', color: '#fff', position: 'relative',
       }}>
         <div style={{ fontSize: 36 }}>🌿</div>
-        <div style={{ fontSize: 13, opacity: 0.85, marginTop: 4 }}>患者服务中心</div>
+        {clinicName ? (
+          <>
+            <div style={{ fontSize: 20, fontWeight: 600, marginTop: 8 }}>{clinicName}</div>
+            <div style={{ fontSize: 13, opacity: 0.85, marginTop: 2 }}>患者端</div>
+          </>
+        ) : (
+          <div style={{ fontSize: 13, opacity: 0.85, marginTop: 4 }}>患者服务中心</div>
+        )}
         <div style={{
           position: 'absolute', bottom: -20, left: 0, right: 0, height: 40,
           background: '#fff', borderRadius: '50% 50% 0 0',
@@ -133,6 +150,7 @@ export default function PatientLogin() {
             <span style={{ fontSize: 24 }}>🏥</span>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 600 }}>{tenant.tenant_name}</div>
+              <div style={{ fontSize: 12, color: '#aaa', marginTop: 2 }}>诊所代码: {tenant.tenant_code}</div>
             </div>
             <span style={{ color: '#52C41A' }}>→</span>
           </div>
