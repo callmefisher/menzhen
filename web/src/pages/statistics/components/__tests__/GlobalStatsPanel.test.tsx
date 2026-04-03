@@ -5,6 +5,10 @@ import GlobalStatsPanel from '../GlobalStatsPanel';
 import * as statsApi from '../../../../api/statistics';
 import type { GlobalStatsData } from '../../../../api/statistics';
 
+vi.mock('../../../../store/auth', () => ({
+  useAuth: () => ({ isPowerAdmin: false, managedGroups: [], isSuperAdmin: false, isGlobalAdmin: false }),
+}));
+
 const mockData: GlobalStatsData = {
   summary: {
     total_revenue: 10000,
