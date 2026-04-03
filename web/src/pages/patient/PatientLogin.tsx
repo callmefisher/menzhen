@@ -41,8 +41,12 @@ export default function PatientLogin() {
         await login(values.tenant_code, values.phone, values.name);
         message.success('登录成功');
         navigate('/patient/home', { replace: true });
-      } catch {
-        // error handled by interceptor
+      } catch (err: unknown) {
+        const errData = (err as { response?: { data?: { message?: string } } })?.response?.data;
+        if (errData?.message) {
+          message.error(errData.message);
+        }
+        // interceptor already shows a generic toast; above shows specific backend message
       } finally {
         setLoading(false);
       }
@@ -53,7 +57,9 @@ export default function PatientLogin() {
         const res = await listTenantsByPhone(values.phone);
         const results = res.data ?? [];
         if (results.length === 0) {
-          message.warning('未找到就诊记录，请扫描诊所二维码注册');
+          message.warning('未找到就诊记录，请填写诊所代码后重试');
+          form.scrollToField('tenant_code');
+          form.getFieldInstance?.('tenant_code')?.focus?.();
         } else if (results.length === 1) {
           await login(results[0].tenant_code, values.phone, values.name);
           message.success('登录成功');
