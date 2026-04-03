@@ -28,11 +28,11 @@ type GlobalSummary struct {
 	TotalPatients       int     `json:"total_patients"`
 	AvgRevenuePerRecord float64 `json:"avg_revenue_per_record"`
 	TenantCount         int     `json:"tenant_count"`
-	Total               int     `json:"total"`
 }
 
 // GlobalStatsResult is the response type for GetGlobalStats.
 type GlobalStatsResult struct {
+	Total   int                `json:"total"`
 	Summary GlobalSummary      `json:"summary"`
 	Tenants []GlobalTenantItem `json:"tenants"`
 }
@@ -44,13 +44,13 @@ type globalCacheEntry struct {
 
 // AdminStatisticsService aggregates daily_stats across all tenants.
 type AdminStatisticsService struct {
-	DB    *gorm.DB
+	db    *gorm.DB
 	cache sync.Map // key: "start:end:page:size" → *globalCacheEntry; TTL 5 min
 }
 
 // NewAdminStatisticsService creates a new AdminStatisticsService.
 func NewAdminStatisticsService(db *gorm.DB) *AdminStatisticsService {
-	return &AdminStatisticsService{DB: db}
+	return &AdminStatisticsService{db: db}
 }
 
 // GetGlobalStats returns platform-wide aggregated stats for the given date range.
@@ -77,14 +77,14 @@ func (s *AdminStatisticsService) GetGlobalStats(startDate, endDate time.Time, pa
 	}
 
 	var totalCount int64
-	s.DB.Model(&model.DailyStats{}).
+	s.db.Model(&model.DailyStats{}).
 		Where("stat_date >= ? AND stat_date <= ?", startDate, endDate).
 		Distinct("tenant_id").
 		Count(&totalCount)
 
 	var rows []row
 	offset := (page - 1) * size
-	s.DB.Model(&model.DailyStats{}).
+	s.db.Model(&model.DailyStats{}).
 		Select("daily_stats.tenant_id, tenants.name AS tenant_name, "+
 			"SUM(daily_stats.revenue) AS revenue, "+
 			"SUM(daily_stats.record_count) AS records, "+
@@ -102,7 +102,7 @@ func (s *AdminStatisticsService) GetGlobalStats(startDate, endDate time.Time, pa
 		TotalPatients int
 	}
 	var totals totalRow
-	s.DB.Model(&model.DailyStats{}).
+	s.db.Model(&model.DailyStats{}).
 		Select("SUM(revenue) AS total_revenue, SUM(record_count) AS total_records, "+
 			"SUM(new_patient_count + returning_patient_count) AS total_patients").
 		Where("stat_date >= ? AND stat_date <= ?", startDate, endDate).
@@ -135,13 +135,13 @@ func (s *AdminStatisticsService) GetGlobalStats(startDate, endDate time.Time, pa
 	}
 
 	result := &GlobalStatsResult{
+		Total: int(totalCount),
 		Summary: GlobalSummary{
 			TotalRevenue:        totals.TotalRevenue,
 			TotalRecords:        totals.TotalRecords,
 			TotalPatients:       totals.TotalPatients,
 			AvgRevenuePerRecord: avgPerRecord,
 			TenantCount:         int(totalCount),
-			Total:               int(totalCount),
 		},
 		Tenants: tenants,
 	}
