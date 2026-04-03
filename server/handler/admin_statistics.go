@@ -49,17 +49,17 @@ func (h *AdminStatisticsHandler) GetGlobal(c *gin.Context) {
 		return
 	}
 	if endDate.Before(startDate) {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "end_date must be after start_date"})
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "end_date must not be before start_date"})
 		return
 	}
 
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	if page < 1 {
-		page = 1
+	page := 1
+	if p, err := strconv.Atoi(c.DefaultQuery("page", "1")); err == nil && p > 0 {
+		page = p
 	}
-	size, _ := strconv.Atoi(c.DefaultQuery("size", "50"))
-	if size < 1 || size > 200 {
-		size = 50
+	size := 50
+	if s, err := strconv.Atoi(c.DefaultQuery("size", "50")); err == nil && s > 0 && s <= 200 {
+		size = s
 	}
 
 	result, err := h.svc.GetGlobalStats(startDate, endDate, page, size)

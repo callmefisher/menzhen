@@ -439,7 +439,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		adminStatsHandler := handler.NewAdminStatisticsHandler(db)
 		adminStats := authenticated.Group("/admin/statistics")
 		{
-			adminStats.GET("/global", adminStatsHandler.GetGlobal)
+			adminStats.GET("/global", middleware.RequirePermission(db, "user:manage"), adminStatsHandler.GetGlobal)
 		}
 
 		// Prescription list by record (nested under records).
