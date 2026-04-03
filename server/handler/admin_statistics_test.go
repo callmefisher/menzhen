@@ -16,9 +16,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func mustParseDateAdmin(s string) time.Time {
-	t, _ := time.ParseInLocation("2006-01-02", s, time.Local)
-	return t
+func mustParseDateAdmin(t *testing.T, s string) time.Time {
+	t.Helper()
+	result, err := time.ParseInLocation("2006-01-02", s, time.Local)
+	if err != nil {
+		t.Fatalf("mustParseDateAdmin: invalid date %q: %v", s, err)
+	}
+	return result
 }
 
 func TestAdminStatsHandler_Forbidden(t *testing.T) {
@@ -65,7 +69,7 @@ func TestAdminStatsHandler_Success(t *testing.T) {
 	_, adminUser, _ := testutil.SeedAdminUser(t, db)
 	t2 := testutil.SeedTestTenant(t, db, "诊所B", "clinic-b2")
 	db.Create(&model.DailyStats{
-		TenantID: t2.ID, StatDate: mustParseDateAdmin("2026-03-01"),
+		TenantID: t2.ID, StatDate: mustParseDateAdmin(t, "2026-03-01"),
 		Revenue: 2000, RecordCount: 20, NewPatientCount: 5, ReturningPatientCount: 15,
 	})
 

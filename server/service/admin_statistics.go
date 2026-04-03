@@ -159,6 +159,9 @@ func (s *AdminStatisticsService) GetGlobalStats(startDate, endDate time.Time, pa
 		Tenants: tenants,
 	}
 
+	// NOTE: Cache is not invalidated when daily stats are rebuilt. Stale data will be served
+	// for up to 5 minutes. If immediate freshness is required after a rebuild, restart the server
+	// or implement a ClearCache() method on this service.
 	s.cache.Store(cacheKey, &globalCacheEntry{result: result, expiresAt: time.Now().Add(5 * time.Minute)})
 	return result, nil
 }
