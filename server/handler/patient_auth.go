@@ -105,6 +105,38 @@ func (h *PatientAuthHandler) Login(c *gin.Context) {
 	})
 }
 
+// TenantListItem is the DTO for a tenant returned by ListTenantsByPhone.
+type TenantListItem struct {
+	TenantID   uint64 `json:"tenant_id"`
+	TenantName string `json:"tenant_name"`
+	TenantCode string `json:"tenant_code"`
+}
+
+// ListTenantsByPhone handles GET /api/v1/patient/auth/tenant-list.
+// It looks up all active tenants where the given phone number has a patient_user record.
+// No authentication required — used before login to show clinic selection.
+func (h *PatientAuthHandler) ListTenantsByPhone(c *gin.Context) {
+	phone := strings.TrimSpace(c.Query("phone"))
+	if phone == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "phone is required"})
+		return
+	}
+	var items []TenantListItem
+	err := h.db.Table("patient_users").
+		Select("patient_users.tenant_id, tenants.name AS tenant_name, tenants.code AS tenant_code").
+		Joins("JOIN tenants ON tenants.id = patient_users.tenant_id").
+		Where("patient_users.phone = ? AND tenants.status = 1 AND tenants.deleted_at IS NULL AND patient_users.deleted_at IS NULL", phone).
+		Scan(&items).Error
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "查询失败"})
+		return
+	}
+	if items == nil {
+		items = []TenantListItem{}
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success", "data": items})
+}
+
 // Me handles GET /api/v1/patient/me.
 func (h *PatientAuthHandler) Me(c *gin.Context) {
 	patientUserID := middleware.GetPatientUserID(c)

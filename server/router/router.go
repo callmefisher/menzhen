@@ -459,13 +459,14 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	// ---------- Patient portal handlers ----------
 	patientAuthSvc := service.NewPatientAuthService(db)
 	patientAuthHandler := handler.NewPatientAuthHandler(patientAuthSvc, cfg.JWTSecret, db)
-	patientSettingsHandler := handler.NewPatientSettingsHandler(patientAuthSvc)
+	patientSettingsHandler := handler.NewPatientSettingsHandler(patientAuthSvc, db)
 	patientPortalHandler := handler.NewPatientPortalHandler(db, patientAuthSvc)
 
 	// Public patient auth route (no JWT required).
 	patientPublic := v1.Group("/patient")
 	{
 		patientPublic.POST("/auth/login", patientAuthHandler.Login)
+		patientPublic.GET("/auth/tenant-list", patientAuthHandler.ListTenantsByPhone)
 	}
 
 	// Authenticated patient routes (patient JWT required).
