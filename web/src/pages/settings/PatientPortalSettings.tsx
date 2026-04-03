@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Card, Switch, message, Spin, Typography, Alert } from 'antd';
+import { Card, Switch, message, Spin, Typography, Alert, QRCode, Button } from 'antd';
 import { getPatientPortalConfig, updatePatientPortalConfig } from '../../api/patientPortal';
 import type { PatientPortalConfig } from '../../api/patientPortal';
 
@@ -41,6 +41,22 @@ export default function PatientPortalSettings() {
 
   const sections = [...new Set(SWITCHES.map(s => s.section))];
 
+  const qrUrl = config.tenant_code
+    ? `${window.location.origin}/patient/login?code=${config.tenant_code}`
+    : '';
+
+  const handleDownloadQRCode = () => {
+    const container = document.getElementById('clinic-qrcode');
+    if (!container) return;
+    const canvas = container.querySelector<HTMLCanvasElement>('canvas');
+    if (!canvas) return;
+    const url = canvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'clinic-qrcode.png';
+    a.click();
+  };
+
   return (
     <div style={{ padding: '24px', maxWidth: 600 }}>
       <Title level={4}>患者端管理</Title>
@@ -50,6 +66,39 @@ export default function PatientPortalSettings() {
         message="以下开关仅影响患者端，不影响诊所员工的管理后台功能"
         showIcon
       />
+      <Card title="患者端二维码" size="small" style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20 }}>
+          <div id="clinic-qrcode">
+            {qrUrl ? (
+              <QRCode value={qrUrl} size={128} />
+            ) : (
+              <div
+                style={{
+                  width: 128, height: 128,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: '#f5f5f5', color: '#aaa', fontSize: 13,
+                  border: '1px solid #e8e8e8', borderRadius: 4,
+                }}
+              >
+                暂无诊所代码
+              </div>
+            )}
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ marginBottom: 12, color: '#555', lineHeight: '1.6' }}>
+              患者扫描此码即可直接进入本诊所患者端
+            </div>
+            {qrUrl && (
+              <Button size="small" onClick={handleDownloadQRCode}>
+                下载二维码
+              </Button>
+            )}
+            <div style={{ marginTop: 12, fontSize: 12, color: '#888' }}>
+              诊所代码: {config.tenant_code || '—'}
+            </div>
+          </div>
+        </div>
+      </Card>
       {sections.map(section => (
         <Card key={section} title={section} size="small" style={{ marginBottom: 12 }}>
           {SWITCHES.filter(s => s.section === section).map(sw => (
