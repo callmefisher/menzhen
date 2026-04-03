@@ -435,6 +435,13 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			statistics.GET("/staff", middleware.RequirePermission(db, "statistics:read"), statisticsHandler.GetStaffRevenue)
 		}
 
+		// Admin statistics routes (superAdmin only, checked inside handler).
+		adminStatsHandler := handler.NewAdminStatisticsHandler(db)
+		adminStats := authenticated.Group("/admin/statistics")
+		{
+			adminStats.GET("/global", adminStatsHandler.GetGlobal)
+		}
+
 		// Prescription list by record (nested under records).
 		records.GET("/:id/prescriptions", middleware.RequirePermission(db, "prescription:read"), prescriptionHandler.ListByRecord)
 
