@@ -128,15 +128,15 @@ export default function AppointmentMatrix({ selectedDate, onDateChange }: Props)
       {/* Matrix table */}
       <Spin spinning={loading} size="small">
         <div style={{ overflowX: 'auto', overflowY: 'visible', WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
-          <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', minWidth: 480 }}>
+          <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', minWidth: 580 }}>
             <thead>
               <tr>
                 <th style={{
                   ...stickyStyle,
-                  textAlign: 'left', padding: '6px 8px 6px 14px',
-                  fontSize: 10, fontWeight: 600, color: '#999',
+                  textAlign: 'left', padding: '8px 12px 8px 16px',
+                  fontSize: 12, fontWeight: 600, color: '#888',
                   background: '#fafafa', borderBottom: '1px solid #f0f0f0',
-                  borderRight: '1px solid #f0f0f0', minWidth: 64,
+                  borderRight: '1px solid #f0f0f0', minWidth: 88,
                 }}>
                   医生
                 </th>
@@ -146,27 +146,29 @@ export default function AppointmentMatrix({ selectedDate, onDateChange }: Props)
                   const isSelected = d.isSame(selectedDate, 'day');
                   return (
                     <th key={day} style={{
-                      padding: '6px 4px', textAlign: 'center', fontSize: 10,
+                      padding: '8px 6px', textAlign: 'center', fontSize: 11,
                       fontWeight: isToday ? 700 : 600,
-                      color: isToday ? '#1677ff' : '#666',
+                      color: isToday ? '#1677ff' : '#555',
                       background: isSelected ? 'rgba(22,119,255,0.06)' : '#fafafa',
                       borderBottom: '1px solid #f0f0f0',
                       whiteSpace: 'nowrap',
+                      minWidth: 60,
                     }}>
                       {DOW_LABELS[i]}<br />
-                      <span style={{ fontWeight: isToday ? 700 : 400, fontSize: 9 }}>
+                      <span style={{ fontWeight: isToday ? 700 : 400, fontSize: 10 }}>
                         {d.format('M/D')}
                       </span>
                     </th>
                   );
                 })}
                 <th style={{
-                  padding: '6px 10px', textAlign: 'center', fontSize: 10,
+                  padding: '8px 14px', textAlign: 'center', fontSize: 11,
                   fontWeight: 700, color: '#333',
                   background: '#f5f5f5',
                   borderBottom: '1px solid #f0f0f0',
                   borderLeft: '1px solid #e8e8e8',
                   whiteSpace: 'nowrap',
+                  minWidth: 52,
                 }}>
                   合计
                 </th>
@@ -178,9 +180,9 @@ export default function AppointmentMatrix({ selectedDate, onDateChange }: Props)
                 <tr key={doc.doctor_id}>
                   <td style={{
                     ...stickyStyle,
-                    padding: '3px 8px 3px 14px', fontSize: 12, fontWeight: 500,
+                    padding: '6px 12px 6px 16px', fontSize: 14, fontWeight: 500,
                     borderRight: '1px solid #f0f0f0',
-                    borderBottom: '1px solid #fafafa',
+                    borderBottom: '1px solid #f5f5f5',
                     whiteSpace: 'nowrap',
                   }}>
                     {doc.doctor_name}
@@ -192,9 +194,9 @@ export default function AppointmentMatrix({ selectedDate, onDateChange }: Props)
                     const isSelected = d.isSame(selectedDate, 'day');
                     return (
                       <td key={day} style={{
-                        padding: '3px 3px',
+                        padding: '4px 4px',
                         background: isSelected ? 'rgba(22,119,255,0.04)' : undefined,
-                        borderBottom: '1px solid #fafafa',
+                        borderBottom: '1px solid #f5f5f5',
                       }}>
                         <Tooltip title={count > 0 ? `${doc.doctor_name} ${d.format('M月D日')} ${count}人` : undefined}>
                           <div
@@ -202,32 +204,32 @@ export default function AppointmentMatrix({ selectedDate, onDateChange }: Props)
                             style={{
                               display: 'flex', flexDirection: 'column',
                               alignItems: 'center', justifyContent: 'center',
-                              borderRadius: 6, cursor: 'pointer',
+                              borderRadius: 8, cursor: 'pointer',
                               background: bg, color,
                               fontWeight: 700,
-                              fontSize: isMobile ? 12 : 13,
-                              minHeight: isMobile ? 40 : 44,
-                              minWidth: 34,
-                              margin: '1px',
+                              fontSize: isMobile ? 13 : 15,
+                              minHeight: isMobile ? 44 : 52,
+                              minWidth: 48,
+                              margin: '2px',
                               transition: 'transform 0.1s',
                               outline: isSelected ? '2px solid #1677ff' : undefined,
                               outlineOffset: isSelected ? 1 : undefined,
                             }}
-                            onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.transform = 'scale(1.08)'; }}
+                            onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.transform = 'scale(1.06)'; }}
                             onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.transform = ''; }}
                           >
                             {count === 0 ? '—' : count}
-                            {count > 0 && <span style={{ fontSize: 9, fontWeight: 400, opacity: 0.75, marginTop: 1 }}>人</span>}
+                            {count > 0 && <span style={{ fontSize: 10, fontWeight: 400, opacity: 0.75, marginTop: 1 }}>人</span>}
                           </div>
                         </Tooltip>
                       </td>
                     );
                   })}
                   <td style={{
-                    padding: '3px 10px', textAlign: 'center',
-                    fontWeight: 700, fontSize: 13, color: '#333',
+                    padding: '4px 14px', textAlign: 'center',
+                    fontWeight: 700, fontSize: 15, color: '#333',
                     background: '#fafafa', borderLeft: '1px solid #e8e8e8',
-                    borderBottom: '1px solid #fafafa',
+                    borderBottom: '1px solid #f5f5f5',
                   }}>
                     {data?.row_totals[String(doc.doctor_id)] ?? 0}
                   </td>
@@ -235,7 +237,7 @@ export default function AppointmentMatrix({ selectedDate, onDateChange }: Props)
               ))}
               {!loading && (data?.doctors ?? []).length === 0 && (
                 <tr>
-                  <td colSpan={9} style={{ textAlign: 'center', padding: '16px', color: '#999', fontSize: 12 }}>
+                  <td colSpan={9} style={{ textAlign: 'center', padding: '24px', color: '#bbb', fontSize: 13 }}>
                     本周暂无预约
                   </td>
                 </tr>
@@ -247,8 +249,8 @@ export default function AppointmentMatrix({ selectedDate, onDateChange }: Props)
                 <tr>
                   <td style={{
                     ...stickyStyle,
-                    padding: '5px 8px 5px 14px', fontSize: 11,
-                    color: '#999', fontWeight: 500,
+                    padding: '7px 12px 7px 16px', fontSize: 12,
+                    color: '#888', fontWeight: 500,
                     borderRight: '1px solid #f0f0f0',
                     borderTop: '1px solid #e8e8e8',
                     background: '#fafafa',
@@ -262,9 +264,9 @@ export default function AppointmentMatrix({ selectedDate, onDateChange }: Props)
                     const isSelected = d.isSame(selectedDate, 'day');
                     return (
                       <td key={day} style={{
-                        padding: '5px 3px', textAlign: 'center',
-                        fontSize: 11, fontWeight: 700,
-                        color: isToday ? '#1677ff' : '#555',
+                        padding: '7px 4px', textAlign: 'center',
+                        fontSize: 13, fontWeight: 700,
+                        color: isToday ? '#1677ff' : '#444',
                         background: isSelected ? 'rgba(22,119,255,0.06)' : '#fafafa',
                         borderTop: '1px solid #e8e8e8',
                       }}>
@@ -273,8 +275,8 @@ export default function AppointmentMatrix({ selectedDate, onDateChange }: Props)
                     );
                   })}
                   <td style={{
-                    padding: '5px 10px', textAlign: 'center',
-                    fontSize: 13, fontWeight: 700, color: '#333',
+                    padding: '7px 14px', textAlign: 'center',
+                    fontSize: 15, fontWeight: 700, color: '#333',
                     background: '#f0f0f0',
                     borderLeft: '1px solid #e8e8e8',
                     borderTop: '1px solid #e8e8e8',

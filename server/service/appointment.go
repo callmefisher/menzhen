@@ -447,14 +447,20 @@ func (s *AppointmentService) WeeklyMatrix(tenantID uint, startDate string) (Week
 	grandTotal := 0
 
 	for _, r := range rows {
+		// MySQL with parseTime=True scans DATE columns as time.Time, which GORM
+		// converts to a full datetime string. Truncate to just "YYYY-MM-DD".
+		dateKey := r.AppointDate
+		if len(dateKey) > 10 {
+			dateKey = dateKey[:10]
+		}
 		if _, seen := doctorMap[r.DoctorID]; !seen {
 			doctorOrder = append(doctorOrder, r.DoctorID)
 			doctorMap[r.DoctorID] = r.DoctorName
 			counts[r.DoctorID] = make(map[string]int)
 		}
-		counts[r.DoctorID][r.AppointDate] = r.Count
+		counts[r.DoctorID][dateKey] = r.Count
 		rowTotals[r.DoctorID] += r.Count
-		colTotals[r.AppointDate] += r.Count
+		colTotals[dateKey] += r.Count
 		grandTotal += r.Count
 	}
 
