@@ -47,6 +47,10 @@ vi.mock('../../../hooks/useIsMobile', () => ({
   default: vi.fn().mockReturnValue(false),
 }));
 
+vi.mock('../../../store/auth', () => ({
+  useAuth: vi.fn().mockReturnValue({ isSuperAdmin: false }),
+}));
+
 vi.mock('echarts-for-react', () => ({
   default: ({ option: _option, ...props }: any) => <div data-testid="echarts-mock" {...props} />,
 }));

@@ -9,11 +9,13 @@ dayjs.locale('zh-cn');
 import { getDashboard } from '../../api/statistics';
 import type { DashboardData, DailyTrendItem } from '../../api/statistics';
 import useIsMobile from '../../hooks/useIsMobile';
+import { useAuth } from '../../store/auth';
 import SummaryCards from './components/SummaryCards';
 import RevenueTrendChart from './components/RevenueTrendChart';
 import RevenueBreakdownChart from './components/RevenueBreakdownChart';
 import PatientChart from './components/PatientChart';
 import StaffRevenuePanel from './components/StaffRevenuePanel';
+import GlobalStatsPanel from './components/GlobalStatsPanel';
 
 const { RangePicker } = DatePicker;
 
@@ -87,10 +89,14 @@ export function aggregateForCharts(data: DailyTrendItem[], range: QuickRange): D
 
 export default function StatsDashboard() {
   const isMobile = useIsMobile();
+  const { isSuperAdmin } = useAuth();
   const [quickRange, setQuickRange] = useState<QuickRange>('month');
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs]>(getDateRange('month'));
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<string>('overview');
+  const [overrideTenantId, setOverrideTenantId] = useState<number | null>(null);
+  const [overrideTenantName, setOverrideTenantName] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -98,6 +104,7 @@ export default function StatsDashboard() {
       const res = await getDashboard(
         dateRange[0].format('YYYY-MM-DD'),
         dateRange[1].format('YYYY-MM-DD'),
+        overrideTenantId ?? undefined,
       );
       const body = res as unknown as { code: number; data: DashboardData };
       setData(body.data);
@@ -106,7 +113,7 @@ export default function StatsDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [dateRange]);
+  }, [dateRange, overrideTenantId]);
 
   useEffect(() => {
     fetchData();
@@ -125,6 +132,12 @@ export default function StatsDashboard() {
       setDateRange([dates[0], dates[1]]);
     }
   };
+
+  const handleViewDetail = useCallback((tenantId: number, tenantName: string) => {
+    setOverrideTenantId(tenantId);
+    setOverrideTenantName(tenantName);
+    setActiveTab('overview');
+  }, []);
 
   const chartData = useMemo(
     () => (data ? aggregateForCharts(data.daily_trend, quickRange) : []),
@@ -191,18 +204,43 @@ export default function StatsDashboard() {
     </Spin>
   );
 
+  const tenantAlert = isSuperAdmin && overrideTenantName ? (
+    <div style={{ marginBottom: 12, padding: '8px 14px', background: '#f6ffed', border: '1px solid #b7eb8f', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <span style={{ fontSize: 13, color: '#389e0d' }}>当前查看：<b>{overrideTenantName}</b></span>
+      <button
+        onClick={() => { setOverrideTenantId(null); setOverrideTenantName(null); }}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: 16 }}
+      >✕</button>
+    </div>
+  ) : null;
+
+  const tabItems = [
+    { key: 'overview', label: '数据概览', children: <>{tenantAlert}{overviewContent}</> },
+    {
+      key: 'staff',
+      label: '人员收费',
+      children: <StaffRevenuePanel startDate={startDateStr} endDate={endDateStr} />,
+    },
+    ...(isSuperAdmin ? [{
+      key: 'global',
+      label: <span>全局总览 <span style={{ display: 'inline-block', background: '#ff4d4f', color: '#fff', fontSize: 9, borderRadius: 8, padding: '1px 4px', marginLeft: 2, verticalAlign: 'middle' }}>Admin</span></span>,
+      children: (
+        <GlobalStatsPanel
+          startDate={startDateStr}
+          endDate={endDateStr}
+          onViewDetail={handleViewDetail}
+        />
+      ),
+    }] : []),
+  ];
+
   return (
     <div style={{ padding: isMobile ? 12 : 24 }}>
       {filterBar}
       <Tabs
-        items={[
-          { key: 'overview', label: '数据概览', children: overviewContent },
-          {
-            key: 'staff',
-            label: '人员收费',
-            children: <StaffRevenuePanel startDate={startDateStr} endDate={endDateStr} />,
-          },
-        ]}
+        activeKey={activeTab}
+        onChange={setActiveTab}
+        items={tabItems}
       />
     </div>
   );
