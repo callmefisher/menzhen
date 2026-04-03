@@ -6,6 +6,7 @@ export interface PatientUserDTO {
   name: string;
   tenant_id: number;
   patient_id: number | null;
+  tenant_name: string;
 }
 
 export interface PatientLoginResponse {
@@ -34,4 +35,13 @@ export interface TenantItem {
 
 export function listTenantsByPhone(phone: string): Promise<{ code: number; data: TenantItem[] }> {
   return patientRequest.get('/auth/tenant-list', { params: { phone } }) as Promise<{ code: number; data: TenantItem[] }>;
+}
+
+export interface TenantInfo {
+  tenant_name: string;
+  tenant_code: string;
+}
+
+export function getTenantInfo(code: string): Promise<{ code: number; data: TenantInfo }> {
+  return patientRequest.get('/auth/tenant-info', { params: { code } }) as Promise<{ code: number; data: TenantInfo }>;
 }

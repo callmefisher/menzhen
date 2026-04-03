@@ -9,6 +9,7 @@ interface PatientAuthState {
   user: PatientUserDTO | null;
   token: string | null;
   loading: boolean;
+  tenantName: string | null;
 }
 
 interface PatientAuthContextValue extends PatientAuthState {
@@ -23,17 +24,18 @@ export function PatientAuthProvider({ children }: { children: ReactNode }) {
     user: null,
     token: localStorage.getItem('patient_token'),
     loading: true,
+    tenantName: null,
   });
 
   useEffect(() => {
     if (state.token) {
       getPatientMe()
         .then((res) => {
-          setState((prev) => ({ ...prev, user: res.data, loading: false }));
+          setState((prev) => ({ ...prev, user: res.data, tenantName: res.data.tenant_name, loading: false }));
         })
         .catch(() => {
           localStorage.removeItem('patient_token');
-          setState({ user: null, token: null, loading: false });
+          setState({ user: null, token: null, loading: false, tenantName: null });
         });
     } else {
       setState((prev) => ({ ...prev, loading: false }));
@@ -44,12 +46,17 @@ export function PatientAuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (tenantCode: string, phone: string, name: string) => {
     const res = await patientLogin({ tenant_code: tenantCode, phone, name });
     localStorage.setItem('patient_token', res.data.token);
-    setState({ user: res.data.patient_user, token: res.data.token, loading: false });
+    setState({
+      user: res.data.patient_user,
+      token: res.data.token,
+      loading: false,
+      tenantName: res.data.patient_user.tenant_name,
+    });
   }, []);
 
   const logout = useCallback(() => {
     localStorage.removeItem('patient_token');
-    setState({ user: null, token: null, loading: false });
+    setState({ user: null, token: null, loading: false, tenantName: null });
   }, []);
 
   return (
