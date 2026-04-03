@@ -3,6 +3,8 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { BrowserRouter } from 'react-router-dom';
 import StatsDashboard from '../StatsDashboard';
+import * as statsApi from '../../../api/statistics';
+import * as authStore from '../../../store/auth';
 
 
 // Mock must match what request interceptor actually returns:
@@ -40,6 +42,13 @@ vi.mock('../../../api/statistics', () => ({
   getStaffRevenue: vi.fn().mockResolvedValue({
     code: 0,
     data: { summary: { total_revenue: 0, total_records: 0, staff_count: 0, avg_per_record: 0 }, staff: [] },
+  }),
+  getGlobalStats: vi.fn().mockResolvedValue({
+    code: 0,
+    data: {
+      summary: { total_revenue: 0, total_records: 0, total_patients: 0, avg_revenue_per_record: 0, tenant_count: 0, total: 0 },
+      tenants: [],
+    },
   }),
 }));
 
@@ -133,5 +142,59 @@ describe('StatsDashboard', () => {
     renderWithRouter();
     expect(screen.getByText('数据概览')).toBeInTheDocument();
     expect(screen.getByText('人员收费')).toBeInTheDocument();
+  });
+});
+
+describe('StatsDashboard global tab visibility', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(statsApi, 'getGlobalStats').mockResolvedValue({
+      code: 0,
+      data: {
+        summary: { total_revenue: 0, total_records: 0, total_patients: 0, avg_revenue_per_record: 0, tenant_count: 0, total: 0 },
+        tenants: [],
+      },
+    } as never);
+  });
+
+  it('shows 全局总览 tab for superAdmin', () => {
+    vi.spyOn(authStore, 'useAuth').mockReturnValue({
+      isSuperAdmin: true,
+      user: { id: 1, username: 'admin', real_name: '管理员', tenant_id: 1 },
+      permissions: ['user:manage'],
+      token: 'mock',
+      loading: false,
+      login: vi.fn(),
+      logout: vi.fn(),
+      hasPermission: vi.fn().mockReturnValue(true),
+      isGlobalAdmin: true,
+      queueEnabled: false,
+      appointmentEnabled: false,
+      fetchQueueEnabled: vi.fn(),
+      fetchAppointmentEnabled: vi.fn(),
+    } as never);
+    renderWithRouter();
+    expect(screen.getByText(/全局总览/)).toBeInTheDocument();
+  });
+
+  it('hides 全局总览 tab for regular user', () => {
+    // explicitly set isSuperAdmin: false to override the spy from previous test
+    vi.spyOn(authStore, 'useAuth').mockReturnValue({
+      isSuperAdmin: false,
+      user: { id: 1, username: 'user', real_name: '普通用户', tenant_id: 1 },
+      permissions: [],
+      token: 'mock',
+      loading: false,
+      login: vi.fn(),
+      logout: vi.fn(),
+      hasPermission: vi.fn().mockReturnValue(false),
+      isGlobalAdmin: false,
+      queueEnabled: false,
+      appointmentEnabled: false,
+      fetchQueueEnabled: vi.fn(),
+      fetchAppointmentEnabled: vi.fn(),
+    } as never);
+    renderWithRouter();
+    expect(screen.queryByText(/全局总览/)).toBeNull();
   });
 });
