@@ -456,5 +456,50 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		records.POST("/:id/ai-analysis", middleware.RequirePermission(db, "record:read"), aiAnalysisHandler.SaveCached)
 	}
 
+	// ---------- Patient portal handlers ----------
+	patientAuthSvc := service.NewPatientAuthService(db)
+	patientAuthHandler := handler.NewPatientAuthHandler(patientAuthSvc, cfg.JWTSecret, db)
+	patientSettingsHandler := handler.NewPatientSettingsHandler(patientAuthSvc)
+	patientPortalHandler := handler.NewPatientPortalHandler(db, patientAuthSvc)
+
+	// Public patient auth route (no JWT required).
+	patientPublic := v1.Group("/patient")
+	{
+		patientPublic.POST("/auth/login", patientAuthHandler.Login)
+	}
+
+	// Authenticated patient routes (patient JWT required).
+	patientAuth := v1.Group("/patient")
+	patientAuth.Use(middleware.PatientAuthMiddleware(cfg.JWTSecret))
+	{
+		patientAuth.GET("/me", patientAuthHandler.Me)
+		patientAuth.GET("/doctors", patientPortalHandler.ListDoctors)
+
+		// Appointments
+		patientAuth.GET("/appointments", patientPortalHandler.ListAppointments)
+		patientAuth.POST("/appointments", patientPortalHandler.CreateAppointment)
+		patientAuth.GET("/appointments/slots", patientPortalHandler.GetAppointmentSlots)
+		patientAuth.POST("/appointments/:id/cancel", patientPortalHandler.CancelAppointment)
+
+		// Queue
+		patientAuth.POST("/queue/take", patientPortalHandler.TakeNumber)
+		patientAuth.GET("/queue/my-status", patientPortalHandler.GetMyQueueStatus)
+
+		// Records (read-only)
+		patientAuth.GET("/records", patientPortalHandler.ListRecords)
+		patientAuth.GET("/records/:id", patientPortalHandler.GetRecord)
+
+		// Billing (read-only)
+		patientAuth.GET("/billings", patientPortalHandler.ListBillings)
+	}
+
+	// Admin: patient portal config (tenant:user:manage required).
+	authenticated.GET("/tenant/patient-portal-config",
+		middleware.RequirePermission(db, "tenant:user:manage"),
+		patientSettingsHandler.GetPortalConfig)
+	authenticated.PUT("/tenant/patient-portal-config",
+		middleware.RequirePermission(db, "tenant:user:manage"),
+		patientSettingsHandler.UpdatePortalConfig)
+
 	return r
 }
