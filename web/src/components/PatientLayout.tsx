@@ -17,7 +17,7 @@ export default function PatientLayout() {
   if (loading) return null;
   if (!token) return <Navigate to="/patient/login" replace />;
 
-  const displayName = tenantName || '患者服务中心';
+  const displayName = tenantName ?? '患者服务中心';
 
   return (
     <div style={{ maxWidth: 480, margin: '0 auto', minHeight: '100vh', display: 'flex', flexDirection: 'column', background: '#f5f7fa' }}>
