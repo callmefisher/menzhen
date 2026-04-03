@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/callmefisher/menzhen/server/middleware"
@@ -270,7 +271,10 @@ func TestGetPortalConfig_Unauthorized(t *testing.T) {
 
 // doPost sends a POST request with JSON body without auth.
 func doPost(router *gin.Engine, path string, body interface{}) *httptest.ResponseRecorder {
-	b, _ := json.Marshal(body)
+	b, err := json.Marshal(body)
+	if err != nil {
+		panic(fmt.Sprintf("doPost: json.Marshal failed: %v", err))
+	}
 	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(b))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -397,4 +401,18 @@ func TestGetTenantInfo_DisabledTenant(t *testing.T) {
 	body := parseJSON(w)
 	assert.Equal(t, float64(404), body["code"])
 	assert.Equal(t, "诊所不存在或已禁用", body["message"])
+}
+
+func TestGetTenantInfo_CodeTooLong(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	router := setupPatientAuthRouter(db)
+
+	// code longer than 50 characters should be rejected with 400
+	longCode := strings.Repeat("a", 51)
+	w := doPublicGet(router, "/api/v1/patient/auth/tenant-info?code="+longCode)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	body := parseJSON(w)
+	assert.Equal(t, float64(400), body["code"])
+	assert.Equal(t, "参数校验失败", body["message"])
 }
