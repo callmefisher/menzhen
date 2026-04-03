@@ -95,7 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             ...prev,
             user: meBody.data.user,
             permissions: meBody.data.permissions || [],
-            managedGroups: (meBody.data as any).managed_groups || [],
+            managedGroups: meBody.data.managed_groups || [],
             loading: false,
           }));
           if (meBody.data.user.tenant_name) {
@@ -142,7 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading: false,
       queueEnabled: true,
       appointmentEnabled: true,
-      managedGroups: (body.data as any).managed_groups || [],
+      managedGroups: body.data.managed_groups || [],
     });
     if (body.data.user.tenant_name) {
       document.title = body.data.user.tenant_name;

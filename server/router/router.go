@@ -76,6 +76,8 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 
 	// WebSocket upgrade (handles its own JWT auth via query param or header).
 	v1.GET("/ws", wsHandler.Upgrade)
+	// Patient WebSocket — validates patient_token from query param, joins same Hub.
+	v1.GET("/patient/ws", wsHandler.PatientUpgrade)
 
 	// Auth-only routes (JWT validated, but no token_version check).
 	// The refresh endpoint must bypass TokenVersionMiddleware so that
@@ -442,6 +444,8 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		adminStatsHandler := handler.NewAdminStatisticsHandler(db)
 		adminStats := authenticated.Group("/admin/statistics")
 		{
+			// /global uses internal handler-level auth (supports both superAdmin and powerAdmin).
+			// Access is controlled inside GetGlobal via IsProtectedAdminAccount + GetManagedGroups.
 			adminStats.GET("/global", adminStatsHandler.GetGlobal)
 		}
 
@@ -496,6 +500,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		patientAuth.POST("/appointments", patientPortalHandler.CreateAppointment)
 		patientAuth.GET("/appointments/slots", patientPortalHandler.GetAppointmentSlots)
 		patientAuth.POST("/appointments/:id/cancel", patientPortalHandler.CancelAppointment)
+		patientAuth.POST("/appointments/:id/checkin", patientPortalHandler.PatientCheckin)
 
 		// Queue
 		patientAuth.POST("/queue/take", patientPortalHandler.TakeNumber)

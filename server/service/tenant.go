@@ -164,8 +164,12 @@ func (s *TenantService) UpdateTenant(id uint64, req *UpdateTenantRequest) (*mode
 		}
 		updates["status"] = *req.Status
 	}
-	if req.GroupName != nil && *req.GroupName != "" {
-		updates["group_name"] = *req.GroupName
+	if req.GroupName != nil {
+		if *req.GroupName == "" {
+			updates["group_name"] = "default"
+		} else {
+			updates["group_name"] = *req.GroupName
+		}
 	}
 
 	if len(updates) > 0 {
