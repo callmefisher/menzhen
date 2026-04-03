@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,29 +14,32 @@ import (
 
 // Context keys used by the auth middleware.
 const (
-	CtxKeyUserID       = "user_id"
-	CtxKeyTenantID     = "tenant_id"
-	CtxKeyUsername     = "username"
-	CtxKeyTokenVersion = "token_version"
+	CtxKeyUserID        = "user_id"
+	CtxKeyTenantID      = "tenant_id"
+	CtxKeyUsername      = "username"
+	CtxKeyTokenVersion  = "token_version"
+	CtxKeyManagedGroups = "managed_groups"
 )
 
 // Claims represents the JWT claims for an authenticated user.
 type Claims struct {
-	UserID       uint64 `json:"user_id"`
-	TenantID     uint64 `json:"tenant_id"`
-	Username     string `json:"username"`
-	TokenVersion int64  `json:"token_version"`
+	UserID        uint64   `json:"user_id"`
+	TenantID      uint64   `json:"tenant_id"`
+	Username      string   `json:"username"`
+	TokenVersion  int64    `json:"token_version"`
+	ManagedGroups []string `json:"managed_groups,omitempty"`
 	jwt.RegisteredClaims
 }
 
 // GenerateToken creates a signed JWT token with user information.
 // The token expires after 24 hours.
-func GenerateToken(userID uint64, tenantID uint64, username string, tokenVersion int64, secret string) (string, error) {
+func GenerateToken(userID uint64, tenantID uint64, username string, tokenVersion int64, managedGroups []string, secret string) (string, error) {
 	claims := Claims{
-		UserID:       userID,
-		TenantID:     tenantID,
-		Username:     username,
-		TokenVersion: tokenVersion,
+		UserID:        userID,
+		TenantID:      tenantID,
+		Username:      username,
+		TokenVersion:  tokenVersion,
+		ManagedGroups: managedGroups,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -88,6 +92,7 @@ func AuthMiddleware(secret string) gin.HandlerFunc {
 		c.Set(CtxKeyTenantID, claims.TenantID)
 		c.Set(CtxKeyUsername, claims.Username)
 		c.Set(CtxKeyTokenVersion, claims.TokenVersion)
+		c.Set(CtxKeyManagedGroups, claims.ManagedGroups)
 
 		c.Next()
 	}
@@ -119,6 +124,69 @@ func GetTokenVersion(c *gin.Context) int64 {
 	v, _ := c.Get(CtxKeyTokenVersion)
 	ver, _ := v.(int64)
 	return ver
+}
+
+// GetManagedGroups extracts the powerAdmin's managed group names from context.
+func GetManagedGroups(c *gin.Context) []string {
+	v, _ := c.Get(CtxKeyManagedGroups)
+	groups, _ := v.([]string)
+	return groups
+}
+
+// SuperAdminTenantOverrideMiddleware allows the protected "admin" account to
+// temporarily operate in another tenant's context by passing ?tenant_id=X.
+// For powerAdmin users, they may switch only to tenants within their managed groups.
+func SuperAdminTenantOverrideMiddleware(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		username := GetUsername(c)
+		tid := c.Query("tenant_id")
+
+		if username == "admin" {
+			// superAdmin: can switch to any tenant
+			if tid == "" {
+				c.Next()
+				return
+			}
+			parsed, err := strconv.ParseUint(tid, 10, 64)
+			if err != nil || parsed == 0 {
+				c.Next()
+				return
+			}
+			var count int64
+			if err := db.Model(&model.Tenant{}).Where("id = ?", parsed).Count(&count).Error; err != nil || count == 0 {
+				c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"code": 404, "message": "诊所不存在"})
+				return
+			}
+			c.Set(CtxKeyTenantID, parsed)
+			c.Next()
+			return
+		}
+
+		// powerAdmin: can switch only within managed groups
+		managedGroups := GetManagedGroups(c)
+		if len(managedGroups) == 0 || tid == "" {
+			c.Next()
+			return
+		}
+		parsed, err := strconv.ParseUint(tid, 10, 64)
+		if err != nil || parsed == 0 {
+			c.Next()
+			return
+		}
+		var tenant model.Tenant
+		if err := db.Select("id, group_name").First(&tenant, parsed).Error; err != nil {
+			c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"code": 404, "message": "诊所不存在"})
+			return
+		}
+		for _, g := range managedGroups {
+			if g == tenant.GroupName {
+				c.Set(CtxKeyTenantID, parsed)
+				c.Next()
+				return
+			}
+		}
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"code": 403, "message": "无权访问该诊所"})
+	}
 }
 
 // TokenVersionMiddleware checks that the JWT's token_version matches the DB.

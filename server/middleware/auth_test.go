@@ -30,7 +30,7 @@ func setupAuthRouter() *gin.Engine {
 }
 
 func TestAuthMiddleware_ValidToken(t *testing.T) {
-	token, err := GenerateToken(1, 10, "testuser", 0, testSecret)
+	token, err := GenerateToken(1, 10, "testuser", 0, nil, testSecret)
 	assert.NoError(t, err)
 
 	r := setupAuthRouter()
@@ -94,7 +94,7 @@ func TestAuthMiddleware_ExpiredToken(t *testing.T) {
 }
 
 func TestAuthMiddleware_WrongSecret(t *testing.T) {
-	token, _ := GenerateToken(1, 10, "testuser", 0, "wrong-secret")
+	token, _ := GenerateToken(1, 10, "testuser", 0, nil, "wrong-secret")
 
 	r := setupAuthRouter()
 	req := httptest.NewRequest("GET", "/protected", nil)
@@ -116,13 +116,13 @@ func TestAuthMiddleware_MalformedJWT(t *testing.T) {
 }
 
 func TestGenerateToken_Success(t *testing.T) {
-	token, err := GenerateToken(42, 100, "admin", 0, testSecret)
+	token, err := GenerateToken(42, 100, "admin", 0, nil, testSecret)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, token)
 }
 
 func TestGenerateToken_ClaimsRoundTrip(t *testing.T) {
-	token, err := GenerateToken(42, 100, "admin", 5, testSecret)
+	token, err := GenerateToken(42, 100, "admin", 5, nil, testSecret)
 	assert.NoError(t, err)
 
 	claims := &Claims{}
