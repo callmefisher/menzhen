@@ -342,10 +342,16 @@ func (h *PatientPortalHandler) GetMyQueueStatus(c *gin.Context) {
 		return
 	}
 
+	// PatientID must be set; without it we cannot safely identify the patient's queue entry.
+	if pu.PatientID == nil {
+		c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success", "data": nil})
+		return
+	}
+
 	today := time.Now().Format("2006-01-02")
 	var entry model.QueueEntry
-	err := h.db.Where("tenant_id = ? AND patient_name = ? AND queue_date = ? AND status IN ?",
-		uint(tenantID), pu.Name, today, []string{model.QueueStatusWaiting, model.QueueStatusSeeing}).
+	err := h.db.Where("tenant_id = ? AND patient_id = ? AND queue_date = ? AND status IN ?",
+		uint(tenantID), uint(*pu.PatientID), today, []string{model.QueueStatusWaiting, model.QueueStatusSeeing}).
 		Order("created_at DESC").First(&entry).Error
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success", "data": nil})
