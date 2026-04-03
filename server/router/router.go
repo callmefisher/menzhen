@@ -445,6 +445,16 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			adminStats.GET("/global", middleware.RequirePermission(db, "user:manage"), adminStatsHandler.GetGlobal)
 		}
 
+		// PowerAdmin management (superAdmin only).
+		powerAdminHandler := handler.NewPowerAdminHandler(db)
+		powerAdmins := authenticated.Group("/settings/power-admins")
+		{
+			powerAdmins.GET("", middleware.RequirePermission(db, "power_admin:manage"), powerAdminHandler.List)
+			powerAdmins.DELETE("/:id", middleware.RequirePermission(db, "power_admin:manage"), powerAdminHandler.Delete)
+			powerAdmins.PUT("/:id/groups", middleware.RequirePermission(db, "power_admin:manage"), powerAdminHandler.AssignGroups)
+			powerAdmins.GET("/groups", middleware.RequirePermission(db, "power_admin:manage"), powerAdminHandler.ListAllGroups)
+		}
+
 		// Prescription list by record (nested under records).
 		records.GET("/:id/prescriptions", middleware.RequirePermission(db, "prescription:read"), prescriptionHandler.ListByRecord)
 
