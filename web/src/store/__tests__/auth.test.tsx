@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, act } from '@testing-library/react';
+import { renderHook } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AuthProvider, useAuth } from '../auth';
 
@@ -261,5 +262,72 @@ describe('AuthProvider + useAuth', () => {
     }).toThrow('useAuth must be used within an AuthProvider');
 
     spy.mockRestore();
+  });
+});
+
+describe('isPowerAdmin', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+
+  it('should be false when managedGroups is empty', async () => {
+    mockLogin.mockResolvedValue({
+      data: {
+        token: 'tok',
+        user: { id: 1, username: 'lisi', real_name: 'LS', tenant_id: 1 },
+        permissions: ['user:manage'],
+        managed_groups: [],
+      },
+    } as never);
+
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: AuthProvider,
+    });
+    await act(async () => {
+      await result.current.login('lisi', 'pass');
+    });
+    expect(result.current.isPowerAdmin).toBe(false);
+  });
+
+  it('should be true when managedGroups is non-empty and not superAdmin', async () => {
+    mockLogin.mockResolvedValue({
+      data: {
+        token: 'tok',
+        user: { id: 2, username: 'wangwu', real_name: 'WW', tenant_id: 1 },
+        permissions: [],
+        managed_groups: ['华北分组', '华南分组'],
+      },
+    } as never);
+
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: AuthProvider,
+    });
+    await act(async () => {
+      await result.current.login('wangwu', 'pass');
+    });
+    expect(result.current.isPowerAdmin).toBe(true);
+    expect(result.current.managedGroups).toEqual(['华北分组', '华南分组']);
+  });
+
+  it('should be false when user is superAdmin even with managedGroups', async () => {
+    mockLogin.mockResolvedValue({
+      data: {
+        token: 'tok',
+        user: { id: 3, username: 'admin', real_name: 'Admin', tenant_id: 1 },
+        permissions: ['user:manage'],
+        managed_groups: ['华北分组'],
+      },
+    } as never);
+
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: AuthProvider,
+    });
+    await act(async () => {
+      await result.current.login('admin', 'pass');
+    });
+    expect(result.current.isSuperAdmin).toBe(true);
+    expect(result.current.isPowerAdmin).toBe(false);
   });
 });
