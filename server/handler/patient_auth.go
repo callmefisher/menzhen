@@ -172,7 +172,11 @@ func (h *PatientAuthHandler) Me(c *gin.Context) {
 		return
 	}
 	var tenant model.Tenant
-	if err := h.db.First(&tenant, pu.TenantID).Error; err != nil {
+	if err := h.db.Where("id = ? AND status = 1", pu.TenantID).First(&tenant).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusForbidden, gin.H{"code": 403, "message": "诊所已禁用"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "服务错误"})
 		return
 	}
