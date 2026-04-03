@@ -43,5 +43,8 @@ export interface TenantInfo {
 }
 
 export function getTenantInfo(code: string): Promise<{ code: number; data: TenantInfo }> {
-  return patientRequest.get('/auth/tenant-info', { params: { code } }) as Promise<{ code: number; data: TenantInfo }>;
+  // Use fetch directly (no axios interceptor) — best-effort display call,
+  // silently ignored on failure so no error toast is shown.
+  return fetch(`/api/v1/patient/auth/tenant-info?code=${encodeURIComponent(code)}`)
+    .then((res) => res.json() as Promise<{ code: number; data: TenantInfo }>);
 }

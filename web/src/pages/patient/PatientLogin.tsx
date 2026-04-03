@@ -108,8 +108,19 @@ export default function PatientLogin() {
       </div>
       <div style={{ padding: '32px 20px 20px' }}>
         <Form form={form} onFinish={onFinish} layout="vertical" size="large">
-          <Form.Item name="tenant_code" label="诊所代码">
-            <Input prefix="🏥" placeholder="扫码自动填写（可选）" />
+          <Form.Item
+            name="tenant_code"
+            label="诊所"
+            getValueProps={(value) => ({
+              value: clinicName && value ? `${clinicName}（${value}）` : (value ?? ''),
+            })}
+          >
+            <Input
+              prefix="🏥"
+              placeholder="扫码自动填写（可选）"
+              readOnly={!!clinicName}
+              style={{ background: clinicName ? '#f6ffed' : undefined, cursor: clinicName ? 'default' : undefined }}
+            />
           </Form.Item>
           <Form.Item name="phone" label="手机号" rules={[{ required: true, message: '请输入手机号' }, { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号' }]}>
             <Input prefix="📱" placeholder="请输入手机号" />
