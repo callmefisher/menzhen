@@ -26,9 +26,18 @@ func NewAdminStatisticsHandler(db *gorm.DB) *AdminStatisticsHandler {
 // Query params: start_date (YYYY-MM-DD), end_date (YYYY-MM-DD), page (default 1), size (default 50, max 200)
 func (h *AdminStatisticsHandler) GetGlobal(c *gin.Context) {
 	userID := middleware.GetUserID(c)
-	if !service.IsProtectedAdminAccount(h.db, userID) {
-		c.JSON(http.StatusForbidden, gin.H{"code": 403, "message": "仅超级管理员可访问全局统计"})
-		return
+
+	var groupNames []string
+	if service.IsProtectedAdminAccount(h.db, userID) {
+		// superAdmin: no group filter, sees all tenants
+		groupNames = nil
+	} else {
+		managedGroups := middleware.GetManagedGroups(c)
+		if len(managedGroups) == 0 {
+			c.JSON(http.StatusForbidden, gin.H{"code": 403, "message": "仅超级管理员或授权管理员可访问全局统计"})
+			return
+		}
+		groupNames = managedGroups
 	}
 
 	startStr := c.Query("start_date")
@@ -62,7 +71,7 @@ func (h *AdminStatisticsHandler) GetGlobal(c *gin.Context) {
 		size = s
 	}
 
-	result, err := h.svc.GetGlobalStats(startDate, endDate, page, size)
+	result, err := h.svc.GetGlobalStats(startDate, endDate, page, size, groupNames)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "failed to get global statistics"})
 		return

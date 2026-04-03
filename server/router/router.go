@@ -442,7 +442,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		adminStatsHandler := handler.NewAdminStatisticsHandler(db)
 		adminStats := authenticated.Group("/admin/statistics")
 		{
-			adminStats.GET("/global", middleware.RequirePermission(db, "user:manage"), adminStatsHandler.GetGlobal)
+			adminStats.GET("/global", adminStatsHandler.GetGlobal)
 		}
 
 		// PowerAdmin management (superAdmin only).

@@ -21,7 +21,7 @@ func TestGetGlobalStats_MultiTenant(t *testing.T) {
 	db.Create(&model.DailyStats{TenantID: t2.ID, StatDate: date, Revenue: 500, RecordCount: 5, NewPatientCount: 2, ReturningPatientCount: 3})
 
 	svc := service.NewAdminStatisticsService(db)
-	result, err := svc.GetGlobalStats(date, date, 1, 50)
+	result, err := svc.GetGlobalStats(date, date, 1, 50, nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, float64(1500), result.Summary.TotalRevenue)
@@ -39,7 +39,7 @@ func TestGetGlobalStats_Empty(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	svc := service.NewAdminStatisticsService(db)
 	date := time.Date(2026, 3, 1, 0, 0, 0, 0, time.Local)
-	result, err := svc.GetGlobalStats(date, date, 1, 50)
+	result, err := svc.GetGlobalStats(date, date, 1, 50, nil)
 	require.NoError(t, err)
 	assert.Equal(t, float64(0), result.Summary.TotalRevenue)
 	assert.Empty(t, result.Tenants)
@@ -54,7 +54,7 @@ func TestGetGlobalStats_Pagination(t *testing.T) {
 	}
 	svc := service.NewAdminStatisticsService(db)
 	date := time.Date(2026, 3, 1, 0, 0, 0, 0, time.Local)
-	result, err := svc.GetGlobalStats(date, date, 1, 2)
+	result, err := svc.GetGlobalStats(date, date, 1, 2, nil)
 	require.NoError(t, err)
 	assert.Equal(t, 3, result.Summary.TenantCount)
 	assert.Len(t, result.Tenants, 2)

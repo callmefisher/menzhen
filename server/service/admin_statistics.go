@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -56,7 +57,8 @@ func NewAdminStatisticsService(db *gorm.DB) *AdminStatisticsService {
 // GetGlobalStats returns platform-wide aggregated stats for the given date range.
 // Results are cached in memory for 5 minutes to reduce DB load at large scale.
 // page and size control the returned tenants slice; Summary.Total reflects all tenants.
-func (s *AdminStatisticsService) GetGlobalStats(startDate, endDate time.Time, page, size int) (*GlobalStatsResult, error) {
+// groupNames restricts results to tenants belonging to those groups; nil/empty means no restriction.
+func (s *AdminStatisticsService) GetGlobalStats(startDate, endDate time.Time, page, size int, groupNames []string) (*GlobalStatsResult, error) {
 	if page <= 0 {
 		page = 1
 	}
@@ -64,8 +66,9 @@ func (s *AdminStatisticsService) GetGlobalStats(startDate, endDate time.Time, pa
 		size = 50
 	}
 
-	cacheKey := fmt.Sprintf("%s:%s:%d:%d",
-		startDate.Format("2006-01-02"), endDate.Format("2006-01-02"), page, size)
+	groupKey := strings.Join(groupNames, ",")
+	cacheKey := fmt.Sprintf("%s:%s:%d:%d:%s",
+		startDate.Format("2006-01-02"), endDate.Format("2006-01-02"), page, size, groupKey)
 
 	if v, ok := s.cache.Load(cacheKey); ok {
 		entry := v.(*globalCacheEntry)
@@ -83,41 +86,54 @@ func (s *AdminStatisticsService) GetGlobalStats(startDate, endDate time.Time, pa
 		Patients   int
 	}
 
+	// COUNT distinct tenants that have stats in the date range, optionally filtered by group.
+	countQ := s.db.Model(&model.DailyStats{}).
+		Where("stat_date >= ? AND stat_date <= ?", startDate, endDate)
+	if len(groupNames) > 0 {
+		countQ = countQ.Joins("JOIN tenants ON tenants.id = daily_stats.tenant_id").
+			Where("tenants.group_name IN ?", groupNames)
+	}
 	var totalCount int64
-	if err := s.db.Model(&model.DailyStats{}).
-		Where("stat_date >= ? AND stat_date <= ?", startDate, endDate).
-		Distinct("tenant_id").
-		Count(&totalCount).Error; err != nil {
+	if err := countQ.Distinct("daily_stats.tenant_id").Count(&totalCount).Error; err != nil {
 		return nil, fmt.Errorf("count tenants: %w", err)
 	}
 
+	// Per-tenant aggregated rows (always JOINs tenants for the name column).
 	var rows []row
 	offset := (page - 1) * size
-	if err := s.db.Model(&model.DailyStats{}).
+	q := s.db.Model(&model.DailyStats{}).
 		Select("daily_stats.tenant_id, tenants.name AS tenant_name, "+
 			"SUM(daily_stats.revenue) AS revenue, "+
 			"SUM(daily_stats.record_count) AS records, "+
 			"SUM(daily_stats.new_patient_count + daily_stats.returning_patient_count) AS patients").
 		Joins("JOIN tenants ON tenants.id = daily_stats.tenant_id").
-		Where("daily_stats.stat_date >= ? AND daily_stats.stat_date <= ?", startDate, endDate).
-		Group("daily_stats.tenant_id, tenants.name").
+		Where("daily_stats.stat_date >= ? AND daily_stats.stat_date <= ?", startDate, endDate)
+	if len(groupNames) > 0 {
+		q = q.Where("tenants.group_name IN ?", groupNames)
+	}
+	if err := q.Group("daily_stats.tenant_id, tenants.name").
 		Order("revenue DESC").
 		Limit(size).Offset(offset).
 		Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("query tenants: %w", err)
 	}
 
+	// Platform-wide totals, also filtered by group when applicable.
 	type totalRow struct {
 		TotalRevenue  float64
 		TotalRecords  int
 		TotalPatients int
 	}
 	var totals totalRow
-	if err := s.db.Model(&model.DailyStats{}).
+	totalsQ := s.db.Model(&model.DailyStats{}).
 		Select("SUM(revenue) AS total_revenue, SUM(record_count) AS total_records, "+
 			"SUM(new_patient_count + returning_patient_count) AS total_patients").
-		Where("stat_date >= ? AND stat_date <= ?", startDate, endDate).
-		Scan(&totals).Error; err != nil {
+		Where("stat_date >= ? AND stat_date <= ?", startDate, endDate)
+	if len(groupNames) > 0 {
+		totalsQ = totalsQ.Joins("JOIN tenants ON tenants.id = daily_stats.tenant_id").
+			Where("tenants.group_name IN ?", groupNames)
+	}
+	if err := totalsQ.Scan(&totals).Error; err != nil {
 		return nil, fmt.Errorf("query totals: %w", err)
 	}
 
