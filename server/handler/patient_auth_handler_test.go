@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -18,7 +20,9 @@ import (
 )
 
 // setupPatientAuthRouter builds a minimal Gin engine covering:
+//   - POST /api/v1/patient/auth/login       (public)
 //   - GET  /api/v1/patient/auth/tenant-list  (public)
+//   - GET  /api/v1/patient/me               (patient-authed)
 //   - GET  /api/v1/tenant/patient-portal-config (authed, tenant:user:manage)
 func setupPatientAuthRouter(db *gorm.DB) *gin.Engine {
 	gin.SetMode(gin.TestMode)
@@ -32,7 +36,13 @@ func setupPatientAuthRouter(db *gorm.DB) *gin.Engine {
 
 	// Public routes
 	patientPublic := v1.Group("/patient")
+	patientPublic.POST("/auth/login", authHandler.Login)
 	patientPublic.GET("/auth/tenant-list", authHandler.ListTenantsByPhone)
+
+	// Patient-authenticated routes
+	patientAuthed := v1.Group("/patient")
+	patientAuthed.Use(middleware.PatientAuthMiddleware(testutil.TestJWTSecret))
+	patientAuthed.GET("/me", authHandler.Me)
 
 	// Authenticated admin routes
 	authed := v1.Group("")
@@ -227,6 +237,25 @@ func TestGetPortalConfig_ReturnsTenantCode(t *testing.T) {
 	data, ok := body["data"].(map[string]interface{})
 	require.True(t, ok, "data should be an object")
 	assert.Equal(t, tenant.Code, data["tenant_code"])
+	assert.Equal(t, tenant.Name, data["tenant_name"])
+}
+
+func TestGetPortalConfig_DefaultsWhenNoPortalConfigRow(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	router := setupPatientAuthRouter(db)
+	_, token := seedAdminWithPermission(t, db)
+
+	// No patient_portal_configs row exists — expect all flags to default to true.
+	w := doAuthedGet(router, "/api/v1/tenant/patient-portal-config", token)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	body := parseJSON(w)
+	data := body["data"].(map[string]interface{})
+	assert.Equal(t, true, data["login_enabled"])
+	assert.Equal(t, true, data["register_enabled"])
+	assert.Equal(t, true, data["appointment_enabled"])
+	assert.Equal(t, true, data["queue_enabled"])
+	assert.Equal(t, true, data["records_enabled"])
 }
 
 func TestGetPortalConfig_Unauthorized(t *testing.T) {
@@ -236,4 +265,74 @@ func TestGetPortalConfig_Unauthorized(t *testing.T) {
 	w := doPublicGet(router, "/api/v1/tenant/patient-portal-config")
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+// doPost sends a POST request with JSON body without auth.
+func doPost(router *gin.Engine, path string, body interface{}) *httptest.ResponseRecorder {
+	b, _ := json.Marshal(body)
+	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	return w
+}
+
+// ─── Login tests ───────────────────────────────────────────────────────────
+
+func TestPatientLogin_IncludesTenantName(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	router := setupPatientAuthRouter(db)
+
+	tenant := testutil.SeedTestTenant(t, db, "登录诊所", "login-clinic")
+	seedPatientUser(t, db, tenant.ID, "13512341234", "赵六")
+
+	payload := map[string]string{
+		"tenant_code": "login-clinic",
+		"phone":       "13512341234",
+		"name":        "赵六",
+	}
+	w := doPost(router, "/api/v1/patient/auth/login", payload)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	body := parseJSON(w)
+	assert.Equal(t, float64(0), body["code"])
+
+	data, ok := body["data"].(map[string]interface{})
+	require.True(t, ok, "data should be an object")
+
+	pu, ok := data["patient_user"].(map[string]interface{})
+	require.True(t, ok, "data.patient_user should be an object")
+
+	assert.Equal(t, "登录诊所", pu["tenant_name"])
+	assert.Equal(t, float64(tenant.ID), pu["tenant_id"])
+	assert.NotEmpty(t, data["token"])
+}
+
+// ─── Me tests ──────────────────────────────────────────────────────────────
+
+func TestPatientMe_IncludesTenantName(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	router := setupPatientAuthRouter(db)
+
+	tenant := testutil.SeedTestTenant(t, db, "我的诊所", "me-clinic")
+	pu := seedPatientUser(t, db, tenant.ID, "13611116666", "孙七")
+
+	token, err := middleware.GeneratePatientToken(pu.ID, pu.PatientID, pu.TenantID, testutil.TestJWTSecret)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/patient/me", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	body := parseJSON(w)
+	assert.Equal(t, float64(0), body["code"])
+
+	data, ok := body["data"].(map[string]interface{})
+	require.True(t, ok, "data should be an object")
+
+	assert.Equal(t, "我的诊所", data["tenant_name"])
+	assert.Equal(t, float64(tenant.ID), data["tenant_id"])
+	assert.Equal(t, "孙七", data["name"])
 }

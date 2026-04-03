@@ -32,11 +32,12 @@ type PatientLoginResponse struct {
 
 // PatientUserDTO is a safe patient user representation (no password).
 type PatientUserDTO struct {
-	ID        uint64  `json:"id"`
-	Phone     string  `json:"phone"`
-	Name      string  `json:"name"`
-	TenantID  uint64  `json:"tenant_id"`
-	PatientID *uint64 `json:"patient_id"`
+	ID         uint64  `json:"id"`
+	Phone      string  `json:"phone"`
+	Name       string  `json:"name"`
+	TenantID   uint64  `json:"tenant_id"`
+	TenantName string  `json:"tenant_name"`
+	PatientID  *uint64 `json:"patient_id"`
 }
 
 // PatientAuthHandler handles patient portal authentication.
@@ -100,11 +101,12 @@ func (h *PatientAuthHandler) Login(c *gin.Context) {
 		"data": PatientLoginResponse{
 			Token: token,
 			PatientUser: PatientUserDTO{
-				ID:        pu.ID,
-				Phone:     pu.Phone,
-				Name:      pu.Name,
-				TenantID:  pu.TenantID,
-				PatientID: pu.PatientID,
+				ID:         pu.ID,
+				Phone:      pu.Phone,
+				Name:       pu.Name,
+				TenantID:   pu.TenantID,
+				TenantName: tenant.Name,
+				PatientID:  pu.PatientID,
 			},
 		},
 	})
@@ -169,15 +171,21 @@ func (h *PatientAuthHandler) Me(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"code": 404, "message": "patient user not found"})
 		return
 	}
+	var tenant model.Tenant
+	if err := h.db.First(&tenant, pu.TenantID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "服务错误"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"message": "success",
 		"data": PatientUserDTO{
-			ID:        pu.ID,
-			Phone:     pu.Phone,
-			Name:      pu.Name,
-			TenantID:  pu.TenantID,
-			PatientID: pu.PatientID,
+			ID:         pu.ID,
+			Phone:      pu.Phone,
+			Name:       pu.Name,
+			TenantID:   pu.TenantID,
+			TenantName: tenant.Name,
+			PatientID:  pu.PatientID,
 		},
 	})
 }
