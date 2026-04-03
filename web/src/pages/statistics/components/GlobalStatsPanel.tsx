@@ -126,10 +126,8 @@ export default function GlobalStatsPanel({ startDate, endDate, onViewDetail }: P
     setLoading(true);
     try {
       const res = await getGlobalStats(startDate, endDate, p, pageSize);
-      // Support both axios-wrapped ({ data: { code, data } }) and direct ({ code, data })
-      const axiosBody = res as unknown as { data: { code: number; data: GlobalStatsData } };
-      const directBody = res as unknown as { code: number; data: GlobalStatsData };
-      const body = axiosBody.data ?? directBody;
+      // Axios interceptor returns response.data, so res = { code, data: GlobalStatsData }
+      const body = res as unknown as { code: number; data: GlobalStatsData };
       if (body.code === 0) setData(body.data);
     } catch {
       message.error('获取全局统计数据失败，请稍后重试');

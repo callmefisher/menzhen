@@ -27,7 +27,7 @@ const wrapper = ({ children }: { children: React.ReactNode }) => (
 describe('GlobalStatsPanel', () => {
   beforeEach(() => {
     vi.spyOn(statsApi, 'getGlobalStats').mockResolvedValue({
-      data: { code: 0, data: mockData },
+      code: 0, data: mockData,
     } as never);
   });
 
