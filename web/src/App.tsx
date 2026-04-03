@@ -52,6 +52,7 @@ const PatientQueue = lazy(() => import('./pages/patient/PatientQueue'));
 const PatientRecords = lazy(() => import('./pages/patient/PatientRecords'));
 const PatientRecordDetail = lazy(() => import('./pages/patient/PatientRecordDetail'));
 const PatientBilling = lazy(() => import('./pages/patient/PatientBilling'));
+const PatientMe = lazy(() => import('./pages/patient/PatientMe'));
 
 const MeridianView = lazy(() => import('./pages/meridians/MeridianView'));
 
@@ -146,8 +147,9 @@ function AppRoutes() {
                   <Route path="records" element={<PatientRecords />} />
                   <Route path="records/:id" element={<PatientRecordDetail />} />
                   <Route path="billing" element={<PatientBilling />} />
+                  <Route path="me" element={<PatientMe />} />
                   <Route index element={<Navigate to="home" replace />} />
-                  <Route path="*" element={<Navigate to="login" replace />} />
+                  <Route path="*" element={<Navigate to="home" replace />} />
                 </Route>
               </Routes>
             </PatientAuthProvider>

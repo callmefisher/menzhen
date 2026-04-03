@@ -1,5 +1,6 @@
 import { Outlet, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { CalendarOutlined, NumberOutlined, UserOutlined, HomeOutlined } from '@ant-design/icons';
+import { Spin } from 'antd';
 import { usePatientAuth } from '../store/patientAuth';
 
 const TABS = [
@@ -14,7 +15,11 @@ export default function PatientLayout() {
   const location = useLocation();
   const { token, loading, tenantName } = usePatientAuth();
 
-  if (loading) return null;
+  if (loading) return (
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+      <Spin size="large" />
+    </div>
+  );
   if (!token) return <Navigate to="/patient/login" replace />;
 
   const displayName = tenantName ?? '患者服务中心';

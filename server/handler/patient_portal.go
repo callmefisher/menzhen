@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/callmefisher/menzhen/server/middleware"
@@ -15,11 +17,20 @@ import (
 type PatientPortalHandler struct {
 	db             *gorm.DB
 	patientAuthSvc *service.PatientAuthService
+	appointmentSvc *service.AppointmentService
+	queueSvc       *service.QueueService
+	schedSvc       *service.DoctorScheduleService
 }
 
 // NewPatientPortalHandler creates a new PatientPortalHandler.
 func NewPatientPortalHandler(db *gorm.DB, svc *service.PatientAuthService) *PatientPortalHandler {
-	return &PatientPortalHandler{db: db, patientAuthSvc: svc}
+	return &PatientPortalHandler{
+		db:             db,
+		patientAuthSvc: svc,
+		appointmentSvc: service.NewAppointmentService(db),
+		queueSvc:       service.NewQueueService(db),
+		schedSvc:       service.NewDoctorScheduleService(db),
+	}
 }
 
 // portalEnabled aborts with 403 if a specific feature switch is off.
@@ -46,14 +57,23 @@ func (h *PatientPortalHandler) doctorDisplayName(doctor model.QueueDoctor) strin
 	return user.RealName
 }
 
+// patientDoctorDTO is the patient-facing doctor representation.
+// Uses doctor_name to match the frontend patientPortal.ts Doctor interface.
+type patientDoctorDTO struct {
+	ID         uint   `json:"id"`
+	DoctorName string `json:"doctor_name"`
+	Room       string `json:"room"`
+	SortOrder  int    `json:"sort_order"`
+}
+
 // ListDoctors handles GET /api/v1/patient/doctors.
 func (h *PatientPortalHandler) ListDoctors(c *gin.Context) {
 	tenantID := middleware.GetPatientTenantID(c)
 	var doctors []model.QueueDoctor
 	h.db.Where("tenant_id = ? AND enabled = true", tenantID).Order("sort_order").Find(&doctors)
 
+	result := make([]patientDoctorDTO, 0, len(doctors))
 	if len(doctors) > 0 {
-		// Collect all user IDs in one pass, then fetch names in a single query.
 		userIDs := make([]uint, 0, len(doctors))
 		for _, d := range doctors {
 			userIDs = append(userIDs, d.UserID)
@@ -64,11 +84,16 @@ func (h *PatientPortalHandler) ListDoctors(c *gin.Context) {
 		for _, u := range users {
 			nameByID[uint(u.ID)] = u.RealName
 		}
-		for i := range doctors {
-			doctors[i].UserName = nameByID[doctors[i].UserID]
+		for _, d := range doctors {
+			result = append(result, patientDoctorDTO{
+				ID:         uint(d.ID),
+				DoctorName: nameByID[d.UserID],
+				Room:       d.Room,
+				SortOrder:  d.SortOrder,
+			})
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success", "data": doctors})
+	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success", "data": result})
 }
 
 // ListAppointments handles GET /api/v1/patient/appointments.
@@ -144,6 +169,12 @@ func (h *PatientPortalHandler) CreateAppointment(c *gin.Context) {
 		return
 	}
 
+	// Validate appointment date weekday against doctor's schedule.
+	if err := validateAppointDateWeekday(h.schedSvc, uint(tenantID), req.DoctorID, req.AppointDate); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+		return
+	}
+
 	var patientIDPtr *uint
 	if patientID != nil {
 		v := uint(*patientID)
@@ -166,6 +197,13 @@ func (h *PatientPortalHandler) CreateAppointment(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "预约失败，请稍后重试"})
 		return
 	}
+
+	// Immediately enqueue if appointment is for today (server may be off at midnight,
+	// so same-day patient bookings must be enqueued on creation).
+	if err := h.appointmentSvc.EnqueueAppointment(uint(tenantID), appt.ID, h.queueSvc); err != nil {
+		log.Printf("patient portal: enqueue appointment %d failed: %v", appt.ID, err)
+	}
+
 	c.JSON(http.StatusCreated, gin.H{"code": 0, "message": "预约成功", "data": appt})
 }
 
@@ -461,4 +499,33 @@ func (h *PatientPortalHandler) ListBillings(c *gin.Context) {
 	h.db.Where("tenant_id = ? AND record_id IN ?", tenantID, recordIDs).
 		Order("created_at DESC").Limit(100).Find(&billings)
 	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success", "data": billings})
+}
+
+// GetDoctorSchedule handles GET /api/v1/patient/doctors/:id/schedule
+// Returns the doctor's schedule config (weekdays bitmask + booking range).
+// Used by the patient portal to disable invalid dates in the DatePicker.
+func (h *PatientPortalHandler) GetDoctorSchedule(c *gin.Context) {
+	tenantID := middleware.GetPatientTenantID(c)
+	doctorIDStr := c.Param("id")
+	doctorID, err := strconv.ParseUint(doctorIDStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "invalid doctor_id"})
+		return
+	}
+	// Validate that the doctor belongs to this tenant.
+	var doctor model.QueueDoctor
+	if err := h.db.Where("id = ? AND tenant_id = ?", doctorID, tenantID).First(&doctor).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"code": 404, "message": "医生不存在"})
+		return
+	}
+	cfg, err := h.schedSvc.Get(uint(tenantID), uint(doctorID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "获取出诊配置失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success", "data": gin.H{
+		"weekdays":    cfg.Weekdays,
+		"range_start": cfg.RangeStart,
+		"range_end":   cfg.RangeEnd,
+	}})
 }
