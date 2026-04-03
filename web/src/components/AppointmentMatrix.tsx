@@ -118,8 +118,8 @@ export default function AppointmentMatrix({ selectedDate, onDateChange }: Props)
         </div>
       </div>
 
-      {/* Mobile scroll hint */}
-      {isMobile && (
+      {/* Mobile scroll hint — show on narrow screens (< 768px) */}
+      {typeof window !== 'undefined' && window.innerWidth < 768 && (
         <div style={{ padding: '2px 12px 3px', fontSize: 10, color: '#bbb' }}>
           ← 左右滑动查看全周
         </div>
