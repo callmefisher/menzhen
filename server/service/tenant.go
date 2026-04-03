@@ -41,15 +41,17 @@ func checkTenantHasAdmin(db *gorm.DB, tenantID uint64) error {
 
 // CreateTenantRequest is the input for creating a new tenant.
 type CreateTenantRequest struct {
-	Name string `json:"name" binding:"required"`
-	Code string `json:"code" binding:"required"`
+	Name      string `json:"name" binding:"required"`
+	Code      string `json:"code" binding:"required"`
+	GroupName string `json:"group_name" binding:"max=100"`
 }
 
 // UpdateTenantRequest is the input for updating a tenant.
 type UpdateTenantRequest struct {
-	Name   *string `json:"name"`
-	Code   *string `json:"code"`
-	Status *int8   `json:"status"`
+	Name      *string `json:"name"`
+	Code      *string `json:"code"`
+	Status    *int8   `json:"status"`
+	GroupName *string `json:"group_name" binding:"omitempty,max=100"`
 }
 
 // TenantService handles tenant-related business logic.
@@ -96,10 +98,15 @@ func (s *TenantService) CreateTenant(req *CreateTenantRequest) (*model.Tenant, e
 		return nil, ErrTenantNameExist
 	}
 
+	groupName := req.GroupName
+	if groupName == "" {
+		groupName = "default"
+	}
 	tenant := model.Tenant{
-		Name:   req.Name,
-		Code:   req.Code,
-		Status: 1,
+		Name:      req.Name,
+		Code:      req.Code,
+		Status:    1,
+		GroupName: groupName,
 	}
 
 	if err := s.DB.Create(&tenant).Error; err != nil {
@@ -156,6 +163,9 @@ func (s *TenantService) UpdateTenant(id uint64, req *UpdateTenantRequest) (*mode
 			}
 		}
 		updates["status"] = *req.Status
+	}
+	if req.GroupName != nil && *req.GroupName != "" {
+		updates["group_name"] = *req.GroupName
 	}
 
 	if len(updates) > 0 {
