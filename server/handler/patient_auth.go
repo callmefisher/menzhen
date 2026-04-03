@@ -118,14 +118,18 @@ type TenantListItem struct {
 func (h *PatientAuthHandler) ListTenantsByPhone(c *gin.Context) {
 	phone := strings.TrimSpace(c.Query("phone"))
 	if phone == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "phone is required"})
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "参数校验失败"})
+		return
+	}
+	if len(phone) > 20 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "参数校验失败"})
 		return
 	}
 	var items []TenantListItem
 	err := h.db.Table("patient_users").
 		Select("patient_users.tenant_id, tenants.name AS tenant_name, tenants.code AS tenant_code").
 		Joins("JOIN tenants ON tenants.id = patient_users.tenant_id").
-		Where("patient_users.phone = ? AND tenants.status = 1 AND tenants.deleted_at IS NULL AND patient_users.deleted_at IS NULL", phone).
+		Where("patient_users.phone = ? AND tenants.status = 1", phone).
 		Scan(&items).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "查询失败"})

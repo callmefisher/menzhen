@@ -32,7 +32,10 @@ func (h *PatientSettingsHandler) GetPortalConfig(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
 	cfg := h.patientAuthSvc.GetPortalConfig(tenantID)
 	var t model.Tenant
-	h.db.Select("code").Where("id = ?", tenantID).First(&t)
+	if err := h.db.Select("code").Where("id = ?", tenantID).First(&t).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "服务错误"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success", "data": GetPortalConfigResponse{PatientPortalConfig: cfg, TenantCode: t.Code}})
 }
 
