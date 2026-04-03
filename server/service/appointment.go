@@ -382,8 +382,9 @@ func (s *AppointmentService) AutoEnqueueToday(queueSvc *QueueService) (failedIDs
 	return failedIDs, successCount
 }
 
-// MatrixRow is a (doctor_id, doctor_name, appoint_date) count row from the DB.
-type MatrixRow struct {
+// matrixRow is a (doctor_id, doctor_name, appoint_date) count row from the DB.
+// Unexported: used only within WeeklyMatrix.
+type matrixRow struct {
 	DoctorID    uint
 	DoctorName  string
 	AppointDate string
@@ -422,7 +423,7 @@ func (s *AppointmentService) WeeklyMatrix(tenantID uint, startDate string) (Week
 		days[i] = start.AddDate(0, 0, i).Format("2006-01-02")
 	}
 
-	var rows []MatrixRow
+	var rows []matrixRow
 	err = s.DB.Model(&model.Appointment{}).
 		Select("doctor_id, doctor_name, appoint_date, COUNT(*) as count").
 		Where("tenant_id = ? AND appoint_date >= ? AND appoint_date <= ? AND status IN (?,?)",
@@ -431,6 +432,9 @@ func (s *AppointmentService) WeeklyMatrix(tenantID uint, startDate string) (Week
 		Group("doctor_id, doctor_name, appoint_date").
 		Order("doctor_name ASC, appoint_date ASC").
 		Scan(&rows).Error
+	// doctor_name is included in GROUP BY to satisfy ONLY_FULL_GROUP_BY. If a doctor's
+	// name is updated, old appointment rows may produce a separate matrix row until
+	// back-filled. This is acceptable for the weekly overview use case.
 	if err != nil {
 		return WeeklyMatrixResult{}, fmt.Errorf("WeeklyMatrix: query: %w", err)
 	}

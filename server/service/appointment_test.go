@@ -465,7 +465,8 @@ func TestMarkNoShow_PreservesTodayPendingAppointments(t *testing.T) {
 func TestWeeklyMatrix(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	svc := service.NewAppointmentService(db)
-	tenantID := uint(1)
+	tenant := testutil.SeedTestTenant(t, db, "矩阵测试诊所", "matrix-test-"+t.Name())
+	tenantID := uint(tenant.ID)
 
 	_ = db.Create(&model.Appointment{
 		TenantID: tenantID, DoctorID: 10, DoctorName: "王医生",
@@ -508,14 +509,16 @@ func TestWeeklyMatrix(t *testing.T) {
 func TestWeeklyMatrix_OtherTenantIsolation(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	svc := service.NewAppointmentService(db)
+	tenantA := testutil.SeedTestTenant(t, db, "隔离诊所A", "matrix-iso-a-"+t.Name())
+	tenantB := testutil.SeedTestTenant(t, db, "隔离诊所B", "matrix-iso-b-"+t.Name())
 
 	_ = db.Create(&model.Appointment{
-		TenantID: 2, DoctorID: 99, DoctorName: "他院医生",
+		TenantID: uint(tenantB.ID), DoctorID: 99, DoctorName: "他院医生",
 		AppointDate: "2026-04-07", SlotStart: "09:00", SlotEnd: "09:30",
 		PatientName: "隔离患者", Status: model.AppointmentStatusPending,
 	})
 
-	result, err := svc.WeeklyMatrix(1, "2026-04-07")
+	result, err := svc.WeeklyMatrix(uint(tenantA.ID), "2026-04-07")
 	assert.NoError(t, err)
 	assert.Len(t, result.Doctors, 0)
 	assert.Equal(t, 0, result.GrandTotal)
