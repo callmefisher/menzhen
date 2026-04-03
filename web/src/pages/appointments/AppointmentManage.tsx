@@ -99,9 +99,7 @@ export default function AppointmentManage() {
   const handleMatrixDateChange = useCallback((date: Dayjs, doctorId?: number) => {
     setSelectedDate(date);
     setSelectedDoctorId(doctorId);
-    if (doctorId === undefined) {
-      setDoctorFilter('');
-    }
+    setDoctorFilter('');
   }, []);
 
   const filteredAppointments = useMemo(() => {
