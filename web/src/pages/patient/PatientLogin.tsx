@@ -95,13 +95,11 @@ export default function PatientLogin() {
         padding: '32px 20px 48px', color: '#fff', position: 'relative',
       }}>
         <div style={{ fontSize: 36 }}>🌿</div>
-        {clinicName ? (
-          <>
-            <div style={{ fontSize: 20, fontWeight: 600, marginTop: 8 }}>{clinicName}</div>
-            <div style={{ fontSize: 13, opacity: 0.85, marginTop: 2 }}>患者端</div>
-          </>
-        ) : (
-          <div style={{ fontSize: 13, opacity: 0.85, marginTop: 4 }}>患者服务中心</div>
+        <div style={{ fontSize: 20, fontWeight: 600, marginTop: 8 }}>
+          {clinicName ?? '患者服务中心'}
+        </div>
+        {clinicName && (
+          <div style={{ fontSize: 13, opacity: 0.85, marginTop: 2 }}>患者端</div>
         )}
         <div style={{
           position: 'absolute', bottom: -20, left: 0, right: 0, height: 40,
