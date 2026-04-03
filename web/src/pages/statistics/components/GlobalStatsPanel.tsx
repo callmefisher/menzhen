@@ -125,6 +125,27 @@ export default function GlobalStatsPanel({ startDate, endDate, onViewDetail }: P
     [sortedTenants],
   );
 
+  // ── Desktop: table columns (must be at top level, not in conditional branch) ──────
+  const columns = useMemo<ColumnsType<GlobalTenantItem & { rank: number }>>(() => [
+    { title: '排名', dataIndex: 'rank', width: 56, render: (r) => <RankBadge rank={r} /> },
+    { title: '诊所名称', dataIndex: 'tenant_name', render: (v) => <span style={{ fontWeight: 600 }}>{v}</span> },
+    { title: <span style={{ color: sortKey === 'revenue' ? '#52c41a' : undefined }}>收入 {sortKey === 'revenue' ? '↓' : ''}</span>, dataIndex: 'revenue', align: 'right', render: (v) => <span style={{ color: '#1890ff', fontWeight: 600 }}>¥ {Math.round(v).toLocaleString()}</span> },
+    { title: <span style={{ color: sortKey === 'records' ? '#52c41a' : undefined }}>接诊 {sortKey === 'records' ? '↓' : ''}</span>, dataIndex: 'records', align: 'right' },
+    { title: <span style={{ color: sortKey === 'patients' ? '#52c41a' : undefined }}>患者 {sortKey === 'patients' ? '↓' : ''}</span>, dataIndex: 'patients', align: 'right' },
+    { title: <span style={{ color: sortKey === 'avg_per_record' ? '#52c41a' : undefined }}>客单价 {sortKey === 'avg_per_record' ? '↓' : ''}</span>, dataIndex: 'avg_per_record', align: 'right', render: (v) => `¥ ${v.toFixed(1)}` },
+    {
+      title: '收入占比', dataIndex: 'revenue_percent', width: 140,
+      render: (v) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ flex: 1, height: 5, background: '#f0f0f0', borderRadius: 3 }}>
+            <div style={{ width: `${v}%`, height: 5, background: 'linear-gradient(90deg,#52c41a,#36cfc9)', borderRadius: 3 }} />
+          </div>
+          <span style={{ fontSize: 11, color: '#999', minWidth: 32 }}>{v.toFixed(1)}%</span>
+        </div>
+      ),
+    },
+  ], [sortKey]);
+
   if (loading && !data) {
     return (
       <div style={{ padding: isMobile ? 0 : 4 }}>
@@ -227,26 +248,6 @@ export default function GlobalStatsPanel({ startDate, endDate, onViewDetail }: P
   }
 
   // ── Desktop: table ─────────────────────────────────────────────────────────
-  const columns: ColumnsType<GlobalTenantItem & { rank: number }> = [
-    { title: '排名', dataIndex: 'rank', width: 56, render: (r) => <RankBadge rank={r} /> },
-    { title: '诊所名称', dataIndex: 'tenant_name', render: (v) => <span style={{ fontWeight: 600 }}>{v}</span> },
-    { title: <span style={{ color: sortKey === 'revenue' ? '#52c41a' : undefined }}>收入 {sortKey === 'revenue' ? '↓' : ''}</span>, dataIndex: 'revenue', align: 'right', render: (v) => <span style={{ color: '#1890ff', fontWeight: 600 }}>¥ {Math.round(v).toLocaleString()}</span> },
-    { title: <span style={{ color: sortKey === 'records' ? '#52c41a' : undefined }}>接诊 {sortKey === 'records' ? '↓' : ''}</span>, dataIndex: 'records', align: 'right' },
-    { title: <span style={{ color: sortKey === 'patients' ? '#52c41a' : undefined }}>患者 {sortKey === 'patients' ? '↓' : ''}</span>, dataIndex: 'patients', align: 'right' },
-    { title: <span style={{ color: sortKey === 'avg_per_record' ? '#52c41a' : undefined }}>客单价 {sortKey === 'avg_per_record' ? '↓' : ''}</span>, dataIndex: 'avg_per_record', align: 'right', render: (v) => `¥ ${v.toFixed(1)}` },
-    {
-      title: '收入占比', dataIndex: 'revenue_percent', width: 140,
-      render: (v) => (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <div style={{ flex: 1, height: 5, background: '#f0f0f0', borderRadius: 3 }}>
-            <div style={{ width: `${v}%`, height: 5, background: 'linear-gradient(90deg,#52c41a,#36cfc9)', borderRadius: 3 }} />
-          </div>
-          <span style={{ fontSize: 11, color: '#999', minWidth: 32 }}>{v.toFixed(1)}%</span>
-        </div>
-      ),
-    },
-  ];
-
   const tableData = sortedTenants.map((t, i) => ({ ...t, rank: i + 1, key: t.tenant_id }));
 
   return (
