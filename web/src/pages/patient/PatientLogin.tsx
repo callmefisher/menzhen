@@ -115,9 +115,10 @@ export default function PatientLogin() {
 
       <Modal
         open={tenantModalOpen}
-        onCancel={() => setTenantModalOpen(false)}
+        onCancel={() => { setTenantModalOpen(false); setPendingValues(null); }}
         footer={null}
         title="请选择诊所"
+        destroyOnClose
       >
         {tenantList.map((tenant) => (
           <div
@@ -131,7 +132,6 @@ export default function PatientLogin() {
             <span style={{ fontSize: 24 }}>🏥</span>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 600 }}>{tenant.tenant_name}</div>
-              <div style={{ fontSize: 12, color: '#888' }}>{tenant.tenant_code}</div>
             </div>
             <span style={{ color: '#52C41A' }}>→</span>
           </div>

@@ -101,6 +101,31 @@ func TestListTenantsByPhone_PhoneTooLong(t *testing.T) {
 	assert.Equal(t, float64(400), body["code"])
 }
 
+func TestListTenantsByPhone_WhitespacePhone(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	router := setupPatientAuthRouter(db)
+
+	// URL-encoded spaces (%20%20%20) become "   " after query parsing;
+	// TrimSpace reduces them to "", triggering the empty-phone 400 path.
+	// A phone of "+++" (non-digits) passes length but fails regex — also 400.
+	cases := []struct {
+		name  string
+		query string
+	}{
+		{"url-encoded spaces", "phone=%20%20%20"},
+		{"plus signs (non-digit)", "phone=%2B%2B%2B"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := doPublicGet(router, "/api/v1/patient/auth/tenant-list?"+tc.query)
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			body := parseJSON(w)
+			assert.Equal(t, float64(400), body["code"])
+			assert.Equal(t, "参数校验失败", body["message"])
+		})
+	}
+}
+
 func TestListTenantsByPhone_PhoneNotFound(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	router := setupPatientAuthRouter(db)

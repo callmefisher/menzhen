@@ -42,7 +42,7 @@ export default function PatientPortalSettings() {
   const sections = [...new Set(SWITCHES.map(s => s.section))];
 
   const qrUrl = config.tenant_code
-    ? `${window.location.origin}/patient/login?code=${config.tenant_code}`
+    ? `${window.location.origin}/patient/login?code=${encodeURIComponent(config.tenant_code)}`
     : '';
 
   const handleDownloadQRCode = () => {

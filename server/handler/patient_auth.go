@@ -2,7 +2,9 @@ package handler
 
 import (
 	"errors"
+	"log"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/callmefisher/menzhen/server/middleware"
@@ -11,6 +13,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+// phoneRegex validates Chinese mainland mobile phone numbers (11 digits, starting with 1[3-9]).
+var phoneRegex = regexp.MustCompile(`^1[3-9]\d{9}$`)
 
 // PatientLoginRequest is the JSON body for POST /api/v1/patient/auth/login.
 type PatientLoginRequest struct {
@@ -125,6 +130,16 @@ func (h *PatientAuthHandler) ListTenantsByPhone(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "参数校验失败"})
 		return
 	}
+	if !phoneRegex.MatchString(phone) {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "参数校验失败"})
+		return
+	}
+	// Audit log — log phone suffix for security monitoring (not full phone per privacy rules).
+	suffix := phone[len(phone)-4:]
+	if len(phone) < 4 {
+		suffix = phone
+	}
+	log.Printf("[audit] tenant-list lookup for phone suffix ...%s from %s", suffix, c.ClientIP())
 	var items []TenantListItem
 	err := h.db.Table("patient_users").
 		Select("patient_users.tenant_id, tenants.name AS tenant_name, tenants.code AS tenant_code").
