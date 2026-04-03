@@ -31,6 +31,7 @@ const BackupRestore = lazy(() => import('./pages/settings/BackupRestore'));
 const QueueSettings = lazy(() => import('./pages/settings/QueueSettings'));
 const AppointmentSlots = lazy(() => import('./pages/settings/AppointmentSlots'));
 const PatientPortalSettings = lazy(() => import('./pages/settings/PatientPortalSettings'));
+const PowerAdminList = lazy(() => import('./pages/settings/PowerAdminList'));
 const HerbSearch = lazy(() => import('./pages/herbs/HerbSearch'));
 const FormulaSearch = lazy(() => import('./pages/formulas/FormulaSearch'));
 const PulseList = lazy(() => import('./pages/pulses/PulseList'));
@@ -133,6 +134,7 @@ function AppRoutes() {
           <Route path="settings/queue" element={<QueueSettings />} />
           <Route path="settings/appointment-slots" element={<AppointmentSlots />} />
           <Route path="settings/patient-portal" element={<PatientPortalSettings />} />
+          <Route path="settings/power-admins" element={<PowerAdminList />} />
         </Route>
         <Route
           path="/patient/*"

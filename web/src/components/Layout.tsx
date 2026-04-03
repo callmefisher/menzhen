@@ -59,7 +59,7 @@ export default function AppLayout() {
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [passwordForm] = Form.useForm();
-  const { user, logout, hasPermission, queueEnabled, fetchQueueEnabled, appointmentEnabled, fetchAppointmentEnabled } = useAuth();
+  const { user, logout, hasPermission, isSuperAdmin, queueEnabled, fetchQueueEnabled, appointmentEnabled, fetchAppointmentEnabled } = useAuth();
   const { themeKey, themeConfig, setTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
@@ -374,8 +374,9 @@ export default function AppLayout() {
     const canManageRoles = hasPermission('role:manage') || hasPermission('tenant:role:manage');
     const canManageTenants = hasPermission('tenant:manage');
     const canManageConfig = hasPermission('user:manage');
+    const canManagePowerAdmin = hasPermission('power_admin:manage');
 
-    if (canManageUsers || canManageRoles || canManageTenants || canManageConfig) {
+    if (canManageUsers || canManageRoles || canManageTenants || canManageConfig || canManagePowerAdmin) {
       const settingsChildren: MenuItem[] = [];
       if (canManageUsers) {
         settingsChildren.push({
@@ -412,19 +413,28 @@ export default function AppLayout() {
           });
         }
         settingsChildren.push({
+          key: '/settings/patient-portal',
+          icon: <MobileOutlined />,
+          label: '患者端管理',
+        });
+      }
+      if (isSuperAdmin) {
+        settingsChildren.push({
           key: '/settings/config',
           icon: <ToolOutlined />,
           label: '软件配置',
         });
         settingsChildren.push({
-          key: '/settings/patient-portal',
-          icon: <MobileOutlined />,
-          label: '患者端管理',
-        });
-        settingsChildren.push({
           key: '/settings/backup',
           icon: <CloudSyncOutlined />,
           label: '备份与恢复',
+        });
+      }
+      if (canManagePowerAdmin) {
+        settingsChildren.push({
+          key: '/settings/power-admins',
+          icon: <TeamOutlined />,
+          label: '超级管理员',
         });
       }
       items.push({
@@ -444,7 +454,7 @@ export default function AppLayout() {
     }
 
     return items;
-  }, [hasPermission, alertCount, followUpCount, rxPendingCount, queueWaitingCount, queueEnabled, appointmentEnabled]);
+  }, [hasPermission, isSuperAdmin, alertCount, followUpCount, rxPendingCount, queueWaitingCount, queueEnabled, appointmentEnabled]);
 
   // Determine selected keys from current path
   const selectedKeys = useMemo(() => {
@@ -457,6 +467,7 @@ export default function AppLayout() {
     if (path.startsWith('/settings/queue')) return ['/settings/queue'];
     if (path.startsWith('/settings/appointment-slots')) return ['/settings/appointment-slots'];
     if (path.startsWith('/settings/patient-portal')) return ['/settings/patient-portal'];
+    if (path.startsWith('/settings/power-admins')) return ['/settings/power-admins'];
     if (path.startsWith('/patients')) return ['/patients'];
     if (path.startsWith('/queue')) return ['/queue'];
     if (path.startsWith('/appointments')) return ['/appointments'];
