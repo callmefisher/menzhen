@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/callmefisher/menzhen/server/middleware"
@@ -26,9 +27,18 @@ func NewStatisticsHandler(db *gorm.DB) *StatisticsHandler {
 }
 
 // GetDashboard returns aggregated statistics for the given date range.
-// Query params: start_date (YYYY-MM-DD), end_date (YYYY-MM-DD)
+// Query params: start_date (YYYY-MM-DD), end_date (YYYY-MM-DD), tenant_id (optional, superAdmin only)
 func (h *StatisticsHandler) GetDashboard(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
+	userID := middleware.GetUserID(c)
+	// SuperAdmin can cross-query any tenant by passing tenant_id param.
+	if service.IsProtectedAdminAccount(h.db, userID) {
+		if tidStr := c.Query("tenant_id"); tidStr != "" {
+			if tid, err := strconv.ParseUint(tidStr, 10, 64); err == nil && tid > 0 {
+				tenantID = tid
+			}
+		}
+	}
 
 	startStr := c.Query("start_date")
 	endStr := c.Query("end_date")

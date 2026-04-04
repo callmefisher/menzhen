@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-03-27（排队叫号系统优化、页面可见性检测优化、移动端叫号通知固定定位）
+> 最后更新：2026-04-04（powerAdmin 权限角色：分组授权管理、JWT ManagedGroups、全局统计分组过滤）
 
 ---
 
@@ -27,7 +27,7 @@
 ```
 menzhen/
 ├── server/                          # Go 后端
-│   ├── main.go                      # 入口：加载配置 -> InitDB -> Seed -> InitMinIO -> SetupRouter -> Run
+│   ├── main.go                      # 入口：加载配置 -> InitDB -> Seed -> InitMinIO -> SetupRouter -> Run + goroutines（处方通知清理/队列跨日清理/预约自动入队[启动即执行+重试]/DB清理[启动即执行+24h ticker]）
 │   ├── config/
 │   │   └── config.go                # Config 结构体 + Load()，全部读取环境变量
 │   ├── database/
@@ -63,9 +63,10 @@ menzhen/
 │   │   ├── user.go                  # List/CreateUser/Update/Delete/AssignRoles/ResetPassword
 │   │   ├── role.go                  # List/Create/Update/Delete/ListPermissions
 │   │   ├── tenant.go                # List/Create/Update/Delete
+│   │   ├── power_admin.go           # PowerAdmin CRUD + 分组分配（List/Delete/AssignGroups/ListAllGroups）
 │   │   └── handler_test.go          # handler 测试
 │   ├── middleware/
-│   │   ├── auth.go                  # JWT 解析（含 TokenVersion），GenerateToken/TokenVersionMiddleware/GetTokenVersion
+│   │   ├── auth.go                  # JWT 解析（含 TokenVersion + ManagedGroups），GenerateToken/TokenVersionMiddleware/SuperAdminTenantOverrideMiddleware（支持 superAdmin + powerAdmin）/GetManagedGroups
 │   │   ├── rbac.go                  # RequirePermission：检查用户是否拥有指定权限码（支持 OR 匹配）
 │   │   ├── tenant.go                # TenantScope：GORM scope，按 tenant_id 过滤
 │   │   ├── tenant_status.go         # TenantStatusMiddleware：校验租户状态（禁用租户拒绝访问）
@@ -88,7 +89,7 @@ menzhen/
 │   │   ├── billing.go              # 收费 GetBillingDetail/CreateBilling/DeductStockAndBill/ListBillingsByRecord/GetRecordBillingDetail/CreateRecordBilling（含实时价格计算：中药 元/500g→元/g 转换 + 中成药不乘付数 + 事务库存扣除 + 写时刷新daily_stats + 按处方药品名称定向查库存避免全表扫描）
 │   │   ├── statistics.go           # 统计服务 RefreshDailyStats/GetDashboard/RebuildAllDailyStats（每日汇总表聚合，批量查首诊日期替代N+1，范围查询替代DATE()函数确保索引生效）
 │   │   ├── storage_cleanup.go     # 孤立文件扫描清理服务 ScanOrphanFiles/CleanupOrphanFiles（比对 MinIO 对象与 DB 引用，找出并删除孤立文件）
-│   │   ├── db_cleanup.go          # 数据库孤立数据清理 ScanOrphanData/CleanupOrphanData（孤立处方/处方项/账单/用户角色/角色权限 + 过期软删除记录清理）
+│   │   ├── db_cleanup.go          # 数据库孤立数据+过期数据清理 ScanOrphanData/CleanupOrphanData（孤立处方/处方项/账单/用户角色/角色权限 + 过期软删除记录 + op_logs 90天 + queue_entries/queue_seqs 7天 + appointments(cancelled/queued/no_show) appoint_date 30天 + ai_analyses TTL 180天）
 │   │   ├── follow_up.go           # 回访 List/Create/Get/Update/Delete/Stats（租户隔离，含患者/记录名称关联+逾期状态自动标记，Stats单条聚合SQL替代4次COUNT）
 │   │   ├── tenant_admin.go         # 租户级用户/角色管理服务（ListUsers/CreateUser/UpdateUser/DeleteUser/AssignRoles/ResetPassword/ListRoles/CreateRole/UpdateRole/DeleteRole，隐藏 user:manage 用户，ErrProtectedUser）
 │   │   ├── backup.go                # 备份恢复服务（Docker exec 触发备份/恢复，异步任务状态跟踪，文件列表查询）
@@ -100,7 +101,9 @@ menzhen/
 │   │   ├── permission.go            # HasPermission 检查
 │   │   ├── user.go                  # 用户管理（ListUsers 隐藏 user:manage 用户，UpdateUser 租户变更时 bump token_version，含 getAdminUserIDs/isAdminUser/ErrProtectedUser）
 │   │   ├── role.go                  # 角色管理
-│   │   └── tenant.go                # 租户管理
+│   │   ├── tenant.go                # 租户管理（含 group_name 支持）
+│   │   ├── admin_statistics.go      # 全局统计（GetGlobalStats 支持 groupNames []string 过滤，5分钟内存缓存）
+│   │   └── power_admin.go           # powerAdmin 管理（GetManagedGroups/GetManagedGroupsForUser/AssignGroups/ListPowerAdmins/GetAllGroups）
 │   └── storage/
 │       └── minio.go                 # InitMinIO/UploadFile/GetObject/DeleteFile/DeleteFiles/ListAllObjects
 ├── web/                             # React 前端
@@ -291,7 +294,7 @@ menzhen/
 | `name` | `varchar(50)` | 权限名称 |
 | `description` | `varchar(200)` | 描述 |
 
-**全部权限码（共 29 个）：** `patient:create`, `patient:read`, `patient:update`, `patient:delete`, `record:create`, `record:read`, `record:update`, `record:delete`, `oplog:read`, `user:manage`, `role:manage`, `herb:read`, `formula:read`, `prescription:create`, `prescription:read`, `tenant:manage`, `inventory:read`, `inventory:create`, `inventory:update`, `inventory:delete`, `billing:read`, `billing:create`, `tenant:user:manage`（诊所用户管理）, `tenant:role:manage`（诊所角色管理）, `followup:create`, `followup:read`, `followup:update`, `followup:delete`, `statistics:read`（统计数据）
+**全部权限码（共 30 个）：** `patient:create`, `patient:read`, `patient:update`, `patient:delete`, `record:create`, `record:read`, `record:update`, `record:delete`, `oplog:read`, `user:manage`, `role:manage`, `herb:read`, `formula:read`, `prescription:create`, `prescription:read`, `tenant:manage`, `inventory:read`, `inventory:create`, `inventory:update`, `inventory:delete`, `billing:read`, `billing:create`, `tenant:user:manage`（诊所用户管理）, `tenant:role:manage`（诊所角色管理）, `followup:create`, `followup:read`, `followup:update`, `followup:delete`, `statistics:read`（统计数据）, `power_admin:manage`（superAdmin 管理 powerAdmin 账号及分组）
 
 #### `herbs` — 中药
 
@@ -430,7 +433,18 @@ menzhen/
 | `name` | `varchar(100)` | 诊所名称 |
 | `code` | `varchar(50)` | 诊所编码（唯一索引） |
 | `status` | `tinyint` | 状态：1=启用, 0=禁用 |
+| `group_name` | `varchar(100)` | 分组名称（默认 "default"）；powerAdmin 按分组授权 |
 | `created_at` | `time.Time` | 创建时间 |
+
+#### `user_managed_groups` — powerAdmin 授权分组
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | `uint64` | 主键 |
+| `user_id` | `uint64` | 用户 ID（索引；唯一复合索引 idx_user_group） |
+| `group_name` | `varchar(100)` | 分组名（唯一复合索引 idx_user_group） |
+
+一行记录一个 (user_id, group_name) 关联。`AssignGroups` 以事务替换全集并 bump `token_version`。
 
 #### `users` — 用户
 
@@ -881,6 +895,16 @@ menzhen/
 |------|------|------|------|
 | GET | `/api/v1/statistics/dashboard` | `statistics:read` | 统计仪表盘（参数：start_date, end_date）返回 summary（含 cure_rate/cure_rate_change_percent）、daily_trend、breakdown |
 | POST | `/api/v1/statistics/rebuild` | `tenant:manage` | 重建全部统计数据 |
+| GET | `/api/v1/admin/statistics/global` | 内部验证（superAdmin 或 powerAdmin） | 全局统计：superAdmin 看全部，powerAdmin 按授权分组过滤 |
+
+#### SuperAdmin — powerAdmin 管理
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| GET | `/api/v1/settings/power-admins` | `power_admin:manage` | 列出所有 powerAdmin（有至少一个分组的用户） |
+| DELETE | `/api/v1/settings/power-admins/:id` | `power_admin:manage` | 撤销用户的全部分组（移除 powerAdmin 身份） |
+| PUT | `/api/v1/settings/power-admins/:id/groups` | `power_admin:manage` | 替换用户的授权分组（同时 bump token_version） |
+| GET | `/api/v1/settings/power-admins/groups` | `power_admin:manage` | 获取所有诊所分组名称（distinct，用于 autocomplete） |
 
 #### 回访管理（租户隔离）
 

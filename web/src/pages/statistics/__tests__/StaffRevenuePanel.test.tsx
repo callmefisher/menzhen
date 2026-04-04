@@ -101,7 +101,7 @@ describe('StaffRevenuePanel', () => {
     });
     renderPanel();
     await waitFor(() => {
-      expect(screen.getByText('暂无人员收费数据')).toBeInTheDocument();
+      expect(screen.getByText('暂无人员统计数据')).toBeInTheDocument();
     });
   });
 

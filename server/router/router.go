@@ -76,6 +76,8 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 
 	// WebSocket upgrade (handles its own JWT auth via query param or header).
 	v1.GET("/ws", wsHandler.Upgrade)
+	// Patient WebSocket — validates patient_token from query param, joins same Hub.
+	v1.GET("/patient/ws", wsHandler.PatientUpgrade)
 
 	// Auth-only routes (JWT validated, but no token_version check).
 	// The refresh endpoint must bypass TokenVersionMiddleware so that
@@ -92,6 +94,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	authenticated.Use(middleware.AuthMiddleware(cfg.JWTSecret))
 	authenticated.Use(middleware.TokenVersionMiddleware(db))
 	authenticated.Use(middleware.TenantStatusMiddleware(db))
+	authenticated.Use(middleware.SuperAdminTenantOverrideMiddleware(db))
 	{
 		// File download route (authenticated, tenant-isolated).
 		authenticated.GET("/files/*key", uploadHandler.GetFile)
@@ -343,6 +346,8 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			appt.POST("", middleware.RequirePermission(db, "appointment:create"), apptHandler.Create)
 			appt.GET("", middleware.RequirePermission(db, "appointment:read"), apptHandler.List)
 			appt.GET("/slots", middleware.RequirePermission(db, "appointment:read"), apptHandler.Slots)
+			appt.GET("/matrix", middleware.RequirePermission(db, "appointment:read"), apptHandler.Matrix)
+			appt.POST("/enqueue-today", middleware.RequirePermission(db, "appointment:update"), apptHandler.EnqueueToday)
 			appt.PUT("/:id", middleware.RequirePermission(db, "appointment:update"), apptHandler.Update)
 			appt.POST("/:id/checkin", middleware.RequirePermission(db, "appointment:checkin"), apptHandler.Checkin)
 			appt.POST("/:id/cancel", middleware.RequirePermission(db, "appointment:update"), apptHandler.Cancel)
@@ -435,6 +440,28 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			statistics.GET("/staff", middleware.RequirePermission(db, "statistics:read"), statisticsHandler.GetStaffRevenue)
 		}
 
+		// Admin statistics routes (superAdmin only, checked inside handler).
+		adminStatsHandler := handler.NewAdminStatisticsHandler(db)
+		adminStats := authenticated.Group("/admin/statistics")
+		{
+			// /global is accessible to superAdmin (any tenant) and powerAdmin (filtered by managed groups).
+			// Route-level guard: RequireSuperOrPowerAdmin. Handler applies the group filter.
+			adminStats.GET("/global",
+				middleware.RequireSuperOrPowerAdmin(db),
+				adminStatsHandler.GetGlobal,
+			)
+		}
+
+		// PowerAdmin management (superAdmin only).
+		powerAdminHandler := handler.NewPowerAdminHandler(db)
+		powerAdmins := authenticated.Group("/settings/power-admins")
+		{
+			powerAdmins.GET("", middleware.RequireSuperAdmin(db), powerAdminHandler.List)
+			powerAdmins.DELETE("/:id", middleware.RequireSuperAdmin(db), powerAdminHandler.Delete)
+			powerAdmins.PUT("/:id/groups", middleware.RequireSuperAdmin(db), powerAdminHandler.AssignGroups)
+			powerAdmins.GET("/groups", middleware.RequireSuperAdmin(db), powerAdminHandler.ListAllGroups)
+		}
+
 		// Prescription list by record (nested under records).
 		records.GET("/:id/prescriptions", middleware.RequirePermission(db, "prescription:read"), prescriptionHandler.ListByRecord)
 
@@ -448,6 +475,56 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		records.GET("/:id/ai-analysis", middleware.RequirePermission(db, "record:read"), aiAnalysisHandler.GetCached)
 		records.POST("/:id/ai-analysis", middleware.RequirePermission(db, "record:read"), aiAnalysisHandler.SaveCached)
 	}
+
+	// ---------- Patient portal handlers ----------
+	patientAuthSvc := service.NewPatientAuthService(db)
+	patientAuthHandler := handler.NewPatientAuthHandler(patientAuthSvc, cfg.JWTSecret, db)
+	patientSettingsHandler := handler.NewPatientSettingsHandler(patientAuthSvc, db)
+	patientPortalHandler := handler.NewPatientPortalHandler(db, patientAuthSvc)
+
+	// Public patient auth route (no JWT required).
+	patientPublic := v1.Group("/patient")
+	{
+		patientPublic.POST("/auth/login", patientAuthHandler.Login)
+		patientPublic.GET("/auth/tenant-list", patientAuthHandler.ListTenantsByPhone)
+		patientPublic.GET("/auth/tenant-info", patientAuthHandler.GetTenantInfo)
+	}
+
+	// Authenticated patient routes (patient JWT required).
+	patientAuth := v1.Group("/patient")
+	patientAuth.Use(middleware.PatientAuthMiddleware(cfg.JWTSecret))
+	{
+		patientAuth.GET("/me", patientAuthHandler.Me)
+		patientAuth.GET("/doctors", patientPortalHandler.ListDoctors)
+		patientAuth.GET("/doctors/:id/schedule", patientPortalHandler.GetDoctorSchedule)
+
+		// Appointments
+		patientAuth.GET("/appointments", patientPortalHandler.ListAppointments)
+		patientAuth.POST("/appointments", patientPortalHandler.CreateAppointment)
+		patientAuth.GET("/appointments/slots", patientPortalHandler.GetAppointmentSlots)
+		patientAuth.POST("/appointments/:id/cancel", patientPortalHandler.CancelAppointment)
+		patientAuth.POST("/appointments/:id/checkin", patientPortalHandler.PatientCheckin)
+
+		// Queue
+		patientAuth.POST("/queue/take", patientPortalHandler.TakeNumber)
+		patientAuth.GET("/queue/my-status", patientPortalHandler.GetMyQueueStatus)
+		patientAuth.GET("/queue/list", patientPortalHandler.ListQueue)
+
+		// Records (read-only)
+		patientAuth.GET("/records", patientPortalHandler.ListRecords)
+		patientAuth.GET("/records/:id", patientPortalHandler.GetRecord)
+
+		// Billing (read-only)
+		patientAuth.GET("/billings", patientPortalHandler.ListBillings)
+	}
+
+	// Admin: patient portal config (tenant:user:manage required).
+	authenticated.GET("/tenant/patient-portal-config",
+		middleware.RequirePermission(db, "tenant:user:manage"),
+		patientSettingsHandler.GetPortalConfig)
+	authenticated.PUT("/tenant/patient-portal-config",
+		middleware.RequirePermission(db, "tenant:user:manage"),
+		patientSettingsHandler.UpdatePortalConfig)
 
 	return r
 }

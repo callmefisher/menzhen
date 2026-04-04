@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Card,
@@ -65,6 +65,7 @@ import {
 import { listUsers } from '../../api/user';
 import { useAuth } from '../../store/auth';
 import useIsMobile from '../../hooks/useIsMobile';
+import TenantSelector from '../../components/TenantSelector';
 
 const AVATAR_COLORS = ['#52c41a', '#faad14', '#722ed1', '#cf1322', '#1677ff', '#13c2c2', '#eb2f96', '#fa541c'];
 
@@ -199,15 +200,17 @@ function SortableDoctorItem({
 /* ========== Main component ========== */
 export default function QueueSettings() {
   const isMobile = useIsMobile();
-  const { fetchQueueEnabled, fetchAppointmentEnabled } = useAuth();
+  const { user: currentUser, isSuperAdmin, fetchQueueEnabled, fetchAppointmentEnabled } = useAuth();
   const navigate = useNavigate();
+  const [selectedTenantId, setSelectedTenantId] = useState<number>(currentUser?.tenant_id ?? 0);
+  const tenantIdParam = isSuperAdmin ? (selectedTenantId || undefined) : undefined;
 
   // Feature toggle
   const [enabled, setEnabled] = useState(true);
   const [toggleLoading, setToggleLoading] = useState(false);
 
   // Call display duration
-  const [callDuration, setCallDuration] = useState(10);
+  const [callDuration, setCallDuration] = useState(6);
   const [durationSaving, setDurationSaving] = useState(false);
 
   // Show arrival time toggle
@@ -221,8 +224,8 @@ export default function QueueSettings() {
   // Appointment config
   const [apptConfig, setApptConfig] = useState<AppointmentConfig>({
     slot_minutes: 30,
-    max_appt_per_slot: 10,
-    advance_days: 7,
+    max_appt_per_slot: 1,
+    advance_days: 30,
   });
   const [apptConfigSaving, setApptConfigSaving] = useState(false);
 
@@ -243,6 +246,9 @@ export default function QueueSettings() {
   const [form] = Form.useForm();
   const [submitLoading, setSubmitLoading] = useState(false);
 
+  // Cancellation ref — set to true when tenantIdParam changes so stale fetches don't update state
+  const fetchCancelledRef = useRef(false);
+
   // DnD sensors
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -253,94 +259,97 @@ export default function QueueSettings() {
   const fetchDoctors = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await listQueueDoctors();
+      const res = await listQueueDoctors(tenantIdParam);
       const body = res as unknown as { data?: { list?: QueueDoctor[] } };
-      setDoctors(body.data?.list ?? []);
+      if (!fetchCancelledRef.current) setDoctors(body.data?.list ?? []);
     } catch {
       // handled by interceptor
     } finally {
-      setLoading(false);
+      if (!fetchCancelledRef.current) setLoading(false);
     }
-  }, []);
+  }, [tenantIdParam]);
 
   const fetchEnabled = useCallback(async () => {
     try {
-      const res = await getQueueEnabled();
+      const res = await getQueueEnabled(tenantIdParam);
       const body = res as unknown as { data?: { enabled?: boolean } };
-      setEnabled(body.data?.enabled ?? true);
+      if (!fetchCancelledRef.current) setEnabled(body.data?.enabled ?? true);
     } catch {
       // default on
     }
-  }, []);
+  }, [tenantIdParam]);
 
   const fetchCallDuration = useCallback(async () => {
     try {
-      const res = await getCallDisplayDuration();
+      const res = await getCallDisplayDuration(tenantIdParam);
       const body = res as unknown as { data?: { seconds?: number } };
-      setCallDuration(body.data?.seconds ?? 10);
+      if (!fetchCancelledRef.current) setCallDuration(body.data?.seconds ?? 6);
     } catch {
       // default 10s
     }
-  }, []);
+  }, [tenantIdParam]);
 
   const fetchShowArrivalTime = useCallback(async () => {
     try {
-      const res = await getShowArrivalTime();
+      const res = await getShowArrivalTime(tenantIdParam);
       const body = res as unknown as { data?: { show?: boolean } };
-      setShowArrivalTime(body.data?.show ?? true);
+      if (!fetchCancelledRef.current) setShowArrivalTime(body.data?.show ?? true);
     } catch {
       // default on
     }
-  }, []);
+  }, [tenantIdParam]);
 
   const fetchApptEnabled = useCallback(async () => {
     try {
-      const res = await getAppointmentEnabled();
+      const res = await getAppointmentEnabled(tenantIdParam);
       const body = res as unknown as { data?: { enabled?: boolean } };
-      setApptEnabled(body.data?.enabled ?? true);
+      if (!fetchCancelledRef.current) setApptEnabled(body.data?.enabled ?? true);
     } catch {
       // default on
     }
-  }, []);
+  }, [tenantIdParam]);
 
   const fetchApptConfig = useCallback(async () => {
     try {
-      const res = await getAppointmentConfig();
+      const res = await getAppointmentConfig(tenantIdParam);
       const body = res as unknown as { data?: AppointmentConfig };
-      if (body.data) {
+      if (body.data && !fetchCancelledRef.current) {
         setApptConfig(body.data);
       }
     } catch {
       // keep defaults
     }
-  }, []);
+  }, [tenantIdParam]);
 
   const fetchSoundEnabled = useCallback(async () => {
     try {
-      const res = await getCallSoundEnabled();
+      const res = await getCallSoundEnabled(tenantIdParam);
       const body = res as unknown as { data?: { enabled?: boolean } };
-      setSoundEnabled(body.data?.enabled ?? true);
+      if (!fetchCancelledRef.current) setSoundEnabled(body.data?.enabled ?? true);
     } catch { /* keep default */ }
-  }, []);
+  }, [tenantIdParam]);
 
   const fetchUsers = useCallback(async () => {
     try {
-      const res = await listUsers({ page: 1, size: 200 });
+      const res = await listUsers({ page: 1, size: 200, tenant_id: tenantIdParam });
       const body = res as unknown as { data?: { list?: RawUser[] } | RawUser[] };
       const rawList = Array.isArray(body.data) ? body.data : (body.data as { list?: RawUser[] })?.list ?? [];
-      setAllUsers(
-        rawList.map((u: RawUser) => ({
-          id: u.id,
-          real_name: u.real_name || u.username,
-          username: u.username,
-        })),
-      );
+      if (!fetchCancelledRef.current) {
+        setAllUsers(
+          rawList.map((u: RawUser) => ({
+            id: u.id,
+            real_name: u.real_name || u.username,
+            username: u.username,
+          })),
+        );
+      }
     } catch {
       // ignore
     }
-  }, []);
+  }, [tenantIdParam]);
 
   useEffect(() => {
+    fetchCancelledRef.current = false;
     fetchDoctors();
     fetchEnabled();
     fetchCallDuration();
@@ -349,13 +358,14 @@ export default function QueueSettings() {
     fetchApptConfig();
     fetchSoundEnabled();
     fetchUsers();
+    return () => { fetchCancelledRef.current = true; };
   }, [fetchDoctors, fetchEnabled, fetchCallDuration, fetchShowArrivalTime, fetchApptEnabled, fetchApptConfig, fetchSoundEnabled, fetchUsers]);
 
   /* ---- Toggle handler ---- */
   const handleToggle = async (checked: boolean) => {
     setToggleLoading(true);
     try {
-      await setQueueEnabled(checked);
+      await setQueueEnabled(checked, tenantIdParam);
       setEnabled(checked);
       await fetchQueueEnabled();
       message.success(checked ? '排队叫号已开启' : '排队叫号已关闭');
@@ -370,7 +380,7 @@ export default function QueueSettings() {
   const handleSaveDuration = async (val: number) => {
     setDurationSaving(true);
     try {
-      await setCallDisplayDuration(val);
+      await setCallDisplayDuration(val, tenantIdParam);
       setCallDuration(val);
       message.success('叫号显示时长已保存');
     } catch {
@@ -384,7 +394,7 @@ export default function QueueSettings() {
   const handleToggleArrivalTime = async (checked: boolean) => {
     setArrivalTimeLoading(true);
     try {
-      await apiSetShowArrivalTime(checked);
+      await apiSetShowArrivalTime(checked, tenantIdParam);
       setShowArrivalTime(checked);
       message.success(checked ? '入队时间显示已开启' : '入队时间显示已关闭');
     } catch {
@@ -398,7 +408,7 @@ export default function QueueSettings() {
   const handleToggleSound = async (checked: boolean) => {
     setSoundLoading(true);
     try {
-      await apiSetCallSoundEnabled(checked);
+      await apiSetCallSoundEnabled(checked, tenantIdParam);
       setSoundEnabled(checked);
       message.success(checked ? '声音播报已开启' : '声音播报已关闭');
     } catch {
@@ -412,7 +422,7 @@ export default function QueueSettings() {
   const handleToggleApptEnabled = async (checked: boolean) => {
     setApptEnabledLoading(true);
     try {
-      await apiSetAppointmentEnabled(checked);
+      await apiSetAppointmentEnabled(checked, tenantIdParam);
       setApptEnabled(checked);
       await fetchAppointmentEnabled();
       message.success(checked ? '预约功能已开启' : '预约功能已关闭');
@@ -427,7 +437,7 @@ export default function QueueSettings() {
   const handleSaveApptConfig = async () => {
     setApptConfigSaving(true);
     try {
-      await apiSetAppointmentConfig(apptConfig);
+      await apiSetAppointmentConfig(apptConfig, tenantIdParam);
       message.success('预约配置已保存');
     } catch {
       message.error('保存失败');
@@ -469,14 +479,14 @@ export default function QueueSettings() {
         await updateQueueDoctor(editingDoctor.id, {
           room: values.room,
           enabled: values.enabled,
-        });
+        }, tenantIdParam);
         message.success('更新成功');
       } else {
         await createQueueDoctor({
           user_id: values.user_id,
           room: values.room,
           enabled: values.enabled,
-        });
+        }, tenantIdParam);
         message.success('添加成功');
       }
 
@@ -501,7 +511,7 @@ export default function QueueSettings() {
       okButtonProps: { danger: true },
       onOk: async () => {
         try {
-          await deleteQueueDoctor(doctor.id);
+          await deleteQueueDoctor(doctor.id, tenantIdParam);
           message.success('删除成功');
           fetchDoctors();
         } catch {
@@ -525,7 +535,7 @@ export default function QueueSettings() {
 
     const orders = reordered.map((d, i) => ({ id: d.id, sort_order: i + 1 }));
     try {
-      await updateQueueDoctorSort(orders);
+      await updateQueueDoctorSort(orders, tenantIdParam);
     } catch {
       message.error('排序保存失败');
       fetchDoctors();
@@ -540,6 +550,10 @@ export default function QueueSettings() {
 
   return (
     <div style={{ maxWidth: 800, margin: '0 auto' }}>
+      <TenantSelector
+        value={selectedTenantId}
+        onChange={(id) => setSelectedTenantId(id)}
+      />
       {/* Feature toggle card */}
       <Card style={{ marginBottom: 16 }}>
         <div
@@ -689,7 +703,6 @@ export default function QueueSettings() {
                   onChange={(v) => setApptConfig((prev) => ({
                     ...prev,
                     slot_minutes: v,
-                    max_appt_per_slot: v <= 30 ? 1 : 2,
                   }))}
                   style={{ width: 120 }}
                   options={[
@@ -718,7 +731,7 @@ export default function QueueSettings() {
                   min={1}
                   max={30}
                   value={apptConfig.advance_days}
-                  onChange={(v) => setApptConfig((prev) => ({ ...prev, advance_days: v ?? 7 }))}
+                  onChange={(v) => setApptConfig((prev) => ({ ...prev, advance_days: v ?? 30 }))}
                   addonAfter="天"
                   style={{ width: 120 }}
                 />

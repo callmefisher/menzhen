@@ -187,7 +187,106 @@ func TestQueueCall_InvalidStatus(t *testing.T) {
 	assert.ErrorIs(t, err, service.ErrInvalidStatus)
 }
 
-// TestQueueComplete verifies that a seeing entry becomes "done" with CompletedAt set.
+// TestQueueCall_AppointmentNotCheckedIn verifies that calling an appointment-source
+// entry whose checkin_status is still pending does NOT transition it to seeing.
+func TestQueueCall_AppointmentNotCheckedIn(t *testing.T) {
+	svc, tenantID := makeQueueSvcSingle(t)
+
+	// Create a walk_in entry, then override source/checkin_status to simulate an
+	// appointment-derived entry that hasn't been checked in yet.
+	e := takeNumber(t, svc, tenantID, "预约患者", 1, "医生", "诊室")
+	require.NoError(t, svc.DB.Model(&model.QueueEntry{}).Where("id = ?", e.ID).
+		Updates(map[string]interface{}{
+			"source":         "appointment",
+			"checkin_status": model.CheckinStatusPending,
+		}).Error)
+
+	called, changed, err := svc.Call(tenantID, e.ID)
+	require.NoError(t, err)
+	assert.False(t, changed, "unchecked-in appointment patient must not transition to seeing")
+	assert.Equal(t, "waiting", called.Status)
+}
+
+// TestQueueCall_AppointmentCheckedIn verifies that after check-in the patient
+// can be transitioned to seeing normally.
+func TestQueueCall_AppointmentCheckedIn(t *testing.T) {
+	svc, tenantID := makeQueueSvcSingle(t)
+
+	e := takeNumber(t, svc, tenantID, "已签到预约患者", 1, "医生", "诊室")
+	require.NoError(t, svc.DB.Model(&model.QueueEntry{}).Where("id = ?", e.ID).
+		Updates(map[string]interface{}{
+			"source":         "appointment",
+			"checkin_status": model.CheckinStatusDone,
+		}).Error)
+
+	called, changed, err := svc.Call(tenantID, e.ID)
+	require.NoError(t, err)
+	assert.True(t, changed, "checked-in appointment patient should transition to seeing")
+	assert.Equal(t, "seeing", called.Status)
+}
+
+// TestQueueComplete_AutoCallSkipsUncheckedIn verifies that auto-call after Complete
+// skips appointment patients who have not yet checked in.
+func TestQueueComplete_AutoCallSkipsUncheckedIn(t *testing.T) {
+	svc, tenantID := makeQueueSvcSingle(t)
+
+	const docID uint = 7
+	first := takeNumber(t, svc, tenantID, "第一号", docID, "医生", "诊室")
+	second := takeNumber(t, svc, tenantID, "未签到预约", docID, "医生", "诊室")
+	third := takeNumber(t, svc, tenantID, "第三号", docID, "医生", "诊室")
+
+	// Make second entry a not-checked-in appointment patient
+	require.NoError(t, svc.DB.Model(&model.QueueEntry{}).Where("id = ?", second.ID).
+		Updates(map[string]interface{}{
+			"source":         "appointment",
+			"checkin_status": model.CheckinStatusPending,
+		}).Error)
+
+	_, _, err := svc.Call(tenantID, first.ID)
+	require.NoError(t, err)
+
+	_, next, err := svc.Complete(tenantID, first.ID)
+	require.NoError(t, err)
+	require.NotNil(t, next, "auto-call should find a callable patient")
+	assert.Equal(t, third.ID, next.ID, "auto-call should skip unchecked-in appointment patient and pick third")
+	assert.Equal(t, "seeing", next.Status)
+}
+
+// TestQueueComplete_OnlyUncheckedAppointmentRemaining verifies that completing a seeing
+// patient succeeds (returns nil error, nil next) when the only remaining waiting patient
+// is an unchecked appointment. This is the exact bug scenario reported: "完成时弹出失败，
+// 因为下一个在队列的是未签到的预约号".
+func TestQueueComplete_OnlyUncheckedAppointmentRemaining(t *testing.T) {
+	svc, tenantID := makeQueueSvcSingle(t)
+
+	const docID uint = 8
+	// Patient A — real seeing patient
+	patientA := takeNumber(t, svc, tenantID, "就诊患者", docID, "医生", "诊室")
+	// Patient B — unchecked appointment, the ONLY next patient
+	patientB := takeNumber(t, svc, tenantID, "未签到预约", docID, "医生", "诊室")
+	require.NoError(t, svc.DB.Model(&model.QueueEntry{}).Where("id = ?", patientB.ID).
+		Updates(map[string]interface{}{
+			"source":         "appointment",
+			"checkin_status": model.CheckinStatusPending,
+		}).Error)
+
+	// A is called and now seeing
+	_, changed, err := svc.Call(tenantID, patientA.ID)
+	require.NoError(t, err)
+	require.True(t, changed)
+
+	// Complete A — must succeed even though B is unchecked
+	completed, next, err := svc.Complete(tenantID, patientA.ID)
+	require.NoError(t, err, "Complete must not error when only unchecked appointment remains")
+	assert.Equal(t, model.QueueStatusDone, completed.Status)
+	assert.Nil(t, next, "no auto-call when only unchecked appointment remains")
+
+	// B must still be waiting (not auto-called, not errored)
+	var bEntry model.QueueEntry
+	require.NoError(t, svc.DB.First(&bEntry, patientB.ID).Error)
+	assert.Equal(t, model.QueueStatusWaiting, bEntry.Status, "unchecked appointment must remain waiting")
+}
+
 func TestQueueComplete(t *testing.T) {
 	svc, tenantID := makeQueueSvcSingle(t)
 
@@ -483,4 +582,58 @@ func TestQueueCrossDayCleanup(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, entries, 1)
 	assert.Equal(t, todayResult.Entry.ID, entries[0].ID)
+}
+
+// TestQueueCall_GhostSeeingAutoMissed verifies that an unchecked appointment entry
+// that somehow ended up in "seeing" status (ghost entry) does not block calling the
+// next real patient. The ghost entry should be auto-moved to "missed".
+func TestQueueCall_GhostSeeingAutoMissed(t *testing.T) {
+	svc, tenantID := makeQueueSvcSingle(t)
+
+	const docID uint = 1
+
+	// Create a walk_in entry and force it into seeing status directly (simulates ghost)
+	ghost := takeNumber(t, svc, tenantID, "未签到预约患者", docID, "医生", "诊室")
+	require.NoError(t, svc.DB.Model(&model.QueueEntry{}).Where("id = ?", ghost.ID).
+		Updates(map[string]interface{}{
+			"source":         "appointment",
+			"checkin_status": model.CheckinStatusPending,
+			"status":         model.QueueStatusSeeing,
+		}).Error)
+
+	// Create a real (walk-in) patient who should be callable
+	real := takeNumber(t, svc, tenantID, "普通患者", docID, "医生", "诊室")
+
+	// Calling the real patient should succeed despite the ghost seeing entry
+	called, changed, err := svc.Call(tenantID, real.ID)
+	require.NoError(t, err)
+	assert.True(t, changed, "real patient should transition to seeing")
+	assert.Equal(t, model.QueueStatusSeeing, called.Status)
+
+	// Ghost entry should have been auto-moved to missed
+	var ghostEntry model.QueueEntry
+	require.NoError(t, svc.DB.First(&ghostEntry, ghost.ID).Error)
+	assert.Equal(t, model.QueueStatusMissed, ghostEntry.Status, "ghost seeing entry must be auto-missed")
+}
+
+// TestQueueCall_RealSeeingBlocksCall verifies that a legitimate seeing entry (checked-in
+// appointment or walk-in) still blocks calling another patient.
+func TestQueueCall_RealSeeingBlocksCall(t *testing.T) {
+	svc, tenantID := makeQueueSvcSingle(t)
+
+	const docID uint = 1
+
+	first := takeNumber(t, svc, tenantID, "第一号", docID, "医生", "诊室")
+	second := takeNumber(t, svc, tenantID, "第二号", docID, "医生", "诊室")
+
+	// Legitimately call first — becomes real seeing entry
+	_, changed, err := svc.Call(tenantID, first.ID)
+	require.NoError(t, err)
+	assert.True(t, changed)
+
+	// Calling second should be blocked (real seeing exists)
+	called, changed2, err := svc.Call(tenantID, second.ID)
+	require.NoError(t, err)
+	assert.False(t, changed2, "real seeing entry must block calling next patient")
+	assert.Equal(t, model.QueueStatusWaiting, called.Status)
 }

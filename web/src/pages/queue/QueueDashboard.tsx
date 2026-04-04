@@ -10,7 +10,7 @@ import { useAuth } from '../../store/auth';
 import useIsMobile from '../../hooks/useIsMobile';
 import CallOverlay from '../../components/CallOverlay';
 import AppointmentModal from '../../components/AppointmentModal';
-import { formatRoom, formatQueueTime, formatQueueTimeFull } from '../../utils/format';
+import { formatRoom, formatQueueTime, formatQueueTimeFull, buildRoomSpeechText } from '../../utils/format';
 
 const DOCTOR_COLORS = ['#52c41a', '#faad14', '#722ed1', '#cf1322', '#1677ff', '#13c2c2', '#eb2f96', '#fa541c'];
 
@@ -19,8 +19,11 @@ let callIdCounter = 0;
 
 /**
  * Speak a call announcement with natural pauses using multiple utterances.
- * Segments: "请" → pause → "{seq}号" → pause → "{name}" → pause → "到{room}就诊"
- * Falls back to a single utterance if speechSynthesis is unavailable.
+ * Format: "请{seq}号，{name}，到诊室{room}就诊"
+ * Digit rule (same for seq and room): ≥3 digits → digit-by-digit (101→一零一);
+ * <3 digits → natural reading by TTS engine (99→九十九, 21→二十一, 1→一).
+ * Room is normalised with formatRoom so "1"→"诊室1", "101"→"诊室一零一".
+ * Falls back gracefully if speechSynthesis is unavailable.
  */
 function speakTTS(call: { seq: number; name: string; room: string }, voices: SpeechSynthesisVoice[]) {
   if (!window.speechSynthesis) return;
@@ -32,11 +35,15 @@ function speakTTS(call: { seq: number; name: string; room: string }, voices: Spe
     voices.find(v => v.lang.startsWith('zh')) ??
     null;
 
-  const roomPart = call.room ? `到${call.room}就诊` : '就诊';
+  // Queue number: apply same digit rule as room (≥3 digits → digit-by-digit)
+  const seqSpeech = buildRoomSpeechText(String(call.seq));
+  // Room: normalise first (adds "诊室" prefix for plain numbers), then expand digits
+  const roomSpeech = call.room?.trim() ? buildRoomSpeechText(formatRoom(call.room)) : '';
+  const roomPart = roomSpeech ? `到${roomSpeech}就诊` : '就诊';
   // Break into segments that pause naturally between each phrase
   const segments = [
     { text: '请', rate: 0.85 },
-    { text: `${call.seq}号`, rate: 0.8 },
+    { text: `${seqSpeech}号`, rate: 0.8 },
     { text: call.name, rate: 0.85 },
     { text: roomPart, rate: 0.85 },
   ];
@@ -91,7 +98,7 @@ export default function QueueDashboard() {
   const [takeLoading, setTakeLoading] = useState(false);
   // Per-doctor call state: queue + current merged into one atomic unit
   const [doctorCallStates, setDoctorCallStates] = useState<Record<number, DoctorCallState>>({});
-  const [callDurationMs, setCallDurationMs] = useState(10000);
+  const [callDurationMs, setCallDurationMs] = useState(6000);
   const [showArrivalTime, setShowArrivalTime] = useState<boolean | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(true);
   // Pre-load TTS voices on mount so they're ready when handleCall fires.
@@ -104,6 +111,28 @@ export default function QueueDashboard() {
     load();
     window.speechSynthesis.addEventListener('voiceschanged', load);
     return () => window.speechSynthesis.removeEventListener('voiceschanged', load);
+  }, []);
+  // Chrome blocks speechSynthesis.speak() on fresh page loads until a user gesture has
+  // occurred (autoplay policy). Speak a silent empty utterance on the very first interaction
+  // so subsequent WS-triggered calls (from other terminals) work without user interaction.
+  useEffect(() => {
+    if (!window.speechSynthesis) return;
+    const unlock = () => {
+      const u = new SpeechSynthesisUtterance('');
+      u.volume = 0;
+      window.speechSynthesis.speak(u);
+      document.removeEventListener('click', unlock, true);
+      document.removeEventListener('keydown', unlock, true);
+      document.removeEventListener('touchstart', unlock, true);
+    };
+    document.addEventListener('click', unlock, true);
+    document.addEventListener('keydown', unlock, true);
+    document.addEventListener('touchstart', unlock, true);
+    return () => {
+      document.removeEventListener('click', unlock, true);
+      document.removeEventListener('keydown', unlock, true);
+      document.removeEventListener('touchstart', unlock, true);
+    };
   }, []);
   // Timestamp of the last locally-initiated call. DoctorCard skips TTS for WS
   // events that arrive within 2 s of a local call (same terminal, same event).
@@ -151,7 +180,7 @@ export default function QueueDashboard() {
       try {
         const res = await getCallDisplayDuration();
         const body = res as unknown as { data?: { seconds?: number } };
-        const seconds: number = body.data?.seconds ?? 10;
+        const seconds: number = body.data?.seconds ?? 6;
         setCallDurationMs(seconds * 1000);
       } catch {
         // default 10s
@@ -219,7 +248,7 @@ export default function QueueDashboard() {
         const list: QueueDoctorConfig[] = body.data?.list || [];
         const docs: DoctorOption[] = list
           .filter(d => d.enabled)
-          .map(d => ({ id: d.user_id, name: d.user_name, room: d.room }));
+          .map(d => ({ id: d.id, name: d.user_name, room: d.room }));
         setDoctors(docs);
         // Default select first enabled doctor (functional update avoids stale closure)
         if (docs.length > 0) {
@@ -754,11 +783,20 @@ function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall,
   // Find the "seeing" entry and "next" (first waiting) entry
   const seeingEntry = group.entries.find(e => e.status === 'seeing');
   const waitingEntries = group.entries.filter(e => e.status === 'waiting' || e.status === 'ready');
-  const firstWaiting = waitingEntries[0];
+  // First waiting entry that can actually be called: only appointment entries with checkin_status='done' are callable
+  const firstCallableWaiting = waitingEntries.find(e => e.source !== 'appointment' || e.checkin_status === 'done');
 
-  // Handle call for first waiting in this doctor's queue
+  // For tooltip accuracy: compute how many callable entries are ahead of each entry
+  let _callableCount = 0;
+  const callablePositions = waitingEntries.map(e => {
+    const pos = _callableCount;
+    if (e.source !== 'appointment' || e.checkin_status === 'done') _callableCount++;
+    return pos;
+  });
+
+  // Handle call for first callable waiting in this doctor's queue
   const handleCallDoctor = () => {
-    const target = seeingEntry || firstWaiting;
+    const target = seeingEntry || firstCallableWaiting;
     if (target) onCall(target);
   };
 
@@ -802,6 +840,7 @@ function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall,
             type="text"
             size="small"
             icon={<SoundOutlined />}
+            disabled={!seeingEntry && !firstCallableWaiting}
             onClick={handleCallDoctor}
             style={{ color, fontWeight: 600, fontSize: 14 }}
           >
@@ -839,8 +878,8 @@ function DoctorCard({ group, colorIndex, speed, onCall, onComplete, currentCall,
           <QueueRow
             key={entry.id}
             entry={entry}
-            type={i === 0 ? 'next' : 'waiting'}
-            position={i}
+            type={entry.id === firstCallableWaiting?.id ? 'next' : 'waiting'}
+            position={callablePositions[i]}
             onCall={onCall}
             onComplete={onComplete}
             hasWritePermission={hasWritePermission}

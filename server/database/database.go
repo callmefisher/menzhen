@@ -26,8 +26,8 @@ func InitDB(cfg *config.Config) *gorm.DB {
 		DisableForeignKeyConstraintWhenMigrating: true,
 	})
 	if err != nil {
-		log.Panicf("failed to connect to database: %v (user=%s password=%s host=%s port=%s dbname=%s)",
-			err, cfg.DBUser, cfg.DBPassword, cfg.DBHost, cfg.DBPort, cfg.DBName)
+		log.Panicf("failed to connect to database: %v (user=%s host=%s port=%s dbname=%s)",
+			err, cfg.DBUser, cfg.DBHost, cfg.DBPort, cfg.DBName)
 	}
 
 	log.Println("Database connected successfully")
@@ -67,6 +67,9 @@ func InitDB(cfg *config.Config) *gorm.DB {
 		&model.Appointment{},
 		&model.AppointmentSlotConfig{},
 		&model.DoctorScheduleConfig{},
+		&model.PatientUser{},
+		&model.PatientPortalConfig{},
+		&model.UserManagedGroup{},
 	)
 	if err != nil {
 		log.Panicf("failed to auto-migrate database: %v", err)

@@ -45,6 +45,23 @@ export function formatQueueTimeFull(t?: string): string {
   }
 }
 
+const DIGIT_MAP: Record<string, string> = {
+  '0': '零', '1': '一', '2': '二', '3': '三', '4': '四',
+  '5': '五', '6': '六', '7': '七', '8': '八', '9': '九',
+};
+
+/**
+ * Convert digit runs of 3+ digits to individual Chinese characters for TTS.
+ * Digit runs of 1-2 digits are left as-is for natural reading by the speech engine
+ * ("5" → "五", "12" → "十二"). Runs of 3+ digits are spelled out digit-by-digit
+ * ("101" → "一零一", "1234" → "一二三四").
+ */
+export function buildRoomSpeechText(room: string): string {
+  return room.replace(/\d+/g, match =>
+    match.length >= 3 ? match.split('').map(d => DIGIT_MAP[d] ?? d).join('') : match
+  );
+}
+
 /**
  * Format room name for display.
  * - If room is undefined or empty, returns "诊室"

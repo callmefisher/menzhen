@@ -30,6 +30,7 @@ import {
 import { useAuth } from '../../store/auth';
 import useIsMobile from '../../hooks/useIsMobile';
 import useRowHighlight from '../../hooks/useRowHighlight';
+import TenantSelector from '../../components/TenantSelector';
 
 interface PermissionItem {
   id: number;
@@ -100,8 +101,9 @@ export default function RoleList() {
   const [data, setData] = useState<RoleItem[]>([]);
   const [loading, setLoading] = useState(false);
   const isMobile = useIsMobile();
-  const { hasPermission, isGlobalAdmin } = useAuth();
+  const { user: currentUser, hasPermission, isGlobalAdmin, isSuperAdmin } = useAuth();
   const canManageRoles = hasPermission('role:manage');
+  const [selectedTenantId, setSelectedTenantId] = useState<number>(currentUser?.tenant_id ?? 0);
 
   const highlight = useRowHighlight({
     data,
@@ -125,7 +127,9 @@ export default function RoleList() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = canManageRoles ? await listRoles() : await listTenantRoles();
+      const res = canManageRoles
+        ? await listRoles({ tenant_id: isSuperAdmin ? (selectedTenantId || undefined) : undefined })
+        : await listTenantRoles();
       const body = res as unknown as { data: RoleItem[] };
       setData(body.data || []);
     } catch {
@@ -133,7 +137,7 @@ export default function RoleList() {
     } finally {
       setLoading(false);
     }
-  }, [canManageRoles]);
+  }, [canManageRoles, isSuperAdmin, selectedTenantId]);
 
   const fetchPermissions = useCallback(async () => {
     try {
@@ -332,10 +336,17 @@ export default function RoleList() {
       <div
         style={{
           display: 'flex',
-          justifyContent: 'flex-end',
+          justifyContent: 'space-between',
+          alignItems: 'center',
           marginBottom: 16,
+          flexWrap: 'wrap',
+          gap: 8,
         }}
       >
+        <TenantSelector
+          value={selectedTenantId}
+          onChange={(id) => setSelectedTenantId(id)}
+        />
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
           新增角色
         </Button>

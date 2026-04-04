@@ -8,6 +8,7 @@ import { formatQueueTime } from '../utils/format';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useAuth } from '../store/auth';
 import useIsMobile from '../hooks/useIsMobile';
+import { useQueueDoctorId } from '../hooks/useQueueDoctorId';
 
 /**
  * QueueStrip - Pipe-style queue bar for the PatientList page.
@@ -17,12 +18,14 @@ import useIsMobile from '../hooks/useIsMobile';
  *
  * Hides completely when the doctor has no active queue entries.
  */
+
 export default function QueueStrip() {
   const { user } = useAuth();
   const isMobile = useIsMobile();
   const navigate = useNavigate();
   const [entries, setEntries] = useState<QueueEntry[]>([]);
   const [showArrivalTime, setShowArrivalTime] = useState<boolean | null>(null);
+  const queueDoctorId = useQueueDoctorId();
 
   useEffect(() => {
     getShowArrivalTime().then((res) => {
@@ -38,9 +41,9 @@ export default function QueueStrip() {
   }, [navigate]);
 
   const fetchQueue = useCallback(async () => {
-    if (!user?.id) return;
+    if (!user?.id || queueDoctorId === undefined) return;
     try {
-      const res = await listQueue(user.id);
+      const res = await listQueue(queueDoctorId);
       const body = res as unknown as { data?: { list?: QueueEntry[] } };
       const list: QueueEntry[] = body.data?.list || [];
       // Only keep active entries (not done/missed)
@@ -48,7 +51,7 @@ export default function QueueStrip() {
     } catch {
       /* ignore */
     }
-  }, [user?.id]);
+  }, [user?.id, queueDoctorId]);
 
   useEffect(() => {
     fetchQueue();
@@ -65,10 +68,10 @@ export default function QueueStrip() {
     const sorted = [...entries].sort((a, b) => a.seq_number - b.seq_number);
     const seeing = sorted.find(e => e.status === 'seeing') || null;
     const waitingAll = sorted.filter(e => e.status === 'waiting');
-    // "ready" is the first waiting entry (next to be seen)
-    const ready = waitingAll.length > 0 ? waitingAll[0] : null;
-    // Limit waiting entries to max 8 (excluding ready entry)
-    const waiting = waitingAll.slice(1, 9);
+    // "ready" is the first *callable* waiting entry — skip unchecked appointments
+    const ready = waitingAll.find(e => e.source !== 'appointment' || e.checkin_status === 'done') ?? null;
+    // Pipe chips: all waiting entries except the ready one, limited to 8
+    const waiting = waitingAll.filter(e => e.id !== ready?.id).slice(0, 8);
     return {
       seeingEntry: seeing,
       readyEntry: ready,
@@ -303,13 +306,6 @@ export default function QueueStrip() {
                   }}>预</span>
                 )}
               </span>
-              {readyEntry.source === 'appointment' && readyEntry.checkin_status === 'pending' && (
-                <span style={{
-                  position: 'absolute', top: 2, right: 2,
-                  width: 6, height: 6, borderRadius: '50%',
-                  background: '#fa8c16', display: 'block',
-                }} />
-              )}
               {showArrivalTime && readyEntry.arrival_time && (
                 <span style={{
                   fontSize: 11,
@@ -526,18 +522,19 @@ export interface QueueStatusInfo {
 export function useQueueStatusMap(): Map<string, QueueStatusInfo> {
   const { user } = useAuth();
   const [entries, setEntries] = useState<QueueEntry[]>([]);
+  const queueDoctorId = useQueueDoctorId();
 
   const fetchQueue = useCallback(async () => {
-    if (!user?.id) return;
+    if (!user?.id || queueDoctorId === undefined) return;
     try {
-      const res = await listQueue(user.id);
+      const res = await listQueue(queueDoctorId);
       const body = res as unknown as { data?: { list?: QueueEntry[] } };
       const list: QueueEntry[] = body.data?.list || [];
       setEntries(list.filter(e => e.status !== 'done' && e.status !== 'missed'));
     } catch {
       /* ignore */
     }
-  }, [user?.id]);
+  }, [user?.id, queueDoctorId]);
 
   useEffect(() => {
     fetchQueue();
@@ -556,12 +553,13 @@ export function useQueueStatusMap(): Map<string, QueueStatusInfo> {
     if (seeing) {
       map.set(seeing.patient_name, { status: 'seeing', entryId: seeing.id });
     }
-    if (waitingAll.length > 0) {
-      // First waiting = ready (next)
-      map.set(waitingAll[0].patient_name, { status: 'ready', entryId: waitingAll[0].id });
-      for (let i = 1; i < waitingAll.length; i++) {
-        map.set(waitingAll[i].patient_name, { status: 'waiting', entryId: waitingAll[i].id });
-      }
+    // First callable waiting entry = ready, others = waiting (including unchecked appointments)
+    const readyEntry = waitingAll.find(e => e.source !== 'appointment' || e.checkin_status === 'done');
+    for (const entry of waitingAll) {
+      map.set(entry.patient_name, {
+        status: entry.id === readyEntry?.id ? 'ready' : 'waiting',
+        entryId: entry.id,
+      });
     }
     return map;
   }, [entries]);

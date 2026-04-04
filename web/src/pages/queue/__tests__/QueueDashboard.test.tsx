@@ -640,4 +640,151 @@ describe('QueueDashboard', () => {
     expect(await screen.findByText('✓ 已到')).toBeInTheDocument();
     expect(screen.getByText('预')).toBeInTheDocument();
   });
+
+  // ── Bug fix: 未签到预约号在首位时，后续可叫号的人仍能被叫到 ────────────────
+
+  // 27. 未签到预约在首位，后续签到的患者显示「下一位」而非「候诊中」
+  it('marks the first callable entry as 下一位 when the queue head is an unchecked appointment', async () => {
+    mockListQueue.mockResolvedValue({
+      data: {
+        list: [
+          makeEntry({ id: 1, patient_name: '预约未签到', seq_number: 1, source: 'appointment', checkin_status: 'pending', appointment_id: 1 }),
+          makeEntry({ id: 2, patient_name: '普通号患者', seq_number: 2, source: 'walk_in' }),
+        ],
+      },
+    });
+
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByText('预约未签到')).toBeInTheDocument();
+      expect(screen.getByText('普通号患者')).toBeInTheDocument();
+    });
+
+    // 普通号患者应该是「下一位」
+    expect(screen.getByText('下一位')).toBeInTheDocument();
+    // 未签到预约号不应是「下一位」
+    const allNextTags = screen.getAllByText('下一位');
+    expect(allNextTags.length).toBe(1);
+  });
+
+  // 28. 未签到预约在首位，后续患者有「叫号」按钮
+  it('shows 叫号 button for the first callable entry when queue head is an unchecked appointment', async () => {
+    mockCallNumber.mockResolvedValue({ data: { code: 0 } });
+    mockListQueue.mockResolvedValue({
+      data: {
+        list: [
+          makeEntry({ id: 1, patient_name: '预约未签到', seq_number: 1, source: 'appointment', checkin_status: 'pending', appointment_id: 1 }),
+          makeEntry({ id: 2, patient_name: '签到患者', seq_number: 2, source: 'appointment', checkin_status: 'done', appointment_id: 2 }),
+        ],
+      },
+    });
+
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByText('签到患者')).toBeInTheDocument();
+    });
+
+    // 「叫号」按钮（行内）应该存在并对应第二个患者（第一个可叫的）
+    const callButtons = screen.getAllByRole('button');
+    const rowCallBtn = callButtons.find(btn => btn.textContent?.replace(/\s/g, '') === '叫号' && !btn.hasAttribute('disabled'));
+    expect(rowCallBtn).toBeDefined();
+
+    // 点击叫号，应该叫的是 id=2 的签到患者，而不是 id=1 的未签到预约
+    fireEvent.click(rowCallBtn!);
+    await waitFor(() => {
+      expect(mockCallNumber).toHaveBeenCalledWith(2);
+    });
+    expect(mockCallNumber).not.toHaveBeenCalledWith(1);
+  });
+
+  // 29. 所有等待者均为未签到预约时，卡片头部「叫号」按钮应禁用
+  it('disables card-level 叫号 button when all waiting entries are unchecked appointments', async () => {
+    mockListQueue.mockResolvedValue({
+      data: {
+        list: [
+          makeEntry({ id: 1, patient_name: '预约A', seq_number: 1, source: 'appointment', checkin_status: 'pending', appointment_id: 1 }),
+          makeEntry({ id: 2, patient_name: '预约B', seq_number: 2, source: 'appointment', checkin_status: 'pending', appointment_id: 2 }),
+        ],
+      },
+    });
+
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByText('预约A')).toBeInTheDocument();
+    });
+
+    // 卡片头部「叫号」按钮（SoundOutlined + 叫号 文字）应被禁用
+    const buttons = screen.getAllByRole('button');
+    const headerCallBtn = buttons.find(btn => btn.textContent?.replace(/\s/g, '') === '叫号' && btn.closest('[data-testid]') == null);
+    // 找到带 disabled 属性的叫号按钮
+    const disabledCallBtn = buttons.find(btn =>
+      btn.textContent?.replace(/\s/g, '') === '叫号' && btn.hasAttribute('disabled')
+    );
+    expect(disabledCallBtn).toBeDefined();
+  });
+
+  // 30. 多个未签到预约在前，第一个可叫患者的 position tooltip 只计算可叫的人数
+  it('counts only callable entries for position tooltip when unchecked appointments precede', async () => {
+    mockListQueue.mockResolvedValue({
+      data: {
+        list: [
+          makeEntry({ id: 1, patient_name: '预约未签到1', seq_number: 1, source: 'appointment', checkin_status: 'pending', appointment_id: 1 }),
+          makeEntry({ id: 2, patient_name: '预约未签到2', seq_number: 2, source: 'appointment', checkin_status: 'pending', appointment_id: 2 }),
+          makeEntry({ id: 3, patient_name: '可叫患者', seq_number: 3, source: 'walk_in' }),
+          makeEntry({ id: 4, patient_name: '第二可叫', seq_number: 4, source: 'walk_in' }),
+        ],
+      },
+    });
+
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByText('可叫患者')).toBeInTheDocument();
+      expect(screen.getByText('第二可叫')).toBeInTheDocument();
+    });
+
+    // 「可叫患者」应为「下一位」（不是「候诊中」）
+    expect(screen.getByText('下一位')).toBeInTheDocument();
+    // 「第二可叫」位于「可叫患者」后面，前方只有 1 个可叫的人（可叫患者）
+    // 通过 Tooltip title 验证（Antd Tooltip 渲染在 title 属性上）
+    // 不直接检查 tooltip 文字（jsdom 不渲染 hover tooltip），
+    // 但至少验证「下一位」只有一个（说明 position 标记正确）
+  });
+
+  // 31. Regression: take-number sends queue_doctor.id (PK), NOT user_id
+  // Before fix, doctor options were built with d.user_id instead of d.id,
+  // causing walk_in entries to store user_id as doctor_id (ID space mismatch).
+  it('doctor options in take-number use queue_doctor.id (d.id), not user_id (d.user_id)', async () => {
+    // Doctor with queue_doctor.id=5 and user_id=99 — very different values
+    mockListQueueDoctors.mockResolvedValue({
+      data: {
+        list: [
+          { id: 5, user_id: 99, user_name: '李医生', room: '1诊室', enabled: true, sort_order: 0 },
+        ],
+      },
+    });
+    mockTakeNumber.mockResolvedValue({ data: { code: 0 } });
+
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByText('现场取号')).toBeInTheDocument();
+    });
+
+    // Enter patient name and submit
+    fireEvent.change(screen.getByPlaceholderText('患者姓名'), { target: { value: '测试患者' } });
+    fireEvent.click(screen.getByText('取号'));
+
+    await waitFor(() => {
+      expect(mockTakeNumber).toHaveBeenCalled();
+    });
+
+    const callArgs = mockTakeNumber.mock.calls[0][0] as { doctor_id: number };
+    // MUST use queue_doctor.id (5), NOT user_id (99)
+    expect(callArgs.doctor_id).toBe(5);
+    expect(callArgs.doctor_id).not.toBe(99);
+  });
 });

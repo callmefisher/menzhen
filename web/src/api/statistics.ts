@@ -39,9 +39,9 @@ export interface DashboardData {
   patient_breakdown: PatientBreakdown;
 }
 
-export function getDashboard(startDate: string, endDate: string) {
+export function getDashboard(startDate: string, endDate: string, tenantId?: number) {
   return request.get<{ code: number; data: DashboardData }>('/statistics/dashboard', {
-    params: { start_date: startDate, end_date: endDate },
+    params: { start_date: startDate, end_date: endDate, ...(tenantId ? { tenant_id: tenantId } : {}) },
   });
 }
 
@@ -72,4 +72,42 @@ export function getStaffRevenue(startDate: string, endDate: string) {
   return request.get<{ code: number; data: StaffRevenueData }>('/statistics/staff', {
     params: { start_date: startDate, end_date: endDate },
   });
+}
+
+// ── Global stats (superAdmin only) ──────────────────────────────────────────
+
+export interface GlobalTenantItem {
+  tenant_id: number;
+  tenant_name: string;
+  revenue: number;
+  records: number;
+  patients: number;
+  avg_per_record: number;
+  revenue_percent: number;
+}
+
+export interface GlobalSummary {
+  total_revenue: number;
+  total_records: number;
+  total_patients: number;
+  avg_revenue_per_record: number;
+  tenant_count: number;
+}
+
+export interface GlobalStatsData {
+  total: number; // total tenant count for pagination (from GlobalStatsResult.Total)
+  summary: GlobalSummary;
+  tenants: GlobalTenantItem[];
+}
+
+export function getGlobalStats(
+  startDate: string,
+  endDate: string,
+  page = 1,
+  size = 50,
+) {
+  return request.get<{ code: number; data: GlobalStatsData }>(
+    '/admin/statistics/global',
+    { params: { start_date: startDate, end_date: endDate, page, size } },
+  );
 }

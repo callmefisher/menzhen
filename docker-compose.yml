@@ -25,6 +25,8 @@ services:
     image: menzhen-api:latest
     build: ./server
     env_file: .env
+    environment:
+      TZ: Asia/Shanghai
     healthcheck:
       test: ["CMD-SHELL", "wget -S -O /dev/null http://127.0.0.1:8080/ 2>&1 | grep -q 'HTTP/'"]
       interval: 5s
@@ -48,6 +50,7 @@ services:
     command: --default-authentication-plugin=mysql_native_password
     env_file: .env
     environment:
+      TZ: Asia/Shanghai
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
       MYSQL_DATABASE: ${DB_NAME}
       MYSQL_USER: ${DB_USER}

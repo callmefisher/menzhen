@@ -24,6 +24,7 @@ interface AuthState {
   loading: boolean;
   queueEnabled: boolean;
   appointmentEnabled: boolean;
+  managedGroups: string[];
 }
 
 interface AuthContextValue extends AuthState {
@@ -34,6 +35,8 @@ interface AuthContextValue extends AuthState {
   isGlobalAdmin: boolean;
   /** True only for username=admin with user:manage — can see across all tenants. */
   isSuperAdmin: boolean;
+  /** True when user manages one or more groups and is not superAdmin. */
+  isPowerAdmin: boolean;
   fetchQueueEnabled: () => Promise<void>;
   fetchAppointmentEnabled: () => Promise<void>;
 }
@@ -57,6 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loading: true,
     queueEnabled: true,
     appointmentEnabled: true,
+    managedGroups: [],
   });
 
   const fetchQueueEnabled = useCallback(async () => {
@@ -84,17 +88,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (state.token) {
       getMe()
         .then((res) => {
-          const body = res as unknown as {
-            data: { user: User; permissions: string[] };
+          const meBody = res as unknown as {
+            data: { user: User; permissions: string[]; managed_groups?: string[] };
           };
           setState((prev) => ({
             ...prev,
-            user: body.data.user,
-            permissions: body.data.permissions || [],
+            user: meBody.data.user,
+            permissions: meBody.data.permissions || [],
+            managedGroups: meBody.data.managed_groups || [],
             loading: false,
           }));
-          if (body.data.user.tenant_name) {
-            document.title = body.data.user.tenant_name;
+          if (meBody.data.user.tenant_name) {
+            document.title = meBody.data.user.tenant_name;
           }
           fetchQueueEnabled();
           fetchAppointmentEnabled();
@@ -108,6 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             loading: false,
             queueEnabled: true,
             appointmentEnabled: true,
+            managedGroups: [],
           });
         });
     } else {
@@ -120,7 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (username: string, password: string, remember?: boolean) => {
     const res = await loginApi({ username, password });
     const body = res as unknown as {
-      data: { token: string; user: User; permissions: string[] };
+      data: { token: string; user: User; permissions: string[]; managed_groups?: string[] };
     };
     // Clear both storages first, then store in the appropriate one
     clearStoredToken();
@@ -136,6 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading: false,
       queueEnabled: true,
       appointmentEnabled: true,
+      managedGroups: body.data.managed_groups || [],
     });
     if (body.data.user.tenant_name) {
       document.title = body.data.user.tenant_name;
@@ -165,6 +172,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading: false,
         queueEnabled: true,
         appointmentEnabled: true,
+        managedGroups: [],
       });
     }
   }, []);
@@ -178,6 +186,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const isGlobalAdmin = state.permissions.includes('user:manage');
   const isSuperAdmin = state.user?.username === 'admin' && isGlobalAdmin;
+  const isPowerAdmin = (state.managedGroups?.length ?? 0) > 0 && !isSuperAdmin;
 
   return (
     <AuthContext.Provider
@@ -188,6 +197,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         hasPermission,
         isGlobalAdmin,
         isSuperAdmin,
+        isPowerAdmin,
         fetchQueueEnabled,
         fetchAppointmentEnabled,
       }}

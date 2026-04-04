@@ -47,6 +47,7 @@ describe('TenantList', () => {
             name: '默认诊所',
             code: 'default',
             status: 1,
+            group_name: 'main',
             created_at: '2026-01-01T00:00:00Z',
           },
           {
@@ -54,6 +55,7 @@ describe('TenantList', () => {
             name: '仁心堂',
             code: 'renxintang',
             status: 0,
+            group_name: 'main',
             created_at: '2026-02-01T00:00:00Z',
           },
         ],

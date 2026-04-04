@@ -64,3 +64,25 @@ export const getSlots = (date: string, doctorId: number) =>
   request.get<{ code: number; data: { list: SlotInfo[] } }>('/appointments/slots', {
     params: { date, doctor_id: doctorId },
   });
+
+export const enqueueToday = () =>
+  request.post<{ code: number; data: { enqueued: number; failed: number[] } }>('/appointments/enqueue-today');
+
+export interface MatrixDoctor {
+  doctor_id: number;
+  doctor_name: string;
+}
+
+export interface WeeklyMatrixResult {
+  doctors: MatrixDoctor[];
+  days: string[];                                   // ["2026-04-07", ..., "2026-04-13"]
+  counts: Record<string, Record<string, number>>;   // counts[doctorId][date]
+  row_totals: Record<string, number>;               // row_totals[doctorId]
+  col_totals: Record<string, number>;               // col_totals[date]
+  grand_total: number;
+}
+
+export const getAppointmentMatrix = (start?: string) =>
+  request.get<{ code: number; data: WeeklyMatrixResult }>('/appointments/matrix', {
+    params: start ? { start } : undefined,
+  });

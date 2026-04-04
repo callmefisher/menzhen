@@ -8,13 +8,15 @@ import {
   Typography,
   message,
   DatePicker,
-} from 'antd';import { PlusOutlined, SearchOutlined, LeftOutlined, RightOutlined, CalendarOutlined } from '@ant-design/icons';
+} from 'antd';
+import { PlusOutlined, SearchOutlined, LeftOutlined, RightOutlined, CalendarOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
 import type { ColumnsType } from 'antd/es/table';
-import { listAppointments, cancelAppointment, type Appointment } from '../../api/appointment';
+import { listAppointments, cancelAppointment, enqueueToday, type Appointment } from '../../api/appointment';
 import { listQueueDoctors, type QueueDoctor } from '../../api/queue-doctor';
 import AppointmentModal from '../../components/AppointmentModal';
-
+import AppointmentMatrix from '../../components/AppointmentMatrix';
+import { useWebSocket } from '../../hooks/useWebSocket';
 
 const STATUS_MAP: Record<string, { color: string; label: string }> = {
   pending:   { color: 'blue',    label: '待签到' },
@@ -28,7 +30,9 @@ export default function AppointmentManage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(false);
   const [cancelLoading, setCancelLoading] = useState<Record<number, boolean>>({});
+  const [enqueueLoading, setEnqueueLoading] = useState(false);
   const [doctorFilter, setDoctorFilter] = useState('');
+  const [selectedDoctorId, setSelectedDoctorId] = useState<number | undefined>(undefined);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
   const [doctors, setDoctors] = useState<QueueDoctor[]>([]);
@@ -62,6 +66,26 @@ export default function AppointmentManage() {
     })();
   }, []);
 
+  // Refresh appointment list when an appointment is created or cancelled via WebSocket.
+  const refreshList = useCallback(() => { fetchAppointments(selectedDate); }, [fetchAppointments, selectedDate]);
+  useWebSocket('appt_created', refreshList);
+  useWebSocket('appt_cancelled', refreshList);
+
+  const handleEnqueueToday = useCallback(async () => {
+    setEnqueueLoading(true);
+    try {
+      const res = await enqueueToday();
+      const body = res as unknown as { data?: { enqueued?: number; failed?: number[] } };
+      const n = body.data?.enqueued ?? 0;
+      message.success(n > 0 ? `已入队 ${n} 名患者` : '无待入队预约');
+      fetchAppointments(selectedDate);
+    } catch {
+      message.error('入队失败，请重试');
+    } finally {
+      setEnqueueLoading(false);
+    }
+  }, [fetchAppointments, selectedDate]);
+
   const handleCancel = useCallback(
     async (id: number) => {
       setCancelLoading((prev) => ({ ...prev, [id]: true }));
@@ -78,11 +102,22 @@ export default function AppointmentManage() {
     [fetchAppointments, selectedDate],
   );
 
+  const handleMatrixDateChange = useCallback((date: Dayjs, doctorId?: number) => {
+    setSelectedDate(date);
+    setSelectedDoctorId(doctorId);
+    setDoctorFilter('');
+  }, []);
+
   const filteredAppointments = useMemo(() => {
-    if (!doctorFilter.trim()) return appointments;
-    const lower = doctorFilter.trim().toLowerCase();
-    return appointments.filter((a) => a.doctor_name.toLowerCase().includes(lower));
-  }, [appointments, doctorFilter]);
+    let result = appointments;
+    if (selectedDoctorId !== undefined) {
+      result = result.filter((a) => a.doctor_id === selectedDoctorId);
+    } else if (doctorFilter.trim()) {
+      const lower = doctorFilter.trim().toLowerCase();
+      result = result.filter((a) => a.doctor_name.toLowerCase().includes(lower));
+    }
+    return result;
+  }, [appointments, doctorFilter, selectedDoctorId]);
 
   const columns = useMemo<ColumnsType<Appointment>>(
     () => [
@@ -167,14 +202,30 @@ export default function AppointmentManage() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
         <Typography.Title level={4} style={{ margin: 0 }}>预约管理</Typography.Title>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => { setEditingAppointment(null); setModalOpen(true); }}
-        >
-          新建预约
-        </Button>
+        <Space>
+          {isToday && appointments.some(a => a.status === 'pending') && (
+            <Button
+              loading={enqueueLoading}
+              onClick={handleEnqueueToday}
+            >
+              立即入队
+            </Button>
+          )}
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => { setEditingAppointment(null); setModalOpen(true); }}
+          >
+            新建预约
+          </Button>
+        </Space>
       </div>
+
+      {/* Matrix overview */}
+      <AppointmentMatrix
+        selectedDate={selectedDate}
+        onDateChange={handleMatrixDateChange}
+      />
 
       {/* Toolbar */}
       <div style={{
@@ -231,7 +282,7 @@ export default function AppointmentManage() {
           placeholder="按医生筛选"
           prefix={<SearchOutlined />}
           value={doctorFilter}
-          onChange={(e) => setDoctorFilter(e.target.value)}
+          onChange={(e) => { setDoctorFilter(e.target.value); setSelectedDoctorId(undefined); }}
           style={{ width: 140, marginLeft: 'auto' }}
           size="small"
         />
@@ -253,7 +304,7 @@ export default function AppointmentManage() {
 
       <AppointmentModal
         open={modalOpen}
-        doctorOptions={doctors.map(d => ({ id: d.user_id, name: d.user_name, room: d.room }))}
+        doctorOptions={doctors.map(d => ({ id: d.id, name: d.user_name, room: d.room }))}
         initialValues={editingAppointment ? {
           id: editingAppointment.id,
           patient_name: editingAppointment.patient_name,

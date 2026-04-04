@@ -13,6 +13,8 @@ import {
   Pagination,
   Spin,
   Empty,
+  Tag,
+  AutoComplete,
 } from 'antd';
 import {
   PlusOutlined,
@@ -20,6 +22,7 @@ import {
   DeleteOutlined,
 } from '@ant-design/icons';
 import { listTenants, createTenant, updateTenant, deleteTenant } from '../../api/tenant';
+import { listAllGroups } from '../../api/powerAdmin';
 import useIsMobile from '../../hooks/useIsMobile';
 import useRowHighlight from '../../hooks/useRowHighlight';
 import { useAuth } from '../../store/auth';
@@ -32,6 +35,7 @@ interface TenantItem {
   code: string;
   status: number;
   created_at: string;
+  group_name: string;
 }
 
 interface ListParams {
@@ -61,8 +65,22 @@ export default function TenantList() {
   const [editingTenant, setEditingTenant] = useState<TenantItem | null>(null);
   const [form] = Form.useForm();
   const [submitLoading, setSubmitLoading] = useState(false);
+  const [groupOptions, setGroupOptions] = useState<{ value: string }[]>([]);
 
   const isEdit = Boolean(editingTenant);
+
+  const handleGroupSearch = useCallback(async (val: string) => {
+    try {
+      const res = await listAllGroups();
+      const body = res as unknown as { code: number; data: string[] };
+      const groups = body.data || [];
+      const filtered = groups.filter(g => !val || g.includes(val)).map(g => ({ value: g }));
+      if (val && !groups.includes(val)) {
+        filtered.push({ value: val }); // allow creating new group by typing
+      }
+      setGroupOptions(filtered);
+    } catch { /* ignore */ }
+  }, []);
 
   const fetchData = useCallback(async (query: ListParams) => {
     setLoading(true);
@@ -97,10 +115,12 @@ export default function TenantList() {
         name: record.name,
         code: record.code,
         status: record.status,
+        group_name: record.group_name || 'default',
       });
     } else {
       setEditingTenant(null);
       form.resetFields();
+      form.setFieldValue('group_name', 'default');
     }
     setModalVisible(true);
   };
@@ -115,6 +135,7 @@ export default function TenantList() {
           name: values.name,
           code: values.code,
           status: values.status,
+          group_name: values.group_name,
         });
         message.success('更新成功');
         const editedId = editingTenant.id;
@@ -127,6 +148,7 @@ export default function TenantList() {
         await createTenant({
           name: values.name,
           code: values.code,
+          group_name: values.group_name || 'default',
         });
         message.success('创建成功');
         setModalVisible(false);
@@ -204,6 +226,15 @@ export default function TenantList() {
       width: 100,
       ellipsis: true,
       a11yPriority: 2,
+    },
+    {
+      title: '分组',
+      dataIndex: 'group_name',
+      key: 'group_name',
+      width: 100,
+      render: (val: string) => (
+        <Tag color={val === 'default' || !val ? 'default' : 'purple'}>{val || 'default'}</Tag>
+      ),
     },
     {
       title: '操作',
@@ -404,6 +435,19 @@ export default function TenantList() {
             rules={[{ required: true, message: '请输入诊所编码' }]}
           >
             <Input placeholder="请输入唯一编码，如 clinic01" />
+          </Form.Item>
+          <Form.Item
+            name="group_name"
+            label="所属分组"
+            rules={[{ required: true, message: '请输入分组名' }]}
+          >
+            <AutoComplete
+              placeholder="默认 default，输入新名称自动创建分组"
+              options={groupOptions}
+              onSearch={handleGroupSearch}
+              onFocus={() => handleGroupSearch('')}
+              filterOption={false}
+            />
           </Form.Item>
           {isEdit && (
             <Form.Item name="status" label="状态">

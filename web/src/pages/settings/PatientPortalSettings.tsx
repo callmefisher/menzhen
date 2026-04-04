@@ -1,0 +1,165 @@
+import { useEffect, useRef, useState } from 'react';
+import { Card, Switch, message, Spin, Typography, Alert, QRCode, Button, Input } from 'antd';
+import { getPatientPortalConfig, updatePatientPortalConfig } from '../../api/patientPortal';
+import type { PatientPortalConfig } from '../../api/patientPortal';
+import { useAuth } from '../../store/auth';
+import TenantSelector from '../../components/TenantSelector';
+
+const { Title } = Typography;
+
+const SWITCHES = [
+  { key: 'login_enabled' as keyof PatientPortalConfig, label: '开放患者登录', desc: '关闭后患者端所有功能不可用', icon: '🔑', section: '账号管理' },
+  { key: 'register_enabled' as keyof PatientPortalConfig, label: '开放患者注册', desc: '关闭后只允许已注册患者登录，新用户无法注册', icon: '📝', section: '账号管理' },
+  { key: 'appointment_enabled' as keyof PatientPortalConfig, label: '开放在线预约', desc: '患者可自助预约医生时段', icon: '📅', section: '就诊功能' },
+  { key: 'queue_enabled' as keyof PatientPortalConfig, label: '开放快捷取号', desc: '患者到院后可自助取号入队', icon: '🎫', section: '就诊功能' },
+  { key: 'records_enabled' as keyof PatientPortalConfig, label: '开放病历与收费查看', desc: '患者可查看自己的病历、处方、账单（只读）', icon: '📋', section: '记录查看' },
+];
+
+export default function PatientPortalSettings() {
+  const { user: currentUser, isSuperAdmin } = useAuth();
+  const [selectedTenantId, setSelectedTenantId] = useState<number>(currentUser?.tenant_id ?? 0);
+  const [config, setConfig] = useState<PatientPortalConfig | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const qrContainerRef = useRef<HTMLDivElement>(null);
+  const [baseUrl, setBaseUrl] = useState(
+    () => localStorage.getItem('portal_base_url') || window.location.origin
+  );
+  const tenantIdParam = isSuperAdmin ? (selectedTenantId || undefined) : undefined;
+
+  const isValidBaseUrl = /^https?:\/\/.+/.test(baseUrl.replace(/\/+$/, ''));
+
+  useEffect(() => {
+    setLoading(true);
+    setConfig(null);
+    getPatientPortalConfig(tenantIdParam)
+      .then((res) => setConfig(res.data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [tenantIdParam]);
+
+  const handleToggle = async (key: keyof PatientPortalConfig, value: boolean) => {
+    if (!config) return;
+    const updated = { ...config, [key]: value };
+    setConfig(updated);
+    try {
+      await updatePatientPortalConfig(updated, tenantIdParam);
+      message.success('已保存');
+    } catch {
+      setConfig(config); // revert on error
+    }
+  };
+
+  const sections = [...new Set(SWITCHES.map(s => s.section))];
+
+  const qrUrl = config?.tenant_code && isValidBaseUrl
+    ? `${baseUrl.replace(/\/+$/, '')}/patient/login?code=${encodeURIComponent(config.tenant_code)}`
+    : '';
+
+  const handleDownloadQRCode = () => {
+    const canvas = qrContainerRef.current?.querySelector<HTMLCanvasElement>('canvas');
+    if (!canvas) {
+      message.warning('二维码尚未生成，请稍后重试');
+      return;
+    }
+    const url = canvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'clinic-qrcode.png';
+    a.click();
+    a.remove();
+  };
+
+  return (
+    <div style={{ padding: '24px', maxWidth: 600 }}>
+      <Title level={4}>患者端管理</Title>
+      <TenantSelector
+        value={selectedTenantId}
+        onChange={(id) => setSelectedTenantId(id)}
+      />
+      <Alert
+        style={{ marginBottom: 16 }}
+        type="info"
+        message="以下开关仅影响患者端，不影响诊所员工的管理后台功能"
+        showIcon
+      />
+      {loading ? (
+        <div style={{ padding: 40, textAlign: 'center' }}><Spin /></div>
+      ) : !config ? null : (
+        <>
+          <Card title="患者端二维码" size="small" style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20 }}>
+              <div ref={qrContainerRef}>
+                {qrUrl ? (
+                  <QRCode value={qrUrl} size={128} />
+                ) : (
+                  <div
+                    style={{
+                      width: 128, height: 128,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      background: '#f5f5f5', color: '#aaa', fontSize: 13,
+                      border: '1px solid #e8e8e8', borderRadius: 4,
+                    }}
+                  >
+                    暂无诊所代码
+                  </div>
+                )}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ marginBottom: 12, color: '#555', lineHeight: '1.6' }}>
+                  患者扫描此码即可直接进入本诊所患者端
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>访问地址（可修改为外网域名）</div>
+                  <Input
+                    size="small"
+                    value={baseUrl}
+                    onChange={e => {
+                      setBaseUrl(e.target.value);
+                      localStorage.setItem('portal_base_url', e.target.value);
+                    }}
+                    placeholder="https://your-domain.com"
+                    style={{ fontFamily: 'monospace' }}
+                    status={!isValidBaseUrl ? 'error' : ''}
+                  />
+                </div>
+                {qrUrl && (
+                  <Button size="small" onClick={handleDownloadQRCode}>
+                    下载二维码
+                  </Button>
+                )}
+                <div style={{ marginTop: 12, fontSize: 12, color: '#888' }}>
+                  诊所代码: {config.tenant_code || '—'}{config.tenant_name ? ` · ${config.tenant_name}` : ''}
+                </div>
+              </div>
+            </div>
+          </Card>
+          {sections.map(section => (
+            <Card key={section} title={section} size="small" style={{ marginBottom: 12 }}>
+              {SWITCHES.filter(s => s.section === section).map(sw => (
+                <div
+                  key={sw.key}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    padding: '10px 0', borderBottom: '1px solid #f9f9f9',
+                  }}
+                >
+                  <span style={{ fontSize: 20 }}>{sw.icon}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600 }}>{sw.label}</div>
+                    <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{sw.desc}</div>
+                  </div>
+                  <Switch
+                    checked={config[sw.key] as boolean}
+                    onChange={(v) => handleToggle(sw.key, v)}
+                    style={{ background: (config[sw.key] as boolean) ? '#52C41A' : undefined }}
+                  />
+                </div>
+              ))}
+            </Card>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}

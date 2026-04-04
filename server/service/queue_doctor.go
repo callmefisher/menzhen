@@ -170,7 +170,7 @@ func (s *QueueDoctorService) GetCallDisplayDuration(tenantID uint) (int, error) 
 		return 0, err
 	}
 	if tenant.CallDisplayDuration == nil {
-		return 10, nil
+		return 6, nil
 	}
 	return *tenant.CallDisplayDuration, nil
 }
@@ -299,8 +299,8 @@ func (s *QueueDoctorService) GetAppointmentConfig(tenantID uint) (AppointmentCon
 	}
 	cfg := AppointmentConfig{
 		SlotMinutes: 30,
-		MaxPerSlot:  10,
-		AdvanceDays: 7,
+		MaxPerSlot:  1,
+		AdvanceDays: 30,
 	}
 	if tenant.AppointmentSlotMinutes != nil {
 		cfg.SlotMinutes = *tenant.AppointmentSlotMinutes

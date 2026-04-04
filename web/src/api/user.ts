@@ -1,6 +1,6 @@
 import request from '../utils/request';
 
-export function listUsers(params: { page?: number; size?: number }) {
+export function listUsers(params: { page?: number; size?: number; tenant_id?: number }) {
   return request.get('/users', { params });
 }
 

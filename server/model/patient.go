@@ -20,7 +20,7 @@ type Patient struct {
 
 	// Associations
 	Tenant         Tenant          `gorm:"foreignKey:TenantID" json:"tenant,omitempty"`
-	Creator        User            `gorm:"foreignKey:CreatedBy" json:"creator,omitempty"`
+	Creator        User            `gorm:"foreignKey:CreatedBy;constraint:OnUpdate:NO ACTION,OnDelete:NO ACTION" json:"creator,omitempty"`
 	MedicalRecords []MedicalRecord `gorm:"foreignKey:PatientID" json:"medical_records,omitempty"`
 }
 

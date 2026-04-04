@@ -22,9 +22,10 @@ type LoginRequest struct {
 
 // LoginResponse is returned on successful login.
 type LoginResponse struct {
-	Token       string       `json:"token"`
-	User        UserBriefDTO `json:"user"`
-	Permissions []string     `json:"permissions"`
+	Token         string       `json:"token"`
+	User          UserBriefDTO `json:"user"`
+	Permissions   []string     `json:"permissions"`
+	ManagedGroups []string     `json:"managed_groups"`
 }
 
 // RegisterRequest is the JSON body for POST /api/v1/auth/register.
@@ -47,8 +48,9 @@ type UserBriefDTO struct {
 
 // MeResponse is returned by GET /api/v1/auth/me.
 type MeResponse struct {
-	User        UserBriefDTO `json:"user"`
-	Permissions []string     `json:"permissions"`
+	User          UserBriefDTO `json:"user"`
+	Permissions   []string     `json:"permissions"`
+	ManagedGroups []string     `json:"managed_groups"`
 }
 
 // ChangePasswordRequest is the JSON body for POST /api/v1/auth/change-password.
@@ -61,17 +63,19 @@ type ChangePasswordRequest struct {
 
 // AuthHandler handles authentication endpoints.
 type AuthHandler struct {
-	authService *service.AuthService
-	jwtSecret   string
-	db          *gorm.DB
+	authService   *service.AuthService
+	powerAdminSvc *service.PowerAdminService
+	jwtSecret     string
+	db            *gorm.DB
 }
 
 // NewAuthHandler creates a new AuthHandler.
 func NewAuthHandler(authService *service.AuthService, jwtSecret string, db *gorm.DB) *AuthHandler {
 	return &AuthHandler{
-		authService: authService,
-		jwtSecret:   jwtSecret,
-		db:          db,
+		authService:   authService,
+		powerAdminSvc: service.NewPowerAdminService(db),
+		jwtSecret:     jwtSecret,
+		db:            db,
 	}
 }
 
@@ -110,7 +114,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	token, err := middleware.GenerateToken(user.ID, user.TenantID, user.Username, user.TokenVersion, h.jwtSecret)
+	managedGroups, _ := h.powerAdminSvc.GetManagedGroupsForUser(user.ID)
+	token, err := middleware.GenerateToken(user.ID, user.TenantID, user.Username, user.TokenVersion, managedGroups, h.jwtSecret)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -144,7 +149,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 				TenantID:   user.TenantID,
 				TenantName: tenantName,
 			},
-			Permissions: permissions,
+			Permissions:   permissions,
+			ManagedGroups: managedGroups,
 		},
 	})
 }
@@ -163,6 +169,15 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	req.Username = strings.TrimSpace(req.Username)
 	req.RealName = strings.TrimSpace(req.RealName)
 	req.Phone = strings.TrimSpace(req.Phone)
+
+	// "admin" is a reserved username for the super-administrator account.
+	if req.Username == "admin" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "该用户名为系统保留用户名，不可注册",
+		})
+		return
+	}
 
 	// Look up tenant by code.
 	var tenant model.Tenant
@@ -252,6 +267,8 @@ func (h *AuthHandler) Me(c *gin.Context) {
 		tenantName = tenant.Name
 	}
 
+	managedGroups, _ := h.powerAdminSvc.GetManagedGroupsForUser(user.ID)
+
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"message": "success",
@@ -263,7 +280,8 @@ func (h *AuthHandler) Me(c *gin.Context) {
 				TenantID:   user.TenantID,
 				TenantName: tenantName,
 			},
-			Permissions: permissions,
+			Permissions:   permissions,
+			ManagedGroups: managedGroups,
 		},
 	})
 }
@@ -344,7 +362,8 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		return
 	}
 
-	token, err := middleware.GenerateToken(user.ID, user.TenantID, user.Username, user.TokenVersion, h.jwtSecret)
+	managedGroups, _ := h.powerAdminSvc.GetManagedGroupsForUser(user.ID)
+	token, err := middleware.GenerateToken(user.ID, user.TenantID, user.Username, user.TokenVersion, managedGroups, h.jwtSecret)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -371,7 +390,8 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 				TenantID:   user.TenantID,
 				TenantName: tenantName,
 			},
-			Permissions: permissions,
+			Permissions:   permissions,
+			ManagedGroups: managedGroups,
 		},
 	})
 }
