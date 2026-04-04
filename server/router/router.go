@@ -456,10 +456,10 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		powerAdminHandler := handler.NewPowerAdminHandler(db)
 		powerAdmins := authenticated.Group("/settings/power-admins")
 		{
-			powerAdmins.GET("", middleware.RequirePermission(db, "power_admin:manage"), powerAdminHandler.List)
-			powerAdmins.DELETE("/:id", middleware.RequirePermission(db, "power_admin:manage"), powerAdminHandler.Delete)
-			powerAdmins.PUT("/:id/groups", middleware.RequirePermission(db, "power_admin:manage"), powerAdminHandler.AssignGroups)
-			powerAdmins.GET("/groups", middleware.RequirePermission(db, "power_admin:manage"), powerAdminHandler.ListAllGroups)
+			powerAdmins.GET("", middleware.RequireSuperAdmin(db), powerAdminHandler.List)
+			powerAdmins.DELETE("/:id", middleware.RequireSuperAdmin(db), powerAdminHandler.Delete)
+			powerAdmins.PUT("/:id/groups", middleware.RequireSuperAdmin(db), powerAdminHandler.AssignGroups)
+			powerAdmins.GET("/groups", middleware.RequireSuperAdmin(db), powerAdminHandler.ListAllGroups)
 		}
 
 		// Prescription list by record (nested under records).

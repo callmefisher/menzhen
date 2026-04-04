@@ -44,6 +44,7 @@ function renderWithRouter(url = '/patient/login') {
 describe('PatientLogin', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
     mockUsePatientAuth.mockReturnValue({
       token: null,
       user: null,
@@ -229,5 +230,77 @@ describe('PatientLogin', () => {
     await waitFor(() => {
       expect(screen.getByText('请输入正确的手机号')).toBeInTheDocument();
     });
+  });
+
+  // 11. localStorage pre-fill: all four values present → form pre-filled, no API call
+  it('pre-fills all fields from localStorage when no ?code= param', async () => {
+    localStorage.setItem('patient_last_tenant_code', 'clinic01');
+    localStorage.setItem('patient_last_tenant_name', '康德中医诊所');
+    localStorage.setItem('patient_last_phone', '13800000001');
+    localStorage.setItem('patient_last_name', '张三');
+
+    renderWithRouter('/patient/login');
+
+    await waitFor(() => {
+      expect(screen.getByText('康德中医诊所')).toBeInTheDocument();
+    });
+
+    expect(mockGetTenantInfo).not.toHaveBeenCalled();
+    expect(screen.getByDisplayValue('13800000001')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('张三')).toBeInTheDocument();
+  });
+
+  // 12. localStorage pre-fill: code without tenant_name → falls back to getTenantInfo
+  it('calls getTenantInfo when localStorage has code but no tenant_name', async () => {
+    localStorage.setItem('patient_last_tenant_code', 'clinic01');
+    mockGetTenantInfo.mockResolvedValue({
+      code: 0,
+      data: { tenant_name: '康德中医诊所', tenant_code: 'clinic01' },
+    });
+
+    renderWithRouter('/patient/login');
+
+    await waitFor(() => {
+      expect(screen.getByText('康德中医诊所')).toBeInTheDocument();
+    });
+
+    expect(mockGetTenantInfo).toHaveBeenCalledWith('clinic01');
+  });
+
+  // 13. localStorage pre-fill: partial values (code+name only, no phone)
+  it('pre-fills only available fields from localStorage', async () => {
+    localStorage.setItem('patient_last_tenant_code', 'clinic01');
+    localStorage.setItem('patient_last_tenant_name', '康德中医诊所');
+    localStorage.setItem('patient_last_name', '李四');
+    // no patient_last_phone
+
+    renderWithRouter('/patient/login');
+
+    await waitFor(() => {
+      expect(screen.getByText('康德中医诊所')).toBeInTheDocument();
+    });
+
+    expect(screen.getByDisplayValue('李四')).toBeInTheDocument();
+    // phone field should be empty
+    expect(screen.getByPlaceholderText('请输入手机号')).toHaveValue('');
+  });
+
+  // 14. ?code= param takes priority over localStorage
+  it('URL ?code= param overrides localStorage pre-fill', async () => {
+    localStorage.setItem('patient_last_tenant_code', 'old_clinic');
+    localStorage.setItem('patient_last_tenant_name', '旧诊所');
+    mockGetTenantInfo.mockResolvedValue({
+      code: 0,
+      data: { tenant_name: '新诊所', tenant_code: 'new_clinic' },
+    });
+
+    renderWithRouter('/patient/login?code=new_clinic');
+
+    await waitFor(() => {
+      expect(screen.getByText('新诊所')).toBeInTheDocument();
+    });
+
+    expect(mockGetTenantInfo).toHaveBeenCalledWith('new_clinic');
+    expect(mockGetTenantInfo).not.toHaveBeenCalledWith('old_clinic');
   });
 });

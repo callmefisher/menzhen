@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/callmefisher/menzhen/server/model"
+	"github.com/callmefisher/menzhen/server/service"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"gorm.io/gorm"
@@ -186,6 +187,33 @@ func SuperAdminTenantOverrideMiddleware(db *gorm.DB) gin.HandlerFunc {
 			}
 		}
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"code": 403, "message": "无权访问该诊所"})
+	}
+}
+
+// RequireSuperAdmin rejects requests that are not from the superAdmin account
+// (username=="admin" with user:manage permission). All other users get 403.
+// Use this for endpoints that should only be accessible by the superAdmin.
+func RequireSuperAdmin(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		username := GetUsername(c)
+		if username != "admin" {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"code":    403,
+				"message": "仅超级管理员可访问",
+			})
+			return
+		}
+		userID := GetUserID(c)
+		permSvc := service.NewPermissionService(db)
+		has, err := permSvc.HasPermission(userID, "user:manage")
+		if err != nil || !has {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"code":    403,
+				"message": "仅超级管理员可访问",
+			})
+			return
+		}
+		c.Next()
 	}
 }
 

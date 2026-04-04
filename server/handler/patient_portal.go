@@ -281,29 +281,47 @@ func (h *PatientPortalHandler) GetAppointmentSlots(c *gin.Context) {
 }
 
 // CancelAppointment handles POST /api/v1/patient/appointments/:id/cancel.
+// Patients may cancel their own pending or queued appointments.
 func (h *PatientPortalHandler) CancelAppointment(c *gin.Context) {
 	if !h.portalEnabled(c, func(cfg model.PatientPortalConfig) bool { return cfg.AppointmentEnabled }) {
 		return
 	}
 	tenantID := middleware.GetPatientTenantID(c)
 	patientID := middleware.GetPatientIDFromCtx(c)
-	id := c.Param("id")
-
-	query := h.db.Model(&model.Appointment{}).
-		Where("id = ? AND tenant_id = ? AND status = ?", id, tenantID, model.AppointmentStatusPending)
-	if patientID != nil {
-		v := uint(*patientID)
-		query = query.Where("patient_id = ?", v)
+	idStr := c.Param("id")
+	apptID, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "无效的预约 ID"})
+		return
 	}
 
-	result := query.Update("status", model.AppointmentStatusCancelled)
-	if result.Error != nil {
+	// Require a linked patient record to prevent name-based horizontal privilege escalation.
+	if patientID == nil {
+		c.JSON(http.StatusForbidden, gin.H{"code": 403, "message": "请先绑定患者档案才能取消预约"})
+		return
+	}
+
+	// Verify the appointment belongs to this patient before cancelling.
+	var appt model.Appointment
+	if err := h.db.Where("id = ? AND tenant_id = ? AND patient_id = ?",
+		apptID, tenantID, uint(*patientID)).First(&appt).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"code": 404, "message": "预约不存在"})
+		return
+	}
+
+	if err := h.appointmentSvc.Cancel(uint(tenantID), uint(apptID)); err != nil {
+		if errors.Is(err, service.ErrCancelNotAllowed) {
+			c.JSON(http.StatusConflict, gin.H{"code": 409, "message": "该预约状态不支持取消"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "取消失败"})
 		return
 	}
-	if result.RowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"code": 404, "message": "预约不存在或无法取消"})
-		return
+	if ws.DefaultHub != nil {
+		ws.DefaultHub.Broadcast(uint64(tenantID), ws.Message{
+			Type:    "appt_cancelled",
+			Payload: gin.H{"action": "refresh"},
+		})
 	}
 	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "预约已取消"})
 }

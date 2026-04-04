@@ -16,6 +16,7 @@ import { listAppointments, cancelAppointment, enqueueToday, type Appointment } f
 import { listQueueDoctors, type QueueDoctor } from '../../api/queue-doctor';
 import AppointmentModal from '../../components/AppointmentModal';
 import AppointmentMatrix from '../../components/AppointmentMatrix';
+import { useWebSocket } from '../../hooks/useWebSocket';
 
 const STATUS_MAP: Record<string, { color: string; label: string }> = {
   pending:   { color: 'blue',    label: '待签到' },
@@ -64,6 +65,11 @@ export default function AppointmentManage() {
       }
     })();
   }, []);
+
+  // Refresh appointment list when an appointment is created or cancelled via WebSocket.
+  const refreshList = useCallback(() => { fetchAppointments(selectedDate); }, [fetchAppointments, selectedDate]);
+  useWebSocket('appt_created', refreshList);
+  useWebSocket('appt_cancelled', refreshList);
 
   const handleEnqueueToday = useCallback(async () => {
     setEnqueueLoading(true);

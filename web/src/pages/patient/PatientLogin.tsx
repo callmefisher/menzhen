@@ -26,6 +26,24 @@ export default function PatientLogin() {
         .catch(() => {
           // silently fall back to default title
         });
+    } else {
+      // Pre-fill from last session after logout
+      const lastCode = localStorage.getItem('patient_last_tenant_code');
+      const lastTenantName = localStorage.getItem('patient_last_tenant_name');
+      const lastPhone = localStorage.getItem('patient_last_phone');
+      const lastName = localStorage.getItem('patient_last_name');
+      if (lastCode) {
+        form.setFieldValue('tenant_code', lastCode);
+        if (lastTenantName) {
+          setClinicName(lastTenantName);
+        } else {
+          getTenantInfo(lastCode).then((res) => {
+            if (res.data?.tenant_name) setClinicName(res.data.tenant_name);
+          }).catch(() => {});
+        }
+      }
+      if (lastPhone) form.setFieldValue('phone', lastPhone);
+      if (lastName) form.setFieldValue('name', lastName);
     }
   }, [searchParams, form]);
 

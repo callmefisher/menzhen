@@ -3,6 +3,7 @@ import { Button, Spin, Tooltip } from 'antd';
 import { LeftOutlined, RightOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
 import { getAppointmentMatrix, type WeeklyMatrixResult } from '../api/appointment';
+import { useWebSocket } from '../hooks/useWebSocket';
 
 interface Props {
   selectedDate: Dayjs;
@@ -62,6 +63,11 @@ export default function AppointmentMatrix({ selectedDate, onDateChange }: Props)
   // weekStart intentionally excluded: adding it would re-fire on every manual
   // week-nav click, overwriting the user's navigation with selectedDate's week.
   }, [selectedDate]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-refresh matrix when appointments are created or cancelled via WebSocket.
+  const refreshMatrix = useCallback(() => { fetchMatrix(weekStart); }, [fetchMatrix, weekStart]);
+  useWebSocket('appt_created', refreshMatrix);
+  useWebSocket('appt_cancelled', refreshMatrix);
 
   const handlePrevWeek = () => setWeekStart((w) => w.subtract(7, 'day'));
   const handleNextWeek = () => setWeekStart((w) => w.add(7, 'day'));

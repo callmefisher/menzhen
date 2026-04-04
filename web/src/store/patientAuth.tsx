@@ -45,6 +45,16 @@ export function PatientAuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (tenantCode: string, phone: string, name: string) => {
     const res = await patientLogin({ tenant_code: tenantCode, phone, name });
     localStorage.setItem('patient_token', res.data.token);
+    // Persist last-used credentials so login page can pre-fill after logout
+    localStorage.setItem('patient_last_tenant_code', tenantCode);
+    localStorage.setItem('patient_last_phone', phone);
+    localStorage.setItem('patient_last_name', name);
+    const tenantName = res.data.patient_user?.tenant_name ?? '';
+    if (tenantName) {
+      localStorage.setItem('patient_last_tenant_name', tenantName);
+    } else {
+      localStorage.removeItem('patient_last_tenant_name');
+    }
     setState({
       user: res.data.patient_user,
       token: res.data.token,

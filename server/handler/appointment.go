@@ -75,6 +75,7 @@ func (h *AppointmentHandler) Create(c *gin.Context) {
 		AppointDate: req.AppointDate,
 		SlotStart:   req.SlotStart,
 		SlotEnd:     req.SlotEnd,
+		CreatedBy:   middleware.GetUserID(c),
 	}
 
 	appt, err := h.svc.CreateAppointment(uint(tenantID), in)

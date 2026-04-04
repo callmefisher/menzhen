@@ -20,6 +20,24 @@ var (
 	ErrUpdateNotAllowed     = errors.New("appointment cannot be updated in current status")
 )
 
+// resolveQueueDoctorID normalizes a doctorID that may be either a queue_doctor.id or a
+// user_id into the canonical queue_doctor.id for the given tenant.
+// If the id cannot be resolved, the original value is returned unchanged.
+// This is the single source of truth for doctorID normalization — reused by
+// ListSlots, CreateAppointment, and EnqueueAppointment.
+func resolveQueueDoctorID(db *gorm.DB, tenantID, doctorID uint) (queueDoctorID uint, qd model.QueueDoctor) {
+	queueDoctorID = doctorID
+	if err := db.Where("id = ? AND tenant_id = ?", doctorID, tenantID).First(&qd).Error; err != nil {
+		// Not found by queue_doctor.id — try looking up by user_id instead.
+		if err2 := db.Where("user_id = ? AND tenant_id = ?", doctorID, tenantID).First(&qd).Error; err2 == nil {
+			queueDoctorID = uint(qd.ID)
+		}
+	} else {
+		queueDoctorID = uint(qd.ID)
+	}
+	return
+}
+
 type CreateAppointmentInput struct {
 	PatientName string
 	PatientID   *uint
@@ -29,6 +47,7 @@ type CreateAppointmentInput struct {
 	AppointDate string // "2006-01-02"
 	SlotStart   string // "09:00"
 	SlotEnd     string // "09:30"
+	CreatedBy   uint64 // admin user_id for auto-patient creation; 0 = skip
 }
 
 type UpdateAppointmentInput struct {
@@ -51,44 +70,85 @@ func NewAppointmentService(db *gorm.DB) *AppointmentService {
 }
 
 // CreateAppointment creates an appointment. Same patient same doctor same date is rejected.
+// If CreatedBy is set and no existing patient record is found for the name, one is auto-created
+// and the appointment's PatientID is populated — all within a single transaction.
 func (s *AppointmentService) CreateAppointment(tenantID uint, in CreateAppointmentInput) (*model.Appointment, error) {
-	var count int64
-	dupQuery := s.DB.Model(&model.Appointment{}).
-		Where("tenant_id = ? AND doctor_id = ? AND appoint_date = ? AND status NOT IN (?,?)",
-			tenantID, in.DoctorID, in.AppointDate,
-			model.AppointmentStatusCancelled, model.AppointmentStatusNoShow)
-	if in.PatientID != nil {
-		dupQuery = dupQuery.Where("patient_id = ?", *in.PatientID)
-	} else {
-		dupQuery = dupQuery.Where("patient_name = ?", in.PatientName)
-	}
-	if err := dupQuery.Count(&count).Error; err != nil {
-		return nil, fmt.Errorf("check duplicate appointment: %w", err)
-	}
-	if count > 0 {
-		return nil, ErrDuplicateAppointment
-	}
+	// Normalize doctor_id to queue_doctor.id to ensure consistent storage.
+	normalizedDoctorID, _ := resolveQueueDoctorID(s.DB, tenantID, in.DoctorID)
+	in.DoctorID = normalizedDoctorID
 
-	appt := &model.Appointment{
-		TenantID:    tenantID,
-		PatientID:   in.PatientID,
-		PatientName: in.PatientName,
-		DoctorID:    in.DoctorID,
-		DoctorName:  in.DoctorName,
-		Room:        in.Room,
-		AppointDate: in.AppointDate,
-		SlotStart:   in.SlotStart,
-		SlotEnd:     in.SlotEnd,
-		Status:      model.AppointmentStatusPending,
+	var result *model.Appointment
+	err := s.DB.Transaction(func(tx *gorm.DB) error {
+		var count int64
+		dupQuery := tx.Model(&model.Appointment{}).
+			Where("tenant_id = ? AND doctor_id = ? AND appoint_date = ? AND status NOT IN (?,?)",
+				tenantID, in.DoctorID, in.AppointDate,
+				model.AppointmentStatusCancelled, model.AppointmentStatusNoShow)
+		if in.PatientID != nil {
+			dupQuery = dupQuery.Where("patient_id = ?", *in.PatientID)
+		} else {
+			dupQuery = dupQuery.Where("patient_name = ?", in.PatientName)
+		}
+		if err := dupQuery.Count(&count).Error; err != nil {
+			return fmt.Errorf("check duplicate appointment: %w", err)
+		}
+		if count > 0 {
+			return ErrDuplicateAppointment
+		}
+
+		// Auto-create patient record if needed (admin-side creation with CreatedBy set).
+		patientID := in.PatientID
+		if patientID == nil && in.CreatedBy != 0 {
+			var patient model.Patient
+			err := tx.Where("tenant_id = ? AND name = ?", tenantID, in.PatientName).First(&patient).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				patient = model.Patient{
+					TenantID:  uint64(tenantID),
+					Name:      in.PatientName,
+					CreatedBy: in.CreatedBy,
+				}
+				if createErr := tx.Create(&patient).Error; createErr != nil {
+					return fmt.Errorf("auto-create patient: %w", createErr)
+				}
+			} else if err != nil {
+				return fmt.Errorf("lookup patient: %w", err)
+			}
+			if patient.ID != 0 {
+				pid := uint(patient.ID)
+				patientID = &pid
+			}
+		}
+
+		appt := &model.Appointment{
+			TenantID:    tenantID,
+			PatientID:   patientID,
+			PatientName: in.PatientName,
+			DoctorID:    in.DoctorID,
+			DoctorName:  in.DoctorName,
+			Room:        in.Room,
+			AppointDate: in.AppointDate,
+			SlotStart:   in.SlotStart,
+			SlotEnd:     in.SlotEnd,
+			Status:      model.AppointmentStatusPending,
+		}
+		if err := tx.Create(appt).Error; err != nil {
+			return fmt.Errorf("create appointment: %w", err)
+		}
+		result = appt
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	if err := s.DB.Create(appt).Error; err != nil {
-		return nil, fmt.Errorf("create appointment: %w", err)
-	}
-	return appt, nil
+	return result, nil
 }
 
 // Update updates a pending or queued appointment's fields.
 func (s *AppointmentService) Update(tenantID, apptID uint, in UpdateAppointmentInput) (*model.Appointment, error) {
+	// Normalize doctor_id to queue_doctor.id for consistent storage.
+	normalizedDoctorID, _ := resolveQueueDoctorID(s.DB, tenantID, in.DoctorID)
+	in.DoctorID = normalizedDoctorID
+
 	var appt model.Appointment
 	if err := s.DB.Where("id = ? AND tenant_id = ?", apptID, tenantID).First(&appt).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -99,16 +159,21 @@ func (s *AppointmentService) Update(tenantID, apptID uint, in UpdateAppointmentI
 	if appt.Status != model.AppointmentStatusPending && appt.Status != model.AppointmentStatusQueued {
 		return nil, ErrUpdateNotAllowed
 	}
-	if err := s.DB.Model(&appt).Updates(map[string]interface{}{
+	updates := map[string]interface{}{
 		"patient_name": in.PatientName,
-		"patient_id":   in.PatientID,
 		"doctor_id":    in.DoctorID,
 		"doctor_name":  in.DoctorName,
 		"room":         in.Room,
 		"appoint_date": in.AppointDate,
 		"slot_start":   in.SlotStart,
 		"slot_end":     in.SlotEnd,
-	}).Error; err != nil {
+	}
+	// Only update patient_id when explicitly provided; never overwrite an existing
+	// patient link with NULL if the caller omits it.
+	if in.PatientID != nil {
+		updates["patient_id"] = *in.PatientID
+	}
+	if err := s.DB.Model(&appt).Updates(updates).Error; err != nil {
 		return nil, fmt.Errorf("update appointment: %w", err)
 	}
 	// Reload to return fresh data (GORM Updates does not refresh the struct)
@@ -132,22 +197,34 @@ func (s *AppointmentService) ListByDate(tenantID uint, date string, doctorID *ui
 	return list, nil
 }
 
-// Cancel cancels a pending appointment.
+// Cancel cancels a pending or queued appointment.
+// For queued appointments, the linked queue entry is marked as missed so it is
+// removed from the active queue.
 func (s *AppointmentService) Cancel(tenantID, apptID uint) error {
-	var appt model.Appointment
-	if err := s.DB.Where("id = ? AND tenant_id = ?", apptID, tenantID).First(&appt).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrAppointmentNotFound
+	return s.DB.Transaction(func(tx *gorm.DB) error {
+		var appt model.Appointment
+		if err := tx.Where("id = ? AND tenant_id = ?", apptID, tenantID).First(&appt).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrAppointmentNotFound
+			}
+			return fmt.Errorf("load appointment: %w", err)
 		}
-		return fmt.Errorf("load appointment: %w", err)
-	}
-	if appt.Status != model.AppointmentStatusPending {
-		return ErrCancelNotAllowed
-	}
-	if err := s.DB.Model(&appt).Update("status", model.AppointmentStatusCancelled).Error; err != nil {
-		return fmt.Errorf("cancel appointment: %w", err)
-	}
-	return nil
+		if appt.Status != model.AppointmentStatusPending && appt.Status != model.AppointmentStatusQueued {
+			return ErrCancelNotAllowed
+		}
+		// If queued, mark the linked queue entry as missed to pull it from the active queue.
+		if appt.Status == model.AppointmentStatusQueued && appt.QueueEntryID != nil {
+			if err := tx.Model(&model.QueueEntry{}).
+				Where("id = ? AND tenant_id = ?", *appt.QueueEntryID, tenantID).
+				Update("status", model.QueueStatusMissed).Error; err != nil {
+				return fmt.Errorf("mark queue entry missed: %w", err)
+			}
+		}
+		if err := tx.Model(&appt).Update("status", model.AppointmentStatusCancelled).Error; err != nil {
+			return fmt.Errorf("cancel appointment: %w", err)
+		}
+		return nil
+	})
 }
 
 // EnqueueAppointment converts a pending appointment into a QueueEntry (source=appointment).
@@ -183,21 +260,11 @@ func (s *AppointmentService) EnqueueAppointment(tenantID, apptID uint, queueSvc 
 		if err != nil {
 			return fmt.Errorf("next seq: %w", err)
 		}
-		// Resolve queue_doctor.id from appt.DoctorID.
+		// Resolve queue_doctor.id from appt.DoctorID using the shared normalization helper.
 		// appointments.doctor_id may store either queue_doctor.id or user_id depending on
-		// which path created the appointment (patient portal uses queue_doctor.id; admin
-		// panel may use user_id). Normalize to queue_doctor.id here so all queue_entries
-		// use a consistent doctor_id (queue_doctor.id), matching how the dashboard groups.
-		queueDoctorID := appt.DoctorID
-		var qd model.QueueDoctor
-		if err := tx.Where("id = ? AND tenant_id = ?", appt.DoctorID, tenantID).First(&qd).Error; err != nil {
-			// Not found by queue_doctor.id — try looking up by user_id instead.
-			if err2 := tx.Where("user_id = ? AND tenant_id = ?", appt.DoctorID, tenantID).First(&qd).Error; err2 == nil {
-				queueDoctorID = uint(qd.ID)
-			}
-		} else {
-			queueDoctorID = uint(qd.ID)
-		}
+		// which path created the appointment. Normalize to queue_doctor.id here so all
+		// queue_entries use a consistent doctor_id, matching how the dashboard groups.
+		queueDoctorID, _ := resolveQueueDoctorID(tx, tenantID, appt.DoctorID)
 
 		entry := &model.QueueEntry{
 			TenantID:      tenantID,
@@ -308,9 +375,20 @@ type SlotInfo struct {
 // annotated with booking counts. If the doctor has no slot configs, an empty
 // slice is returned so the caller can degrade gracefully.
 func (s *AppointmentService) ListSlots(tenantID uint, date string, doctorID uint) ([]SlotInfo, error) {
+	// Normalize doctorID to queue_doctor.id so queries are consistent regardless
+	// of whether the caller passed a queue_doctor.id or a user_id.
+	normalizedID, qd := resolveQueueDoctorID(s.DB, tenantID, doctorID)
+
+	// Build the set of doctor_id values to count — covers both queue_doctor.id
+	// and any legacy appointments that stored user_id as doctor_id.
+	doctorIDSet := []uint{normalizedID}
+	if qd.ID != 0 && uint(qd.UserID) != normalizedID {
+		doctorIDSet = append(doctorIDSet, uint(qd.UserID))
+	}
+
 	// 1. Read the slot configs for this doctor.
 	var configs []model.AppointmentSlotConfig
-	if err := s.DB.Where("tenant_id = ? AND doctor_id = ?", tenantID, doctorID).
+	if err := s.DB.Where("tenant_id = ? AND doctor_id = ?", tenantID, normalizedID).
 		Order("slot_start ASC").Find(&configs).Error; err != nil {
 		return nil, fmt.Errorf("list slot configs: %w", err)
 	}
@@ -326,6 +404,7 @@ func (s *AppointmentService) ListSlots(tenantID uint, date string, doctorID uint
 	}
 
 	// 2. Count bookings per slot_start (only pending/queued statuses).
+	// Use IN clause to capture both queue_doctor.id and legacy user_id representations.
 	type slotCount struct {
 		SlotStart string
 		Count     int
@@ -333,8 +412,8 @@ func (s *AppointmentService) ListSlots(tenantID uint, date string, doctorID uint
 	var counts []slotCount
 	if err := s.DB.Model(&model.Appointment{}).
 		Select("slot_start, COUNT(*) as count").
-		Where("tenant_id = ? AND doctor_id = ? AND appoint_date = ? AND status IN (?,?)",
-			tenantID, doctorID, date,
+		Where("tenant_id = ? AND doctor_id IN ? AND appoint_date = ? AND status IN (?,?)",
+			tenantID, doctorIDSet, date,
 			model.AppointmentStatusPending, model.AppointmentStatusQueued).
 		Group("slot_start").
 		Scan(&counts).Error; err != nil {
@@ -457,8 +536,51 @@ func (s *AppointmentService) WeeklyMatrix(tenantID uint, startDate string) (Week
 		return WeeklyMatrixResult{}, fmt.Errorf("WeeklyMatrix: query: %w", err)
 	}
 
+	// Build a normalization map: raw doctor_id (may be user_id or queue_doctor.id) → canonical queue_doctor.id.
+	// Collect unique raw IDs first, then batch-query to avoid N+1 (one round-trip per unique doctor, not per row).
+	rawIDs := make([]uint, 0)
+	seen := make(map[uint]bool)
+	for _, r := range rows {
+		if !seen[r.DoctorID] {
+			seen[r.DoctorID] = true
+			rawIDs = append(rawIDs, r.DoctorID)
+		}
+	}
+	// Fetch all matching queue_doctors in two queries (by id, then by user_id for mismatches).
+	canonicalIDMap := make(map[uint]uint) // raw → canonical
+	if len(rawIDs) > 0 {
+		var byID []model.QueueDoctor
+		s.DB.Where("id IN ? AND tenant_id = ?", rawIDs, tenantID).Find(&byID)
+		foundByID := make(map[uint]bool)
+		for _, qd := range byID {
+			canonicalIDMap[uint(qd.ID)] = uint(qd.ID)
+			foundByID[uint(qd.ID)] = true
+		}
+		// For any raw IDs not matched by queue_doctor.id, try user_id lookup.
+		unmatchedUserIDs := make([]uint, 0)
+		for _, id := range rawIDs {
+			if !foundByID[id] {
+				unmatchedUserIDs = append(unmatchedUserIDs, id)
+			}
+		}
+		if len(unmatchedUserIDs) > 0 {
+			var byUserID []model.QueueDoctor
+			s.DB.Where("user_id IN ? AND tenant_id = ?", unmatchedUserIDs, tenantID).Find(&byUserID)
+			for _, qd := range byUserID {
+				canonicalIDMap[qd.UserID] = uint(qd.ID)
+			}
+		}
+	}
+	// resolve returns the canonical queue_doctor.id for a raw doctor_id, falling back to the raw id.
+	resolveCanonical := func(rawID uint) uint {
+		if cid, ok := canonicalIDMap[rawID]; ok {
+			return cid
+		}
+		return rawID
+	}
+
 	doctorOrder := make([]uint, 0)
-	doctorMap := make(map[uint]string)
+	doctorNameMap := make(map[uint]string)
 	counts := make(map[uint]map[string]int)
 	rowTotals := make(map[uint]int)
 	colTotals := make(map[string]int)
@@ -471,20 +593,21 @@ func (s *AppointmentService) WeeklyMatrix(tenantID uint, startDate string) (Week
 		if len(dateKey) > 10 {
 			dateKey = dateKey[:10]
 		}
-		if _, seen := doctorMap[r.DoctorID]; !seen {
-			doctorOrder = append(doctorOrder, r.DoctorID)
-			doctorMap[r.DoctorID] = r.DoctorName
-			counts[r.DoctorID] = make(map[string]int)
+		canonicalID := resolveCanonical(r.DoctorID)
+		if _, ok := doctorNameMap[canonicalID]; !ok {
+			doctorOrder = append(doctorOrder, canonicalID)
+			doctorNameMap[canonicalID] = r.DoctorName
+			counts[canonicalID] = make(map[string]int)
 		}
-		counts[r.DoctorID][dateKey] = r.Count
-		rowTotals[r.DoctorID] += r.Count
+		counts[canonicalID][dateKey] += r.Count
+		rowTotals[canonicalID] += r.Count
 		colTotals[dateKey] += r.Count
 		grandTotal += r.Count
 	}
 
 	doctors := make([]MatrixDoctor, 0, len(doctorOrder))
 	for _, id := range doctorOrder {
-		doctors = append(doctors, MatrixDoctor{DoctorID: id, DoctorName: doctorMap[id]})
+		doctors = append(doctors, MatrixDoctor{DoctorID: id, DoctorName: doctorNameMap[id]})
 	}
 
 	return WeeklyMatrixResult{

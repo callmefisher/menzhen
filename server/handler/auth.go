@@ -170,6 +170,15 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	req.RealName = strings.TrimSpace(req.RealName)
 	req.Phone = strings.TrimSpace(req.Phone)
 
+	// "admin" is a reserved username for the super-administrator account.
+	if req.Username == "admin" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "该用户名为系统保留用户名，不可注册",
+		})
+		return
+	}
+
 	// Look up tenant by code.
 	var tenant model.Tenant
 	if err := h.db.Where("code = ? AND status = 1", req.TenantCode).First(&tenant).Error; err != nil {

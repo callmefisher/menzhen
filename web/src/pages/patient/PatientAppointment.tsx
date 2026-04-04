@@ -117,7 +117,7 @@ export default function PatientAppointment() {
           <Card size="small" style={{ marginBottom: 10 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <div>
-                <div style={{ fontWeight: 600 }}>{a.appoint_date} {a.slot_start}–{a.slot_end}</div>
+                <div style={{ fontWeight: 600 }}>{a.appoint_date.slice(0, 10)} {a.slot_start}–{a.slot_end}</div>
                 <div style={{ color: '#888', fontSize: 13 }}>{a.doctor_name} · {a.room}</div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
@@ -130,12 +130,19 @@ export default function PatientAppointment() {
                     签到
                   </Button>
                 )}
-                {a.status === 'pending' && (
+                {(a.status === 'pending' || a.status === 'queued') && (
                   <Button size="small" danger onClick={() =>
-                    cancelAppointment(a.id)
-                      .then(() => { message.success('已取消'); fetchData(); })
-                      .catch(() => message.error('取消失败，请重试'))
-                  }>取消</Button>
+                    Modal.confirm({
+                      title: '确认取消预约',
+                      content: a.status === 'queued' ? '该预约已入队，取消后将从队列中移除，确认取消？' : '确认取消此预约？',
+                      okText: '确认取消',
+                      cancelText: '返回',
+                      okButtonProps: { danger: true },
+                      onOk: () => cancelAppointment(a.id)
+                        .then(() => { message.success('预约已取消'); fetchData(); })
+                        .catch(() => message.error('取消失败，请重试')),
+                    })
+                  }>取消预约</Button>
                 )}
               </div>
             </div>
@@ -151,6 +158,7 @@ export default function PatientAppointment() {
           <Select placeholder="选择医生" style={{ width: '100%' }} onChange={setSelectedDoctor}
             options={doctors.map(d => ({ value: d.id, label: `${d.doctor_name}${d.room ? ` · ${d.room}` : ''}` }))} />
           <DatePicker style={{ width: '100%' }}
+            inputReadOnly
             getPopupContainer={(trigger) => trigger.parentElement ?? document.body}
             disabledDate={makePatientDisabledDate(scheduleConfig.weekdays, scheduleConfig.range_start, scheduleConfig.range_end)}
             onChange={(_, ds) => { setSelectedDate(ds as string); setSelectedSlot(null); }} />

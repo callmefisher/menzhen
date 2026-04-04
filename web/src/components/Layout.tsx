@@ -374,9 +374,8 @@ export default function AppLayout() {
     const canManageRoles = hasPermission('role:manage') || hasPermission('tenant:role:manage');
     const canManageTenants = hasPermission('tenant:manage');
     const canManageConfig = hasPermission('user:manage');
-    const canManagePowerAdmin = hasPermission('power_admin:manage');
 
-    if (canManageUsers || canManageRoles || canManageTenants || canManageConfig || canManagePowerAdmin) {
+    if (canManageUsers || canManageRoles || canManageTenants || canManageConfig || isSuperAdmin) {
       const settingsChildren: MenuItem[] = [];
       if (canManageUsers) {
         settingsChildren.push({
@@ -430,7 +429,7 @@ export default function AppLayout() {
           label: '备份与恢复',
         });
       }
-      if (canManagePowerAdmin) {
+      if (isSuperAdmin) {
         settingsChildren.push({
           key: '/settings/power-admins',
           icon: <TeamOutlined />,
