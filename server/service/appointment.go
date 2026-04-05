@@ -187,7 +187,14 @@ func (s *AppointmentService) Update(tenantID, apptID uint, in UpdateAppointmentI
 func (s *AppointmentService) ListByDate(tenantID uint, date string, doctorID *uint) ([]model.Appointment, error) {
 	q := s.DB.Where("tenant_id = ? AND appoint_date = ?", tenantID, date)
 	if doctorID != nil {
-		q = q.Where("doctor_id = ?", *doctorID)
+		// Normalize the doctorID and include both canonical queue_doctor.id and user_id
+		// so that historical appointments stored with user_id are also matched.
+		canonicalID, qd := resolveQueueDoctorID(s.DB, tenantID, *doctorID)
+		idSet := []uint{canonicalID}
+		if qd.ID != 0 && qd.UserID != 0 && qd.UserID != canonicalID {
+			idSet = append(idSet, qd.UserID)
+		}
+		q = q.Where("doctor_id IN ?", idSet)
 	}
 	var list []model.Appointment
 	err := q.Order("slot_start ASC, id ASC").Find(&list).Error

@@ -38,6 +38,9 @@ export const checkinAppointment = (id: number) =>
 export const cancelAppointment = (id: number) =>
   request.post<{ code: number; message?: string }>(`/appointments/${id}/cancel`);
 
+export const deleteAppointment = (id: number) =>
+  request.delete<{ code: number }>(`/appointments/${id}`);
+
 export interface UpdateAppointmentInput {
   patient_name: string;
   patient_id?: number;

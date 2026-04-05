@@ -616,8 +616,48 @@ func TestQueueCall_GhostSeeingAutoMissed(t *testing.T) {
 	assert.Equal(t, model.QueueStatusMissed, ghostEntry.Status, "ghost seeing entry must be auto-missed")
 }
 
-// TestQueueCall_RealSeeingBlocksCall verifies that a legitimate seeing entry (checked-in
-// appointment or walk-in) still blocks calling another patient.
+// TestTakeNumber_NormalizesUserIdToDoctorPK guards the fix in service.TakeNumber that
+// calls resolveQueueDoctorID to normalize user_id → queue_doctor.id before storing.
+// Before the fix, passing user_id as doctorID caused the entry to be stored under
+// user_id, producing "two queues for the same doctor" when combined with entries
+// stored under queue_doctor.id.
+func TestTakeNumber_NormalizesUserIdToDoctorPK(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	tenant := testutil.SeedTestTenant(t, db, "诊所", "queue-normalize-"+t.Name())
+	svc := service.NewQueueService(db)
+	tenantID := uint(tenant.ID)
+
+	// Create a QueueDoctor with a known user_id that differs from its primary key.
+	qd := model.QueueDoctor{TenantID: tenantID, UserID: 500, Room: "1诊室", Enabled: true, SortOrder: 1}
+	require.NoError(t, db.Create(&qd).Error)
+	require.NotEqual(t, uint(500), uint(qd.ID), "test precondition: queue_doctor.id must differ from user_id=500")
+
+	// Simulate old admin UI passing user_id (500) instead of queue_doctor.id.
+	result, err := svc.TakeNumber(tenantID, "用户ID患者", qd.UserID, "测试医生", "1诊室", 1)
+	require.NoError(t, err)
+	assert.Equal(t, uint(qd.ID), result.Entry.DoctorID,
+		"TakeNumber must normalize user_id(%d) → queue_doctor.id(PK=%d)", qd.UserID, qd.ID)
+	assert.NotEqual(t, qd.UserID, result.Entry.DoctorID,
+		"queue_entry.doctor_id must NOT be the raw user_id")
+}
+
+// TestTakeNumber_AlreadyCanonicalIdUnchanged verifies that passing an already-canonical
+// queue_doctor.id is stored as-is (no double-normalization side effects).
+func TestTakeNumber_AlreadyCanonicalIdUnchanged(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	tenant := testutil.SeedTestTenant(t, db, "诊所", "queue-canonical-"+t.Name())
+	svc := service.NewQueueService(db)
+	tenantID := uint(tenant.ID)
+
+	qd := model.QueueDoctor{TenantID: tenantID, UserID: 600, Room: "2诊室", Enabled: true, SortOrder: 1}
+	require.NoError(t, db.Create(&qd).Error)
+
+	// Pass queue_doctor.id (canonical) — should store the same id.
+	result, err := svc.TakeNumber(tenantID, "规范ID患者", uint(qd.ID), "测试医生", "2诊室", 1)
+	require.NoError(t, err)
+	assert.Equal(t, uint(qd.ID), result.Entry.DoctorID,
+		"canonical queue_doctor.id must be preserved unchanged")
+}
 func TestQueueCall_RealSeeingBlocksCall(t *testing.T) {
 	svc, tenantID := makeQueueSvcSingle(t)
 

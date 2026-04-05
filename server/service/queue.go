@@ -67,6 +67,14 @@ type TakeNumberResult struct {
 // If the patient does not exist, auto-creates one with defaults.
 // The entire operation runs inside a transaction for atomicity.
 func (s *QueueService) TakeNumber(tenantID uint, patientName string, doctorID uint, doctorName, room string, userID uint64) (*TakeNumberResult, error) {
+	// Normalize doctorID to queue_doctor.id to prevent user_id vs queue_doctor.id inconsistency.
+	normalizedDoctorID, qd := resolveQueueDoctorID(s.DB, tenantID, doctorID)
+	if qd.ID != 0 {
+		doctorID = normalizedDoctorID
+		if room == "" {
+			room = qd.Room
+		}
+	}
 	var result TakeNumberResult
 
 	txErr := s.DB.Transaction(func(tx *gorm.DB) error {

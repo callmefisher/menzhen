@@ -96,6 +96,9 @@ export const getAppointmentSlots = (doctorId: number, date: string) =>
 export const cancelAppointment = (id: number) =>
   patientRequest.post(`/appointments/${id}/cancel`);
 
+export const deleteAppointment = (id: number) =>
+  patientRequest.delete(`/appointments/${id}`);
+
 export const checkinAppointment = (id: number) =>
   patientRequest.post(`/appointments/${id}/checkin`) as Promise<{ data: { id: number } }>;
 

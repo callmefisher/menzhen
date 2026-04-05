@@ -584,6 +584,61 @@ func TestEnqueueAppointment_FallbackUserIdToDoctorPK(t *testing.T) {
 		"EnqueueAppointment must normalize user_id (%d) → queue_doctor.id (PK=%d)", qd.UserID, qd.ID)
 }
 
+// TestCreateAppointment_AfterNoShowAllowed verifies that a patient whose prior appointment
+// was no_show can create a new appointment for the same doctor on the same day.
+// This is the regression test for the patient portal handler fix that excluded
+// no_show (in addition to cancelled) from the duplicate check.
+func TestCreateAppointment_AfterNoShowAllowed(t *testing.T) {
+	svc, tid := setupApptService(t)
+	date := time.Now().Format("2006-01-02")
+	appt, err := svc.CreateAppointment(tid, service.CreateAppointmentInput{
+		PatientName: "王小花", DoctorID: 1, DoctorName: "夏老三",
+		AppointDate: date, SlotStart: "09:00", SlotEnd: "09:30",
+	})
+	require.NoError(t, err)
+	// Force to no_show (simulating server-side auto-mark)
+	require.NoError(t, svc.DB.Model(appt).Update("status", model.AppointmentStatusNoShow).Error)
+
+	// Same patient, same doctor, same day — must be allowed after no_show
+	_, err2 := svc.CreateAppointment(tid, service.CreateAppointmentInput{
+		PatientName: "王小花", DoctorID: 1, DoctorName: "夏老三",
+		AppointDate: date, SlotStart: "10:00", SlotEnd: "10:30",
+	})
+	assert.NoError(t, err2, "appointment after no_show on same day must be allowed")
+}
+
+// TestCreateAppointment_SlotCapacityExcludesNoShow verifies that a no_show booking
+// does not consume a slot (i.e. does not count toward max_count).
+// This mirrors the patient portal handler fix that changed status != cancelled
+// to status NOT IN (cancelled, no_show) in the slot capacity count.
+func TestCreateAppointment_SlotCapacityExcludesNoShow(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	tenant := testutil.SeedTestTenant(t, db, "诊所", "slot-no-show-"+t.Name())
+	svc := service.NewAppointmentService(db)
+	tenantID := uint(tenant.ID)
+	date := time.Now().Format("2006-01-02")
+
+	// Create a slot config with max_count = 1
+	require.NoError(t, db.Create(&model.AppointmentSlotConfig{
+		TenantID: tenantID, DoctorID: 1, SlotStart: "09:00", SlotEnd: "09:30", MaxCount: 1,
+	}).Error)
+
+	// First booking (张三) — succeeds, then forced to no_show
+	appt, err := svc.CreateAppointment(tenantID, service.CreateAppointmentInput{
+		PatientName: "张三", DoctorID: 1, DoctorName: "李医生",
+		AppointDate: date, SlotStart: "09:00", SlotEnd: "09:30",
+	})
+	require.NoError(t, err)
+	require.NoError(t, db.Model(appt).Update("status", model.AppointmentStatusNoShow).Error)
+
+	// ListSlots should show the slot as available (no_show must not count)
+	slots, err := svc.ListSlots(tenantID, date, 1)
+	require.NoError(t, err)
+	require.Len(t, slots, 1)
+	assert.True(t, slots[0].Available, "slot must be available after prior booking is no_show")
+	assert.Equal(t, 0, slots[0].BookedCount, "no_show booking must not count toward booked_count")
+}
+
 func TestWeeklyMatrix_OtherTenantIsolation(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	svc := service.NewAppointmentService(db)
@@ -601,3 +656,49 @@ func TestWeeklyMatrix_OtherTenantIsolation(t *testing.T) {
 	assert.Len(t, result.Doctors, 0)
 	assert.Equal(t, 0, result.GrandTotal)
 }
+
+// TestListByDate_NormalizesUserIdDoctorID is a regression test for the bug where
+// WeeklyMatrix showed appointments for a doctor but ListByDate returned empty
+// because historical appointments stored user_id in the doctor_id column.
+// ListByDate must search by both canonical queue_doctor.id AND the linked user_id.
+func TestListByDate_NormalizesUserIdDoctorID(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	svc := service.NewAppointmentService(db)
+	tenant := testutil.SeedTestTenant(t, db, "测试诊所", "listbydate-norm-"+t.Name())
+
+	// Create a QueueDoctor with an associated user (user_id = 500, queue_doctor.id = auto).
+	userID := uint(500)
+	qd := model.QueueDoctor{
+		TenantID: uint(tenant.ID),
+		UserName: "夏老三",
+		UserID:   userID,
+		Room:     "诊室1",
+		Enabled:  true,
+	}
+	require.NoError(t, db.Create(&qd).Error)
+	canonicalID := uint(qd.ID)
+
+	// Simulate historical appointment stored with user_id as doctor_id.
+	appt := model.Appointment{
+		TenantID:    uint(tenant.ID),
+		PatientName: "王小花",
+		DoctorID:    userID, // old bug: user_id stored here instead of queue_doctor.id
+		DoctorName:  "夏老三",
+		AppointDate: "2026-04-07",
+		SlotStart:   "09:00",
+		SlotEnd:     "09:30",
+		Status:      model.AppointmentStatusPending,
+	}
+	require.NoError(t, db.Create(&appt).Error)
+
+	// ListByDate with canonical queue_doctor.id must still find the appointment.
+	list, err := svc.ListByDate(uint(tenant.ID), "2026-04-07", &canonicalID)
+	assert.NoError(t, err)
+	assert.Len(t, list, 1, "ListByDate should find appointment stored with user_id via canonical id lookup")
+
+	// ListByDate with user_id directly must also work (legacy callers).
+	list2, err := svc.ListByDate(uint(tenant.ID), "2026-04-07", &userID)
+	assert.NoError(t, err)
+	assert.Len(t, list2, 1, "ListByDate should find appointment when queried by user_id directly")
+}
+

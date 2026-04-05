@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/callmefisher/menzhen/server/middleware"
+	"github.com/callmefisher/menzhen/server/model"
 	"github.com/callmefisher/menzhen/server/service"
 	"github.com/callmefisher/menzhen/server/ws"
 	"github.com/gin-gonic/gin"
@@ -346,6 +347,49 @@ func (h *AppointmentHandler) Cancel(c *gin.Context) {
 		})
 	}
 
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": nil})
+}
+
+// Delete handles DELETE /appointments/:id
+// Only cancelled or no_show appointments can be deleted.
+// Success  200: { code: 0 }
+// Not found 404
+// Conflict  409: status not deletable
+func (h *AppointmentHandler) Delete(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 1, "message": "missing tenant"})
+		return
+	}
+	idStr := c.Param("id")
+	apptID, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": "invalid appointment id"})
+		return
+	}
+	var appt model.Appointment
+	if err := h.svc.DB.Where("id = ? AND tenant_id = ?", apptID, tenantID).First(&appt).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"code": 1, "message": "appointment not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "internal server error"})
+		return
+	}
+	if appt.Status != model.AppointmentStatusCancelled && appt.Status != model.AppointmentStatusNoShow {
+		c.JSON(http.StatusConflict, gin.H{"code": 1, "message": "只能删除已取消或未到诊的预约"})
+		return
+	}
+	if err := h.svc.DB.Delete(&appt).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "internal server error"})
+		return
+	}
+	if ws.DefaultHub != nil {
+		ws.DefaultHub.Broadcast(tenantID, ws.Message{
+			Type:    "appt_deleted",
+			Payload: gin.H{"appointment_id": apptID},
+		})
+	}
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": nil})
 }
 

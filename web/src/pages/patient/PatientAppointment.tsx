@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { List, Card, Tag, Button, Modal, Select, DatePicker, message, Empty, Spin } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
-import { listAppointments, listDoctors, getAppointmentSlots, createAppointment, cancelAppointment, checkinAppointment, getDoctorSchedule } from '../../api/patientPortal';
+import { listAppointments, listDoctors, getAppointmentSlots, createAppointment, cancelAppointment, checkinAppointment, getDoctorSchedule, deleteAppointment } from '../../api/patientPortal';
 import type { Appointment, Doctor, SlotInfo } from '../../api/patientPortal';
+import { usePatientWebSocket } from '../../hooks/usePatientWebSocket';
 
 /** Returns a disabledDate predicate from doctor's schedule config.
  *  bit0=Sun, bit1=Mon, ..., bit6=Sat.  weekdays=0 means no restriction. */
@@ -23,6 +25,7 @@ function makePatientDisabledDate(weekdays: number, rangeStart: number, rangeEnd:
 }
 
 export default function PatientAppointment() {
+  const navigate = useNavigate();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,17 +37,23 @@ export default function PatientAppointment() {
   const [submitting, setSubmitting] = useState(false);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [checkinLoading, setCheckinLoading] = useState<Record<number, boolean>>({});
+  const [deleteLoading, setDeleteLoading] = useState<Record<number, boolean>>({});
   const [scheduleConfig, setScheduleConfig] = useState({ weekdays: 0, range_start: 1, range_end: 30 });
 
-  const fetchData = () => {
+  const fetchData = useCallback(() => {
     setLoading(true);
     Promise.all([listAppointments(), listDoctors()]).then(([apptRes, docRes]) => {
       setAppointments(apptRes.data);
       setDoctors(docRes.data);
     }).finally(() => setLoading(false));
-  };
+  }, []);
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Refresh when admin side cancels or deletes an appointment.
+  const onApptChanged = useCallback(() => { fetchData(); }, [fetchData]);
+  usePatientWebSocket('appt_cancelled', onApptChanged);
+  usePatientWebSocket('appt_deleted', onApptChanged);
 
   useEffect(() => {
     if (selectedDoctor && selectedDate) {
@@ -90,12 +99,26 @@ export default function PatientAppointment() {
     try {
       await checkinAppointment(id);
       message.success('签到成功，已加入队列');
-      fetchData();
+      navigate('/patient/queue');
     } catch (err: unknown) {
       const errMsg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
       message.error(errMsg ?? '签到失败，请稍后重试');
     } finally {
       setCheckinLoading((prev) => ({ ...prev, [id]: false }));
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    setDeleteLoading((prev) => ({ ...prev, [id]: true }));
+    try {
+      await deleteAppointment(id);
+      message.success('预约已删除');
+      fetchData();
+    } catch (err: unknown) {
+      const errMsg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      message.error(errMsg ?? '删除失败，请稍后重试');
+    } finally {
+      setDeleteLoading((prev) => ({ ...prev, [id]: false }));
     }
   };
 
@@ -143,6 +166,20 @@ export default function PatientAppointment() {
                         .catch(() => message.error('取消失败，请重试')),
                     })
                   }>取消预约</Button>
+                )}
+                {(a.status === 'cancelled' || a.status === 'no_show') && (
+                  <Button size="small" danger
+                    loading={deleteLoading[a.id]}
+                    onClick={() =>
+                      Modal.confirm({
+                        title: '确认删除预约',
+                        content: '删除后不可恢复，确认删除？',
+                        okText: '确认删除',
+                        cancelText: '返回',
+                        okButtonProps: { danger: true },
+                        onOk: () => handleDelete(a.id),
+                      })
+                    }>删除</Button>
                 )}
               </div>
             </div>
