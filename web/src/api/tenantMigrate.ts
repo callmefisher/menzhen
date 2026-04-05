@@ -63,6 +63,7 @@ export function executeMigrate(params: {
   source_tenant_id: number;
   target_tenant_id: number;
   confirm_code: string;
+  force?: boolean;
 }) {
   return request.post<{ task_id: string }>('/tenant-migrate/execute', params);
 }

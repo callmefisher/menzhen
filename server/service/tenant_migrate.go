@@ -244,6 +244,7 @@ func (s *TenantMigrateService) CleanupOldTasks() {
 //	INSERT INTO `tableName` VALUES           (values on same line or next line)
 //	INSERT INTO `tableName` VALUES (1,2,...) (values on same line)
 var reInsertHeader = regexp.MustCompile(`(?i)^INSERT INTO \x60([^\x60]+)\x60 VALUES`)
+var reCreateTable = regexp.MustCompile("CREATE TABLE `([^`]+)`")
 
 // scanInsertBlock reads the complete VALUES string for one INSERT statement.
 // mysqldump may emit:
@@ -450,10 +451,14 @@ type ExecuteRequest struct {
 	TaskID         string `json:"task_id"`
 	SourceTenantID uint64 `json:"source_tenant_id"`
 	TargetTenantID uint64 `json:"target_tenant_id"`
+	Force          bool   `json:"force"` // skip source==target guard when true
 }
 
 // ExecuteAsync launches async tenant data migration.
 func (s *TenantMigrateService) ExecuteAsync(req ExecuteRequest) error {
+	if req.SourceTenantID == req.TargetTenantID && !req.Force {
+		return fmt.Errorf("源诊所和目标诊所不能相同")
+	}
 	task, err := s.GetTask(req.TaskID)
 	if err != nil {
 		return fmt.Errorf("task not found: %w", err)
@@ -495,18 +500,17 @@ func (s *TenantMigrateService) executeMigrate(req ExecuteRequest) error {
 	totalTables := len(rowsByTable)
 	s.appendLog(req.TaskID, fmt.Sprintf("已提取 %d 张表的数据，开始写入数据库...", totalTables))
 
-	// Execute inside a transaction.
+	// Disable FK checks on this connection for the entire delete+insert phase.
+	// FOREIGN_KEY_CHECKS is session-scoped (not transaction-scoped), so it must be
+	// set on the same *sql.DB connection. Moving it outside db.Transaction ensures
+	// the defer fires on the correct connection before the transaction commits.
+	if err := s.db.Exec("SET FOREIGN_KEY_CHECKS = 0").Error; err != nil {
+		return fmt.Errorf("禁用 FK 检查失败: %w", err)
+	}
+	defer s.db.Exec("SET FOREIGN_KEY_CHECKS = 1") //nolint:errcheck
+
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec("SET FOREIGN_KEY_CHECKS = 0").Error; err != nil {
-			return fmt.Errorf("禁用 FK 检查失败: %w", err)
-		}
-		migrateErr := s.doMigrate(tx, req, rowsByTable, tenantsRow, dynamicCols)
-		// Always restore FK checks on this connection regardless of outcome,
-		// so the connection is clean when returned to the pool.
-		if restoreErr := tx.Exec("SET FOREIGN_KEY_CHECKS = 1").Error; restoreErr != nil {
-			s.appendLog(req.TaskID, fmt.Sprintf("警告：恢复 FK 检查失败: %v", restoreErr))
-		}
-		return migrateErr
+		return s.doMigrate(tx, req, rowsByTable, tenantsRow, dynamicCols)
 	})
 }
 
@@ -572,12 +576,8 @@ func (s *TenantMigrateService) doMigrate(tx *gorm.DB, req ExecuteRequest, rowsBy
 		"users", "roles",
 	}
 	for _, tbl := range directDeleteOrder {
-		col := "tenant_id"
-		if tbl == "patient_portal_configs" {
-			col = "tenant_id" // PK is tenant_id, same DELETE syntax
-		}
 		if err := tx.Exec(
-			fmt.Sprintf("DELETE FROM `%s` WHERE `%s` = ?", tbl, col),
+			fmt.Sprintf("DELETE FROM `%s` WHERE `tenant_id` = ?", tbl),
 			req.TargetTenantID).Error; err != nil {
 			return fmt.Errorf("删除 %s 失败: %w", tbl, err)
 		}
@@ -677,7 +677,7 @@ func (s *TenantMigrateService) doMigrate(tx *gorm.DB, req ExecuteRequest, rowsBy
 	}
 
 	// ── Step 4: handle indirect tables ─────────────────────────────────
-	for _, tbl := range []string{"prescription_items", "record_attachments", "user_roles", "role_permissions"} {
+	for _, tbl := range indirectTables {
 		rows, ok := rowsByTable[tbl]
 		if !ok || len(rows) == 0 {
 			continue
@@ -699,7 +699,31 @@ func (s *TenantMigrateService) doMigrate(tx *gorm.DB, req ExecuteRequest, rowsBy
 	return nil
 }
 
-// collectRows re-reads the SQL file and collects all row tuples for the given
+// indirectTables lists tables that have no tenant_id column but belong to a tenant
+// via a FK relationship. Defined once here; used in both collectRows and doMigrate.
+var indirectTables = []string{
+	"prescription_items", // FK: prescription_id → prescriptions.id
+	"record_attachments", // FK: record_id       → medical_records.id
+	"user_roles",         // FK: user_id         → users.id
+	"role_permissions",   // FK: role_id         → roles.id
+}
+
+// indirectTableParent maps each indirect table to its (FK column, parent table).
+var indirectTableParent = map[string][2]string{
+	"prescription_items": {"prescription_id", "prescriptions"},
+	"record_attachments": {"record_id", "medical_records"},
+	"user_roles":         {"user_id", "users"},
+	"role_permissions":   {"role_id", "roles"},
+}
+
+func isIndirectTable(name string) bool {
+	for _, t := range indirectTables {
+		if t == name {
+			return true
+		}
+	}
+	return false
+}
 // source tenant, grouped by table name.
 // Also returns the raw tuple string for the tenants table row and the dynamic
 // column-position map (used by doMigrate to rewrite tenant_id at the correct index).
@@ -724,6 +748,8 @@ func (s *TenantMigrateService) collectRows(filePath string, sourceTenantID uint6
 
 	rowsByTable = make(map[string][]string)
 	dynamicCols = make(map[string]map[string]int)
+	// Collect all indirect rows first; filter them after we know the source PKs.
+	indirectRaw := make(map[string][]string)
 
 	scanner := bufio.NewScanner(reader)
 	buf := make([]byte, 0, 1*1024*1024)
@@ -744,43 +770,39 @@ func (s *TenantMigrateService) collectRows(filePath string, sourceTenantID uint6
 			continue
 		}
 
-		tableName, valuesStr, err := scanInsertBlock(scanner, line)
-		if err != nil || valuesStr == "" {
-			continue
-		}
-
-		// For indirect tables, collect all rows (we'll filter by FK later).
-		isIndirect := tableName == "prescription_items" ||
-			tableName == "record_attachments" ||
-			tableName == "user_roles" ||
-			tableName == "role_permissions"
-
-		info, hasTenantInfo := tenantTableMap[tableName]
-		if !hasTenantInfo && !isIndirect {
+		tableName, valuesStr, scanErr := scanInsertBlock(scanner, line)
+		if scanErr != nil || valuesStr == "" {
 			continue
 		}
 
 		tuples := splitTuples(valuesStr)
 
-		if isIndirect {
-			rowsByTable[tableName] = append(rowsByTable[tableName], tuples...)
+		if isIndirectTable(tableName) {
+			indirectRaw[tableName] = append(indirectRaw[tableName], tuples...)
+			continue
+		}
+
+		info, hasTenantInfo := tenantTableMap[tableName]
+		if !hasTenantInfo {
 			continue
 		}
 
 		tidIdx := info.colIdx
 		if cols, hasDyn := dynamicCols[tableName]; hasDyn {
-			if idx, ok := cols["tenant_id"]; ok {
-				tidIdx = idx
-			} else if info.isTenantsTable {
+			if info.isTenantsTable {
 				if idx, ok := cols["id"]; ok {
+					tidIdx = idx
+				}
+			} else {
+				if idx, ok := cols["tenant_id"]; ok {
 					tidIdx = idx
 				}
 			}
 		}
 
 		for _, tuple := range tuples {
-			tid, err := extractUint64Col(tuple, tidIdx)
-			if err != nil {
+			tid, tidErr := extractUint64Col(tuple, tidIdx)
+			if tidErr != nil {
 				continue
 			}
 			if tid != sourceTenantID {
@@ -794,7 +816,70 @@ func (s *TenantMigrateService) collectRows(filePath string, sourceTenantID uint6
 		}
 	}
 
-	return rowsByTable, tenantsRow, dynamicCols, scanner.Err()
+	if scanErr := scanner.Err(); scanErr != nil {
+		return nil, "", nil, scanErr
+	}
+
+	// Build PK sets for direct tables so we can filter indirect rows.
+	pkSets := buildPKSets(rowsByTable, dynamicCols)
+
+	// Filter indirect tables: only keep rows whose FK references a source-tenant PK.
+	for _, tbl := range indirectTables {
+		rows, ok := indirectRaw[tbl]
+		if !ok {
+			continue
+		}
+		parent, known := indirectTableParent[tbl]
+		if !known {
+			continue
+		}
+		fkCol, parentTable := parent[0], parent[1]
+		parentPKs := pkSets[parentTable]
+		if parentPKs == nil {
+			continue
+		}
+
+		fkIdx := 0 // FK column index in indirect table
+		if cols, ok := dynamicCols[tbl]; ok {
+			if idx, ok2 := cols[fkCol]; ok2 {
+				fkIdx = idx
+			}
+		}
+
+		for _, tuple := range rows {
+			fkVal, fkErr := extractUint64Col(tuple, fkIdx)
+			if fkErr != nil {
+				continue
+			}
+			if parentPKs[fkVal] {
+				rowsByTable[tbl] = append(rowsByTable[tbl], tuple)
+			}
+		}
+	}
+
+	return rowsByTable, tenantsRow, dynamicCols, nil
+}
+
+// buildPKSets builds a map of tableName → set of primary key values (id column)
+// from the already-collected direct-table rows.
+func buildPKSets(rowsByTable map[string][]string, dynamicCols map[string]map[string]int) map[string]map[uint64]bool {
+	result := make(map[string]map[uint64]bool)
+	for tbl, rows := range rowsByTable {
+		pkIdx := 0
+		if cols, ok := dynamicCols[tbl]; ok {
+			if idx, ok2 := cols["id"]; ok2 {
+				pkIdx = idx
+			}
+		}
+		set := make(map[uint64]bool, len(rows))
+		for _, tuple := range rows {
+			if id, err := extractUint64Col(tuple, pkIdx); err == nil {
+				set[id] = true
+			}
+		}
+		result[tbl] = set
+	}
+	return result
 }
 
 // ─── SQL Parsing Helpers ──────────────────────────────────────────────────────
@@ -803,8 +888,7 @@ func (s *TenantMigrateService) collectRows(filePath string, sourceTenantID uint6
 // statement and returns the table name + a map of colName -> 0-based index.
 // It correctly skips KEY/INDEX/PRIMARY KEY/UNIQUE KEY constraint lines.
 func parseCreateTable(scanner *bufio.Scanner, firstLine string) (string, map[string]int) {
-	reTable := regexp.MustCompile("CREATE TABLE `([^`]+)`")
-	m := reTable.FindStringSubmatch(firstLine)
+	m := reCreateTable.FindStringSubmatch(firstLine)
 	if m == nil {
 		return "", nil
 	}

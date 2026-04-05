@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Card, Steps, Button, Upload, Radio, List, InputNumber, Input,
-  Alert, Space, Typography, Tag, Table, Spin, message, Modal, Result,
+  Alert, Space, Typography, Tag, Table, Spin, message, Modal, Result, Checkbox,
 } from 'antd';
 import {
   SwapOutlined, UploadOutlined, DatabaseOutlined,
@@ -53,6 +53,8 @@ export default function TenantMigrate() {
   // ── Step 2: confirm ───────────────────────────────────────────────────────
   const [confirmInput, setConfirmInput] = useState('');
   const [executing, setExecuting] = useState(false);
+  const [forceModalVisible, setForceModalVisible] = useState(false);
+  const [forceChecked, setForceChecked] = useState(false);
 
   useEffect(() => {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
@@ -146,16 +148,19 @@ export default function TenantMigrate() {
   const confirmValid = confirmInput === confirmCode && confirmCode !== '';
 
   // ── Execute ───────────────────────────────────────────────────────────────
-  const doExecute = useCallback(async () => {
+  const doExecute = useCallback(async (force?: boolean) => {
     if (!selectedTenant || !taskId) return;
     setExecuting(true);
     setConfirmInput('');
+    setForceModalVisible(false);
+    setForceChecked(false);
     try {
       await executeMigrate({
         task_id: taskId,
         source_tenant_id: selectedTenant.tenant_id,
         target_tenant_id: effectiveTargetId,
         confirm_code: confirmCode,
+        ...(force ? { force: true } : {}),
       });
       startPolling(taskId);
     } catch {
@@ -164,16 +169,23 @@ export default function TenantMigrate() {
   }, [selectedTenant, taskId, effectiveTargetId, confirmCode, startPolling]);
 
   const handleExecuteClick = useCallback(() => {
-    Modal.confirm({
-      title: '危险操作确认',
-      icon: <ExclamationCircleOutlined />,
-      content: `将清除目标诊所 ID=${effectiveTargetId} 的全部数据，写入源诊所 ID=${selectedTenant?.tenant_id} 的数据，此操作不可撤销！`,
-      okText: '确认执行',
-      okButtonProps: { danger: true },
-      cancelText: '取消',
-      centered: true,
-      onOk: doExecute,
-    });
+    const isSameId = selectedTenant?.tenant_id === effectiveTargetId;
+    if (isSameId) {
+      // High-risk: source == target → show force confirmation modal
+      setForceChecked(false);
+      setForceModalVisible(true);
+    } else {
+      Modal.confirm({
+        title: '危险操作确认',
+        icon: <ExclamationCircleOutlined />,
+        content: `将清除目标诊所 ID=${effectiveTargetId} 的全部数据，写入源诊所 ID=${selectedTenant?.tenant_id} 的数据，此操作不可撤销！`,
+        okText: '确认执行',
+        okButtonProps: { danger: true },
+        cancelText: '取消',
+        centered: true,
+        onOk: () => doExecute(),
+      });
+    }
   }, [effectiveTargetId, selectedTenant, doExecute]);
 
   // ── Reset ─────────────────────────────────────────────────────────────────
@@ -189,6 +201,8 @@ export default function TenantMigrate() {
     setExecuting(false);
     setUploading(false);
     setSelectedBackupFile('');
+    setForceModalVisible(false);
+    setForceChecked(false);
   }, []);
 
   // ── Terminal log panel ────────────────────────────────────────────────────
@@ -685,6 +699,37 @@ export default function TenantMigrate() {
       {step === 0 && step0}
       {step === 1 && step1}
       {step === 2 && step2}
+
+      {/* High-risk force modal: source == target (overwrite) */}
+      <Modal
+        open={forceModalVisible}
+        title={
+          <Space>
+            <ExclamationCircleOutlined style={{ color: '#ff4d4f', fontSize: 18 }} />
+            <span style={{ color: '#ff4d4f' }}>高风险操作：原地覆盖</span>
+          </Space>
+        }
+        okText="强制执行"
+        okButtonProps={{ danger: true, disabled: !forceChecked }}
+        cancelText="取消"
+        centered
+        onCancel={() => { setForceModalVisible(false); setForceChecked(false); }}
+        onOk={() => doExecute(true)}
+      >
+        <Alert
+          type="error"
+          showIcon
+          message="源诊所 ID 与目标诊所 ID 相同"
+          description={`此操作将清除诊所 ID=${effectiveTargetId} 的全部现有数据，并用备份文件中的同 ID 数据覆盖，不可撤销。`}
+          style={{ marginBottom: 16 }}
+        />
+        <Checkbox
+          checked={forceChecked}
+          onChange={e => setForceChecked(e.target.checked)}
+        >
+          我知道这会覆盖目标诊所 ID={effectiveTargetId} 的所有现有数据，且此操作不可撤销
+        </Checkbox>
+      </Modal>
     </Card>
   );
 }

@@ -7,13 +7,17 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/callmefisher/menzhen/server/middleware"
 	"github.com/callmefisher/menzhen/server/service"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
+
+const maxUploadSize = 2 * 1024 * 1024 * 1024 // 2 GB
 
 // TenantMigrateHandler handles HTTP requests for the tenant migration feature.
 // Completely independent from BackupHandler.
@@ -39,8 +43,15 @@ func uploadDir() string {
 // Upload handles multipart file upload of a .sql or .sql.gz file.
 // POST /api/v1/tenant-migrate/upload
 func (h *TenantMigrateHandler) Upload(c *gin.Context) {
+	// Limit upload body to 2 GB to avoid disk exhaustion.
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxUploadSize)
+
 	file, header, err := c.Request.FormFile("file")
 	if err != nil {
+		if err.Error() == "http: request body too large" {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "文件不能超过 2GB"})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择要上传的文件"})
 		return
 	}
@@ -62,8 +73,18 @@ func (h *TenantMigrateHandler) Upload(c *gin.Context) {
 		return
 	}
 
-	// Save to temp dir.
-	destPath := filepath.Join(uploadDir(), name)
+	// Add UUID suffix to avoid overwriting a file being read by a concurrent task.
+	ext := ".sql"
+	if strings.HasSuffix(lower, ".sql.gz") {
+		ext = ".sql.gz"
+		name = strings.TrimSuffix(name, ".gz")
+		name = strings.TrimSuffix(name, ".sql")
+	} else {
+		name = strings.TrimSuffix(name, ".sql")
+	}
+	uniqueName := name + "." + uuid.New().String()[:8] + ext
+	destPath := filepath.Join(uploadDir(), uniqueName)
+
 	out, err := os.Create(destPath)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法保存文件"})
@@ -90,13 +111,14 @@ func (h *TenantMigrateHandler) Upload(c *gin.Context) {
 	}
 
 	// Create parse task and start async parsing.
+	// Use the original filename for display, unique path for storage.
 	h.svc.CleanupOldTasks()
-	taskID := h.svc.CreateTask(destPath, name)
+	taskID := h.svc.CreateTask(destPath, header.Filename)
 	h.svc.ParseSQLAsync(taskID)
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
-		"data": gin.H{"task_id": taskID, "file_name": name},
+		"data": gin.H{"task_id": taskID, "file_name": header.Filename},
 	})
 }
 
@@ -155,9 +177,15 @@ func (h *TenantMigrateHandler) Execute(c *gin.Context) {
 		SourceTenantID uint64 `json:"source_tenant_id" binding:"required"`
 		TargetTenantID uint64 `json:"target_tenant_id" binding:"required"`
 		ConfirmCode    string `json:"confirm_code" binding:"required"`
+		Force          bool   `json:"force"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误: " + err.Error()})
+		return
+	}
+
+	if req.SourceTenantID == req.TargetTenantID && !req.Force {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "源诊所和目标诊所不能相同"})
 		return
 	}
 
@@ -172,6 +200,7 @@ func (h *TenantMigrateHandler) Execute(c *gin.Context) {
 		TaskID:         req.TaskID,
 		SourceTenantID: req.SourceTenantID,
 		TargetTenantID: req.TargetTenantID,
+		Force:          req.Force,
 	}); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -236,14 +265,7 @@ func (h *TenantMigrateHandler) ListBackupFiles(c *gin.Context) {
 		}
 	}
 
-	// Sort by modified time, newest first.
-	for i := 0; i < len(files); i++ {
-		for j := i + 1; j < len(files); j++ {
-			if files[i].Modified < files[j].Modified {
-				files[i], files[j] = files[j], files[i]
-			}
-		}
-	}
+	sort.Slice(files, func(i, j int) bool { return files[i].Modified > files[j].Modified })
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"files": files}})
 }
