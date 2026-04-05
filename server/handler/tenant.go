@@ -21,6 +21,47 @@ func NewTenantHandler(db *gorm.DB) *TenantHandler {
 	return &TenantHandler{db: db}
 }
 
+// ListAccessible handles GET /api/v1/tenants/accessible.
+// Returns tenants searchable by the current user, intended for filter dropdowns.
+// Query params: keyword (fuzzy match on name), size (default 20, max 50).
+// Super admin: searches all tenants.
+// Power admin: searches only tenants in their managed groups.
+func (h *TenantHandler) ListAccessible(c *gin.Context) {
+	keyword := c.Query("keyword")
+	size, _ := strconv.Atoi(c.DefaultQuery("size", "20"))
+	if size < 1 || size > 50 {
+		size = 20
+	}
+
+	userID := middleware.GetUserID(c)
+	isSuperAdmin := service.IsProtectedAdminAccount(h.db, userID)
+	managedGroups := middleware.GetManagedGroups(c)
+	isPowerAdmin := len(managedGroups) > 0 && !isSuperAdmin
+
+	var groups []string
+	if isPowerAdmin {
+		groups = managedGroups
+	}
+
+	svc := service.NewTenantService(h.db)
+	tenants, err := svc.SearchAccessibleTenants(keyword, groups, size)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "搜索诊所失败",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data": gin.H{
+			"list": tenants,
+		},
+	})
+}
+
 // List handles GET /api/v1/tenants.
 // Super admin (username=admin + user:manage) sees all tenants.
 // Other users see only their own tenant as a single-item list.

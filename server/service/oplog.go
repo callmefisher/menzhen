@@ -54,19 +54,40 @@ func (s *OpLogService) CreateOpLog(tenantID, userID uint64, userName, action, re
 }
 
 // QueryOpLogs queries operation logs with filtering and pagination.
-// When tenantID == 0 (super admin), all tenants' logs are returned with Tenant preloaded.
-// Otherwise filters by tenant_id. Optional user_name (LIKE) and date range filters are applied.
+//
+// Access modes:
+//   - Regular user (tenantID > 0): sees only own tenant's logs.
+//   - Power admin (tenantID == 0, managedGroups non-empty): sees logs for all tenants
+//     in managed groups. Optionally filtered to a specific tenant via filterTenantID.
+//   - Super admin (tenantID == 0, managedGroups empty): sees all tenants' logs.
+//     Optionally filtered to a specific tenant via filterTenantID.
+//
+// Tenant info is preloaded when viewing multiple tenants (super/power admin).
 // Results are ordered by created_at DESC.
-func (s *OpLogService) QueryOpLogs(tenantID uint64, name string, startDate, endDate string, page, size int) ([]model.OpLog, int64, error) {
+func (s *OpLogService) QueryOpLogs(tenantID uint64, managedGroups []string, filterTenantID uint64, name string, startDate, endDate string, page, size int) ([]model.OpLog, int64, error) {
 	var logs []model.OpLog
 	var total int64
 
 	query := s.DB.Model(&model.OpLog{})
-	if tenantID > 0 {
+
+	switch {
+	case tenantID > 0:
+		// Regular user: see only their own tenant's logs.
 		query = query.Where("tenant_id = ?", tenantID)
-	} else {
-		// Super admin global query: preload tenant info for display.
+	case len(managedGroups) > 0:
+		// Power admin: see logs for tenants within managed groups.
+		query = query.Where("tenant_id IN (?)",
+			s.DB.Table("tenants").Select("id").Where("group_name IN ?", managedGroups)).
+			Preload("Tenant")
+		if filterTenantID > 0 {
+			query = query.Where("tenant_id = ?", filterTenantID)
+		}
+	default:
+		// Super admin: see all tenants' logs.
 		query = query.Preload("Tenant")
+		if filterTenantID > 0 {
+			query = query.Where("tenant_id = ?", filterTenantID)
+		}
 	}
 
 	if name != "" {

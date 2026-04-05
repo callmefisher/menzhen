@@ -2,6 +2,7 @@ import request from '../utils/request';
 
 export interface OpLogListParams {
   name?: string;
+  tenant_id?: number;
   start_date?: string;
   end_date?: string;
   page?: number;

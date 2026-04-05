@@ -15,7 +15,6 @@ import type { AcupointData } from './data/types';
 interface MeridianSceneProps {
   selectedMeridians: string[];
   focusedAcupoint: AcupointData | null;
-  selectedAcupoint: AcupointData | null; // 当前选中的单个穴位
   onAcupointClick: (acupoint: AcupointData | null) => void;
   modelType?: ModelType;
 }
@@ -31,7 +30,7 @@ function CameraController(_props: { focusedAcupoint: AcupointData | null }) {
   return null;
 }
 
-function SceneContent({ selectedMeridians, focusedAcupoint, selectedAcupoint, onAcupointClick, modelType = 'female' }: MeridianSceneProps) {
+function SceneContent({ selectedMeridians, focusedAcupoint, onAcupointClick, modelType = 'female' }: MeridianSceneProps) {
   const [mergedBVH, setMergedBVH] = useState<MergedBVH | null>(null);
 
   // Build merged BVH when model loads
@@ -52,13 +51,7 @@ function SceneContent({ selectedMeridians, focusedAcupoint, selectedAcupoint, on
   const acupointsByMeridian = getAcupointsByMeridian(modelType);
 
   // Collect all visible acupoints from selected meridians
-  // 如果有选中的单个穴位，只显示该穴位；否则显示选中经络的所有穴位
   const visibleAcupoints: AcupointData[] = useMemo(() => {
-    if (selectedAcupoint) {
-      // 只显示选中的单个穴位
-      return [selectedAcupoint];
-    }
-    // 显示选中经络的所有穴位
     const points: AcupointData[] = [];
     for (const mId of selectedMeridians) {
       const meridianPoints = acupointsByMeridian[mId];
@@ -67,7 +60,7 @@ function SceneContent({ selectedMeridians, focusedAcupoint, selectedAcupoint, on
       }
     }
     return points;
-  }, [selectedAcupoint, selectedMeridians, acupointsByMeridian]);
+  }, [selectedMeridians, acupointsByMeridian]);
 
   return (
     <>

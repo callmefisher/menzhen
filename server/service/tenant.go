@@ -64,6 +64,32 @@ func NewTenantService(db *gorm.DB) *TenantService {
 	return &TenantService{DB: db}
 }
 
+// TenantSearchItem is a lightweight tenant representation for filter dropdowns.
+type TenantSearchItem struct {
+	ID        uint64 `json:"id"`
+	Name      string `json:"name"`
+	Code      string `json:"code"`
+	GroupName string `json:"group_name"`
+}
+
+// SearchAccessibleTenants searches tenants by name keyword, returning at most size results.
+// If groupNames is non-empty, only tenants in those groups are searched (power admin).
+// If groupNames is empty, all tenants are searched (super admin).
+func (s *TenantService) SearchAccessibleTenants(keyword string, groupNames []string, size int) ([]TenantSearchItem, error) {
+	var items []TenantSearchItem
+	query := s.DB.Table("tenants").Select("id, name, code, group_name")
+	if len(groupNames) > 0 {
+		query = query.Where("group_name IN ?", groupNames)
+	}
+	if keyword != "" {
+		query = query.Where("name LIKE ?", "%"+keyword+"%")
+	}
+	if err := query.Order("name").Limit(size).Scan(&items).Error; err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 // ListTenants returns a paginated list of all tenants.
 func (s *TenantService) ListTenants(page, size int) ([]model.Tenant, int64, error) {
 	var tenants []model.Tenant

@@ -304,6 +304,44 @@ func (s *DBCleanupService) CleanupOrphanData() (*DBCleanupResult, error) {
 
 		// 6. Hard-delete soft-deleted rows older than 30 days
 		cutoff := time.Now().AddDate(0, 0, -30)
+
+		// 6a. Delete prescription_items for prescriptions being purged (FK: fk_prescriptions_items)
+		res = tx.Exec(`
+			DELETE pi FROM prescription_items pi
+			INNER JOIN prescriptions p ON p.id = pi.prescription_id
+			WHERE p.deleted_at IS NOT NULL AND p.deleted_at < ?`, cutoff)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected > 0 {
+			cleaned["purged_prescription_items"] = int(res.RowsAffected)
+		}
+
+		// 6b. Delete record_attachments for medical_records being purged (no soft-delete on attachments)
+		res = tx.Exec(`
+			DELETE ra FROM record_attachments ra
+			INNER JOIN medical_records mr ON mr.id = ra.record_id
+			WHERE mr.deleted_at IS NOT NULL AND mr.deleted_at < ?`, cutoff)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected > 0 {
+			cleaned["purged_record_attachments"] = int(res.RowsAffected)
+		}
+
+		// 6c. Delete follow_ups for medical_records being purged (follow_ups reference record_id)
+		res = tx.Exec(`
+			DELETE fu FROM follow_ups fu
+			INNER JOIN medical_records mr ON mr.id = fu.record_id
+			WHERE mr.deleted_at IS NOT NULL AND mr.deleted_at < ?`, cutoff)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected > 0 {
+			cleaned["purged_follow_ups"] = int(res.RowsAffected)
+		}
+
+		// 6d. Purge soft-deleted rows per table (dependencies above cleared, now safe to delete)
 		for _, table := range []string{"medical_records", "prescriptions", "billings", "ai_analyses", "inventory_drugs"} {
 			res = tx.Exec("DELETE FROM "+table+" WHERE deleted_at IS NOT NULL AND deleted_at < ?", cutoff)
 			if res.Error != nil {

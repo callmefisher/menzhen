@@ -22,8 +22,9 @@ func NewOpLogHandler(db *gorm.DB) *OpLogHandler {
 }
 
 // ListOpLogs handles GET /api/v1/oplogs.
-// Query params: name, start_date, end_date, page (default 1), size (default 20).
+// Query params: name, tenant_id, start_date, end_date, page (default 1), size (default 20).
 // Super admin (username="admin" + user:manage permission) sees all tenants' logs.
+// Power admin (has managed groups) sees logs for tenants in their managed groups.
 func (h *OpLogHandler) ListOpLogs(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
 	if tenantID == 0 {
@@ -34,11 +35,50 @@ func (h *OpLogHandler) ListOpLogs(c *gin.Context) {
 		return
 	}
 
-	// Super admin sees all tenants' logs.
 	userID := middleware.GetUserID(c)
 	isSuperAdmin := service.IsProtectedAdminAccount(h.db, userID)
-	if isSuperAdmin {
+	managedGroups := middleware.GetManagedGroups(c)
+	isPowerAdmin := len(managedGroups) > 0 && !isSuperAdmin
+
+	// Super admin and power admin query across tenants (tenantID=0 signals global mode).
+	if isSuperAdmin || isPowerAdmin {
 		tenantID = 0
+	}
+
+	// Optional: filter to a specific tenant (only effective for super/power admin).
+	var filterTenantID uint64
+	if tidStr := c.Query("tenant_id"); tidStr != "" {
+		tid, err := strconv.ParseUint(tidStr, 10, 64)
+		if err == nil && tid > 0 {
+			filterTenantID = tid
+		}
+	}
+
+	// Power admin: validate the requested tenant is within their managed groups.
+	if isPowerAdmin && filterTenantID > 0 {
+		tenantSvc := service.NewTenantService(h.db)
+		t, err := tenantSvc.GetTenant(filterTenantID)
+		if err != nil {
+			c.JSON(http.StatusForbidden, gin.H{
+				"code":    403,
+				"message": "无权查看该诊所的日志",
+			})
+			return
+		}
+		allowed := false
+		for _, g := range managedGroups {
+			if g == t.GroupName {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			c.JSON(http.StatusForbidden, gin.H{
+				"code":    403,
+				"message": "无权查看该诊所的日志",
+			})
+			return
+		}
 	}
 
 	name := c.Query("name")
@@ -55,7 +95,7 @@ func (h *OpLogHandler) ListOpLogs(c *gin.Context) {
 	}
 
 	svc := service.NewOpLogService(h.db)
-	logs, total, err := svc.QueryOpLogs(tenantID, name, startDate, endDate, page, size)
+	logs, total, err := svc.QueryOpLogs(tenantID, managedGroups, filterTenantID, name, startDate, endDate, page, size)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -73,6 +113,7 @@ func (h *OpLogHandler) ListOpLogs(c *gin.Context) {
 			"page":           page,
 			"size":           size,
 			"is_super_admin": isSuperAdmin,
+			"is_power_admin": isPowerAdmin,
 		},
 	})
 }
