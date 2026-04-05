@@ -8,11 +8,12 @@ import {
   Typography,
   message,
   DatePicker,
+  Modal,
 } from 'antd';
 import { PlusOutlined, SearchOutlined, LeftOutlined, RightOutlined, CalendarOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
 import type { ColumnsType } from 'antd/es/table';
-import { listAppointments, cancelAppointment, enqueueToday, type Appointment } from '../../api/appointment';
+import { listAppointments, cancelAppointment, deleteAppointment, enqueueToday, type Appointment } from '../../api/appointment';
 import { listQueueDoctors, type QueueDoctor } from '../../api/queue-doctor';
 import AppointmentModal from '../../components/AppointmentModal';
 import AppointmentMatrix from '../../components/AppointmentMatrix';
@@ -30,6 +31,7 @@ export default function AppointmentManage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(false);
   const [cancelLoading, setCancelLoading] = useState<Record<number, boolean>>({});
+  const [deleteLoading, setDeleteLoading] = useState<Record<number, boolean>>({});
   const [enqueueLoading, setEnqueueLoading] = useState(false);
   const [doctorFilter, setDoctorFilter] = useState('');
   const [selectedDoctorId, setSelectedDoctorId] = useState<number | undefined>(undefined);
@@ -70,6 +72,7 @@ export default function AppointmentManage() {
   const refreshList = useCallback(() => { fetchAppointments(selectedDate); }, [fetchAppointments, selectedDate]);
   useWebSocket('appt_created', refreshList);
   useWebSocket('appt_cancelled', refreshList);
+  useWebSocket('appt_deleted', refreshList);
 
   const handleEnqueueToday = useCallback(async () => {
     setEnqueueLoading(true);
@@ -97,6 +100,22 @@ export default function AppointmentManage() {
         message.error('取消失败，请重试');
       } finally {
         setCancelLoading((prev) => ({ ...prev, [id]: false }));
+      }
+    },
+    [fetchAppointments, selectedDate],
+  );
+
+  const handleDelete = useCallback(
+    async (id: number) => {
+      setDeleteLoading((prev) => ({ ...prev, [id]: true }));
+      try {
+        await deleteAppointment(id);
+        message.success('预约已删除');
+        fetchAppointments(selectedDate);
+      } catch {
+        message.error('删除失败，请重试');
+      } finally {
+        setDeleteLoading((prev) => ({ ...prev, [id]: false }));
       }
     },
     [fetchAppointments, selectedDate],
@@ -161,32 +180,72 @@ export default function AppointmentManage() {
         title: '操作',
         key: 'action',
         width: 120,
-        render: (_: unknown, r: Appointment) =>
-          r.status === 'pending' ? (
-            <Space size={4}>
-              <Button
-                type="link"
-                size="small"
-                style={{ padding: '0 4px' }}
-                onClick={() => { setEditingAppointment(r); setModalOpen(true); }}
-              >
-                编辑
-              </Button>
+        render: (_: unknown, r: Appointment) => {
+          if (r.status === 'pending' || r.status === 'queued') {
+            return (
+              <Space size={4}>
+                {r.status === 'pending' && (
+                  <Button
+                    type="link"
+                    size="small"
+                    style={{ padding: '0 4px' }}
+                    onClick={() => { setEditingAppointment(r); setModalOpen(true); }}
+                  >
+                    编辑
+                  </Button>
+                )}
+                <Button
+                  type="link"
+                  danger
+                  size="small"
+                  style={{ padding: '0 4px' }}
+                  loading={cancelLoading[r.id]}
+                  onClick={() =>
+                    Modal.confirm({
+                      title: '确认取消预约',
+                      content: r.status === 'queued'
+                        ? '该预约已入队，取消后将从队列中移除，确认取消？'
+                        : `确认取消 ${r.patient_name} 的预约？`,
+                      okText: '确认取消',
+                      cancelText: '返回',
+                      okButtonProps: { danger: true },
+                      onOk: () => handleCancel(r.id),
+                    })
+                  }
+                >
+                  取消
+                </Button>
+              </Space>
+            );
+          }
+          if (r.status === 'cancelled' || r.status === 'no_show') {
+            return (
               <Button
                 type="link"
                 danger
                 size="small"
                 style={{ padding: '0 4px' }}
-                loading={cancelLoading[r.id]}
-                onClick={() => handleCancel(r.id)}
+                loading={deleteLoading[r.id]}
+                onClick={() =>
+                  Modal.confirm({
+                    title: '确认删除预约',
+                    content: '删除后不可恢复，确认删除？',
+                    okText: '确认删除',
+                    cancelText: '返回',
+                    okButtonProps: { danger: true },
+                    onOk: () => handleDelete(r.id),
+                  })
+                }
               >
-                取消
+                删除
               </Button>
-            </Space>
-          ) : null,
+            );
+          }
+          return null;
+        },
       },
     ],
-    [cancelLoading, handleCancel],
+    [cancelLoading, deleteLoading, handleCancel, handleDelete],
   );
 
   const isToday = selectedDate.isSame(dayjs(), 'day');

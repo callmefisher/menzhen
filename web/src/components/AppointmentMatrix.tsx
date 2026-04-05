@@ -68,6 +68,7 @@ export default function AppointmentMatrix({ selectedDate, onDateChange }: Props)
   const refreshMatrix = useCallback(() => { fetchMatrix(weekStart); }, [fetchMatrix, weekStart]);
   useWebSocket('appt_created', refreshMatrix);
   useWebSocket('appt_cancelled', refreshMatrix);
+  useWebSocket('appt_deleted', refreshMatrix);
 
   const handlePrevWeek = () => setWeekStart((w) => w.subtract(7, 'day'));
   const handleNextWeek = () => setWeekStart((w) => w.add(7, 'day'));

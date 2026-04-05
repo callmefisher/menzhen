@@ -70,6 +70,7 @@ func seedPermissions(db *gorm.DB) {
 		{Code: "appointment:create",  Name: "创建预约",  Description: "创建预约记录"},
 		{Code: "appointment:read",    Name: "查看预约",  Description: "查看预约列表"},
 		{Code: "appointment:update",  Name: "修改预约",  Description: "修改/取消预约"},
+		{Code: "appointment:delete",  Name: "删除预约",  Description: "删除已取消或未到诊的预约"},
 		{Code: "appointment:checkin", Name: "预约签到",  Description: "为预约患者签到"},
 		{Code: "power_admin:manage", Name: "超级管理员管理", Description: "管理 powerAdmin 账号及其授权分组"},
 	}

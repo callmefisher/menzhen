@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
+import TenantMigrate from './TenantMigrate';
 import {
   Card, Button, Space, Typography, Alert, Modal, Drawer,
   Radio, List, Tag, message, Spin,
@@ -687,6 +688,9 @@ export default function BackupRestore() {
           {backupModalContent}
         </Modal>
       )}
+
+      {/* 按诊所迁移恢复 — 独立功能，不影响上方备份/恢复逻辑 */}
+      <TenantMigrate />
     </div>
   );
 }

@@ -118,12 +118,10 @@ func (h *PatientPortalHandler) ListAppointments(c *gin.Context) {
 	}
 	var appts []model.Appointment
 	patientIDUint := uint(*patientID)
-	h.db.Where("tenant_id = ? AND patient_id = ?", tenantID, patientIDUint).
-		Order("appoint_date DESC, slot_start DESC").
-		Limit(50).Find(&appts)
-
-	// Populate checkin_status for today's queued appointments via single IN query.
 	today := time.Now().Format("2006-01-02")
+	h.db.Where("tenant_id = ? AND patient_id = ? AND appoint_date >= ?", tenantID, patientIDUint, today).
+		Order("appoint_date ASC, slot_start ASC").
+		Limit(50).Find(&appts)
 	var entryIDs []uint
 	entryIdx := map[uint]int{} // queueEntryID → index in appts
 	for i, a := range appts {
@@ -185,9 +183,32 @@ func (h *PatientPortalHandler) CreateAppointment(c *gin.Context) {
 		return
 	}
 	doctorName := h.doctorDisplayName(doctor)
+	// Use the canonical queue_doctor.id for all subsequent queries to avoid
+	// inconsistencies caused by callers passing user_id vs queue_doctor.id.
+	canonicalDoctorID := uint(doctor.ID)
+
+	// Check: same patient cannot book same doctor on same date more than once.
+	var dupCount int64
+	dupQuery := h.db.Model(&model.Appointment{}).
+		Where("tenant_id = ? AND doctor_id = ? AND appoint_date = ? AND status NOT IN (?,?)",
+			uint(tenantID), canonicalDoctorID, req.AppointDate,
+			model.AppointmentStatusCancelled, model.AppointmentStatusNoShow)
+	if patientID != nil {
+		dupQuery = dupQuery.Where("patient_id = ?", uint(*patientID))
+	} else {
+		dupQuery = dupQuery.Where("patient_name = ?", pu.Name)
+	}
+	if err := dupQuery.Count(&dupCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "预约校验失败，请稍后重试"})
+		return
+	}
+	if dupCount > 0 {
+		c.JSON(http.StatusConflict, gin.H{"code": 409, "message": "您当天已有该医生的预约，请勿重复预约"})
+		return
+	}
 
 	var slotCfg model.AppointmentSlotConfig
-	h.db.Where("tenant_id = ? AND doctor_id = ? AND slot_start = ?", tenantID, req.DoctorID, req.SlotStart).First(&slotCfg)
+	h.db.Where("tenant_id = ? AND doctor_id = ? AND slot_start = ?", tenantID, canonicalDoctorID, req.SlotStart).First(&slotCfg)
 	maxCount := 1
 	if slotCfg.MaxCount > 0 {
 		maxCount = slotCfg.MaxCount
@@ -195,8 +216,9 @@ func (h *PatientPortalHandler) CreateAppointment(c *gin.Context) {
 
 	var existingCount int64
 	h.db.Model(&model.Appointment{}).
-		Where("tenant_id = ? AND doctor_id = ? AND appoint_date = ? AND slot_start = ? AND status != ?",
-			tenantID, req.DoctorID, req.AppointDate, req.SlotStart, model.AppointmentStatusCancelled).
+		Where("tenant_id = ? AND doctor_id = ? AND appoint_date = ? AND slot_start = ? AND status NOT IN (?,?)",
+			tenantID, canonicalDoctorID, req.AppointDate, req.SlotStart,
+			model.AppointmentStatusCancelled, model.AppointmentStatusNoShow).
 		Count(&existingCount)
 
 	if int(existingCount) >= maxCount {
@@ -205,7 +227,7 @@ func (h *PatientPortalHandler) CreateAppointment(c *gin.Context) {
 	}
 
 	// Validate appointment date weekday against doctor's schedule.
-	if err := validateAppointDateWeekday(h.schedSvc, uint(tenantID), req.DoctorID, req.AppointDate); err != nil {
+	if err := validateAppointDateWeekday(h.schedSvc, uint(tenantID), canonicalDoctorID, req.AppointDate); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
 		return
 	}
@@ -220,7 +242,7 @@ func (h *PatientPortalHandler) CreateAppointment(c *gin.Context) {
 		TenantID:    uint(tenantID),
 		PatientID:   patientIDPtr,
 		PatientName: pu.Name,
-		DoctorID:    req.DoctorID,
+		DoctorID:    canonicalDoctorID,
 		DoctorName:  doctorName,
 		Room:        doctor.Room,
 		AppointDate: req.AppointDate,
@@ -326,6 +348,51 @@ func (h *PatientPortalHandler) CancelAppointment(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "预约已取消"})
 }
 
+// DeleteAppointment handles DELETE /api/v1/patient/appointments/:id.
+// Patients may hard-delete their own cancelled or no_show appointments to clean up history.
+func (h *PatientPortalHandler) DeleteAppointment(c *gin.Context) {
+	if !h.portalEnabled(c, func(cfg model.PatientPortalConfig) bool { return cfg.AppointmentEnabled }) {
+		return
+	}
+	tenantID := middleware.GetPatientTenantID(c)
+	patientID := middleware.GetPatientIDFromCtx(c)
+	idStr := c.Param("id")
+	apptID, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "无效的预约 ID"})
+		return
+	}
+	if patientID == nil {
+		c.JSON(http.StatusForbidden, gin.H{"code": 403, "message": "请先绑定患者档案才能删除预约"})
+		return
+	}
+	var appt model.Appointment
+	if err := h.db.Where("id = ? AND tenant_id = ? AND patient_id = ?",
+		apptID, tenantID, uint(*patientID)).First(&appt).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"code": 404, "message": "预约不存在"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "查询失败"})
+		}
+		return
+	}
+	if appt.Status != model.AppointmentStatusCancelled && appt.Status != model.AppointmentStatusNoShow {
+		c.JSON(http.StatusConflict, gin.H{"code": 409, "message": "只能删除已取消或未到诊的预约"})
+		return
+	}
+	if err := h.db.Delete(&appt).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "删除失败"})
+		return
+	}
+	if ws.DefaultHub != nil {
+		ws.DefaultHub.Broadcast(uint64(tenantID), ws.Message{
+			Type:    "appt_deleted",
+			Payload: gin.H{"appointment_id": apptID},
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "预约已删除"})
+}
+
 // TakeQueueNumberRequest is the body for POST /api/v1/patient/queue/take.
 type TakeQueueNumberRequest struct {
 	DoctorID uint `json:"doctor_id" binding:"required"`
@@ -402,7 +469,7 @@ func (h *PatientPortalHandler) TakeNumber(c *gin.Context) {
 			TenantID:    tenantIDUint,
 			PatientID:   patientIDUint,
 			PatientName: pu.Name,
-			DoctorID:    req.DoctorID,
+			DoctorID:    uint(doctor.ID), // use canonical queue_doctor.id, not req.DoctorID
 			DoctorName:  doctorName,
 			Room:        doctor.Room,
 			SeqNumber:   seq.LastSeq,
@@ -419,9 +486,11 @@ func (h *PatientPortalHandler) TakeNumber(c *gin.Context) {
 	}
 
 	var waitingAhead int64
+	// Use doctorIDSet (canonical id + user_id) to cover legacy entries.
+	waitingDoctorIDSet := []uint{uint(doctor.ID), doctor.UserID}
 	h.db.Model(&model.QueueEntry{}).
-		Where("tenant_id = ? AND doctor_id = ? AND queue_date = ? AND status = ? AND seq_number < ?",
-			tenantIDUint, req.DoctorID, today, model.QueueStatusWaiting, entry.SeqNumber).
+		Where("tenant_id = ? AND doctor_id IN ? AND queue_date = ? AND status = ? AND seq_number < ?",
+			tenantIDUint, waitingDoctorIDSet, today, model.QueueStatusWaiting, entry.SeqNumber).
 		Count(&waitingAhead)
 
 	// Notify admin dashboard to refresh queue.
@@ -501,7 +570,7 @@ func (h *PatientPortalHandler) PatientCheckin(c *gin.Context) {
 	if ws.DefaultHub != nil {
 		ws.DefaultHub.Broadcast(uint64(tenantID), ws.Message{
 			Type:    "queue_update",
-			Payload: gin.H{"action": "checkin"},
+			Payload: gin.H{"action": "checkin", "entry": entry},
 		})
 	}
 
@@ -522,26 +591,35 @@ func (h *PatientPortalHandler) GetMyQueueStatus(c *gin.Context) {
 		return
 	}
 
-	// PatientID must be set; without it we cannot safely identify the patient's queue entry.
-	if pu.PatientID == nil {
-		c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success", "data": nil})
-		return
-	}
-
 	today := time.Now().Format("2006-01-02")
 	var entry model.QueueEntry
-	err := h.db.Where("tenant_id = ? AND patient_id = ? AND queue_date = ? AND status IN ?",
-		uint(tenantID), uint(*pu.PatientID), today, []string{model.QueueStatusWaiting, model.QueueStatusSeeing}).
-		Order("created_at DESC").First(&entry).Error
-	if err != nil {
+	var queryErr error
+	if pu.PatientID != nil {
+		queryErr = h.db.Where("tenant_id = ? AND patient_id = ? AND queue_date = ? AND status IN ?",
+			uint(tenantID), uint(*pu.PatientID), today, []string{model.QueueStatusWaiting, model.QueueStatusSeeing}).
+			Order("created_at DESC").First(&entry).Error
+	} else {
+		// Fallback: match by patient_name when no patient record is linked yet.
+		queryErr = h.db.Where("tenant_id = ? AND patient_name = ? AND queue_date = ? AND status IN ?",
+			uint(tenantID), pu.Name, today, []string{model.QueueStatusWaiting, model.QueueStatusSeeing}).
+			Order("created_at DESC").First(&entry).Error
+	}
+	if queryErr != nil {
 		c.JSON(http.StatusOK, gin.H{"code": 0, "message": "success", "data": nil})
 		return
 	}
 
 	var waitingAhead int64
+	// Use IN clause to cover both queue_doctor.id and legacy entries stored with user_id.
+	var qd model.QueueDoctor
+	h.db.Where("id = ? AND tenant_id = ?", entry.DoctorID, uint(tenantID)).First(&qd)
+	doctorIDSet := []uint{entry.DoctorID}
+	if qd.ID != 0 && qd.UserID != 0 && qd.UserID != entry.DoctorID {
+		doctorIDSet = append(doctorIDSet, qd.UserID)
+	}
 	h.db.Model(&model.QueueEntry{}).
-		Where("tenant_id = ? AND doctor_id = ? AND queue_date = ? AND status = ? AND seq_number < ?",
-			uint(tenantID), entry.DoctorID, today, model.QueueStatusWaiting, entry.SeqNumber).
+		Where("tenant_id = ? AND doctor_id IN ? AND queue_date = ? AND status = ? AND seq_number < ?",
+			uint(tenantID), doctorIDSet, today, model.QueueStatusWaiting, entry.SeqNumber).
 		Count(&waitingAhead)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -702,9 +780,11 @@ func (h *PatientPortalHandler) ListQueue(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "医生不存在"})
 		return
 	}
+	// Query by both queue_doctor.id and user_id to cover legacy data where user_id was stored.
+	doctorIDSet := []uint{uint(doctor.ID), doctor.UserID}
 	var entries []model.QueueEntry
-	h.db.Where("tenant_id = ? AND doctor_id = ? AND queue_date = ? AND status IN ?",
-		uint(tenantID), doctor.ID, today, []string{model.QueueStatusWaiting, model.QueueStatusSeeing}).
+	h.db.Where("tenant_id = ? AND doctor_id IN ? AND queue_date = ? AND status IN ?",
+		uint(tenantID), doctorIDSet, today, []string{model.QueueStatusWaiting, model.QueueStatusSeeing}).
 		Order("seq_number ASC").
 		Find(&entries)
 

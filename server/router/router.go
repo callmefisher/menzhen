@@ -353,6 +353,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			appt.PUT("/:id", middleware.RequirePermission(db, "appointment:update"), apptHandler.Update)
 			appt.POST("/:id/checkin", middleware.RequirePermission(db, "appointment:checkin"), apptHandler.Checkin)
 			appt.POST("/:id/cancel", middleware.RequirePermission(db, "appointment:update"), apptHandler.Cancel)
+			appt.DELETE("/:id", middleware.RequirePermission(db, "appointment:delete"), apptHandler.Delete)
 		}
 
 		// Appointment slot config routes (tenant-scoped, admin).
@@ -433,6 +434,18 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			restoreRoutes.GET("/status/:task_id", middleware.RequirePermission(db, "user:manage"), backupHandler.GetTaskStatus)
 		}
 
+		// Tenant migration routes (super admin only) — independent from backup/restore.
+		migrateSvc := service.NewTenantMigrateService(db)
+		migrateHandler := handler.NewTenantMigrateHandler(migrateSvc, db)
+		migrateRoutes := authenticated.Group("/tenant-migrate")
+		{
+			migrateRoutes.POST("/upload", middleware.RequirePermission(db, "user:manage"), migrateHandler.Upload)
+			migrateRoutes.POST("/parse", middleware.RequirePermission(db, "user:manage"), migrateHandler.ParseFromBackup)
+			migrateRoutes.GET("/status/:task_id", middleware.RequirePermission(db, "user:manage"), migrateHandler.GetStatus)
+			migrateRoutes.POST("/execute", middleware.RequirePermission(db, "user:manage"), migrateHandler.Execute)
+			migrateRoutes.GET("/backup-files", middleware.RequirePermission(db, "user:manage"), migrateHandler.ListBackupFiles)
+		}
+
 		// Statistics routes (tenant-scoped).
 		statistics := authenticated.Group("/statistics")
 		{
@@ -505,6 +518,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		patientAuth.POST("/appointments", patientPortalHandler.CreateAppointment)
 		patientAuth.GET("/appointments/slots", patientPortalHandler.GetAppointmentSlots)
 		patientAuth.POST("/appointments/:id/cancel", patientPortalHandler.CancelAppointment)
+		patientAuth.DELETE("/appointments/:id", patientPortalHandler.DeleteAppointment)
 		patientAuth.POST("/appointments/:id/checkin", patientPortalHandler.PatientCheckin)
 
 		// Queue
