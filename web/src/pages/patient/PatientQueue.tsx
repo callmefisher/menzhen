@@ -1,8 +1,44 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Card, Button, Select, message, Spin, Tag } from 'antd';
 import { takeQueueNumber, getMyQueueStatus, listDoctors, listPatientQueue } from '../../api/patientPortal';
 import type { Doctor, QueueEntry } from '../../api/patientPortal';
 import { usePatientWebSocket } from '../../hooks/usePatientWebSocket';
+import CallOverlay from '../../components/CallOverlay';
+import { buildRoomSpeechText, formatRoom } from '../../utils/format';
+
+// Digit map for seq numbers ≥100: 101 → "一零一"
+const DIGIT_MAP: Record<string, string> = {
+  '0': '零', '1': '一', '2': '二', '3': '三', '4': '四',
+  '5': '五', '6': '六', '7': '七', '8': '八', '9': '九',
+};
+
+function seqToSpeech(seq: number): string {
+  const s = String(seq);
+  return s.length >= 3 ? s.split('').map(d => DIGIT_MAP[d] ?? d).join('') : s;
+}
+
+/**
+ * WeChat/Android-compatible TTS.
+ * - voices: pre-loaded voice list (required on Android Chrome)
+ * - resume() → cancel() → setTimeout(100ms) → speak() fixes X5 engine silent failure
+ */
+function patientSpeak(text: string, voices: SpeechSynthesisVoice[]) {
+  if (!window.speechSynthesis) return;
+  const ss = window.speechSynthesis;
+  ss.resume();
+  ss.cancel();
+  const ttsTimer = setTimeout(() => {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'zh-CN';
+    u.rate = 0.85;
+    u.volume = 1.0;
+    // Explicitly set Chinese voice — required on Android Chrome to avoid silence
+    const zhVoice = voices.find(v => v.lang === 'zh-CN') ?? voices.find(v => v.lang.startsWith('zh'));
+    if (zhVoice) u.voice = zhVoice;
+    ss.speak(u);
+  }, 100);
+  return ttsTimer;
+}
 
 export default function PatientQueue() {
   const [doctors, setDoctors] = useState<Doctor[]>([]);
@@ -11,14 +47,50 @@ export default function PatientQueue() {
   const [queueList, setQueueList] = useState<QueueEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [taking, setTaking] = useState(false);
+  const [callNotif, setCallNotif] = useState<{ seq: number; name: string; room: string; doctor: string } | null>(null);
+  const myEntryRef = useRef<{ queue_entry: QueueEntry; waiting_ahead: number } | null>(null);
+  const voicesRef = useRef<SpeechSynthesisVoice[]>([]);
+  const audioUnlockedRef = useRef(false);
 
   const fetchStatus = useCallback(() => {
     return (getMyQueueStatus() as Promise<{ data: { queue_entry: QueueEntry; waiting_ahead: number } | null }>)
       .catch(() => ({ data: null }))
       .then((statusRes) => {
+        myEntryRef.current = statusRes.data;
         setMyEntry(statusRes.data);
         return statusRes.data;
       });
+  }, []);
+
+  // Load TTS voices — Android Chrome returns empty on first call, needs voiceschanged event.
+  useEffect(() => {
+    if (!window.speechSynthesis) return;
+    const load = () => {
+      const v = window.speechSynthesis.getVoices();
+      if (v.length > 0) voicesRef.current = v;
+    };
+    load();
+    window.speechSynthesis.addEventListener('voiceschanged', load);
+    return () => window.speechSynthesis.removeEventListener('voiceschanged', load);
+  }, []);
+
+  // Unlock audio on first user interaction — required by Android/WeChat autoplay policy.
+  useEffect(() => {
+    const unlock = () => {
+      if (audioUnlockedRef.current || !window.speechSynthesis) return;
+      const u = new SpeechSynthesisUtterance(' ');
+      u.volume = 0;
+      u.rate = 10;
+      u.lang = 'zh-CN';
+      window.speechSynthesis.speak(u);
+      audioUnlockedRef.current = true;
+    };
+    document.addEventListener('touchstart', unlock, { once: true, passive: true });
+    document.addEventListener('click', unlock, { once: true, passive: true });
+    return () => {
+      document.removeEventListener('touchstart', unlock);
+      document.removeEventListener('click', unlock);
+    };
   }, []);
 
   useEffect(() => {
@@ -52,11 +124,38 @@ export default function PatientQueue() {
     });
   }, [fetchStatus]));
 
+  // Real-time: show popup when my number is called.
+  usePatientWebSocket('queue_call', useCallback((msg: unknown) => {
+    const p = (msg as { payload?: { seq?: number; patient_name?: string; room?: string; doctor_name?: string } })?.payload;
+    if (typeof p?.seq !== 'number') return;
+    if (myEntryRef.current && myEntryRef.current.queue_entry.seq_number === p.seq) {
+      setCallNotif({ seq: p.seq, name: p.patient_name ?? '', room: p.room ?? '', doctor: p.doctor_name ?? '' });
+    }
+  }, []));
+
+  const handleCloseCall = useCallback(() => {
+    window.speechSynthesis?.cancel();
+    setCallNotif(null);
+  }, []);
+
+  // Trigger TTS when callNotif is set (WeChat/Android compatible).
+  useEffect(() => {
+    if (!callNotif) return;
+    const seqText = seqToSpeech(callNotif.seq);
+    const roomText = buildRoomSpeechText(formatRoom(callNotif.room));
+    const timer = patientSpeak(`请${seqText}号，${callNotif.name}，到${roomText}就诊`, voicesRef.current);
+    return () => {
+      clearTimeout(timer);
+      window.speechSynthesis?.cancel();
+    };
+  }, [callNotif]);
+
   const handleTake = async () => {
     if (!selectedDoctor) { message.warning('请先选择医生'); return; }
     setTaking(true);
     try {
       const res = await takeQueueNumber(selectedDoctor) as { data: { queue_entry: QueueEntry; waiting_ahead: number } };
+      myEntryRef.current = res.data;
       setMyEntry(res.data);
       message.success('取号成功！');
     } catch (err: unknown) {
@@ -77,6 +176,15 @@ export default function PatientQueue() {
     const { queue_entry: e, waiting_ahead } = myEntry;
     return (
       <div style={{ padding: '20px 16px' }}>
+        <CallOverlay
+          visible={callNotif !== null}
+          seq={callNotif?.seq ?? 0}
+          name={callNotif?.name ?? ''}
+          room={callNotif?.room ?? ''}
+          doctor={callNotif?.doctor ?? ''}
+          isMobile={true}
+          onClose={handleCloseCall}
+        />
         {/* My queue card */}
         <div style={{ background: 'linear-gradient(135deg, #389E0D, #237804)', borderRadius: 16, padding: '24px 20px', color: '#fff', textAlign: 'center', marginBottom: 16 }}>
           <div style={{ fontSize: 13, opacity: 0.85 }}>您的号码</div>
