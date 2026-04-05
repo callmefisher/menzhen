@@ -112,9 +112,6 @@ var tenantTables = []tenantTableInfo{
 	// prescription_notifications: id(0),created_at(1),updated_at(2),deleted_at(3),tenant_id(4),...
 	{table: "prescription_notifications", colIdx: 4},
 
-	// op_logs: id(0),created_at(1),updated_at(2),deleted_at(3),tenant_id(4),...
-	{table: "op_logs", colIdx: 4},
-
 	// appointments: id(0),created_at(1),updated_at(2),deleted_at(3),tenant_id(4),...
 	{table: "appointments", colIdx: 4},
 
@@ -527,16 +524,6 @@ func (s *TenantMigrateService) doMigrate(tx *gorm.DB, req ExecuteRequest, rowsBy
 		return fmt.Errorf("删除 record_attachments 失败: %w", err)
 	}
 
-	// op_logs cross-tenant: powerAdmin users from this tenant may have acted on
-	// other tenants, leaving op_logs with tenant_id≠target but user_id pointing
-	// to a user being deleted. Must clean these up before deleting users.
-	// (Must run before directDeleteOrder touches users.)
-	if err := tx.Exec(
-		"DELETE FROM op_logs WHERE user_id IN (SELECT id FROM users WHERE tenant_id = ?)",
-		req.TargetTenantID).Error; err != nil {
-		return fmt.Errorf("删除跨租户 op_logs 失败: %w", err)
-	}
-
 	// prescription_items (via prescriptions)
 	if err := tx.Exec(
 		"DELETE pi FROM prescription_items pi "+
@@ -566,7 +553,7 @@ func (s *TenantMigrateService) doMigrate(tx *gorm.DB, req ExecuteRequest, rowsBy
 	// role_permissions) have no tenant_id column and are already handled
 	// by the JOIN deletes above — do NOT include them here.
 	directDeleteOrder := []string{
-		"op_logs", "ai_analyses", "daily_staff_stats", "daily_stats",
+		"ai_analyses", "daily_staff_stats", "daily_stats",
 		"billings", "prescription_notifications", "prescriptions",
 		"medical_records", "follow_ups", "appointments",
 		"appointment_slot_configs", "doctor_schedule_configs",
