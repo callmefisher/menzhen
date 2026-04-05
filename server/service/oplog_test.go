@@ -25,7 +25,7 @@ func TestOpLogService_CreateOpLog_Success(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify created
-	logs, total, err := svc.QueryOpLogs(tenant.ID, "", "", "", 1, 10)
+	logs, total, err := svc.QueryOpLogs(tenant.ID, nil, 0, "", "", "", 1, 10)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), total)
 	assert.Len(t, logs, 1)
@@ -42,7 +42,7 @@ func TestOpLogService_CreateOpLog_WithData(t *testing.T) {
 	err := svc.CreateOpLog(tenant.ID, user.ID, user.RealName, "update", "patient", 1, oldData, newData)
 	assert.NoError(t, err)
 
-	logs, _, err := svc.QueryOpLogs(tenant.ID, "", "", "", 1, 10)
+	logs, _, err := svc.QueryOpLogs(tenant.ID, nil, 0, "", "", "", 1, 10)
 	assert.NoError(t, err)
 	assert.Len(t, logs, 1)
 	assert.NotNil(t, logs[0].OldData)
@@ -61,13 +61,13 @@ func TestOpLogService_QueryOpLogs_Pagination(t *testing.T) {
 	}
 
 	// Page 1 of 2
-	logs, total, err := svc.QueryOpLogs(tenant.ID, "", "", "", 1, 2)
+	logs, total, err := svc.QueryOpLogs(tenant.ID, nil, 0, "", "", "", 1, 2)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(5), total)
 	assert.Len(t, logs, 2)
 
 	// Page 2 of 2
-	logs2, _, err := svc.QueryOpLogs(tenant.ID, "", "", "", 2, 2)
+	logs2, _, err := svc.QueryOpLogs(tenant.ID, nil, 0, "", "", "", 2, 2)
 	assert.NoError(t, err)
 	assert.Len(t, logs2, 2)
 	assert.NotEqual(t, logs[0].ID, logs2[0].ID)
@@ -86,7 +86,7 @@ func TestOpLogService_QueryOpLogs_FilterByName(t *testing.T) {
 	err = svc.CreateOpLog(tenant.ID, user2.ID, "李四", "update", "patient", 2, nil, nil)
 	assert.NoError(t, err)
 
-	logs, total, err := svc.QueryOpLogs(tenant.ID, "张", "", "", 1, 10)
+	logs, total, err := svc.QueryOpLogs(tenant.ID, nil, 0, "张", "", "", 1, 10)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), total)
 	assert.Len(t, logs, 1)
@@ -102,13 +102,13 @@ func TestOpLogService_QueryOpLogs_FilterByDate(t *testing.T) {
 	today := time.Now().Format("2006-01-02")
 
 	// Querying today should find the log
-	logs, total, err := svc.QueryOpLogs(tenant.ID, "", today, today, 1, 10)
+	logs, total, err := svc.QueryOpLogs(tenant.ID, nil, 0, "", today, today, 1, 10)
 	assert.NoError(t, err)
 	assert.True(t, total >= 1)
 	assert.True(t, len(logs) >= 1)
 
 	// Querying a past date range should find nothing
-	logs, total, err = svc.QueryOpLogs(tenant.ID, "", "2020-01-01", "2020-01-02", 1, 10)
+	logs, total, err = svc.QueryOpLogs(tenant.ID, nil, 0, "", "2020-01-01", "2020-01-02", 1, 10)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(0), total)
 	assert.Len(t, logs, 0)
@@ -125,7 +125,7 @@ func TestOpLogService_QueryOpLogs_TenantIsolation(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Tenant 2 should not see tenant 1's logs
-	logs, total, err := svc.QueryOpLogs(tenant2.ID, "", "", "", 1, 10)
+	logs, total, err := svc.QueryOpLogs(tenant2.ID, nil, 0, "", "", "", 1, 10)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(0), total)
 	assert.Len(t, logs, 0)
@@ -137,7 +137,7 @@ func TestOpLogService_DeleteOpLog_Success(t *testing.T) {
 	err := svc.CreateOpLog(tenant.ID, user.ID, user.RealName, "create", "patient", 1, nil, nil)
 	assert.NoError(t, err)
 
-	logs, _, err := svc.QueryOpLogs(tenant.ID, "", "", "", 1, 10)
+	logs, _, err := svc.QueryOpLogs(tenant.ID, nil, 0, "", "", "", 1, 10)
 	assert.NoError(t, err)
 	assert.Len(t, logs, 1)
 
@@ -145,7 +145,7 @@ func TestOpLogService_DeleteOpLog_Success(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify deleted
-	logs, total, err := svc.QueryOpLogs(tenant.ID, "", "", "", 1, 10)
+	logs, total, err := svc.QueryOpLogs(tenant.ID, nil, 0, "", "", "", 1, 10)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(0), total)
 	assert.Len(t, logs, 0)
@@ -167,7 +167,7 @@ func TestOpLogService_BatchDeleteOpLogs(t *testing.T) {
 		assert.NoError(t, err)
 	}
 
-	logs, _, err := svc.QueryOpLogs(tenant.ID, "", "", "", 1, 10)
+	logs, _, err := svc.QueryOpLogs(tenant.ID, nil, 0, "", "", "", 1, 10)
 	assert.NoError(t, err)
 	assert.Len(t, logs, 3)
 
@@ -178,7 +178,7 @@ func TestOpLogService_BatchDeleteOpLogs(t *testing.T) {
 	assert.Equal(t, int64(2), affected)
 
 	// Verify 1 remaining
-	logs, total, err := svc.QueryOpLogs(tenant.ID, "", "", "", 1, 10)
+	logs, total, err := svc.QueryOpLogs(tenant.ID, nil, 0, "", "", "", 1, 10)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), total)
 	assert.Len(t, logs, 1)
@@ -197,8 +197,8 @@ func TestOpLogService_QueryOpLogs_GlobalQuery(t *testing.T) {
 	err = svc.CreateOpLog(tenant2.ID, user2.ID, "医生2", "update", "patient", 2, nil, nil)
 	assert.NoError(t, err)
 
-	// Global query (tenantID=0): should return all logs across tenants.
-	logs, total, err := svc.QueryOpLogs(0, "", "", "", 1, 10)
+	// Global query (tenantID=0, nil groups): should return all logs across tenants.
+	logs, total, err := svc.QueryOpLogs(0, nil, 0, "", "", "", 1, 10)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(2), total)
 	assert.Len(t, logs, 2)
@@ -227,10 +227,84 @@ func TestOpLogService_QueryOpLogs_GlobalQuery_WithNameFilter(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Global query with name filter should still work across tenants.
-	logs, total, err := svc.QueryOpLogs(0, "张", "", "", 1, 10)
+	logs, total, err := svc.QueryOpLogs(0, nil, 0, "张", "", "", 1, 10)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), total)
 	assert.Len(t, logs, 1)
 	assert.Equal(t, "张三", logs[0].UserName)
+	assert.Equal(t, tenant1.ID, logs[0].TenantID)
+}
+
+func TestOpLogService_QueryOpLogs_SuperAdmin_FilterByTenant(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	tenant1 := testutil.SeedTestTenant(t, db, "诊所甲", "clinic-jiap")
+	tenant2 := testutil.SeedTestTenant(t, db, "诊所乙", "clinic-yip")
+	user1, _ := testutil.SeedTestUser(t, db, tenant1.ID, "doc1", "pass", nil)
+	user2, _ := testutil.SeedTestUser(t, db, tenant2.ID, "doc2", "pass", nil)
+	svc := service.NewOpLogService(db)
+
+	err := svc.CreateOpLog(tenant1.ID, user1.ID, "医生甲", "create", "patient", 1, nil, nil)
+	assert.NoError(t, err)
+	err = svc.CreateOpLog(tenant2.ID, user2.ID, "医生乙", "update", "patient", 2, nil, nil)
+	assert.NoError(t, err)
+
+	// Super admin filtered to tenant1 only.
+	logs, total, err := svc.QueryOpLogs(0, nil, tenant1.ID, "", "", "", 1, 10)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	assert.Len(t, logs, 1)
+	assert.Equal(t, tenant1.ID, logs[0].TenantID)
+	assert.NotEmpty(t, logs[0].Tenant.Name, "Tenant should be preloaded")
+}
+
+func TestOpLogService_QueryOpLogs_PowerAdmin_ManagedGroups(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	// Two tenants in "华北" group, one in "华南" group.
+	tenant1 := testutil.SeedTestTenant(t, db, "北京诊所", "clinic-bj")
+	tenant2 := testutil.SeedTestTenant(t, db, "天津诊所", "clinic-tj")
+	tenant3 := testutil.SeedTestTenant(t, db, "广州诊所", "clinic-gz")
+	db.Model(tenant1).Update("group_name", "华北")
+	db.Model(tenant2).Update("group_name", "华北")
+	db.Model(tenant3).Update("group_name", "华南")
+
+	user1, _ := testutil.SeedTestUser(t, db, tenant1.ID, "doc1", "pass", nil)
+	user2, _ := testutil.SeedTestUser(t, db, tenant2.ID, "doc2", "pass", nil)
+	user3, _ := testutil.SeedTestUser(t, db, tenant3.ID, "doc3", "pass", nil)
+	svc := service.NewOpLogService(db)
+
+	_ = svc.CreateOpLog(tenant1.ID, user1.ID, "北京医生", "create", "patient", 1, nil, nil)
+	_ = svc.CreateOpLog(tenant2.ID, user2.ID, "天津医生", "create", "patient", 2, nil, nil)
+	_ = svc.CreateOpLog(tenant3.ID, user3.ID, "广州医生", "create", "patient", 3, nil, nil)
+
+	// Power admin managing "华北": should see only tenant1 and tenant2 logs.
+	logs, total, err := svc.QueryOpLogs(0, []string{"华北"}, 0, "", "", "", 1, 10)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(2), total)
+	assert.Len(t, logs, 2)
+	for _, l := range logs {
+		assert.NotEqual(t, tenant3.ID, l.TenantID, "should not see 华南 tenant")
+		assert.NotEmpty(t, l.Tenant.Name, "Tenant should be preloaded")
+	}
+}
+
+func TestOpLogService_QueryOpLogs_PowerAdmin_FilterByTenant(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	tenant1 := testutil.SeedTestTenant(t, db, "北京诊所2", "clinic-bj2")
+	tenant2 := testutil.SeedTestTenant(t, db, "天津诊所2", "clinic-tj2")
+	db.Model(tenant1).Update("group_name", "华北")
+	db.Model(tenant2).Update("group_name", "华北")
+
+	user1, _ := testutil.SeedTestUser(t, db, tenant1.ID, "doc1", "pass", nil)
+	user2, _ := testutil.SeedTestUser(t, db, tenant2.ID, "doc2", "pass", nil)
+	svc := service.NewOpLogService(db)
+
+	_ = svc.CreateOpLog(tenant1.ID, user1.ID, "北京医生", "create", "patient", 1, nil, nil)
+	_ = svc.CreateOpLog(tenant2.ID, user2.ID, "天津医生", "update", "patient", 2, nil, nil)
+
+	// Power admin managing "华北" filtered to tenant1 only.
+	logs, total, err := svc.QueryOpLogs(0, []string{"华北"}, tenant1.ID, "", "", "", 1, 10)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	assert.Len(t, logs, 1)
 	assert.Equal(t, tenant1.ID, logs[0].TenantID)
 }

@@ -601,7 +601,11 @@ func (h *PatientPortalHandler) GetRecord(c *gin.Context) {
 			itemsByPrescID[item.PrescriptionID] = append(itemsByPrescID[item.PrescriptionID], item)
 		}
 		for i := range prescriptions {
-			prescriptions[i].Items = itemsByPrescID[prescriptions[i].ID]
+			if items := itemsByPrescID[prescriptions[i].ID]; items != nil {
+				prescriptions[i].Items = items
+			} else {
+				prescriptions[i].Items = []model.PrescriptionItem{}
+			}
 		}
 	}
 

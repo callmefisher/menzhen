@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Table,
   Input,
@@ -11,6 +11,7 @@ import {
   Checkbox,
   message,
   Pagination,
+  Select,
 } from 'antd';
 import {
   SearchOutlined,
@@ -22,6 +23,8 @@ import {
 import type { Dayjs } from 'dayjs';
 import { listOpLogs, deleteOpLog, batchDeleteOpLogs } from '../api/oplog';
 import type { OpLogItem, OpLogListParams } from '../api/oplog';
+import { searchAccessibleTenants } from '../api/tenant';
+import type { AccessibleTenant } from '../api/tenant';
 import { useAuth } from '../store/auth';
 import useIsMobile from '../hooks/useIsMobile';
 import { useAccessibleColumns, type AccessibleColumnsType } from '../hooks/useAccessibleColumns';
@@ -547,6 +550,7 @@ export default function OpLogList() {
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [isPowerAdmin, setIsPowerAdmin] = useState(false);
   const [params, setParams] = useState<OpLogListParams>({
     page: 1,
     size: 20,
@@ -566,6 +570,30 @@ export default function OpLogList() {
   const [searchDateRange, setSearchDateRange] = useState<
     [Dayjs, Dayjs] | null
   >(null);
+  const [searchTenantId, setSearchTenantId] = useState<number | undefined>(undefined);
+  const [tenantOptions, setTenantOptions] = useState<AccessibleTenant[]>([]);
+  const [tenantSearchLoading, setTenantSearchLoading] = useState(false);
+  const tenantSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleTenantSearch = useCallback((keyword: string) => {
+    if (tenantSearchTimer.current) clearTimeout(tenantSearchTimer.current);
+    if (!keyword) {
+      setTenantOptions([]);
+      return;
+    }
+    setTenantSearchLoading(true);
+    tenantSearchTimer.current = setTimeout(async () => {
+      try {
+        const res = await searchAccessibleTenants(keyword);
+        const body = res as unknown as { data: { list: AccessibleTenant[] } };
+        setTenantOptions(body.data.list ?? []);
+      } catch {
+        // ignore
+      } finally {
+        setTenantSearchLoading(false);
+      }
+    }, 300);
+  }, []);
 
   const fetchData = useCallback(async (query: OpLogListParams) => {
     setLoading(true);
@@ -576,11 +604,13 @@ export default function OpLogList() {
           list: OpLogItem[];
           total: number;
           is_super_admin: boolean;
+          is_power_admin: boolean;
         };
       };
       setData(body.data.list ?? []);
       setTotal(body.data.total ?? 0);
       setIsSuperAdmin(body.data.is_super_admin ?? false);
+      setIsPowerAdmin(body.data.is_power_admin ?? false);
     } catch {
       // Error already handled by request interceptor
     } finally {
@@ -597,6 +627,7 @@ export default function OpLogList() {
       page: 1,
       size: params.size,
       name: searchName || undefined,
+      tenant_id: searchTenantId,
       start_date: searchDateRange
         ? searchDateRange[0].format('YYYY-MM-DD')
         : undefined,
@@ -610,6 +641,8 @@ export default function OpLogList() {
   const handleReset = () => {
     setSearchName('');
     setSearchDateRange(null);
+    setSearchTenantId(undefined);
+    setTenantOptions([]);
     setParams({ page: 1, size: 20 });
   };
 
@@ -674,7 +707,7 @@ export default function OpLogList() {
         return <>{label} <span style={{ color: '#1677ff' }}>({displayName})</span></>;
       },
     },
-    ...(isSuperAdmin
+    ...(isSuperAdmin || isPowerAdmin
       ? [
           {
             title: '所属租户',
@@ -844,6 +877,25 @@ export default function OpLogList() {
               </Button>
             )}
           </div>
+          {(isSuperAdmin || isPowerAdmin) && (
+            <div style={{ marginBottom: 8 }}>
+              <Select
+                placeholder="搜索诊所名称"
+                value={searchTenantId}
+                onChange={(val) => setSearchTenantId(val)}
+                onSearch={handleTenantSearch}
+                onClear={() => { setSearchTenantId(undefined); setTenantOptions([]); }}
+                options={tenantOptions.map(t => ({ label: t.name, value: t.id }))}
+                showSearch
+                filterOption={false}
+                loading={tenantSearchLoading}
+                allowClear
+                notFoundContent={tenantSearchLoading ? '搜索中...' : '输入诊所名称搜索'}
+                style={{ width: '100%' }}
+                size="small"
+              />
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <RangePicker
               value={searchDateRange}
@@ -874,6 +926,22 @@ export default function OpLogList() {
         }}
       >
         <Space wrap>
+          {(isSuperAdmin || isPowerAdmin) && (
+            <Select
+              placeholder="搜索诊所名称"
+              value={searchTenantId}
+              onChange={(val) => setSearchTenantId(val)}
+              onSearch={handleTenantSearch}
+              onClear={() => { setSearchTenantId(undefined); setTenantOptions([]); }}
+              options={tenantOptions.map(t => ({ label: t.name, value: t.id }))}
+              showSearch
+              filterOption={false}
+              loading={tenantSearchLoading}
+              allowClear
+              notFoundContent={tenantSearchLoading ? '搜索中...' : '输入诊所名称搜索'}
+              style={{ width: 200 }}
+            />
+          )}
           <Input
             placeholder="操作人姓名"
             value={searchName}

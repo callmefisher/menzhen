@@ -9,7 +9,6 @@ import useIsMobile from '../../hooks/useIsMobile';
 function MeridianItem({
   meridian,
   checked,
-  selectedAcupoint,
   onToggle,
   onAcupointClick,
   onInfoClick,
@@ -17,21 +16,12 @@ function MeridianItem({
 }: {
   meridian: MeridianData;
   checked: boolean;
-  selectedAcupoint: AcupointData | null;
   onToggle: (id: string) => void;
   onAcupointClick: (acupoint: AcupointData) => void;
   onInfoClick: (meridian: MeridianData) => void;
   isMobile: boolean;
 }) {
   const points = acupointsByMeridian[meridian.id] || [];
-
-  // 如果当前经络有选中的穴位，只显示该穴位；否则显示所有穴位
-  const visiblePoints = useMemo(() => {
-    if (selectedAcupoint && selectedAcupoint.meridianId === meridian.id) {
-      return [selectedAcupoint];
-    }
-    return points;
-  }, [points, selectedAcupoint, meridian.id]);
 
   return (
     <div>
@@ -70,7 +60,7 @@ function MeridianItem({
           </span>
         </span>
       </Checkbox>
-      {checked && visiblePoints.length > 0 && (
+      {checked && points.length > 0 && (
         <div
           style={{
             marginLeft: 28,
@@ -81,7 +71,7 @@ function MeridianItem({
             gap: isMobile ? 2 : 4,
           }}
         >
-          {visiblePoints.map(a => (
+          {points.map(a => (
             <Tag
               key={a.code}
               color={meridian.color}
@@ -119,7 +109,6 @@ export default function MeridianPanel({
 }: MeridianPanelProps) {
   const [searchValue, setSearchValue] = useState('');
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [selectedAcupoint, setSelectedAcupoint] = useState<AcupointData | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
 
@@ -153,7 +142,6 @@ export default function MeridianPanel({
 
   const handleSelect = useCallback(
     (acupoint: AcupointData) => {
-      setSelectedAcupoint(acupoint);
       onAcupointSearch(acupoint);
       setSearchValue(acupoint.name);
       setDropdownOpen(false);
@@ -163,7 +151,6 @@ export default function MeridianPanel({
 
   const handleClear = useCallback(() => {
     setSearchValue('');
-    setSelectedAcupoint(null);
     onAcupointSearch(null);
     setDropdownOpen(false);
   }, [onAcupointSearch]);
@@ -246,7 +233,6 @@ export default function MeridianPanel({
               key={m.id}
               meridian={m}
               checked={selectedMeridians.includes(m.id)}
-              selectedAcupoint={selectedAcupoint}
               onToggle={onMeridianToggle}
               onAcupointClick={handleSelect}
               onInfoClick={onMeridianInfoClick}
@@ -269,7 +255,6 @@ export default function MeridianPanel({
               key={m.id}
               meridian={m}
               checked={selectedMeridians.includes(m.id)}
-              selectedAcupoint={selectedAcupoint}
               onToggle={onMeridianToggle}
               onAcupointClick={handleSelect}
               onInfoClick={onMeridianInfoClick}

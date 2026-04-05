@@ -177,6 +177,8 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			tenants.POST("", middleware.RequirePermission(db, "tenant:manage"), tenantHandler.Create)
 			tenants.PUT("/:id", middleware.RequirePermission(db, "tenant:manage"), tenantHandler.Update)
 			tenants.DELETE("/:id", middleware.RequirePermission(db, "tenant:manage"), tenantHandler.Delete)
+			// Accessible tenants for filter dropdowns (super admin + power admin).
+			tenants.GET("/accessible", middleware.RequireSuperOrPowerAdmin(db), tenantHandler.ListAccessible)
 		}
 
 		// Tenant-scoped admin routes (for clinic operators).
