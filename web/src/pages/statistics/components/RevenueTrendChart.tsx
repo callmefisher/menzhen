@@ -1,4 +1,5 @@
-import ReactECharts from 'echarts-for-react';
+import ReactEChartsCore from 'echarts-for-react/lib/core';
+import echarts from '../../../utils/echartsConfig';
 import { Card } from 'antd';
 import type { DailyTrendItem } from '../../../api/statistics';
 
@@ -41,7 +42,7 @@ export default function RevenueTrendChart({ data }: Props) {
 
   return (
     <Card title="收入趋势 + 诊疗量" size="small">
-      <ReactECharts option={option} style={{ height: 300 }} />
+      <ReactEChartsCore echarts={echarts} option={option} style={{ height: 300 }} />
     </Card>
   );
 }

@@ -52,7 +52,7 @@ export default function PatientHome() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontSize: 20 }}>📅</span>
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600 }}>{upcomingAppt.appoint_date} {upcomingAppt.slot_start} · {upcomingAppt.doctor_name}</div>
+                <div style={{ fontWeight: 600 }}>{upcomingAppt.appoint_date.slice(0, 10)} {upcomingAppt.slot_start}~{upcomingAppt.slot_end} · {upcomingAppt.doctor_name}</div>
                 <div style={{ fontSize: 12, color: '#888' }}>预约已确认，请准时到诊</div>
               </div>
               <span style={{ color: '#52C41A' }}>›</span>

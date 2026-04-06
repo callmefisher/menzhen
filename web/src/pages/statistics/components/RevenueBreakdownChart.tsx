@@ -1,4 +1,5 @@
-import ReactECharts from 'echarts-for-react';
+import ReactEChartsCore from 'echarts-for-react/lib/core';
+import echarts from '../../../utils/echartsConfig';
 import { Card } from 'antd';
 import type { DailyTrendItem } from '../../../api/statistics';
 
@@ -38,7 +39,7 @@ export default function RevenueBreakdownChart({ data }: Props) {
 
   return (
     <Card title="诊金 vs 药费" size="small">
-      <ReactECharts option={option} style={{ height: 250 }} />
+      <ReactEChartsCore echarts={echarts} option={option} style={{ height: 250 }} />
     </Card>
   );
 }

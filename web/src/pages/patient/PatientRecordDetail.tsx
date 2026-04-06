@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Spin } from 'antd';
-import { ArrowLeftOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, CalendarOutlined } from '@ant-design/icons';
 import { getRecord } from '../../api/patientPortal';
 
 interface PrescriptionItem {
@@ -49,7 +49,7 @@ function SectionBlock({ title, children, isLast }: { title: string; children: Re
       </div>
       {/* Content */}
       <div style={{ flex: 1, paddingBottom: 4 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: '#389E0D', marginBottom: 10 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: '#389E0D', marginBottom: 10 }}>
           {title}
         </div>
         {children}
@@ -66,8 +66,8 @@ function InfoCard({ rows }: { rows: { label: string; value: string }[] }) {
           display: 'flex', alignItems: 'flex-start', padding: '10px 14px',
           borderBottom: '1px solid #fafafa',
         }}>
-          <span style={{ width: 40, color: '#bbb', fontSize: 13, flexShrink: 0 }}>{r.label}</span>
-          <span style={{ fontSize: 13, color: '#333', flex: 1, lineHeight: 1.6 }}>{r.value}</span>
+          <span style={{ width: 44, color: '#bbb', fontSize: 13, flexShrink: 0 }}>{r.label}</span>
+          <span style={{ fontSize: 14, color: '#333', flex: 1, lineHeight: 1.6 }}>{r.value}</span>
         </div>
       ))}
     </div>
@@ -90,7 +90,7 @@ function PrescriptionCard({ p, index }: { p: Prescription; index: number }) {
         {(p.formula_name || p.total_doses > 0) && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px 8px' }}>
             {p.formula_name && (
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#222', flex: 1 }}>{p.formula_name}</span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: '#222', flex: 1 }}>{p.formula_name}</span>
             )}
             {p.total_doses > 0 && (
               <span style={{ fontSize: 11, background: '#f6ffed', color: '#52C41A', border: '1px solid #b7eb8f', borderRadius: 10, padding: '2px 8px', flexShrink: 0 }}>
@@ -103,13 +103,13 @@ function PrescriptionCard({ p, index }: { p: Prescription; index: number }) {
         {/* Herb items — tag cloud */}
         {hasHerb && (
           <div style={{ padding: '6px 14px 10px', borderTop: '1px solid #fafafa' }}>
-            <div style={{ fontSize: 11, color: '#bbb', marginBottom: 6 }}>草药</div>
+            <div style={{ fontSize: 12, color: '#bbb', marginBottom: 6 }}>草药</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {herbItems.map((item, i) => (
                 <span key={i} style={{
                   background: '#f6ffed', border: '1px solid #d9f7be',
-                  borderRadius: 20, padding: '4px 10px',
-                  fontSize: 12, color: '#389E0D',
+                  borderRadius: 20, padding: '5px 11px',
+                  fontSize: 13, color: '#389E0D',
                 }}>
                   {item.herb_name} {item.dosage}g
                 </span>
@@ -121,7 +121,7 @@ function PrescriptionCard({ p, index }: { p: Prescription; index: number }) {
         {/* Patent medicine items — list */}
         {hasPatent && (
           <div style={{ borderTop: '1px solid #fafafa' }}>
-            <div style={{ fontSize: 11, color: '#bbb', padding: '8px 14px 4px' }}>中成药</div>
+            <div style={{ fontSize: 12, color: '#bbb', padding: '8px 14px 4px' }}>中成药</div>
             {patentItems.map((item, i) => (
               <div key={i} style={{
                 display: 'flex', alignItems: 'center', gap: 10,
@@ -133,8 +133,8 @@ function PrescriptionCard({ p, index }: { p: Prescription; index: number }) {
                   background: 'linear-gradient(135deg, #fff3cd, #ffe58f)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16,
                 }}>💊</div>
-                <span style={{ fontSize: 13, color: '#333', flex: 1, fontWeight: 500 }}>{item.herb_name}</span>
-                <span style={{ fontSize: 12, color: '#fa8c16', background: '#fff7e6', padding: '2px 8px', borderRadius: 10, fontWeight: 600 }}>
+                <span style={{ fontSize: 14, color: '#333', flex: 1, fontWeight: 500 }}>{item.herb_name}</span>
+                <span style={{ fontSize: 13, color: '#fa8c16', background: '#fff7e6', padding: '2px 8px', borderRadius: 10, fontWeight: 600 }}>
                   × {item.dosage}盒
                 </span>
               </div>
@@ -145,7 +145,7 @@ function PrescriptionCard({ p, index }: { p: Prescription; index: number }) {
         {/* Usage notes */}
         {p.notes && (
           <div style={{
-            fontSize: 12, color: '#888', background: '#f9fff6',
+            fontSize: 13, color: '#888', background: '#f9fff6',
             padding: '8px 14px', borderTop: '1px solid #fafafa',
             display: 'flex', alignItems: 'flex-start', gap: 6,
           }}>
@@ -197,7 +197,7 @@ export default function PatientRecordDetail() {
       {/* Banner */}
       <div style={{
         background: 'linear-gradient(160deg, #389E0D 0%, #52C41A 55%, #73d13d 100%)',
-        padding: '44px 18px 28px',
+        padding: '44px 18px 24px',
         position: 'relative',
       }}>
         <button
@@ -212,16 +212,17 @@ export default function PatientRecordDetail() {
         >
           <ArrowLeftOutlined />
         </button>
-        <div style={{ fontSize: 12, color: 'rgba(255,255,255,.7)', marginBottom: 4 }}>
-          {formatDate(record.visit_date)}就诊
+        {/* 层级：眉头标签 → 主诊断 → 就诊日期 */}
+        <div style={{ fontSize: 11, color: 'rgba(255,255,255,.6)', letterSpacing: 1, marginBottom: 4 }}>
+          就诊记录
         </div>
-        <div style={{ fontSize: 22, fontWeight: 800, color: '#fff', marginBottom: 8 }}>
+        <div style={{ fontSize: 17, fontWeight: 700, color: '#fff', lineHeight: 1.4, marginBottom: 8 }}>
           {record.diagnosis || '就诊记录'}
         </div>
-        <span style={{
-          display: 'inline-block', background: 'rgba(255,255,255,.22)',
-          color: '#fff', fontSize: 11, padding: '3px 12px', borderRadius: 14,
-        }}>就诊记录</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'rgba(255,255,255,.8)' }}>
+          <CalendarOutlined style={{ fontSize: 11 }} />
+          {formatDate(record.visit_date)}
+        </div>
       </div>
 
       {/* Body */}

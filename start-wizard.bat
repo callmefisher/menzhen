@@ -177,8 +177,8 @@ set WIZARD_SKIP_UPDATE=1
 
 echo.
 echo Ïòµ¼ÒÑÍ£Ö¹¡£
-pause
-exit /b 0
+timeout /t 2 /nobreak >nul
+exit
 
 :: ------------------------------------------------------------------
 :: Helper: try multiple URLs to download deploy-wizard.py

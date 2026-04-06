@@ -8,7 +8,7 @@ import (
 )
 
 func TestParseRootDf(t *testing.T) {
-	t.Run("normal output", func(t *testing.T) {
+	t.Run("normal output — root filesystem", func(t *testing.T) {
 		// Real-world output from `df -B1 /` inside the backup container on Docker Desktop Mac
 		output := `Filesystem           1-blocks       Used Available Use% Mounted on
 overlay              485473984512 21217587200 439520440320   5% /`
@@ -17,6 +17,17 @@ overlay              485473984512 21217587200 439520440320   5% /`
 		assert.Equal(t, int64(485473984512), total)
 		assert.Equal(t, int64(21217587200), used)
 		assert.Equal(t, int64(439520440320), free)
+	})
+
+	t.Run("hostfs output — Mac host disk via /:/hostfs:ro mount", func(t *testing.T) {
+		// Real-world output from `df -B1 /hostfs` on Docker Desktop Mac (138.76 GB free)
+		output := `Filesystem         1-blocks       Used  Available Use% Mounted on
+/dev/disk3s5s1   494384795648 355988963328 138395832320  72% /hostfs`
+		total, used, free, err := parseRootDf(output)
+		require.NoError(t, err)
+		assert.Equal(t, int64(494384795648), total)
+		assert.Equal(t, int64(355988963328), used)
+		assert.Equal(t, int64(138395832320), free)
 	})
 
 	t.Run("header only — no data row", func(t *testing.T) {

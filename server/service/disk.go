@@ -208,14 +208,14 @@ func stripDockerMux(b []byte) string {
 
 // CollectNow collects disk stats from the backup container and updates the cached status.
 // Uses two docker exec calls:
-//   - `df -B1 /` for total/used/free of the root filesystem
+//   - `df -B1 /hostfs` (falls back to `df -B1 /`) for total/used/free of the root filesystem.
+//     On Docker Desktop for Mac, mounting `/:hostfs:ro` in the backup container lets us read
+//     the Mac host's actual disk instead of the Docker VM's virtual disk.
 //   - `du -sb /var/lib/mysql /data /backups` for per-component sizes
-//
-// This avoids the Docker Desktop for Mac quirk where both mysql-data and minio-data
-// named volumes are backed by the same /dev/vda1 filesystem and df reports mountpoint
-// "/data" for both — making df-based per-component parsing unreliable.
 func (s *DiskService) CollectNow() (*model.DiskStatus, error) {
-	dfOut, err := s.dockerExec(backupContainer(), "df", "-B1", "/")
+	// On Docker Desktop for Mac, df / shows the Docker VM's virtual disk, not the Mac host disk.
+	// If /hostfs is mounted (from the host / bind), use it to get accurate host disk stats.
+	dfOut, err := s.dockerExec(backupContainer(), "sh", "-c", "df -B1 /hostfs 2>/dev/null || df -B1 /")
 	if err != nil {
 		return nil, fmt.Errorf("df exec: %w", err)
 	}

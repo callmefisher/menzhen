@@ -1,4 +1,5 @@
-import ReactECharts from 'echarts-for-react';
+import ReactEChartsCore from 'echarts-for-react/lib/core';
+import echarts from '../../../utils/echartsConfig';
 import { Card } from 'antd';
 import type { DailyTrendItem } from '../../../api/statistics';
 
@@ -36,7 +37,7 @@ export default function PatientChart({ data }: Props) {
 
   return (
     <Card title="新增 vs 复诊患者" size="small">
-      <ReactECharts option={option} style={{ height: 250 }} />
+      <ReactEChartsCore echarts={echarts} option={option} style={{ height: 250 }} />
     </Card>
   );
 }

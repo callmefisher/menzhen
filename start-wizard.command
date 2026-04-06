@@ -269,6 +269,11 @@ echo ""
 # 由启动脚本已完成更新检查，跳过 Python 内置的自更新
 WIZARD_SKIP_UPDATE=1 python3 deploy-wizard.py
 
-# 双击打开时，防止窗口自动关闭
+# Python 退出后自动关闭终端窗口（无需按回车）
 echo ""
-read -p "向导已停止，按回车关闭此窗口..."
+echo "向导已停止。"
+if [[ "$(uname)" == "Darwin" ]]; then
+    sleep 1
+    osascript -e 'tell application "Terminal" to close first window' 2>/dev/null || true
+fi
+exit 0
