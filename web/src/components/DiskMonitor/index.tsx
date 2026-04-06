@@ -38,29 +38,24 @@ const DiskMonitor: React.FC = () => {
   const [migrateOpen, setMigrateOpen] = useState(false)
   const [backupDirOpen, setBackupDirOpen] = useState(false)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const mountedRef = useRef(true)
-
-  useEffect(() => {
-    mountedRef.current = true
-    return () => { mountedRef.current = false }
-  }, [])
+  const [error, setError] = useState<string | null>(null)
 
   const fetchStatus = useCallback(() => {
+    const controller = new AbortController()
     setLoading(true)
+    setError(null)
     getDiskStatus()
-      .then(res => {
-        if (mountedRef.current) setStatus(res.data.data)
-      })
+      .then(res => { setStatus(res.data.data) })
       .catch(() => {
-        // silently ignore — card shows last known status
+        if (!controller.signal.aborted) setError('磁盘状态获取失败')
       })
-      .finally(() => {
-        if (mountedRef.current) setLoading(false)
-      })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
+    return controller
   }, [])
 
   useEffect(() => {
-    fetchStatus()
+    const controller = fetchStatus()
+    return () => controller.abort()
   }, [fetchStatus])
 
   // Auto-refresh at configured interval
@@ -108,6 +103,9 @@ const DiskMonitor: React.FC = () => {
       {isCritical && (
         <Alert type="error" message="磁盘告急：可用空间不足 10%，请立即处理！" style={{ marginBottom: 16 }} />
       )}
+      {error && !isCritical && (
+        <Alert type="warning" message={error} style={{ marginBottom: 16 }} />
+      )}
 
       {/* Stats row */}
       {status && (
@@ -133,7 +131,7 @@ const DiskMonitor: React.FC = () => {
             { label: 'MySQL', used: status.mysql_used, total: status.total },
             { label: 'MinIO', used: status.minio_used, total: status.total },
             { label: '备份文件', used: status.backup_used, total: status.total },
-            { label: '系统/其他', used: status.used - status.mysql_used - status.minio_used - status.backup_used, total: status.total },
+            { label: '系统/其他', used: Math.max(0, status.used - status.mysql_used - status.minio_used - status.backup_used), total: status.total },
           ].map(item => {
             const pct = item.total > 0 ? (item.used / item.total) * 100 : 0
             return (
@@ -196,7 +194,7 @@ const DiskMonitor: React.FC = () => {
                 <Button
                   size="small" type="primary"
                   onClick={() => {
-                    if (customInterval && customInterval >= 1 && customInterval <= 60) {
+                    if (customInterval !== null && customInterval >= 1 && customInterval <= 60) {
                       handleIntervalChange(customInterval * 60)
                       setShowCustom(false)
                     }
