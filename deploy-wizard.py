@@ -31,7 +31,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.04.06.130500"
+WIZARD_VERSION = "2026.04.06.200000"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -1302,6 +1302,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             if os_key == "windows":
                 stream_command(self, [
                     "cmd", "/c",
+                    "chcp 65001 >nul 2>&1 & "
                     f'cd /d "{SCRIPT_DIR}" && '
                     "docker compose up -d 2>&1 && "
                     "docker compose up -d nginx 2>&1 && "
@@ -1471,6 +1472,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             if os_key == "windows":
                 stream_command(self, [
                     "cmd", "/c",
+                    "chcp 65001 >nul 2>&1 & "
                     f'cd /d "{SCRIPT_DIR}" && '
                     "docker compose up -d --wait --wait-timeout 120 2>&1 & "
                     "docker compose up -d nginx 2>&1 || "
@@ -1493,8 +1495,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             _refresh_windows_path()
             fresh_install = "fresh=1" in self.path
 
-            # Before building, ensure source code exists (server/, web/, scripts/, nginx/, mysql/)
-            # If missing, auto-clone from git — same logic as /api/clone-repo
+            # Check whether source directories are already present.
             needs_clone = not all([
                 (SCRIPT_DIR / "server").is_dir(),
                 (SCRIPT_DIR / "web").is_dir(),
@@ -1502,6 +1503,11 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 (SCRIPT_DIR / "nginx" / "Dockerfile").exists(),
                 (SCRIPT_DIR / "mysql" / "Dockerfile").exists(),
             ])
+            # Always pull latest code on fresh install or when source is missing.
+            # The git init+remote+fetch sequence is idempotent: safe on both new
+            # and existing repos (remote URL is updated if it already exists).
+            should_pull = fresh_install or needs_clone
+
             os_key, _ = detect_os()
             q_dir = shlex.quote(str(SCRIPT_DIR)) if os_key != "windows" else str(SCRIPT_DIR)
             _repo = get_repo_url()
@@ -1531,19 +1537,22 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             else:
                 vol_cleanup = ""
 
-            if needs_clone:
-                build_cmd = _per_service_build_cmd(os_key)
+            build_cmd = _per_service_build_cmd(os_key)
+            if should_pull:
+                # Pull latest code from GitHub, then build.
+                # chcp 65001: switch cmd.exe to UTF-8 so Chinese echo lines render correctly.
                 if os_key == "windows":
                     clone_and_build = (
+                        "chcp 65001 >nul 2>&1 & "
                         f'cd /d "{q_dir}" && '
                         f"{vol_cleanup}"
-                        "echo 正在下载源码... && "
+                        "echo 正在下载最新代码... && "
                         "git init && git config core.autocrlf false && "
                         f'git remote add origin {q_url} 2>nul || git remote set-url origin {q_url} && '
                         "git fetch origin && "
                         f"git checkout -f origin/main -- . {EXCLUDE} && "
                         "git reset origin/main && "
-                        "echo 源码下载完成，开始构建... & "
+                        "echo 代码下载完成，开始构建... & "
                         f"docker compose pull & {build_cmd}"
                     )
                     stream_command(self, ["cmd", "/c", clone_and_build])
@@ -1551,20 +1560,22 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     clone_and_build = (
                         f"cd {q_dir} && "
                         f"{vol_cleanup}"
-                        "echo '正在下载源码...' && "
+                        "echo '正在下载最新代码...' && "
                         "git init && git config core.autocrlf false && "
                         f"git remote add origin {q_url} 2>/dev/null || git remote set-url origin {q_url} && "
                         "git fetch origin && "
                         f"git checkout -f origin/main -- . {EXCLUDE} && "
                         "git reset origin/main && "
-                        "echo '源码下载完成，开始构建...' && "
+                        "echo '代码下载完成，开始构建...' && "
                         f"docker compose pull; {build_cmd}"
                     )
                     stream_command(self, ["bash", "-c", clone_and_build])
             else:
-                build_cmd = _per_service_build_cmd(os_key)
+                # Non-fresh update with source already present — skip git pull,
+                # rebuild from current local source.
                 if os_key == "windows":
                     stream_command(self, ["cmd", "/c",
+                                          "chcp 65001 >nul 2>&1 & "
                                           f'cd /d "{q_dir}" && '
                                           f"{vol_cleanup}"
                                           f"docker compose pull & {build_cmd}"])
@@ -1602,6 +1613,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             if os_key == "windows":
                 stream_command(self, [
                     "cmd", "/c",
+                    "chcp 65001 >nul 2>&1 & "
                     f'cd /d "{script_dir}" && '
                     "git init && git config core.autocrlf false && "
                     f'git remote add origin "{_repo}" 2>nul || git remote set-url origin "{_repo}" && '
@@ -1641,6 +1653,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             if os_key == "windows":
                 stream_command(self, [
                     "cmd", "/c",
+                    "chcp 65001 >nul 2>&1 & "
                     f'cd /d "{script_dir}" && '
                     "git init && git config core.autocrlf false && "
                     f'git remote add origin "{_repo}" 2>nul || git remote set-url origin "{_repo}" && '
@@ -2062,6 +2075,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             if os_key == "windows":
                 docker_cmd = [
                     "cmd", "/c",
+                    "chcp 65001 >nul 2>&1 & "
                     "echo [2/3] 正在重新构建程序（约5-15分钟）... & "
                     f"docker compose pull & {build_cmd} & "
                     "echo [3/3] 正在重启服务... & "

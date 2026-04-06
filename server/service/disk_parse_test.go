@@ -4,49 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
-
-func TestParseRootDf(t *testing.T) {
-	t.Run("normal output — root filesystem", func(t *testing.T) {
-		// Real-world output from `df -B1 /` inside the backup container on Docker Desktop Mac
-		output := `Filesystem           1-blocks       Used Available Use% Mounted on
-overlay              485473984512 21217587200 439520440320   5% /`
-		total, used, free, err := parseRootDf(output)
-		require.NoError(t, err)
-		assert.Equal(t, int64(485473984512), total)
-		assert.Equal(t, int64(21217587200), used)
-		assert.Equal(t, int64(439520440320), free)
-	})
-
-	t.Run("hostfs output — Mac host disk via /:/hostfs:ro mount", func(t *testing.T) {
-		// Real-world output from `df -B1 /hostfs` on Docker Desktop Mac (138.76 GB free)
-		output := `Filesystem         1-blocks       Used  Available Use% Mounted on
-/dev/disk3s5s1   494384795648 355988963328 138395832320  72% /hostfs`
-		total, used, free, err := parseRootDf(output)
-		require.NoError(t, err)
-		assert.Equal(t, int64(494384795648), total)
-		assert.Equal(t, int64(355988963328), used)
-		assert.Equal(t, int64(138395832320), free)
-	})
-
-	t.Run("header only — no data row", func(t *testing.T) {
-		output := `Filesystem 1-blocks Used Available Use% Mounted on`
-		_, _, _, err := parseRootDf(output)
-		assert.Error(t, err)
-	})
-
-	t.Run("empty output", func(t *testing.T) {
-		_, _, _, err := parseRootDf("")
-		assert.Error(t, err)
-	})
-
-	t.Run("too few fields", func(t *testing.T) {
-		output := "Filesystem 1-blocks\noverlay 485473984512"
-		_, _, _, err := parseRootDf(output)
-		assert.Error(t, err)
-	})
-}
 
 func TestParseDuOutput(t *testing.T) {
 	t.Run("all three paths present", func(t *testing.T) {
@@ -82,4 +40,14 @@ func TestParseDuOutput(t *testing.T) {
 		assert.Equal(t, int64(0), mysqlUsed)
 		assert.Equal(t, int64(500), minioUsed)
 	})
+}
+
+func TestStatfsBytes(t *testing.T) {
+	// /tmp always exists on Linux/Mac; just verify numbers are sane.
+	total, used, free, err := statfsBytes("/tmp")
+	assert.NoError(t, err)
+	assert.Positive(t, total)
+	assert.GreaterOrEqual(t, free, int64(0))
+	assert.Equal(t, total, used+free+(total-used-free)) // used+free <= total (reserved blocks exist)
+	assert.LessOrEqual(t, used+free, total)
 }
