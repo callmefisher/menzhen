@@ -26,8 +26,10 @@ export default function QueueStrip() {
   const [entries, setEntries] = useState<QueueEntry[]>([]);
   const [showArrivalTime, setShowArrivalTime] = useState<boolean | null>(null);
   const [callingId, setCallingId] = useState<number | null>(null);
+  const [ripplingId, setRipplingId] = useState<number | null>(null);
   const callingRef = useRef<number | null>(null);  // synchronous lock, immune to state batching
   const isMountedRef = useRef(true);
+  const rippleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queueDoctorId = useQueueDoctorId();
 
   useEffect(() => () => { isMountedRef.current = false; }, []);
@@ -95,12 +97,17 @@ export default function QueueStrip() {
   };
 
   const handleCall = useCallback(async (id: number) => {
-    if (callingRef.current === id) return;  // synchronous check, no batching race
+    if (callingRef.current === id) return;
     callingRef.current = id;
     setCallingId(id);
     try {
       await callNumber(id);
       message.success('已叫号');
+      if (rippleTimer.current) clearTimeout(rippleTimer.current);
+      if (isMountedRef.current) setRipplingId(id);
+      rippleTimer.current = setTimeout(() => {
+        if (isMountedRef.current) setRipplingId(null);
+      }, 1800); // 3 rings × 0.25s stagger + 1.2s animation
     } catch {
       message.error('叫号失败');
     } finally {
@@ -332,24 +339,31 @@ export default function QueueStrip() {
                   {formatQueueTime(readyEntry.arrival_time)}
                 </span>
               )}
-              <Button
-                size="small"
-                icon={<SoundOutlined />}
-                loading={callingId === readyEntry.id}
-                onClick={() => handleCall(readyEntry.id)}
-                style={{
-                  background: 'linear-gradient(135deg, #ffa940, #fa8c16)',
-                  color: '#fff',
-                  border: 'none',
-                  fontWeight: 700,
-                  fontSize: 12,
-                  borderRadius: 6,
-                  boxShadow: '0 2px 6px rgba(250,140,22,0.25)',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                叫号
-              </Button>
+              <div style={{ position: 'relative', display: 'inline-flex' }}>
+                <Button
+                  size="small"
+                  icon={<SoundOutlined />}
+                  loading={callingId === readyEntry.id}
+                  onClick={() => handleCall(readyEntry.id)}
+                  style={{
+                    background: 'linear-gradient(135deg, #ffa940, #fa8c16)',
+                    color: '#fff',
+                    border: 'none',
+                    fontWeight: 700,
+                    fontSize: 12,
+                    borderRadius: 6,
+                    boxShadow: '0 2px 6px rgba(250,140,22,0.25)',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  叫号
+                </Button>
+                {ripplingId === readyEntry.id && <>
+                  <span className="qs-ripple-orange qs-ripple-1" />
+                  <span className="qs-ripple-orange qs-ripple-2" />
+                  <span className="qs-ripple-orange qs-ripple-3" />
+                </>}
+              </div>
             </div>
           )}
 
@@ -448,25 +462,32 @@ export default function QueueStrip() {
               )}
               {/* Stacked buttons so chip width matches the ready chip */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <Button
-                  size="small"
-                  icon={<SoundOutlined />}
-                  loading={callingId === seeingEntry.id}
-                  onClick={() => handleCall(seeingEntry.id)}
-                  style={{
-                    color: '#52c41a',
-                    border: '1px solid #b7eb8f',
-                    background: '#f6ffed',
-                    fontWeight: 700,
-                    fontSize: isMobile ? 11 : 12,
-                    borderRadius: 6,
-                    whiteSpace: 'nowrap',
-                    lineHeight: 1,
-                    height: 20,
-                  }}
-                >
-                  再叫
-                </Button>
+                <div style={{ position: 'relative', display: 'inline-flex' }}>
+                  <Button
+                    size="small"
+                    icon={<SoundOutlined />}
+                    loading={callingId === seeingEntry.id}
+                    onClick={() => handleCall(seeingEntry.id)}
+                    style={{
+                      color: '#52c41a',
+                      border: '1px solid #b7eb8f',
+                      background: '#f6ffed',
+                      fontWeight: 700,
+                      fontSize: isMobile ? 11 : 12,
+                      borderRadius: 6,
+                      whiteSpace: 'nowrap',
+                      lineHeight: 1,
+                      height: 20,
+                    }}
+                  >
+                    再叫
+                  </Button>
+                  {ripplingId === seeingEntry.id && <>
+                    <span className="qs-ripple-green qs-ripple-1" />
+                    <span className="qs-ripple-green qs-ripple-2" />
+                    <span className="qs-ripple-green qs-ripple-3" />
+                  </>}
+                </div>
                 <Button
                   size="small"
                   icon={<CheckOutlined />}
@@ -518,6 +539,20 @@ export default function QueueStrip() {
         .queue-strip-pipe::-webkit-scrollbar { height: 3px; }
         .queue-strip-pipe::-webkit-scrollbar-thumb { background: #e0e0e0; border-radius: 2px; }
         .queue-strip-pipe::-webkit-scrollbar-track { background: transparent; }
+        .qs-ripple-orange, .qs-ripple-green {
+          position: absolute; inset: 0; border-radius: 7px;
+          pointer-events: none; opacity: 0;
+        }
+        .qs-ripple-orange { border: 2px solid #ffa940; }
+        .qs-ripple-green  { border: 2px solid #52c41a; }
+        .qs-ripple-1 { animation: qsRipple 1.2s ease-out forwards; }
+        .qs-ripple-2 { animation: qsRipple 1.2s ease-out 0.25s forwards; }
+        .qs-ripple-3 { animation: qsRipple 1.2s ease-out 0.5s forwards; }
+        @keyframes qsRipple {
+          0%   { inset: 0;     opacity: 0.75; border-width: 2.5px; }
+          60%  {               opacity: 0.3; }
+          100% { inset: -14px; opacity: 0;    border-width: 1px; }
+        }
       `}</style>
     </div>
   );
