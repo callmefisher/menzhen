@@ -31,7 +31,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.04.06.223900"
+WIZARD_VERSION = "2026.04.06.224101"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -2063,9 +2063,12 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         return
                     checkout_ref = target_hash
 
-                # Reset HEAD — the critical operation that fixes
-                # the "check-updates still shows updates after pull" bug.
-                rc, _, err = run_command(["git", "reset", checkout_ref])
+                # Reset HEAD and working tree — ensures the on-disk files match
+                # the target commit before Docker build.  --hard is required:
+                # default --mixed only updates the index, leaving working-tree
+                # files unchanged, which means Docker may see stale source and
+                # skip rebuilding layers.
+                rc, _, err = run_command(["git", "reset", "--hard", checkout_ref])
                 if rc != 0:
                     _sse({"type": "log", "data": f"[WARN] git reset 失败: {(err or '').strip()}"})
 
