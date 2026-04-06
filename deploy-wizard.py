@@ -31,7 +31,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.03.23.220500"
+WIZARD_VERSION = "2026.04.06.122500"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -1709,15 +1709,20 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         return
                 # 3. Compare HEAD..origin/main
                 rc, out, _ = run_command(["git", "log", "HEAD..origin/main",
-                                          "--oneline", "--no-decorate", "-n", "50"])
+                                          "--format=%H|%h|%s|%ai", "--no-decorate", "-n", "50"])
                 if rc != 0:
                     _sse_done({"error": "compare_failed", "message": "无法比较版本差异"})
                     return
                 commits = []
                 for line in (out or "").strip().splitlines():
                     if line.strip():
-                        parts = line.strip().split(" ", 1)
-                        commits.append({"hash": parts[0], "message": parts[1] if len(parts) > 1 else ""})
+                        parts = line.strip().split("|", 3)
+                        commits.append({
+                            "full_hash": parts[0] if len(parts) > 0 else "",
+                            "hash": parts[1] if len(parts) > 1 else (parts[0][:7] if parts else ""),
+                            "message": parts[2] if len(parts) > 2 else "",
+                            "date": parts[3] if len(parts) > 3 else "",
+                        })
                 _sse_done({
                     "has_updates": len(commits) > 0,
                     "behind_count": len(commits),
@@ -1964,10 +1969,28 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
             })
             return
 
-        if self.path == "/api/pull-and-rebuild":
+        if self.path == "/api/pull-and-rebuild" or self.path.startswith("/api/pull-and-rebuild?"):
             # Pull latest code, rebuild images, restart services — all streamed.
             # Git operations run from Python (not shell chains) to avoid
             # cmd.exe operator-precedence and file-lock issues on Windows.
+            from urllib.parse import urlparse, parse_qs
+            import re as _re
+            _qs = parse_qs(urlparse(self.path).query)
+            target_hash = (_qs.get("target") or [None])[0]
+            rebuild_only = (_qs.get("rebuild_only") or ["0"])[0] == "1"
+
+            # Validate target_hash format before any git operation (prevent argument injection)
+            if target_hash and not _re.fullmatch(r"[0-9a-f]{40}", target_hash):
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Connection", "keep-alive")
+                self.end_headers()
+                self.wfile.write(f'data: {json.dumps({"type":"log","data":"无效的目标版本格式，更新已中止"}, ensure_ascii=False)}\n\n'.encode())
+                self.wfile.write(f'data: {json.dumps({"type":"done","result":"error","code":1}, ensure_ascii=False)}\n\n'.encode())
+                self.wfile.flush()
+                return
+
             _repo = get_repo_url()
             os_key, _ = detect_os()
             build_cmd = _per_service_build_cmd(os_key, standalone=False)
@@ -1984,42 +2007,56 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 self.wfile.flush()
 
             # --- [1/3] Git operations (Python-level, OS-independent) ---
-            _sse({"type": "log", "data": "[1/3] 正在拉取最新代码..."})
-
-            # Ensure git repo initialized
-            if not (SCRIPT_DIR / ".git").exists():
-                _sse({"type": "log", "data": "正在初始化代码仓库..."})
-                run_command(["git", "init"])
-                run_command(["git", "config", "core.autocrlf", "false"])
-            # Ensure remote origin points to the right URL
-            rc, _, _ = run_command(["git", "remote", "set-url", "origin", _repo])
-            if rc != 0:
-                run_command(["git", "remote", "add", "origin", _repo])
-
-            # Fetch
-            rc, _, err = run_command(["git", "fetch", "origin"], timeout=120)
-            if rc != 0:
-                _sse({"type": "log", "data": f"拉取代码失败: {(err or '').strip()}"})
-                _sse({"type": "done", "result": "error", "code": rc})
-                return
-
-            # Reset HEAD to origin/main — the critical operation that fixes
-            # the "check-updates still shows updates after pull" bug.
-            rc, _, err = run_command(["git", "reset", "origin/main"])
-            if rc != 0:
-                _sse({"type": "log", "data": f"[WARN] git reset 失败: {(err or '').strip()}"})
-
-            # Checkout files (excluding wizard scripts that may be locked/modified)
-            rc, out, err = run_command([
-                "git", "checkout", "-f", "origin/main", "--", ".",
-                ":!deploy-wizard.py", ":!start-wizard.command",
-                ":!start-wizard.bat", ":!start-wizard.sh",
-            ])
-            if rc == 0:
-                _sse({"type": "log", "data": "[OK] 代码已更新"})
+            if rebuild_only:
+                _sse({"type": "log", "data": "[1/3] 跳过拉代码（仅重建服务）..."})
             else:
-                detail = (err or out or "").strip()
-                _sse({"type": "log", "data": f"[WARN] git checkout 退出码={rc}: {detail}"})
+                _sse({"type": "log", "data": "[1/3] 正在拉取最新代码..."})
+
+                # Ensure git repo initialized
+                if not (SCRIPT_DIR / ".git").exists():
+                    _sse({"type": "log", "data": "正在初始化代码仓库..."})
+                    run_command(["git", "init"])
+                    run_command(["git", "config", "core.autocrlf", "false"])
+                # Ensure remote origin points to the right URL
+                rc, _, _ = run_command(["git", "remote", "set-url", "origin", _repo])
+                if rc != 0:
+                    run_command(["git", "remote", "add", "origin", _repo])
+
+                # Fetch
+                rc, _, err = run_command(["git", "fetch", "origin"], timeout=120)
+                if rc != 0:
+                    _sse({"type": "log", "data": f"拉取代码失败: {(err or '').strip()}"})
+                    _sse({"type": "done", "result": "error", "code": rc})
+                    return
+
+                # Determine checkout ref: target commit or origin/main (full update)
+                checkout_ref = "origin/main"
+                if target_hash:
+                    # Safety: target must be reachable from origin/main and ahead of HEAD
+                    rc_anc, _, _ = run_command(["git", "merge-base", "--is-ancestor", target_hash, "origin/main"])
+                    if rc_anc != 0:
+                        _sse({"type": "log", "data": f"目标版本 {target_hash[:7]} 不在远程主线上，更新已中止"})
+                        _sse({"type": "done", "result": "error", "code": 1})
+                        return
+                    checkout_ref = target_hash
+
+                # Reset HEAD — the critical operation that fixes
+                # the "check-updates still shows updates after pull" bug.
+                rc, _, err = run_command(["git", "reset", checkout_ref])
+                if rc != 0:
+                    _sse({"type": "log", "data": f"[WARN] git reset 失败: {(err or '').strip()}"})
+
+                # Checkout files (excluding wizard scripts that may be locked/modified)
+                rc, out, err = run_command([
+                    "git", "checkout", "-f", checkout_ref, "--", ".",
+                    ":!deploy-wizard.py", ":!start-wizard.command",
+                    ":!start-wizard.bat", ":!start-wizard.sh",
+                ])
+                if rc == 0:
+                    _sse({"type": "log", "data": "[OK] 代码已更新"})
+                else:
+                    detail = (err or out or "").strip()
+                    _sse({"type": "log", "data": f"[WARN] git checkout 退出码={rc}: {detail}"})
 
             # --- [2/3]+[3/3] Docker rebuild + restart (streamed) ---
             if os_key == "windows":
@@ -3139,9 +3176,33 @@ async function renderStep2(el) {
             return;
           }
           // 有更新
+          // 格式化日期：2026-04-01 14:30:00 +0800 → 04-01 14:30
+          function fmtDate(d) {
+            if (!d) return '';
+            const m = d.match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
+            return m ? m[2]+'-'+m[3]+' '+m[4]+':'+m[5] : '';
+          }
           let commitList = upd.commits.map(c =>
-            '<li style="margin:4px 0;"><code style="background:#eff6ff;padding:2px 6px;border-radius:4px;font-size:13px;">' + esc(c.hash) + '</code> ' + esc(c.message) + '</li>'
+            '<li style="margin:4px 0;"><code style="background:#eff6ff;padding:2px 6px;border-radius:4px;font-size:12px;">' + esc(c.hash) + '</code>'
+            + (c.date ? ' <span style="color:#94a3b8;font-size:12px;">['+fmtDate(c.date)+']</span>' : '')
+            + ' ' + esc(c.message) + '</li>'
           ).join('');
+          // 批次更新 dropdown（最旧→最新，即倒序）
+          const reversedCommits = [...upd.commits].reverse();
+          let batchOptions = reversedCommits.map((c, i) =>
+            `<option value="${esc(c.full_hash)}">${esc(c.hash)} ${esc(c.message.slice(0,30))}${c.message.length>30?'…':''} (${fmtDate(c.date)})</option>`
+          ).join('');
+          const batchSection = upd.behind_count > 1 ? `
+            <div style="margin-top:14px; padding-top:12px; border-top:1px solid #bfdbfe;">
+              <div style="font-size:13px; font-weight:600; color:#1e40af; margin-bottom:8px;">分批次更新（选择更新到哪个版本为止）</div>
+              <select id="batchTargetSelect" style="width:100%; padding:7px 10px; border:1px solid #bfdbfe; border-radius:6px; font-size:13px; background:#fff; margin-bottom:6px;">
+                ${batchOptions}
+              </select>
+              <div id="batchHint" style="font-size:12px; color:#64748b; margin-bottom:8px;"></div>
+              <button class="btn btn-primary" id="doBatchUpdateBtn" style="width:100%; font-size:14px;">
+                更新到选定版本
+              </button>
+            </div>` : '';
           resultDiv.innerHTML = `
             <div style="margin-top:8px; padding:14px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px;">
               <div style="font-size:15px; font-weight:700; color:#1e40af; margin-bottom:8px;">
@@ -3151,11 +3212,12 @@ async function renderStep2(el) {
                 ${commitList}
               </ul>
               <button class="btn btn-success" id="doUpdateBtn" style="margin-top:12px; width:100%; font-size:16px;">
-                一键更新（拉取代码 → 构建镜像 → 重启服务）
+                全量更新（共 ${upd.behind_count} 个版本）
               </button>
               <div style="font-size:13px; color:var(--text-secondary); text-align:center; margin-top:6px;">
                 更新过程中系统会短暂不可用，构建约需 5-15 分钟
               </div>
+              ${batchSection}
             </div>
           `;
           btn.disabled = false; btn.textContent = '检查更新';
@@ -3171,8 +3233,11 @@ async function renderStep2(el) {
       };
     };
     function bindUpdateBtn(el, resultDiv) {
-        function startPullAndRebuild() {
-          const ubtn = el.querySelector('#doUpdateBtn');
+        // url: /api/pull-and-rebuild, /api/pull-and-rebuild?target=xxx, /api/pull-and-rebuild?rebuild_only=1
+        // btnId: which button triggered the update
+        // isBatch: show "re-check remaining" hint after success
+        function startPullAndRebuild(url, btnId, isBatch) {
+          const ubtn = el.querySelector('#' + btnId);
           if (!ubtn) {
             const logDiv = el.querySelector('#updateLog');
             if (logDiv) logDiv.innerHTML = '<div class="hint-box red">页面状态异常，请刷新后重试。</div>';
@@ -3186,7 +3251,7 @@ async function renderStep2(el) {
           const logDiv = el.querySelector('#updateLog');
           logDiv.innerHTML = '<details open style="margin-top:12px;"><summary style="cursor:pointer;font-size:14px;color:var(--text-secondary);">更新日志</summary><div class="log-console" id="updateConsole"></div></details>';
           const cons = logDiv.querySelector('#updateConsole');
-          const es = new EventSource('/api/pull-and-rebuild');
+          const es = new EventSource(url);
           es.onmessage = (e) => {
             const msg = JSON.parse(e.data);
             if (msg.type === 'log') {
@@ -3196,18 +3261,41 @@ async function renderStep2(el) {
               es.close();
               if (ckBtn) ckBtn.disabled = false;
               if (msg.result === 'success') {
-                logDiv.innerHTML = '<div class="hint-box green" style="text-align:center; font-size:16px; margin-top:12px;">更新完成！系统已重新启动。</div>';
-                resultDiv.innerHTML = '';
+                if (isBatch) {
+                  logDiv.innerHTML = `
+                    <div class="hint-box green" style="text-align:center; font-size:15px; margin-top:12px;">
+                      本批次更新完成！<br>
+                      <span style="font-size:13px; color:#166534;">可能还有剩余版本，点击下方按钮继续检查。</span>
+                    </div>
+                    <button class="btn btn-primary" id="reCheckBtn" style="margin-top:10px; width:100%;">检查剩余更新</button>`;
+                  resultDiv.innerHTML = '';
+                  const reCheck = logDiv.querySelector('#reCheckBtn');
+                  if (reCheck) reCheck.onclick = () => el.querySelector('#checkUpdateBtn').click();
+                } else {
+                  logDiv.innerHTML = '<div class="hint-box green" style="text-align:center; font-size:16px; margin-top:12px;">更新完成！系统已重新启动。</div>';
+                  resultDiv.innerHTML = '';
+                }
               } else {
-                logDiv.innerHTML += '<div class="hint-box red" style="text-align:center; margin-top:8px;">更新失败，请截图并联系技术支持。</div>';
+                // docker build/up 失败，但代码可能已经更新，提供仅重建入口
+                logDiv.innerHTML += `
+                  <div class="hint-box red" style="text-align:center; margin-top:8px;">
+                    服务重建失败（代码已更新）<br>
+                    <span style="font-size:12px;">可重试构建，无需重新拉取代码</span>
+                  </div>
+                  <button class="btn btn-primary" id="rebuildOnlyBtn" style="margin-top:8px; width:100%;">重新构建服务（不拉代码）</button>`;
                 ubtn.disabled = false; ubtn.textContent = '重试更新';
+                const rebuildBtn = logDiv.querySelector('#rebuildOnlyBtn');
+                if (rebuildBtn) rebuildBtn.onclick = () => startPullAndRebuild('/api/pull-and-rebuild?rebuild_only=1', ubtn.id, isBatch);
               }
             }
           };
           es.onerror = () => { es.close(); if (ckBtn) ckBtn.disabled = false; if (ubtn) { ubtn.disabled = false; ubtn.textContent = '重试更新'; } };
         }
-        el.querySelector('#doUpdateBtn').onclick = async () => {
+        // 全量更新按钮
+        const doUpdateBtn = el.querySelector('#doUpdateBtn');
+        if (doUpdateBtn) doUpdateBtn.onclick = async () => {
           const ubtn = el.querySelector('#doUpdateBtn');
+          const originalText = ubtn.textContent;
           ubtn.disabled = true;
           ubtn.innerHTML = '<span class="spinner"></span> 正在检查配置文件...';
           let envOk = false;
@@ -3219,10 +3307,10 @@ async function renderStep2(el) {
             networkError = true;
           }
           if (envOk) {
-            startPullAndRebuild();
+            startPullAndRebuild('/api/pull-and-rebuild', 'doUpdateBtn', false);
             return;
           }
-          ubtn.disabled = false; ubtn.textContent = '一键更新（拉取代码 → 构建镜像 → 重启服务）';
+          ubtn.disabled = false; ubtn.textContent = originalText;
           const logDiv = el.querySelector('#updateLog');
           if (networkError) {
             logDiv.innerHTML = '<div class="hint-box red" style="margin-top:12px;">网络请求失败，请检查网络连接后重试。</div>';
@@ -3261,7 +3349,7 @@ async function renderStep2(el) {
               });
               if (r.ok) {
                 msgDiv.innerHTML = '<div class="hint-box green" style="text-align:center;">配置文件已恢复，正在开始更新...</div>';
-                setTimeout(() => startPullAndRebuild(), 500);
+                setTimeout(() => startPullAndRebuild('/api/pull-and-rebuild', 'doUpdateBtn', false), 500);
               } else {
                 msgDiv.innerHTML = '<div class="hint-box red">' + esc(r.error || '复制失败') + '</div>';
                 cbtn.disabled = false; cbtn.textContent = '复制配置';
@@ -3275,6 +3363,40 @@ async function renderStep2(el) {
             showConfirm('将进入全新安装流程，确定吗？', () => { state.freshInstall = true; state.step = 3; render(); });
           };
         };
+        // 批次更新按钮
+        const doBatchUpdateBtn = el.querySelector('#doBatchUpdateBtn');
+        if (doBatchUpdateBtn) {
+          // 初始化提示文字
+          function updateBatchHint() {
+            const sel = el.querySelector('#batchTargetSelect');
+            const hint = el.querySelector('#batchHint');
+            if (!sel || !hint) return;
+            const idx = sel.selectedIndex; // 0 = 最旧
+            hint.textContent = '将应用第 1 ~ ' + (idx + 1) + ' 个版本（共 ' + (idx + 1) + ' 个）';
+          }
+          updateBatchHint();
+          const sel = el.querySelector('#batchTargetSelect');
+          if (sel) sel.onchange = updateBatchHint;
+          doBatchUpdateBtn.onclick = async () => {
+            const selEl = el.querySelector('#batchTargetSelect');
+            if (!selEl) return;
+            const targetHash = selEl.value;
+            if (!targetHash) return;
+            doBatchUpdateBtn.disabled = true;
+            doBatchUpdateBtn.innerHTML = '<span class="spinner"></span> 正在检查配置文件...';
+            let envOk = false;
+            try {
+              const envRes = await api('/api/ensure-env');
+              if (envRes.ok) envOk = true;
+            } catch(e) {}
+            if (!envOk) {
+              doBatchUpdateBtn.disabled = false; doBatchUpdateBtn.textContent = '更新到选定版本';
+              el.querySelector('#updateLog').innerHTML = '<div class="hint-box red" style="margin-top:12px;">配置文件检查失败，请先完成配置。</div>';
+              return;
+            }
+            startPullAndRebuild('/api/pull-and-rebuild?target=' + encodeURIComponent(targetHash), 'doBatchUpdateBtn', true);
+          };
+        }
     }
     el.querySelector('#redeployBtn').onclick = () => {
       showConfirm('重新安装会覆盖当前系统配置，确定要继续吗？', () => { state.freshInstall = true; state.step = 3; render(); });
