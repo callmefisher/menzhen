@@ -31,9 +31,21 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.04.06.224601"
+WIZARD_VERSION = "2026.04.06.224602"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
+
+# --- Debug log file (persists after browser window closes) ---
+_DEBUG_LOG_PATH = SCRIPT_DIR / "wizard-debug.log"
+
+def _debug_log(msg):
+    """Append a timestamped line to wizard-debug.log."""
+    try:
+        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] {msg}\n")
+    except Exception:
+        pass
+
 IMAGE_REGISTRY = "https://your-registry.example.com"
 REPO_URL = "https://github.com/callmefisher/menzhen.git"
 REPO_MIRROR_URLS = [
@@ -581,14 +593,16 @@ def stream_command(handler, cmd, cwd=None, headers_sent=False):
             # straight to CreateProcess without list2cmdline quoting.
             _cmd = subprocess.list2cmdline(cmd[:2]) + " " + cmd[2]
 
+        _debug_log(f"stream_command: launching, cwd={cwd or str(SCRIPT_DIR)}")
+        _debug_log(f"stream_command: _cmd type={type(_cmd).__name__}, len={len(_cmd) if isinstance(_cmd, str) else 'list'}")
         _send_line(f"[DEBUG] stream_command: launching process, cwd={cwd or str(SCRIPT_DIR)}".encode())
-        _send_line(f"[DEBUG] stream_command: _cmd type={type(_cmd).__name__}, len={len(_cmd) if isinstance(_cmd, str) else len(str(_cmd))}".encode())
 
         proc = subprocess.Popen(
             _cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             cwd=cwd or str(SCRIPT_DIR),
             **_popen_kwargs()
         )
+        _debug_log(f"stream_command: process started, pid={proc.pid}")
         _send_line(f"[DEBUG] stream_command: process started, pid={proc.pid}".encode())
 
         # Read byte-by-byte to handle both \r (progress) and \n (newline),
@@ -601,6 +615,9 @@ def stream_command(handler, cmd, cwd=None, headers_sent=False):
                 break
             if b in (b'\n', b'\r'):
                 _send_line(buf)
+                # Log first 20 lines to file for diagnosis
+                if _line_count < 20:
+                    _debug_log(f"  stdout[{_line_count}]: {_decode_bytes(bytes(buf)).strip()[:200]}")
                 _line_count += 1
                 buf.clear()
             else:
@@ -612,6 +629,7 @@ def stream_command(handler, cmd, cwd=None, headers_sent=False):
             proc.kill()
             proc.wait()
 
+        _debug_log(f"stream_command: exited, code={proc.returncode}, lines_read={_line_count}")
         _send_line(f"[DEBUG] stream_command: process exited, code={proc.returncode}, lines_read={_line_count}".encode())
 
         result = "success" if proc.returncode == 0 else "error"
@@ -2096,13 +2114,18 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     _sse({"type": "log", "data": f"[WARN] git checkout 退出码={rc}: {detail}"})
 
             # --- [2/3]+[3/3] Docker rebuild + restart (streamed) ---
+            _debug_log("=" * 60)
+            _debug_log(f"pull-and-rebuild START, os_key={os_key}, cwd={SCRIPT_DIR}")
+            _debug_log(f"build_cmd={build_cmd}")
             _sse({"type": "log", "data": f"[DEBUG] os_key={os_key}, cwd={SCRIPT_DIR}"})
             _sse({"type": "log", "data": f"[DEBUG] build_cmd={build_cmd[:200]}"})
 
             # Quick sanity check: is Docker available?
             _rc_docker, _out_docker, _err_docker = run_command(["docker", "version", "--format", "{{.Server.Version}}"], timeout=10)
+            _debug_log(f"docker version rc={_rc_docker} out={(_out_docker or '').strip()} err={(_err_docker or '').strip()}")
             _sse({"type": "log", "data": f"[DEBUG] docker version rc={_rc_docker} out={(_out_docker or '').strip()} err={(_err_docker or '').strip()}"})
             _rc_compose, _out_compose, _err_compose = run_command(["docker", "compose", "version", "--short"], timeout=10)
+            _debug_log(f"docker compose version rc={_rc_compose} out={(_out_compose or '').strip()} err={(_err_compose or '').strip()}")
             _sse({"type": "log", "data": f"[DEBUG] docker compose version rc={_rc_compose} out={(_out_compose or '').strip()} err={(_err_compose or '').strip()}"})
 
             if os_key == "windows":
@@ -2128,8 +2151,8 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 ]
             # Log the full command for debugging
             _full_cmd = docker_cmd[2] if len(docker_cmd) > 2 else str(docker_cmd)
+            _debug_log(f"full docker cmd ({len(_full_cmd)} chars): {_full_cmd}")
             _sse({"type": "log", "data": f"[DEBUG] full docker cmd ({len(_full_cmd)} chars):"})
-            # Split long command for readability in SSE
             for _chunk_start in range(0, len(_full_cmd), 200):
                 _sse({"type": "log", "data": f"[DEBUG]   {_full_cmd[_chunk_start:_chunk_start+200]}"})
 
