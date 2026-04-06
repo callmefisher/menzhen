@@ -1,4 +1,4 @@
-package main
+package main // build-test: 2026-04-06 — 验证一键更新是否重建镜像，确认后删除
 
 import (
 	"log"
