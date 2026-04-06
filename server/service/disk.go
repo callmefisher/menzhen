@@ -11,9 +11,11 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/callmefisher/menzhen/server/model"
@@ -64,32 +66,6 @@ func NewDiskService(db *gorm.DB) *DiskService {
 
 func (s *DiskService) dockerURL(path string) string {
 	return "http://docker" + path
-}
-
-// parseRootDf parses `df -B1 /` output and returns total, used, free bytes.
-func parseRootDf(output string) (total, used, free int64, err error) {
-	lines := strings.Split(strings.TrimSpace(output), "\n")
-	if len(lines) < 2 {
-		return 0, 0, 0, fmt.Errorf("unexpected df output: %q", output)
-	}
-	// Expected format from `df -B1 /`:
-	// Filesystem  1-blocks  Used  Available  Use%  Mounted on
-	// overlay     NNN       NNN   NNN        N%    /
-	fields := strings.Fields(lines[1])
-	if len(fields) < 4 {
-		return 0, 0, 0, fmt.Errorf("unexpected df fields: %q", lines[1])
-	}
-	var parseErr error
-	if total, parseErr = strconv.ParseInt(fields[1], 10, 64); parseErr != nil {
-		return 0, 0, 0, fmt.Errorf("parse df total %q: %w", fields[1], parseErr)
-	}
-	if used, parseErr = strconv.ParseInt(fields[2], 10, 64); parseErr != nil {
-		return 0, 0, 0, fmt.Errorf("parse df used %q: %w", fields[2], parseErr)
-	}
-	if free, parseErr = strconv.ParseInt(fields[3], 10, 64); parseErr != nil {
-		return 0, 0, 0, fmt.Errorf("parse df free %q: %w", fields[3], parseErr)
-	}
-	return
 }
 
 // parseDuOutput parses `du -sb /var/lib/mysql /data /backups` output.
@@ -206,22 +182,98 @@ func stripDockerMux(b []byte) string {
 	return sb.String()
 }
 
-// CollectNow collects disk stats from the backup container and updates the cached status.
-// Uses two docker exec calls:
-//   - `df -B1 /hostfs` (falls back to `df -B1 /`) for total/used/free of the root filesystem.
-//     On Docker Desktop for Mac, mounting `/:hostfs:ro` in the backup container lets us read
-//     the Mac host's actual disk instead of the Docker VM's virtual disk.
-//   - `du -sb /var/lib/mysql /data /backups` for per-component sizes
-func (s *DiskService) CollectNow() (*model.DiskStatus, error) {
-	// On Docker Desktop for Mac, df / shows the Docker VM's virtual disk, not the Mac host disk.
-	// If /hostfs is mounted (from the host / bind), use it to get accurate host disk stats.
-	dfOut, err := s.dockerExec(backupContainer(), "sh", "-c", "df -B1 /hostfs 2>/dev/null || df -B1 /")
-	if err != nil {
-		return nil, fmt.Errorf("df exec: %w", err)
+// dfBytesFirstAvailable tries each path and returns df stats for the first one
+// that succeeds and has a non-zero total size.
+func dfBytesFirstAvailable(paths ...string) (int64, int64, int64, error) {
+	for _, p := range paths {
+		total, used, free, err := dfBytes(p)
+		if err == nil && total > 0 {
+			return total, used, free, nil
+		}
 	}
-	total, used, free, err := parseRootDf(dfOut)
+	return 0, 0, 0, fmt.Errorf("no usable df path among %v", paths)
+}
+
+// dfBytes runs `df -B1 path` inside the current process and parses the output.
+func dfBytes(path string) (total, used, free int64, err error) {
+	out, execErr := exec.Command("df", "-B1", path).Output()
+	if execErr != nil {
+		err = fmt.Errorf("df %s: %w", path, execErr)
+		return
+	}
+	total, used, free, err = parseRootDf(string(out))
+	return
+}
+
+// parseRootDf parses `df -B1 <path>` output and returns total, used, free bytes.
+func parseRootDf(output string) (total, used, free int64, err error) {
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	if len(lines) < 2 {
+		return 0, 0, 0, fmt.Errorf("unexpected df output: %q", output)
+	}
+	fields := strings.Fields(lines[1])
+	if len(fields) < 4 {
+		return 0, 0, 0, fmt.Errorf("unexpected df fields: %q", lines[1])
+	}
+	var parseErr error
+	if total, parseErr = strconv.ParseInt(fields[1], 10, 64); parseErr != nil {
+		return 0, 0, 0, fmt.Errorf("parse df total %q: %w", fields[1], parseErr)
+	}
+	if used, parseErr = strconv.ParseInt(fields[2], 10, 64); parseErr != nil {
+		return 0, 0, 0, fmt.Errorf("parse df used %q: %w", fields[2], parseErr)
+	}
+	if free, parseErr = strconv.ParseInt(fields[3], 10, 64); parseErr != nil {
+		return 0, 0, 0, fmt.Errorf("parse df free %q: %w", fields[3], parseErr)
+	}
+	return
+}
+
+// statfsBytesFirstAvailable tries each path in order and returns stats for the
+// first one that succeeds and has a non-zero total size.
+func statfsBytesFirstAvailable(paths ...string) (int64, int64, int64, error) {
+	for _, p := range paths {
+		total, used, free, err := statfsBytes(p)
+		if err == nil && total > 0 {
+			return total, used, free, nil
+		}
+	}
+	return 0, 0, 0, fmt.Errorf("no usable statfs path among %v", paths)
+}
+
+// statfsBytes returns total, used, free bytes for the partition containing path.
+func statfsBytes(path string) (total, used, free int64, err error) {
+	var stat syscall.Statfs_t
+	if err = syscall.Statfs(path, &stat); err != nil {
+		return
+	}
+	bsize := int64(stat.Bsize)
+	total = int64(stat.Blocks) * bsize
+	free = int64(stat.Bavail) * bsize
+	used = total - int64(stat.Bfree)*bsize
+	return
+}
+
+// CollectNow collects disk stats and updates the cached status.
+//
+// Disk total/used/free: tries /hostfs first (the host root bind-mounted into the
+// api container via /:/hostfs:ro), which gives accurate host disk stats on Mac and
+// Linux. Falls back to /var/lib/mysql if /hostfs is unavailable.
+//
+// Per-component sizes use du via docker exec into the backup container.
+func (s *DiskService) CollectNow() (*model.DiskStatus, error) {
+	// Get host disk stats by running df inside the api container itself.
+	// On Docker Desktop Mac, /hostfs/run/host_virtiofs/Users is the real VirtioFS mount
+	// that reports the Mac host's actual disk. syscall.Statfs returns wrong values on
+	// fakeowner/virtiofs layers, so we parse df output instead.
+	// On Linux bare-metal, /hostfs reports the real host disk.
+	// Fallback /var/lib/mysql always works but shows Docker VM disk on Mac.
+	total, used, free, err := dfBytesFirstAvailable(
+		"/hostfs/run/host_virtiofs/Users", // Docker Desktop Mac (real VirtioFS)
+		"/hostfs",                          // Linux bare-metal
+		"/var/lib/mysql",                   // fallback
+	)
 	if err != nil {
-		return nil, fmt.Errorf("parse df: %w", err)
+		return nil, fmt.Errorf("df: %w", err)
 	}
 
 	duOut, err := s.dockerExec(backupContainer(), "du", "-sb", "/var/lib/mysql", "/data", "/backups")
