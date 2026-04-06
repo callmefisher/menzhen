@@ -31,7 +31,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.04.06.122500"
+WIZARD_VERSION = "2026.04.06.124500"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -1709,7 +1709,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         return
                 # 3. Compare HEAD..origin/main
                 rc, out, _ = run_command(["git", "log", "HEAD..origin/main",
-                                          "--format=%H|%h|%s|%ai", "--no-decorate", "-n", "50"])
+                                          "--format=%H|%h|%s|%ai", "--no-decorate", "-n", "200"])
                 if rc != 0:
                     _sse_done({"error": "compare_failed", "message": "无法比较版本差异"})
                     return
@@ -3208,7 +3208,7 @@ async function renderStep2(el) {
               <div style="font-size:15px; font-weight:700; color:#1e40af; margin-bottom:8px;">
                 发现 ${upd.behind_count} 个新版本更新
               </div>
-              <ul style="list-style:none; padding:0; font-size:14px; max-height:160px; overflow-y:auto; line-height:1.6;">
+              <ul style="list-style:none; padding:0; font-size:14px; max-height:240px; overflow-y:auto; line-height:1.6;">
                 ${commitList}
               </ul>
               <button class="btn btn-success" id="doUpdateBtn" style="margin-top:12px; width:100%; font-size:16px;">
