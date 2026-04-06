@@ -22,12 +22,13 @@
 ## 2. 架构概述
 
 ```
-浏览器 → GET /api/disk/status          → DiskHandler.GetStatus
-       → POST /api/disk/migrate         → DiskHandler.StartMigrate
-       → GET  /api/disk/migrate/status  → DiskHandler.GetMigrateStatus
-       → POST /api/disk/backup-dir      → DiskHandler.ChangeBackupDir
+浏览器 → GET /api/disk/status            → DiskHandler.GetStatus
+       → POST /api/disk/migrate           → DiskHandler.StartMigrate
+       → GET  /api/disk/migrate/status    → DiskHandler.GetMigrateStatus
+       → POST /api/disk/backup-dir        → DiskHandler.ChangeBackupDir
        → GET  /api/disk/backup-dir/status → DiskHandler.GetBackupDirStatus
-       → PUT  /api/disk/interval        → DiskHandler.SetInterval
+       → PUT  /api/disk/interval          → DiskHandler.SetInterval
+       → GET  /api/disk/fs?path=/         → DiskHandler.BrowseFS
 ```
 
 后端采用与 BackupService 相同的异步任务模式：
@@ -141,16 +142,32 @@ type DiskStatus struct {
 
 ```
 当前路径：/opt/menzhen/backups（容器内 /backups）
-新路径：  [________________________] 手动填写
+新路径：  [________________________] 手动填写  [📁 浏览 →]
           ↓ 实时验证：✓ 路径存在 / ⚠ 将自动创建 / ✗ 无写权限
 
 [复制文件并应用 →]
 ```
 
+点击「📁 浏览 →」弹出目录选择 Modal：
+```
+选择目标目录
+─────────────────────────────────
+/ > opt > menzhen         [上级]
+─────────────────────────────────
+📁 backups       (当前备份目录)
+📁 data
+📁 logs
+─────────────────────────────────
+已选：/opt/menzhen/data
+[取消]               [选择此目录]
+```
+
+**目录浏览 API**：`GET /api/disk/fs?path=/`，从宿主机目录读取子目录列表。需将宿主机根目录只读挂载到 api 容器（`/:/hostfs:ro`）；该组件同时用于 MySQL/MinIO 迁移目标路径选择。
+
 执行流程（无数据库停机）：
 1. rsync 复制现有备份文件到新路径（MySQL/MinIO 全程运行）
 2. 更新 docker-compose.yml 中 backup + api 的 bind mount
-3. `docker-compose up -d backup api`（重建耗时 ~10 秒，API 短暂中断）
+3. `docker-compose up -d --no-deps backup api`（重建耗时 ~10 秒，API 短暂中断）
 4. 写入测试文件验证，成功后显示完成
 
 ---
@@ -178,6 +195,7 @@ disk := authed.Group("/disk")
     disk.GET("/migrate/status",      diskHandler.GetMigrateStatus)
     disk.POST("/backup-dir",         diskHandler.ChangeBackupDir)
     disk.GET("/backup-dir/status",   diskHandler.GetBackupDirStatus)
+    disk.GET("/fs",                  diskHandler.BrowseFS)    // 目录浏览
 }
 ```
 
@@ -210,11 +228,12 @@ docker-compose up -d                         # 全量重启（MySQL迁移完成�
 
 ```
 web/src/
-  api/disk.ts                        ← API 函数（getDiskStatus, setInterval, startMigrate, …）
+  api/disk.ts                        ← API 函数（getDiskStatus, setInterval, startMigrate, browseFS …）
   components/DiskMonitor/
     index.tsx                         ← 主卡片（stats + bars + interval control）
     MigrateWizard.tsx                 ← MySQL/MinIO 迁移向导（Modal）
     BackupDirChange.tsx               ← 备份目录更换（内联展开）
+    DirBrowser.tsx                    ← 目录浏览 Modal（备份目录 + 迁移目标共用）
   pages/settings/BackupRestore.tsx   ← 在底部引入 <DiskMonitor />
 ```
 
@@ -236,10 +255,11 @@ backup:
     - minio-data:/data:ro            # 新增
     - ./backups:/backups
 
-# api 服务：新增 compose 文件挂载（用于写入路径变更）
+# api 服务：新增 compose 文件挂载 + 宿主机根目录只读挂载（目录浏览）
 api:
   volumes:
-    - ./docker-compose.yml:/app/docker-compose.yml  # 新增
+    - ./docker-compose.yml:/app/docker-compose.yml  # 新增，用于写入路径变更
+    - /:/hostfs:ro                                  # 新增，用于 GET /api/disk/fs 目录浏览
 ```
 
 ---
@@ -249,12 +269,14 @@ api:
 ### 后端（Go）
 - `TestGetDiskStatus`：正常采集、df 命令失败降级
 - `TestSetInterval`：合法值（60~3600秒）、非法值拒绝
-- `TestChangBackupDir`：目录不存在自动创建、rsync 成功、compose 写入、容器重建
+- `TestBrowseFS`：正常列目录、path traversal 防护（../etc/passwd → 400）、不存在路径返回空列表
+- `TestChangeBackupDir`：目录不存在自动创建、rsync 成功、compose 写入、容器重建
 - `TestStartMigrate`：完整迁移流程（mock docker exec）、紧急中止回滚
 
 ### 前端（Vitest）
 - `DiskMonitor`：正常渲染、告急状态样式、间隔切换 1 次点击生效
 - `BackupDirChange`：路径验证提示、进度轮询、完成状态
+- `DirBrowser`：目录列表渲染、面包屑导航、选择回调触发
 
 ---
 
