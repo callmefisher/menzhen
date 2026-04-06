@@ -43,6 +43,7 @@ func seedPermissions(db *gorm.DB) {
 		{Code: "record:update", Name: "修改诊疗记录", Description: "修改诊疗记录"},
 		{Code: "record:delete", Name: "删除诊疗记录", Description: "删除诊疗记录"},
 		{Code: "oplog:read", Name: "查看操作日志", Description: "查看操作日志"},
+		{Code: "oplog:delete", Name: "删除操作日志", Description: "删除操作日志"},
 		{Code: "user:manage", Name: "用户管理", Description: "用户管理"},
 		{Code: "role:manage", Name: "角色管理", Description: "角色管理"},
 		{Code: "herb:read", Name: "查询中药", Description: "查询中药信息"},

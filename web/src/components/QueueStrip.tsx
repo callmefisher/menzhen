@@ -25,6 +25,7 @@ export default function QueueStrip() {
   const navigate = useNavigate();
   const [entries, setEntries] = useState<QueueEntry[]>([]);
   const [showArrivalTime, setShowArrivalTime] = useState<boolean | null>(null);
+  const [callingId, setCallingId] = useState<number | null>(null);
   const queueDoctorId = useQueueDoctorId();
 
   useEffect(() => {
@@ -90,10 +91,14 @@ export default function QueueStrip() {
   };
 
   const handleCall = async (id: number) => {
+    if (callingId === id) return;
+    setCallingId(id);
     try {
       await callNumber(id);
     } catch {
       message.error('叫号失败');
+    } finally {
+      setCallingId(null);
     }
   };
 
@@ -323,6 +328,7 @@ export default function QueueStrip() {
               <Button
                 size="small"
                 icon={<SoundOutlined />}
+                loading={callingId === readyEntry.id}
                 onClick={() => handleCall(readyEntry.id)}
                 style={{
                   background: 'linear-gradient(135deg, #ffa940, #fa8c16)',
@@ -438,6 +444,7 @@ export default function QueueStrip() {
                 <Button
                   size="small"
                   icon={<SoundOutlined />}
+                  loading={callingId === seeingEntry.id}
                   onClick={() => handleCall(seeingEntry.id)}
                   style={{
                     color: '#52c41a',

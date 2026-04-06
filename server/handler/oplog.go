@@ -129,6 +129,19 @@ func (h *OpLogHandler) DeleteOpLog(c *gin.Context) {
 		return
 	}
 
+	userID := middleware.GetUserID(c)
+	isSuperAdmin := service.IsProtectedAdminAccount(h.db, userID)
+	managedGroups := middleware.GetManagedGroups(c)
+	isPowerAdmin := len(managedGroups) > 0 && !isSuperAdmin
+
+	// Super admin and power admin operate across tenants.
+	if isSuperAdmin || isPowerAdmin {
+		tenantID = 0
+	}
+	if isSuperAdmin {
+		managedGroups = nil
+	}
+
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -139,7 +152,7 @@ func (h *OpLogHandler) DeleteOpLog(c *gin.Context) {
 	}
 
 	svc := service.NewOpLogService(h.db)
-	if err := svc.DeleteOpLog(tenantID, id); err != nil {
+	if err := svc.DeleteOpLog(tenantID, managedGroups, id); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{
 				"code":    404,
@@ -171,6 +184,19 @@ func (h *OpLogHandler) BatchDeleteOpLogs(c *gin.Context) {
 		return
 	}
 
+	userID := middleware.GetUserID(c)
+	isSuperAdmin := service.IsProtectedAdminAccount(h.db, userID)
+	managedGroups := middleware.GetManagedGroups(c)
+	isPowerAdmin := len(managedGroups) > 0 && !isSuperAdmin
+
+	// Super admin and power admin operate across tenants.
+	if isSuperAdmin || isPowerAdmin {
+		tenantID = 0
+	}
+	if isSuperAdmin {
+		managedGroups = nil
+	}
+
 	var req struct {
 		IDs []uint64 `json:"ids" binding:"required"`
 	}
@@ -190,7 +216,7 @@ func (h *OpLogHandler) BatchDeleteOpLogs(c *gin.Context) {
 	}
 
 	svc := service.NewOpLogService(h.db)
-	deleted, err := svc.BatchDeleteOpLogs(tenantID, req.IDs)
+	deleted, err := svc.BatchDeleteOpLogs(tenantID, managedGroups, req.IDs)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,

@@ -143,8 +143,8 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		oplogs := authenticated.Group("/oplogs")
 		{
 			oplogs.GET("", middleware.RequirePermission(db, "oplog:read"), oplogHandler.ListOpLogs)
-			oplogs.DELETE("/:id", middleware.RequirePermission(db, "role:manage"), oplogHandler.DeleteOpLog)
-			oplogs.POST("/batch-delete", middleware.RequirePermission(db, "role:manage"), oplogHandler.BatchDeleteOpLogs)
+			oplogs.DELETE("/:id", middleware.RequirePermission(db, "oplog:delete"), oplogHandler.DeleteOpLog)
+			oplogs.POST("/batch-delete", middleware.RequirePermission(db, "oplog:delete"), oplogHandler.BatchDeleteOpLogs)
 		}
 
 		// User management routes.

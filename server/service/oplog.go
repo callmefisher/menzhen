@@ -77,7 +77,7 @@ func (s *OpLogService) QueryOpLogs(tenantID uint64, managedGroups []string, filt
 	case len(managedGroups) > 0:
 		// Power admin: see logs for tenants within managed groups.
 		query = query.Where("tenant_id IN (?)",
-			s.DB.Table("tenants").Select("id").Where("group_name IN ?", managedGroups)).
+			s.DB.Table("tenants").Select("id").Where("group_name IN ? AND group_name != ''", managedGroups)).
 			Preload("Tenant")
 		if filterTenantID > 0 {
 			query = query.Where("tenant_id = ?", filterTenantID)
@@ -116,9 +116,23 @@ func (s *OpLogService) QueryOpLogs(tenantID uint64, managedGroups []string, filt
 	return logs, total, nil
 }
 
-// DeleteOpLog deletes a single operation log by ID within the given tenant.
-func (s *OpLogService) DeleteOpLog(tenantID, id uint64) error {
-	result := s.DB.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&model.OpLog{})
+// DeleteOpLog deletes a single operation log by ID.
+//
+// Access modes (mirrors QueryOpLogs):
+//   - Regular user (tenantID > 0): delete within own tenant only.
+//   - Power admin (tenantID == 0, managedGroups non-empty): delete within managed-group tenants.
+//   - Super admin (tenantID == 0, managedGroups empty): delete across all tenants.
+func (s *OpLogService) DeleteOpLog(tenantID uint64, managedGroups []string, id uint64) error {
+	q := s.DB.Where("id = ?", id)
+	switch {
+	case tenantID > 0:
+		q = q.Where("tenant_id = ?", tenantID)
+	case len(managedGroups) > 0:
+		q = q.Where("tenant_id IN (?)",
+			s.DB.Table("tenants").Select("id").Where("group_name IN ? AND group_name != ''", managedGroups))
+	// tenantID == 0 and no managedGroups → super admin, no tenant filter
+	}
+	result := q.Delete(&model.OpLog{})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -128,9 +142,20 @@ func (s *OpLogService) DeleteOpLog(tenantID, id uint64) error {
 	return nil
 }
 
-// BatchDeleteOpLogs deletes multiple operation logs by IDs within the given tenant.
-func (s *OpLogService) BatchDeleteOpLogs(tenantID uint64, ids []uint64) (int64, error) {
-	result := s.DB.Where("id IN ? AND tenant_id = ?", ids, tenantID).Delete(&model.OpLog{})
+// BatchDeleteOpLogs deletes multiple operation logs by IDs.
+//
+// Access modes mirror DeleteOpLog.
+func (s *OpLogService) BatchDeleteOpLogs(tenantID uint64, managedGroups []string, ids []uint64) (int64, error) {
+	q := s.DB.Where("id IN ?", ids)
+	switch {
+	case tenantID > 0:
+		q = q.Where("tenant_id = ?", tenantID)
+	case len(managedGroups) > 0:
+		q = q.Where("tenant_id IN (?)",
+			s.DB.Table("tenants").Select("id").Where("group_name IN ? AND group_name != ''", managedGroups))
+	// tenantID == 0 and no managedGroups → super admin, no tenant filter
+	}
+	result := q.Delete(&model.OpLog{})
 	if result.Error != nil {
 		return 0, result.Error
 	}
