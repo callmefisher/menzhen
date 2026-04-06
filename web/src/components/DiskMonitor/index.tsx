@@ -3,7 +3,8 @@ import {
   Card, Row, Col, Progress, Typography, Space, Tag, Alert, Button, Segmented, InputNumber, message
 } from 'antd'
 import { ReloadOutlined, HddOutlined } from '@ant-design/icons'
-import { getDiskStatus, setDiskInterval, DiskStatus } from '../../api/disk'
+import { getDiskStatus, setDiskInterval } from '../../api/disk'
+import type { DiskStatus } from '../../api/disk'
 import MigrateWizard from './MigrateWizard'
 import BackupDirChange from './BackupDirChange'
 import useIsMobile from '../../hooks/useIsMobile'

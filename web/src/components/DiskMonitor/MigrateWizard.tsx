@@ -3,7 +3,8 @@ import {
   Modal, Steps, Form, Input, Button, Space, Select, Alert,
   Typography, Progress, message
 } from 'antd'
-import { startMigrate, getMigrateStatus, DiskTask } from '../../api/disk'
+import { startMigrate, getMigrateStatus } from '../../api/disk'
+import type { DiskTask } from '../../api/disk'
 import DirBrowser from './DirBrowser'
 
 interface Props {

@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { Modal, Breadcrumb, Typography, Spin, Space, Alert } from 'antd'
 import { FolderOutlined } from '@ant-design/icons'
-import { browseFS, DirEntry } from '../../api/disk'
+import { browseFS } from '../../api/disk'
+import type { DirEntry } from '../../api/disk'
 
 interface Props {
   open: boolean

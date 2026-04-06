@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect } from 'react'
 import {
   Modal, Form, Input, Button, Space, Alert, Steps, Typography, Progress, message
 } from 'antd'
-import { changeBackupDir, getBackupDirStatus, DiskTask } from '../../api/disk'
+import { changeBackupDir, getBackupDirStatus } from '../../api/disk'
+import type { DiskTask } from '../../api/disk'
 import DirBrowser from './DirBrowser'
 
 interface Props {
