@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -49,6 +50,7 @@ func NewDiskService(db *gorm.DB) *DiskService {
 					return net.Dial("unix", "/var/run/docker.sock")
 				},
 			},
+			Timeout: 60 * time.Second,
 		},
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -142,6 +144,9 @@ func (s *DiskService) dockerExec(container string, cmd ...string) (string, error
 	if err := json.NewDecoder(createResp.Body).Decode(&execCreate); err != nil {
 		return "", fmt.Errorf("parse exec create: %w", err)
 	}
+	if execCreate.ID == "" {
+		return "", fmt.Errorf("docker exec create returned empty ID")
+	}
 
 	startBody, err := json.Marshal(map[string]interface{}{"Detach": false, "Tty": false})
 	if err != nil {
@@ -160,6 +165,10 @@ func (s *DiskService) dockerExec(container string, cmd ...string) (string, error
 		return "", fmt.Errorf("exec start: %w", err)
 	}
 	defer startResp.Body.Close()
+	if startResp.StatusCode != 200 {
+		b, _ := io.ReadAll(startResp.Body)
+		return "", fmt.Errorf("exec start (%d): %s", startResp.StatusCode, b)
+	}
 
 	out, err := io.ReadAll(startResp.Body)
 	if err != nil {
@@ -248,8 +257,7 @@ func (s *DiskService) collectLoop(ctx context.Context) {
 			return
 		case <-time.After(interval):
 			if _, err := s.CollectNow(); err != nil {
-				// Non-fatal: log implicitly by discarding — caller can use GetStatus
-				_ = err
+				log.Printf("[disk] collectLoop error: %v", err)
 			}
 		}
 	}
@@ -314,4 +322,9 @@ func (s *DiskService) BrowseFS(path string) ([]model.DirEntry, error) {
 		})
 	}
 	return dirs, nil
+}
+
+// Shutdown stops the background collection loop.
+func (s *DiskService) Shutdown() {
+	s.cancel()
 }
