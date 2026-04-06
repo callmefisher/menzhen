@@ -17,8 +17,9 @@ type DiskStatus struct {
 
 // DirEntry 目录浏览条目
 type DirEntry struct {
-	Name string `json:"name"`
-	Path string `json:"path"` // 宿主机绝对路径
+	Name  string `json:"name"`
+	Path  string `json:"path"`  // 宿主机绝对路径
+	IsDir bool   `json:"is_dir"`
 }
 
 // MigrateRequest MySQL 或 MinIO 迁移请求
@@ -40,5 +41,5 @@ type DiskTask struct {
 	Step    int    `json:"step"`     // 当前步骤（1-based）
 	Total   int    `json:"total"`    // 总步骤数
 	Output  string `json:"output"`
-	StartAt string `json:"start_at"`
+	StartAt  time.Time `json:"start_at"`
 }
