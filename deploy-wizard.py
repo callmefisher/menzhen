@@ -31,7 +31,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.04.06.224501"
+WIZARD_VERSION = "2026.04.06.224601"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -580,20 +580,28 @@ def stream_command(handler, cmd, cwd=None, headers_sent=False):
             # Pass cmd[2] verbatim — on Windows, Popen with a string goes
             # straight to CreateProcess without list2cmdline quoting.
             _cmd = subprocess.list2cmdline(cmd[:2]) + " " + cmd[2]
+
+        _send_line(f"[DEBUG] stream_command: launching process, cwd={cwd or str(SCRIPT_DIR)}".encode())
+        _send_line(f"[DEBUG] stream_command: _cmd type={type(_cmd).__name__}, len={len(_cmd) if isinstance(_cmd, str) else len(str(_cmd))}".encode())
+
         proc = subprocess.Popen(
             _cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             cwd=cwd or str(SCRIPT_DIR),
             **_popen_kwargs()
         )
+        _send_line(f"[DEBUG] stream_command: process started, pid={proc.pid}".encode())
+
         # Read byte-by-byte to handle both \r (progress) and \n (newline),
         # and auto-detect encoding (UTF-8 from winget vs GBK from dism/system).
         buf = bytearray()
+        _line_count = 0
         while True:
             b = proc.stdout.read(1)
             if not b:
                 break
             if b in (b'\n', b'\r'):
                 _send_line(buf)
+                _line_count += 1
                 buf.clear()
             else:
                 buf.extend(b)
@@ -603,6 +611,9 @@ def stream_command(handler, cmd, cwd=None, headers_sent=False):
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait()
+
+        _send_line(f"[DEBUG] stream_command: process exited, code={proc.returncode}, lines_read={_line_count}".encode())
+
         result = "success" if proc.returncode == 0 else "error"
         data = json.dumps({
             "type": "done", "result": result,
@@ -2085,6 +2096,15 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     _sse({"type": "log", "data": f"[WARN] git checkout 退出码={rc}: {detail}"})
 
             # --- [2/3]+[3/3] Docker rebuild + restart (streamed) ---
+            _sse({"type": "log", "data": f"[DEBUG] os_key={os_key}, cwd={SCRIPT_DIR}"})
+            _sse({"type": "log", "data": f"[DEBUG] build_cmd={build_cmd[:200]}"})
+
+            # Quick sanity check: is Docker available?
+            _rc_docker, _out_docker, _err_docker = run_command(["docker", "version", "--format", "{{.Server.Version}}"], timeout=10)
+            _sse({"type": "log", "data": f"[DEBUG] docker version rc={_rc_docker} out={(_out_docker or '').strip()} err={(_err_docker or '').strip()}"})
+            _rc_compose, _out_compose, _err_compose = run_command(["docker", "compose", "version", "--short"], timeout=10)
+            _sse({"type": "log", "data": f"[DEBUG] docker compose version rc={_rc_compose} out={(_out_compose or '').strip()} err={(_err_compose or '').strip()}"})
+
             if os_key == "windows":
                 docker_cmd = [
                     "cmd", "/c",
@@ -2106,6 +2126,13 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "docker compose up -d nginx && "
                     "echo '更新完成!'"
                 ]
+            # Log the full command for debugging
+            _full_cmd = docker_cmd[2] if len(docker_cmd) > 2 else str(docker_cmd)
+            _sse({"type": "log", "data": f"[DEBUG] full docker cmd ({len(_full_cmd)} chars):"})
+            # Split long command for readability in SSE
+            for _chunk_start in range(0, len(_full_cmd), 200):
+                _sse({"type": "log", "data": f"[DEBUG]   {_full_cmd[_chunk_start:_chunk_start+200]}"})
+
             stream_command(self, docker_cmd, headers_sent=True)
             return
 
