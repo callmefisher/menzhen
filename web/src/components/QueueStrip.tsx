@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, message } from 'antd';
 import { CheckOutlined, SoundOutlined } from '@ant-design/icons';
@@ -26,7 +26,11 @@ export default function QueueStrip() {
   const [entries, setEntries] = useState<QueueEntry[]>([]);
   const [showArrivalTime, setShowArrivalTime] = useState<boolean | null>(null);
   const [callingId, setCallingId] = useState<number | null>(null);
+  const callingRef = useRef<number | null>(null);  // synchronous lock, immune to state batching
+  const isMountedRef = useRef(true);
   const queueDoctorId = useQueueDoctorId();
+
+  useEffect(() => () => { isMountedRef.current = false; }, []);
 
   useEffect(() => {
     getShowArrivalTime().then((res) => {
@@ -90,17 +94,20 @@ export default function QueueStrip() {
     }
   };
 
-  const handleCall = async (id: number) => {
-    if (callingId === id) return;
+  const handleCall = useCallback(async (id: number) => {
+    if (callingRef.current === id) return;  // synchronous check, no batching race
+    callingRef.current = id;
     setCallingId(id);
     try {
       await callNumber(id);
+      message.success('已叫号');
     } catch {
       message.error('叫号失败');
     } finally {
-      setCallingId(null);
+      callingRef.current = null;
+      if (isMountedRef.current) setCallingId(null);
     }
-  };
+  }, []);
 
   // Hide completely if no active entries
   if (entries.length === 0) return null;
