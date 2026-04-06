@@ -348,12 +348,15 @@ func (s *DiskService) createTask(taskType string, total int) *model.DiskTask {
 	return task
 }
 
-// GetTask returns a task by ID (nil, false if not found).
-func (s *DiskService) GetTask(taskID string) (*model.DiskTask, bool) {
+// GetTask returns a copy of the task by ID (zero value, false if not found).
+func (s *DiskService) GetTask(taskID string) (model.DiskTask, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	t, ok := s.tasks[taskID]
-	return t, ok
+	if !ok {
+		return model.DiskTask{}, false
+	}
+	return *t, ok
 }
 
 // updateTask appends output and updates step number (thread-safe).
@@ -481,15 +484,25 @@ func (s *DiskService) runCopyContainer(srcVolume, destHostPath string) error {
 	if err != nil {
 		return fmt.Errorf("start copy container: %w", err)
 	}
+	if startResp.StatusCode != 204 {
+		b, _ := io.ReadAll(startResp.Body)
+		startResp.Body.Close()
+		return fmt.Errorf("start copy container (%d): %s", startResp.StatusCode, b)
+	}
 	startResp.Body.Close()
 
-	// Wait for container to exit
-	waitReq, err := http.NewRequest("POST",
+	// Wait for container to exit (may take up to 30 minutes for large data sets)
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer waitCancel()
+	waitClient := &http.Client{
+		Transport: s.httpClient.Transport, // reuse the unix socket transport
+	}
+	waitReq, err := http.NewRequestWithContext(waitCtx, "POST",
 		s.dockerURL(fmt.Sprintf("/containers/%s/wait", created.ID)), nil)
 	if err != nil {
 		return fmt.Errorf("wait copy container request: %w", err)
 	}
-	waitResp, err := s.httpClient.Do(waitReq)
+	waitResp, err := waitClient.Do(waitReq)
 	if err != nil {
 		return fmt.Errorf("wait copy container: %w", err)
 	}
@@ -504,9 +517,13 @@ func (s *DiskService) runCopyContainer(srcVolume, destHostPath string) error {
 	// Delete the temporary container
 	delReq, err := http.NewRequest("DELETE",
 		s.dockerURL(fmt.Sprintf("/containers/%s", created.ID)), nil)
-	if err == nil {
+	if err != nil {
+		log.Printf("[disk] failed to build delete request for copy container %s: %v", created.ID, err)
+	} else {
 		delResp, err := s.httpClient.Do(delReq)
-		if err == nil {
+		if err != nil {
+			log.Printf("[disk] failed to delete copy container %s: %v", created.ID, err)
+		} else {
 			delResp.Body.Close()
 		}
 	}
@@ -562,6 +579,16 @@ func (s *DiskService) StartMigrate(target, newPath string) (*model.DiskTask, err
 		return nil, fmt.Errorf("%s 迁移任务正在进行中", target)
 	}
 
+	// Validate newPath: must be absolute and not escape hostFSRoot
+	cleanPath := filepath.Clean(newPath)
+	if !filepath.IsAbs(cleanPath) {
+		return nil, fmt.Errorf("new_path must be an absolute path")
+	}
+	hostNewPathCheck := filepath.Join(hostFSRoot, cleanPath)
+	if hostNewPathCheck != hostFSRoot && !strings.HasPrefix(hostNewPathCheck, hostFSRoot+"/") {
+		return nil, fmt.Errorf("invalid path: %s", newPath)
+	}
+
 	var containerName, volumeName, composeBind, mountPoint string
 	switch target {
 	case "mysql":
@@ -608,7 +635,7 @@ func (s *DiskService) StartMigrate(target, newPath string) (*model.DiskTask, err
 			s.finishTask(taskID, "failed", fmt.Sprintf("创建目标目录失败: %v", err))
 			return
 		}
-		if err := s.runCopyContainer(volumeName, newPath); err != nil {
+		if err := s.runCopyContainer(volumeName, hostNewPath); err != nil {
 			if startErr := s.dockerStart(containerName); startErr != nil {
 				log.Printf("[disk] failed to restart %s after copy failure: %v", containerName, startErr)
 			}
