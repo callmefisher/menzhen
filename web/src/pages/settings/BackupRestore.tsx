@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import TenantMigrate from './TenantMigrate';
+import DiskMonitor from '../../components/DiskMonitor';
 import {
   Card, Button, Space, Typography, Alert, Modal, Drawer,
   Radio, List, Tag, message, Spin,
@@ -691,6 +692,8 @@ export default function BackupRestore() {
 
       {/* 按诊所迁移恢复 — 独立功能，不影响上方备份/恢复逻辑 */}
       <TenantMigrate />
+
+      <DiskMonitor />
     </div>
   );
 }
