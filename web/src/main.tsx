@@ -1,4 +1,4 @@
-// build-test: 2026-04-06 — 验证一键更新是否重建镜像2
+// build-test: 2026-04-06 — 验证一键更新是否重建镜像1
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { StyleProvider, legacyLogicalPropertiesTransformer } from '@ant-design/cssinjs'
