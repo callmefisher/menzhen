@@ -30,6 +30,11 @@ const BackupDirChange: React.FC<Props> = ({ open, onClose }) => {
 
   useEffect(() => () => stopPoll(), [])
 
+  // Stop polling when modal is hidden (not unmounted — AntD keeps Modal in DOM by default)
+  useEffect(() => {
+    if (!open) stopPoll()
+  }, [open])
+
   const handleStart = async () => {
     if (!newPath.trim()) { message.warning('请填写目标路径'); return }
     try {
