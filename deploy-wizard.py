@@ -31,7 +31,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.04.06.200000"
+WIZARD_VERSION = "2026.04.06.210000"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -262,6 +262,14 @@ def _per_service_build_cmd(os_key, standalone=True):
     Building per-service avoids BuildKit's atomic image export: if one
     service fails, successfully built images are still loaded into Docker.
 
+    DOCKER_BUILDKIT=1 is set explicitly so that Dockerfiles using
+    --mount=type=cache work on Docker 18.09-22.x (which default to the
+    legacy builder).  Docker 23.0+ already enables BuildKit by default.
+
+    --progress=plain forces line-buffered text output; without it BuildKit
+    emits ANSI escape sequences / TTY control codes that corrupt the SSE
+    log stream shown in the browser.
+
     Args:
         os_key: "windows" or other (macOS/Linux).
         standalone: If True (default), bash variant exits with the tracked
@@ -271,19 +279,21 @@ def _per_service_build_cmd(os_key, standalone=True):
     """
     n = len(BUILD_SERVICES)
     if os_key == "windows":
-        # cmd.exe: use & to run all regardless of failures.
-        # Exit code comes from last command; wizard verifies via check-images.
+        # cmd.exe does NOT support inline "VAR=val command" syntax.
+        # Use "set VAR=val & ..." to export for the whole cmd session.
+        # & chains all steps unconditionally; wizard verifies via check-images.
         steps = [
-            f"echo === [{i}/{n}] 构建 {svc} === & docker compose build {svc}"
+            f"echo === [{i}/{n}] 构建 {svc} === & docker compose build --progress=plain {svc}"
             for i, svc in enumerate(BUILD_SERVICES, 1)
         ]
-        return " & ".join(steps)
+        return "set DOCKER_BUILDKIT=1 & " + " & ".join(steps)
     else:
-        # bash: track failures with _f variable, exit non-zero if any failed.
+        # bash/zsh (macOS + Linux): inline VAR=val before each command so the
+        # env var is scoped to that child process and doesn't leak out.
         # Wrapped in (...) subshell so the ';' separators don't break an
         # outer && chain (e.g. git fetch && ... && BUILD_CMD).
         steps = [
-            f"echo '=== [{i}/{n}] 构建 {svc} ==='; docker compose build {svc} || _f=1"
+            f"echo '=== [{i}/{n}] 构建 {svc} ==='; DOCKER_BUILDKIT=1 docker compose build --progress=plain {svc} || _f=1"
             for i, svc in enumerate(BUILD_SERVICES, 1)
         ]
         inner = "_f=0; " + "; ".join(steps)
@@ -1553,7 +1563,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         f"git checkout -f origin/main -- . {EXCLUDE} && "
                         "git reset origin/main && "
                         "echo 代码下载完成，开始构建... & "
-                        f"docker compose pull & {build_cmd}"
+                        f"docker pull minio/minio & {build_cmd}"
                     )
                     stream_command(self, ["cmd", "/c", clone_and_build])
                 else:
@@ -1567,7 +1577,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         f"git checkout -f origin/main -- . {EXCLUDE} && "
                         "git reset origin/main && "
                         "echo '代码下载完成，开始构建...' && "
-                        f"docker compose pull; {build_cmd}"
+                        f"docker pull minio/minio; {build_cmd}"
                     )
                     stream_command(self, ["bash", "-c", clone_and_build])
             else:
@@ -1578,12 +1588,12 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                                           "chcp 65001 >nul 2>&1 & "
                                           f'cd /d "{q_dir}" && '
                                           f"{vol_cleanup}"
-                                          f"docker compose pull & {build_cmd}"])
+                                          f"docker pull minio/minio & {build_cmd}"])
                 else:
                     stream_command(self, ["bash", "-c",
                                           f"cd {q_dir} && "
                                           f"{vol_cleanup}"
-                                          f"docker compose pull; {build_cmd}"])
+                                          f"docker pull minio/minio; {build_cmd}"])
             return
 
         if self.path == "/api/check-repo":
@@ -2077,7 +2087,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     "cmd", "/c",
                     "chcp 65001 >nul 2>&1 & "
                     "echo [2/3] 正在重新构建程序（约5-15分钟）... & "
-                    f"docker compose pull & {build_cmd} & "
+                    f"docker pull minio/minio & {build_cmd} & "
                     "echo [3/3] 正在重启服务... & "
                     "docker compose up -d --force-recreate & "
                     "docker compose up -d nginx & "
@@ -2087,7 +2097,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 docker_cmd = [
                     "bash", "-c",
                     "echo '[2/3] 正在重新构建程序（约5-15分钟）...' && "
-                    f"docker compose pull; {build_cmd} && "
+                    f"docker pull minio/minio; {build_cmd} && "
                     "echo '[3/3] 正在重启服务...' && "
                     "docker compose up -d --force-recreate && "
                     "docker compose up -d nginx && "
