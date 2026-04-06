@@ -31,7 +31,7 @@ describe('DirBrowser', () => {
     render(<DirBrowser open onSelect={vi.fn()} onClose={vi.fn()} />)
     await waitFor(() => screen.getByText('opt'))
     fireEvent.click(screen.getByText('opt'))
-    expect(mockBrowse).toHaveBeenCalledWith('/opt')
+    await waitFor(() => expect(mockBrowse).toHaveBeenCalledWith('/opt'))
   })
 
   it('calls onSelect with current path when OK clicked', async () => {

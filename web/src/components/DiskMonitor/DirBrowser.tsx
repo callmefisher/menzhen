@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useCallback } from 'react'
-import { Modal, Breadcrumb, List, Typography, Spin, Space } from 'antd'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
+import { Modal, Breadcrumb, Typography, Spin, Space, Alert } from 'antd'
 import { FolderOutlined } from '@ant-design/icons'
 import { browseFS, DirEntry } from '../../api/disk'
 
@@ -13,16 +13,34 @@ const DirBrowser: React.FC<Props> = ({ open, onSelect, onClose }) => {
   const [currentPath, setCurrentPath] = useState('/')
   const [entries, setEntries] = useState<DirEntry[]>([])
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const mountedRef = useRef(true)
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
 
   const load = useCallback((path: string) => {
     setLoading(true)
+    setError(null)
     browseFS(path)
       .then(res => {
+        if (!mountedRef.current) return
         setEntries(res.data.data ?? [])
         setCurrentPath(path)
       })
-      .catch(() => setEntries([]))
-      .finally(() => setLoading(false))
+      .catch(() => {
+        if (!mountedRef.current) return
+        setEntries([])
+        setError('加载目录失败，请重试')
+      })
+      .finally(() => {
+        if (!mountedRef.current) return
+        setLoading(false)
+      })
   }, [])
 
   useEffect(() => {
@@ -48,12 +66,12 @@ const DirBrowser: React.FC<Props> = ({ open, onSelect, onClose }) => {
       okText="选择此目录"
       cancelText="取消"
       width={480}
-      destroyOnClose
+      destroyOnHidden
     >
       <Breadcrumb
         style={{ marginBottom: 12 }}
         items={segments.map((seg, i) => ({
-          key: i,
+          key: pathForSegment(i),
           title: (
             <span
               style={{ cursor: 'pointer', color: '#1677ff' }}
@@ -66,25 +84,25 @@ const DirBrowser: React.FC<Props> = ({ open, onSelect, onClose }) => {
       />
       {loading ? (
         <Spin style={{ display: 'block', textAlign: 'center', padding: 24 }} />
+      ) : error ? (
+        <Alert type="error" message={error} />
       ) : directories.length === 0 ? (
         <Typography.Text type="secondary">（空目录或无子目录）</Typography.Text>
       ) : (
-        <List
-          size="small"
-          dataSource={directories}
-          renderItem={entry => (
-            <List.Item
+        <div>
+          {directories.map(entry => (
+            <div
               key={entry.path}
-              style={{ cursor: 'pointer' }}
+              style={{ cursor: 'pointer', padding: '6px 4px' }}
               onClick={() => load(entry.path)}
             >
               <Space>
                 <FolderOutlined />
                 <Typography.Text>{entry.name}</Typography.Text>
               </Space>
-            </List.Item>
-          )}
-        />
+            </div>
+          ))}
+        </div>
       )}
     </Modal>
   )
