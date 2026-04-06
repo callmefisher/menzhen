@@ -19,6 +19,11 @@ func NewDiskHandler(db *gorm.DB) *DiskHandler {
 	return &DiskHandler{svc: service.NewDiskService(db)}
 }
 
+// Shutdown stops the background collection goroutine.
+func (h *DiskHandler) Shutdown() {
+	h.svc.Shutdown()
+}
+
 // GetStatus GET /api/disk/status
 func (h *DiskHandler) GetStatus(c *gin.Context) {
 	status, err := h.svc.GetStatus()

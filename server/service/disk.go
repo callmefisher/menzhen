@@ -255,15 +255,17 @@ func (s *DiskService) GetStatus() (*model.DiskStatus, error) {
 
 // collectLoop runs CollectNow on the configured interval until ctx is cancelled.
 func (s *DiskService) collectLoop(ctx context.Context) {
+	timer := time.NewTimer(time.Duration(s.GetInterval()) * time.Second)
+	defer timer.Stop()
 	for {
-		interval := time.Duration(s.GetInterval()) * time.Second
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(interval):
+		case <-timer.C:
 			if _, err := s.CollectNow(); err != nil {
 				log.Printf("[disk] collectLoop error: %v", err)
 			}
+			timer.Reset(time.Duration(s.GetInterval()) * time.Second)
 		}
 	}
 }
@@ -346,7 +348,13 @@ func (s *DiskService) createTask(taskType string, total int) *model.DiskTask {
 		Total:   total,
 		StartAt: time.Now(),
 	}
+	cutoff := time.Now().Add(-24 * time.Hour)
 	s.mu.Lock()
+	for id, t := range s.tasks {
+		if t.Status != "running" && t.StartAt.Before(cutoff) {
+			delete(s.tasks, id)
+		}
+	}
 	s.tasks[task.TaskID] = task
 	s.mu.Unlock()
 	return task
@@ -722,6 +730,15 @@ func (s *DiskService) StartMigrate(target, newPath string) (*model.DiskTask, err
 		// Step 5: restart container
 		s.updateTask(taskID, 5, fmt.Sprintf("Step 5/6: 重启容器 %s...", containerName))
 		if err := s.dockerStart(containerName); err != nil {
+			// Container failed to start with new path — restore compose backup
+			backupFile := composePath + ".bak"
+			if original, readErr := os.ReadFile(backupFile); readErr == nil {
+				if writeErr := os.WriteFile(composePath, original, 0644); writeErr != nil {
+					log.Printf("[disk] failed to restore compose backup: %v", writeErr)
+				} else {
+					log.Printf("[disk] compose backup restored after container start failure")
+				}
+			}
 			s.finishTask(taskID, "failed", fmt.Sprintf("启动容器失败: %v", err))
 			return
 		}
@@ -816,7 +833,9 @@ func (s *DiskService) ChangeBackupDir(newPath string) (*model.DiskTask, error) {
 			s.finishTask(taskID, "failed", fmt.Sprintf("写入验证文件失败: %v", err))
 			return
 		}
-		os.Remove(testFile)
+		if err := os.Remove(testFile); err != nil {
+			log.Printf("[disk] warning: failed to remove test file %s: %v", testFile, err)
+		}
 
 		s.finishTask(taskID, "success", fmt.Sprintf("备份目录已更换为 %s", newPath))
 	}()

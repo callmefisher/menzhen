@@ -18,6 +18,7 @@ func setupDiskRouter(t *testing.T) *gin.Engine {
 	t.Helper()
 	db := testutil.SetupTestDB(t)
 	h := handler.NewDiskHandler(db)
+	t.Cleanup(h.Shutdown)
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.GET("/disk/fs", h.BrowseFS)
