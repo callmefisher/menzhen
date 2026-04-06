@@ -11,7 +11,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,7 +24,6 @@ import (
 const (
 	diskMonitorIntervalKey = "disk_monitor_interval"
 	defaultInterval        = 3600 // 1 hour in seconds
-	hostFSRoot             = "/hostfs"
 )
 
 // ErrTaskAlreadyRunning is returned when an identical task type is already running.
@@ -68,40 +66,51 @@ func (s *DiskService) dockerURL(path string) string {
 	return "http://docker" + path
 }
 
-// parseDfOutput parses `df -B1 /var/lib/mysql /data /backups /` output.
-// Returns: total, used, free, mysqlUsed, minioUsed, backupUsed (all in bytes).
-func parseDfOutput(output string) (total, used, free, mysqlUsed, minioUsed, backupUsed int64, err error) {
+// parseRootDf parses `df -B1 /` output and returns total, used, free bytes.
+func parseRootDf(output string) (total, used, free int64, err error) {
 	lines := strings.Split(strings.TrimSpace(output), "\n")
 	if len(lines) < 2 {
-		return 0, 0, 0, 0, 0, 0, fmt.Errorf("unexpected df output: %q", output)
+		return 0, 0, 0, fmt.Errorf("unexpected df output: %q", output)
 	}
-	for _, line := range lines[1:] { // skip header
+	// Expected format from `df -B1 /`:
+	// Filesystem  1-blocks  Used  Available  Use%  Mounted on
+	// overlay     NNN       NNN   NNN        N%    /
+	fields := strings.Fields(lines[1])
+	if len(fields) < 4 {
+		return 0, 0, 0, fmt.Errorf("unexpected df fields: %q", lines[1])
+	}
+	var parseErr error
+	if total, parseErr = strconv.ParseInt(fields[1], 10, 64); parseErr != nil {
+		return 0, 0, 0, fmt.Errorf("parse df total %q: %w", fields[1], parseErr)
+	}
+	if used, parseErr = strconv.ParseInt(fields[2], 10, 64); parseErr != nil {
+		return 0, 0, 0, fmt.Errorf("parse df used %q: %w", fields[2], parseErr)
+	}
+	if free, parseErr = strconv.ParseInt(fields[3], 10, 64); parseErr != nil {
+		return 0, 0, 0, fmt.Errorf("parse df free %q: %w", fields[3], parseErr)
+	}
+	return
+}
+
+// parseDuOutput parses `du -sb /var/lib/mysql /data /backups` output.
+// Returns mysqlUsed, minioUsed, backupUsed in bytes.
+func parseDuOutput(output string) (mysqlUsed, minioUsed, backupUsed int64) {
+	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
 		fields := strings.Fields(line)
-		if len(fields) < 6 {
+		if len(fields) < 2 {
 			continue
 		}
-		mountpoint := fields[5]
-		usedBytes, e := strconv.ParseInt(fields[2], 10, 64)
-		if e != nil {
+		size, err := strconv.ParseInt(fields[0], 10, 64)
+		if err != nil {
 			continue
 		}
-		totalBytes, e := strconv.ParseInt(fields[1], 10, 64)
-		if e != nil {
-			continue
-		}
-		freeBytes, e := strconv.ParseInt(fields[3], 10, 64)
-		if e != nil {
-			continue
-		}
-		switch mountpoint {
-		case "/":
-			total, used, free = totalBytes, usedBytes, freeBytes
+		switch fields[1] {
 		case "/var/lib/mysql":
-			mysqlUsed = usedBytes
+			mysqlUsed = size
 		case "/data":
-			minioUsed = usedBytes
+			minioUsed = size
 		case "/backups":
-			backupUsed = usedBytes
+			backupUsed = size
 		}
 	}
 	return
@@ -197,18 +206,29 @@ func stripDockerMux(b []byte) string {
 	return sb.String()
 }
 
-// CollectNow runs df inside the backup container and updates the cached status.
+// CollectNow collects disk stats from the backup container and updates the cached status.
+// Uses two docker exec calls:
+//   - `df -B1 /` for total/used/free of the root filesystem
+//   - `du -sb /var/lib/mysql /data /backups` for per-component sizes
+//
+// This avoids the Docker Desktop for Mac quirk where both mysql-data and minio-data
+// named volumes are backed by the same /dev/vda1 filesystem and df reports mountpoint
+// "/data" for both — making df-based per-component parsing unreliable.
 func (s *DiskService) CollectNow() (*model.DiskStatus, error) {
-	output, err := s.dockerExec(backupContainer(),
-		"df", "-B1", "/var/lib/mysql", "/data", "/backups", "/")
+	dfOut, err := s.dockerExec(backupContainer(), "df", "-B1", "/")
 	if err != nil {
 		return nil, fmt.Errorf("df exec: %w", err)
 	}
-
-	total, used, free, mysqlUsed, minioUsed, backupUsed, err := parseDfOutput(output)
+	total, used, free, err := parseRootDf(dfOut)
 	if err != nil {
 		return nil, fmt.Errorf("parse df: %w", err)
 	}
+
+	duOut, err := s.dockerExec(backupContainer(), "du", "-sb", "/var/lib/mysql", "/data", "/backups")
+	if err != nil {
+		return nil, fmt.Errorf("du exec: %w", err)
+	}
+	mysqlUsed, minioUsed, backupUsed := parseDuOutput(duOut)
 
 	var usedPct float64
 	if total > 0 {
@@ -273,7 +293,7 @@ func (s *DiskService) collectLoop(ctx context.Context) {
 // GetInterval returns the configured collection interval in seconds.
 func (s *DiskService) GetInterval() int {
 	var setting model.SystemSetting
-	if err := s.db.First(&setting, "key = ?", diskMonitorIntervalKey).Error; err != nil {
+	if err := s.db.First(&setting, "`key` = ?", diskMonitorIntervalKey).Error; err != nil {
 		return defaultInterval
 	}
 	v, err := strconv.Atoi(setting.Value)
@@ -294,41 +314,42 @@ func (s *DiskService) SetInterval(seconds int) error {
 	}).Error
 }
 
-// BrowseFS lists non-hidden entries under path on the host filesystem (mounted at /hostfs).
-func (s *DiskService) BrowseFS(path string) ([]model.DirEntry, error) {
-	// Sanitize: prevent path traversal
-	clean := filepath.Clean("/" + path)
-	hostPath := filepath.Join(hostFSRoot, clean)
-
-	// Guard: must have hostFSRoot+"/" prefix OR equal hostFSRoot exactly
-	if hostPath != hostFSRoot && !strings.HasPrefix(hostPath, hostFSRoot+"/") {
-		return nil, fmt.Errorf("invalid path")
-	}
-
-	entries, err := os.ReadDir(hostPath)
+// ListVolumes returns all Docker named volumes via the Docker API.
+func (s *DiskService) ListVolumes() ([]model.DockerVolume, error) {
+	req, err := http.NewRequest("GET", s.dockerURL("/volumes"), nil)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return []model.DirEntry{}, nil
-		}
-		return nil, fmt.Errorf("read dir: %w", err)
+		return nil, fmt.Errorf("list volumes request: %w", err)
 	}
-
-	dirs := make([]model.DirEntry, 0, len(entries))
-	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), ".") {
-			continue
-		}
-		_, err := e.Info()
-		if err != nil {
-			continue
-		}
-		dirs = append(dirs, model.DirEntry{
-			Name:  e.Name(),
-			Path:  filepath.Join(clean, e.Name()),
-			IsDir: e.IsDir(),
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("list volumes: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("list volumes (%d): %s", resp.StatusCode, b)
+	}
+	var result struct {
+		Volumes []struct {
+			Name       string `json:"Name"`
+			Driver     string `json:"Driver"`
+			Mountpoint string `json:"Mountpoint"`
+			CreatedAt  string `json:"CreatedAt"`
+		} `json:"Volumes"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("parse volumes: %w", err)
+	}
+	volumes := make([]model.DockerVolume, 0, len(result.Volumes))
+	for _, v := range result.Volumes {
+		volumes = append(volumes, model.DockerVolume{
+			Name:       v.Name,
+			Driver:     v.Driver,
+			Mountpoint: v.Mountpoint,
+			CreatedAt:  v.CreatedAt,
 		})
 	}
-	return dirs, nil
+	return volumes, nil
 }
 
 // Shutdown stops the background collection loop.
@@ -445,19 +466,20 @@ func (s *DiskService) dockerStart(container string) error {
 
 // ─── runCopyContainer ──────────────────────────────────────────────────────
 
-// runCopyContainer copies data from a named Docker volume to a host directory.
-// srcVolume: named volume name (e.g. "mysql-data")
-// destHostPath: absolute host path (writable via /hostfs mount)
-func (s *DiskService) runCopyContainer(srcVolume, destHostPath string) error {
+// runCopyContainer copies data from srcVolume (named volume) to dest (named volume or host path).
+// dest can be a Docker named volume name (e.g. "mysql-data-new") or an absolute host path.
+// The destination is created automatically if it does not exist (Docker creates named volumes;
+// host paths are created by mkdir inside the container).
+func (s *DiskService) runCopyContainer(srcVolume, dest string) error {
 	body, _ := json.Marshal(map[string]interface{}{
 		"Image": "alpine",
-		"Cmd":   []string{"sh", "-c", "cp -a /source/. /dest/"},
+		"Cmd":   []string{"sh", "-c", "mkdir -p /dest && cp -a /source/. /dest/"},
 		"HostConfig": map[string]interface{}{
 			"Binds": []string{
 				srcVolume + ":/source:ro",
-				destHostPath + ":/dest:rw",
+				dest + ":/dest:rw",
 			},
-			"AutoRemove": false,
+			"AutoRemove": true,
 		},
 	})
 	createReq, err := http.NewRequest("POST",
@@ -524,20 +546,6 @@ func (s *DiskService) runCopyContainer(srcVolume, destHostPath string) error {
 	}
 	if err := json.NewDecoder(waitResp.Body).Decode(&waitResult); err != nil {
 		return fmt.Errorf("parse wait response: %w", err)
-	}
-
-	// Delete the temporary container
-	delReq, err := http.NewRequest("DELETE",
-		s.dockerURL(fmt.Sprintf("/containers/%s", created.ID)), nil)
-	if err != nil {
-		log.Printf("[disk] failed to build delete request for copy container %s: %v", created.ID, err)
-	} else {
-		delResp, err := s.httpClient.Do(delReq)
-		if err != nil {
-			log.Printf("[disk] failed to delete copy container %s: %v", created.ID, err)
-		} else {
-			delResp.Body.Close()
-		}
 	}
 
 	if waitResult.StatusCode != 0 {
@@ -644,21 +652,18 @@ func (s *DiskService) findCurrentBackupsBind() (string, error) {
 
 // StartMigrate starts an async 6-step MySQL or MinIO data directory migration.
 // target: "mysql" or "minio"
-// newPath: absolute host path for the new data location
-func (s *DiskService) StartMigrate(target, newPath string) (*model.DiskTask, error) {
+// newDest: Docker named volume name (e.g. "mysql-data-ssd") or absolute host path.
+//
+// Docker handles both cases in the Binds spec:
+//   - Named volume: Docker creates it automatically if it doesn't exist.
+//   - Host path: Docker bind-mounts the path; mkdir -p inside the container handles creation.
+func (s *DiskService) StartMigrate(target, newDest string) (*model.DiskTask, error) {
 	taskType := "migrate_" + target
 	if s.HasRunningTask(taskType) {
 		return nil, fmt.Errorf("%s 迁移任务正在进行中: %w", target, ErrTaskAlreadyRunning)
 	}
-
-	// Validate newPath: must be absolute and not escape hostFSRoot
-	cleanPath := filepath.Clean(newPath)
-	if !filepath.IsAbs(cleanPath) {
-		return nil, fmt.Errorf("new_path must be an absolute path")
-	}
-	hostNewPathCheck := filepath.Join(hostFSRoot, cleanPath)
-	if hostNewPathCheck != hostFSRoot && !strings.HasPrefix(hostNewPathCheck, hostFSRoot+"/") {
-		return nil, fmt.Errorf("invalid path: %s", newPath)
+	if strings.TrimSpace(newDest) == "" {
+		return nil, fmt.Errorf("new_dest must not be empty")
 	}
 
 	var containerName, volumeName, composeBind, mountPoint string
@@ -697,17 +702,10 @@ func (s *DiskService) StartMigrate(target, newPath string) (*model.DiskTask, err
 			return
 		}
 
-		// Step 3: copy data to new path
-		s.updateTask(taskID, 3, fmt.Sprintf("Step 3/6: 复制数据到 %s...", newPath))
-		hostNewPath := filepath.Join(hostFSRoot, newPath)
-		if err := os.MkdirAll(hostNewPath, 0755); err != nil {
-			if startErr := s.dockerStart(containerName); startErr != nil {
-				log.Printf("[disk] failed to restart %s after mkdirall failure: %v", containerName, startErr)
-			}
-			s.finishTask(taskID, "failed", fmt.Sprintf("创建目标目录失败: %v", err))
-			return
-		}
-		if err := s.runCopyContainer(volumeName, hostNewPath); err != nil {
+		// Step 3: copy data to new destination (named volume or host path).
+		// runCopyContainer handles mkdir -p inside the Alpine container, so no pre-creation needed.
+		s.updateTask(taskID, 3, fmt.Sprintf("Step 3/6: 复制数据到 %s...", newDest))
+		if err := s.runCopyContainer(volumeName, newDest); err != nil {
 			if startErr := s.dockerStart(containerName); startErr != nil {
 				log.Printf("[disk] failed to restart %s after copy failure: %v", containerName, startErr)
 			}
@@ -718,7 +716,7 @@ func (s *DiskService) StartMigrate(target, newPath string) (*model.DiskTask, err
 
 		// Step 4: update docker-compose.yml
 		s.updateTask(taskID, 4, "Step 4/6: 更新 docker-compose.yml...")
-		newBind := newPath + ":" + mountPoint
+		newBind := newDest + ":" + mountPoint
 		if err := s.updateComposeVolume(composeBind, newBind); err != nil {
 			if startErr := s.dockerStart(containerName); startErr != nil {
 				log.Printf("[disk] failed to restart %s after compose update failure: %v", containerName, startErr)
@@ -752,27 +750,21 @@ func (s *DiskService) StartMigrate(target, newPath string) (*model.DiskTask, err
 			return
 		}
 
-		s.finishTask(taskID, "success", fmt.Sprintf("迁移完成。新路径: %s", newPath))
+		s.finishTask(taskID, "success", fmt.Sprintf("迁移完成。新目标: %s", newDest))
 	}()
 
 	return task, nil
 }
 
 // ChangeBackupDir changes the backup directory (4-step async task).
-// Steps: rsync/copy files → update compose → restart backup+api → verify
-func (s *DiskService) ChangeBackupDir(newPath string) (*model.DiskTask, error) {
+// newDest: Docker named volume name or absolute host path accepted by Docker bind-mount syntax.
+// Steps: copy files → update compose → restart backup+api → verify via docker exec
+func (s *DiskService) ChangeBackupDir(newDest string) (*model.DiskTask, error) {
 	if s.HasRunningTask("backup_dir") {
 		return nil, fmt.Errorf("备份目录更换任务正在进行中: %w", ErrTaskAlreadyRunning)
 	}
-
-	// Validate newPath
-	cleanPath := filepath.Clean(newPath)
-	if !filepath.IsAbs(cleanPath) {
-		return nil, fmt.Errorf("new_path must be an absolute path")
-	}
-	hostNewPath := filepath.Join(hostFSRoot, cleanPath)
-	if hostNewPath != hostFSRoot && !strings.HasPrefix(hostNewPath, hostFSRoot+"/") {
-		return nil, fmt.Errorf("invalid path: %s", newPath)
+	if strings.TrimSpace(newDest) == "" {
+		return nil, fmt.Errorf("new_dest must not be empty")
 	}
 
 	task := s.createTask("backup_dir", 4)
@@ -780,19 +772,15 @@ func (s *DiskService) ChangeBackupDir(newPath string) (*model.DiskTask, error) {
 	go func() {
 		taskID := task.TaskID
 
-		// Step 1: copy existing backup files to new path
-		s.updateTask(taskID, 1, fmt.Sprintf("Step 1/4: 复制备份文件到 %s...", newPath))
-		if err := os.MkdirAll(hostNewPath, 0755); err != nil {
-			s.finishTask(taskID, "failed", fmt.Sprintf("创建目标目录失败: %v", err))
-			return
-		}
-		// Get current backup host path to copy from
+		// Step 1: copy existing backup files to new destination.
+		// runCopyContainer uses "mkdir -p /dest && cp -a /source/. /dest/" so the target
+		// is created inside the container — works for both named volumes and host paths.
+		s.updateTask(taskID, 1, fmt.Sprintf("Step 1/4: 复制备份文件到 %s...", newDest))
 		backupHostPath, getErr := s.getContainerMount(backupContainer(), "/backups")
 		if getErr != nil {
 			log.Printf("[disk] could not get current backup mount path: %v — skipping file copy", getErr)
-		} else if backupHostPath != "" && backupHostPath != newPath {
-			// runCopyContainer accepts either a named volume or a host path as source
-			if copyErr := s.runCopyContainer(backupHostPath, newPath); copyErr != nil {
+		} else if backupHostPath != "" && backupHostPath != newDest {
+			if copyErr := s.runCopyContainer(backupHostPath, newDest); copyErr != nil {
 				log.Printf("[disk] backup copy warning: %v — new directory may be empty", copyErr)
 			}
 		}
@@ -800,8 +788,7 @@ func (s *DiskService) ChangeBackupDir(newPath string) (*model.DiskTask, error) {
 
 		// Step 2: update docker-compose.yml
 		s.updateTask(taskID, 2, "Step 2/4: 更新 docker-compose.yml...")
-		newBind := cleanPath + ":/backups"
-		// Read current compose to find actual bind (handles repeated changes)
+		newBind := newDest + ":/backups"
 		oldBind, readErr := s.findCurrentBackupsBind()
 		if readErr != nil {
 			log.Printf("[disk] could not read current backups bind, using default: %v", readErr)
@@ -826,18 +813,16 @@ func (s *DiskService) ChangeBackupDir(newPath string) (*model.DiskTask, error) {
 		}
 		time.Sleep(5 * time.Second)
 
-		// Step 4: verify new backup directory is writable
+		// Step 4: verify new backup directory is writable via docker exec inside backup container.
+		// The container has just been restarted with the new /backups bind, so this is a real check.
 		s.updateTask(taskID, 4, "Step 4/4: 验证新备份目录...")
-		testFile := filepath.Join(hostNewPath, ".disk_monitor_test")
-		if err := os.WriteFile(testFile, []byte("ok"), 0644); err != nil {
-			s.finishTask(taskID, "failed", fmt.Sprintf("写入验证文件失败: %v", err))
+		if _, err := s.dockerExec(backupContainer(), "sh", "-c",
+			"touch /backups/.disk_monitor_test && rm /backups/.disk_monitor_test"); err != nil {
+			s.finishTask(taskID, "failed", fmt.Sprintf("验证写入失败: %v", err))
 			return
 		}
-		if err := os.Remove(testFile); err != nil {
-			log.Printf("[disk] warning: failed to remove test file %s: %v", testFile, err)
-		}
 
-		s.finishTask(taskID, "success", fmt.Sprintf("备份目录已更换为 %s", newPath))
+		s.finishTask(taskID, "success", fmt.Sprintf("备份目录已更换为 %s", newDest))
 	}()
 
 	return task, nil

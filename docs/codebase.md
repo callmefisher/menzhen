@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-04-04（powerAdmin 权限角色：分组授权管理、JWT ManagedGroups、全局统计分组过滤）
+> 最后更新：2026-04-06（预约管理、患者门户、磁盘监控、租户数据迁移、员工营收统计、排队医生配置）
 
 ---
 
@@ -31,7 +31,7 @@ menzhen/
 │   ├── config/
 │   │   └── config.go                # Config 结构体 + Load()，全部读取环境变量
 │   ├── database/
-│   │   ├── database.go              # InitDB：连接 MySQL + AutoMigrate 全部 25 个模型（DisableForeignKeyConstraintWhenMigrating: true）
+│   │   ├── database.go              # InitDB：连接 MySQL + AutoMigrate 全部 37 个模型（DisableForeignKeyConstraintWhenMigrating: true）
 │   │   ├── seed.go                  # Seed：幂等写入 permissions/tenant/admin role/admin user
 │   │   └── hexagram_seed.json       # 64卦种子数据（卦名/卦辞/爻辞/传文/中医应用）
 │   ├── handler/
@@ -64,12 +64,21 @@ menzhen/
 │   │   ├── role.go                  # List/Create/Update/Delete/ListPermissions
 │   │   ├── tenant.go                # List/Create/Update/Delete
 │   │   ├── power_admin.go           # PowerAdmin CRUD + 分组分配（List/Delete/AssignGroups/ListAllGroups）
+│   │   ├── queue_doctor.go          # 接诊医生配置（List/Create/Update/Delete/GetDoctorSchedule/SetDoctorSchedule/tenant queue-enabled/call-duration/show-arrival-time/call-sound-enabled/appointment-enabled/appointment-config）
+│   │   ├── appointment.go           # 预约管理（Create/List/Slots/Matrix/EnqueueToday/Update/Checkin/Cancel/Delete）
+│   │   ├── appointment_slot.go      # 预约时段配置（List/Create/Update/Delete）
+│   │   ├── patient_auth.go          # 患者门户认证（Login/Me/ListTenantsByPhone/GetTenantInfo）
+│   │   ├── patient_portal.go        # 患者门户业务（ListDoctors/GetDoctorSchedule/预约/排队/诊疗记录/账单）
+│   │   ├── patient_settings.go      # 患者门户配置（GetPortalConfig/UpdatePortalConfig）
+│   │   ├── tenant_migrate.go        # 租户数据迁移（Upload/ParseFromBackup/GetStatus/Execute/ListBackupFiles）
+│   │   ├── disk.go                  # 磁盘监控（GetStatus/SetInterval/ListVolumes/StartMigrate/GetMigrateStatus/ChangeBackupDir/GetBackupDirStatus）
 │   │   └── handler_test.go          # handler 测试
 │   ├── middleware/
 │   │   ├── auth.go                  # JWT 解析（含 TokenVersion + ManagedGroups），GenerateToken/TokenVersionMiddleware/SuperAdminTenantOverrideMiddleware（支持 superAdmin + powerAdmin）/GetManagedGroups
 │   │   ├── rbac.go                  # RequirePermission：检查用户是否拥有指定权限码（支持 OR 匹配）
 │   │   ├── tenant.go                # TenantScope：GORM scope，按 tenant_id 过滤
 │   │   ├── tenant_status.go         # TenantStatusMiddleware：校验租户状态（禁用租户拒绝访问）
+│   │   ├── patient_auth.go          # PatientAuthMiddleware：患者门户 JWT 认证（30 天有效期，独立于员工端）
 │   │   └── oplog.go                 # LogOperation：记录操作审计日志（best-effort）
 │   ├── model/                       # GORM 数据模型（见下方数据模型章节）
 │   ├── router/
@@ -103,7 +112,14 @@ menzhen/
 │   │   ├── role.go                  # 角色管理
 │   │   ├── tenant.go                # 租户管理（含 group_name 支持）
 │   │   ├── admin_statistics.go      # 全局统计（GetGlobalStats 支持 groupNames []string 过滤，5分钟内存缓存）
-│   │   └── power_admin.go           # powerAdmin 管理（GetManagedGroups/GetManagedGroupsForUser/AssignGroups/ListPowerAdmins/GetAllGroups）
+│   │   ├── power_admin.go           # powerAdmin 管理（GetManagedGroups/GetManagedGroupsForUser/AssignGroups/ListPowerAdmins/GetAllGroups）
+│   │   ├── queue_doctor.go          # 接诊医生配置服务（CRUD + GetEnabled/SetEnabled/GetCallDuration/SetCallDuration 等租户配置项）
+│   │   ├── doctor_schedule.go       # 医生出诊规则（GetConfig/SetConfig，weekdays bitmask + 预约日期范围）
+│   │   ├── appointment.go           # 预约业务（Create/List/Slots/Matrix/Update/Checkin/Cancel/Delete/EnqueueToday/AutoEnqueueByDate）
+│   │   ├── appointment_slot.go      # 预约时段配置（List/Create/Update/Delete）
+│   │   ├── patient_auth.go          # 患者门户认证（Login/Me/ListTenantsByPhone/GetOrCreate PatientUser，密码=手机后4位 bcrypt）
+│   │   ├── tenant_migrate.go        # 租户数据迁移（上传备份→解析→执行导入，异步任务状态跟踪）
+│   │   └── disk.go                  # 磁盘监控（定时采集磁盘/MySQL/MinIO状态，MySQL数据目录迁移，备份目录变更）
 │   └── storage/
 │       └── minio.go                 # InitMinIO/UploadFile/GetObject/DeleteFile/DeleteFiles/ListAllObjects
 ├── web/                             # React 前端
@@ -141,7 +157,16 @@ menzhen/
 │       │   ├── tenant-admin.ts      # 租户级管理前端 API（listTenantUsers/createTenantUser/updateTenantUser/deleteTenantUser/assignTenantUserRoles/resetTenantUserPassword/listTenantRoles/createTenantRole/updateTenantRole/deleteTenantRole/listAssignablePermissions）
 │       │   ├── prescriptionNotification.ts # 调配通知 API（list/pendingCount/detail/markDone/batchDone）
 │       │   ├── backup.ts            # 备份恢复 API（dockerStatus/trigger/status/listLocal/listCloud/restore）
-│       │   └── dbCleanup.ts         # 数据库清理 API（cleanupOrphanData）
+│       │   ├── dbCleanup.ts         # 数据库清理 API（cleanupOrphanData）
+│       │   ├── queue.ts             # 排队叫号 API（takeNumber/callNext/complete/clear/list/status）
+│       │   ├── queue-doctor.ts      # 接诊医生配置 API（list/create/update/delete/schedule）
+│       │   ├── appointment.ts       # 预约管理 API（list/create/update/cancel/delete/checkin/slots/matrix/enqueueToday）
+│       │   ├── appointmentSlot.ts   # 预约时段配置 API（list/create/update/delete）
+│       │   ├── patientAuth.ts       # 患者门户认证 API（login/me/listTenants/tenantInfo）
+│       │   ├── patientPortal.ts     # 患者门户业务 API（doctors/schedule/appointments/queue/records/billings）
+│       │   ├── powerAdmin.ts        # PowerAdmin 管理 API（list/delete/assignGroups/listGroups）
+│       │   ├── tenantMigrate.ts     # 租户数据迁移 API（upload/parse/status/execute/listBackupFiles）
+│       │   └── disk.ts              # 磁盘监控 API（status/setInterval/listVolumes/migrate/migrateStatus/changeBackupDir/backupDirStatus）
 │       ├── components/
 │       │   ├── Layout.tsx           # 侧边栏 + 顶部导航布局（移动端 Sider→Drawer + 汉堡按钮，待配药 Badge 显示）
 │       │   ├── FileUpload.tsx       # 文件上传组件
@@ -164,6 +189,15 @@ menzhen/
 │       │   ├── AccessibilityToggle.tsx # 无障碍模式切换
 │       │   ├── QueueStrip.tsx         # 排队条（患者列表页顶部，显示当前医生队列：等候池+候诊chips+下一位+就诊中，最多显示8个候诊，WebSocket实时更新）
 │       │   ├── CallOverlay.tsx        # 叫号通知弹窗（桌面端absolute定位，移动端fixed定位固定屏幕顶部，15秒自动关闭+进度条）
+│       │   ├── TenantSelector.tsx     # 租户选择器（superAdmin/powerAdmin 切换管理租户）
+│       │   ├── PatientLayout.tsx      # 患者门户布局（独立于员工端，手机号登录）
+│       │   ├── AppointmentModal.tsx   # 预约弹窗（创建/编辑预约，选医生/时段）
+│       │   ├── AppointmentMatrix.tsx  # 预约矩阵（时段×医生二维可视化，点击快速预约）
+│       │   ├── DiskMonitor/           # 磁盘监控组件目录
+│       │   │   ├── index.tsx          # 磁盘状态卡片（磁盘/MySQL/MinIO 用量显示+轮询）
+│       │   │   ├── MigrateWizard.tsx  # 数据迁移向导（MySQL数据目录迁移步骤）
+│       │   │   ├── BackupDirChange.tsx # 备份目录变更向导
+│       │   │   └── VolumePicker.tsx   # Docker volume 选择器（列出 Docker 命名卷供选择）
 │       │   └── __tests__/           # 组件测试
 │       ├── pages/
 │       │   ├── Login.tsx            # 登录页路由入口
@@ -226,6 +260,17 @@ menzhen/
 │       │   │   └── FollowUpList.tsx  # 回访列表（统计卡片+搜索+Table/Card响应式，CRUD Modal，含康复标签）
 │       │   ├── queue/                 # 排队叫号
 │       │   │   └── QueueDashboard.tsx # 叫号大屏（医生卡片网格+队列滚动+取号+叫号+完成+WebSocket实时更新+页面可见性检测暂停滚动+移动端叫号通知fixed定位）
+│       │   ├── appointments/          # 预约管理
+│       │   │   └── AppointmentManage.tsx # 预约列表（日历+列表视图，CRUD，签到/取消，链接排队）
+│       │   ├── patient/               # 患者门户（独立路由 /patient/*，手机号登录）
+│       │   │   ├── PatientLogin.tsx   # 患者登录（手机号+验证码，选诊所）
+│       │   │   ├── PatientHome.tsx    # 患者主页（导航入口）
+│       │   │   ├── PatientAppointment.tsx # 患者自助预约
+│       │   │   ├── PatientQueue.tsx   # 患者取号/查看队列
+│       │   │   ├── PatientRecords.tsx # 患者查看诊疗记录列表
+│       │   │   ├── PatientRecordDetail.tsx # 诊疗记录详情（只读）
+│       │   │   ├── PatientBilling.tsx # 患者查看账单
+│       │   │   └── PatientMe.tsx      # 患者个人中心
 │       │   ├── statistics/            # 统计仪表盘
 │       │   │   ├── StatsDashboard.tsx # 综合仪表盘（时间选择+渐变汇总卡片+ECharts双轴图/堆叠图/分组图，响应式布局）
 │       │   │   └── components/        # SummaryCards（4卡片含治愈率）/RevenueTrendChart/RevenueBreakdownChart/PatientChart
@@ -234,7 +279,11 @@ menzhen/
 │       │       ├── RoleList.tsx     # 角色管理（卡片式布局+创建/编辑/删除 Modal，权限勾选）
 │       │       ├── TenantList.tsx   # 租户管理（卡片式布局+创建/编辑/启用禁用 Modal）
 │       │       ├── SystemConfig.tsx # 软件配置页面（敏感字段掩码展示、保存风险提示、配置影响说明抽屉）
-│       │       └── BackupRestore.tsx # 备份恢复页面（Docker状态、触发备份/恢复、本地/云端文件列表）
+│       │       ├── BackupRestore.tsx # 备份恢复页面（Docker状态、触发备份/恢复、本地/云端文件列表，嵌入 TenantMigrate 组件）
+│       │       ├── QueueSettings.tsx # 排队叫号设置（接诊医生管理、叫号参数、出诊配置）
+│       │       ├── AppointmentSlots.tsx # 预约时段配置（医生时段容量矩阵）
+│       │       ├── PatientPortalSettings.tsx # 患者门户设置（功能开关：登录/注册/预约/排队/查记录）
+│       │       └── TenantMigrate.tsx # 租户数据迁移（嵌入 BackupRestore，上传备份→解析→预览→导入）
 │       ├── store/
 │       │   ├── auth.tsx             # 认证状态管理（登录/登出/权限检查/角色信息）
 │       │   ├── accessibility.tsx    # 无障碍模式状态管理（大字模式/高对比度）
@@ -294,7 +343,7 @@ menzhen/
 | `name` | `varchar(50)` | 权限名称 |
 | `description` | `varchar(200)` | 描述 |
 
-**全部权限码（共 30 个）：** `patient:create`, `patient:read`, `patient:update`, `patient:delete`, `record:create`, `record:read`, `record:update`, `record:delete`, `oplog:read`, `user:manage`, `role:manage`, `herb:read`, `formula:read`, `prescription:create`, `prescription:read`, `tenant:manage`, `inventory:read`, `inventory:create`, `inventory:update`, `inventory:delete`, `billing:read`, `billing:create`, `tenant:user:manage`（诊所用户管理）, `tenant:role:manage`（诊所角色管理）, `followup:create`, `followup:read`, `followup:update`, `followup:delete`, `statistics:read`（统计数据）, `power_admin:manage`（superAdmin 管理 powerAdmin 账号及分组）
+**全部权限码（共 39 个）：** `patient:create`, `patient:read`, `patient:update`, `patient:delete`, `record:create`, `record:read`, `record:update`, `record:delete`, `oplog:read`, `user:manage`, `role:manage`, `herb:read`, `formula:read`, `prescription:create`, `prescription:read`, `tenant:manage`, `inventory:read`, `inventory:create`, `inventory:update`, `inventory:delete`, `billing:read`, `billing:create`, `tenant:user:manage`（诊所用户管理）, `tenant:role:manage`（诊所角色管理）, `followup:create`, `followup:read`, `followup:update`, `followup:delete`, `statistics:read`（统计数据）, `queue:read`（查看排队）, `queue:create`（取号）, `queue:update`（叫号/完成）, `queue:clear`（清空排队）, `appointment:create`, `appointment:read`, `appointment:update`（修改/取消）, `appointment:delete`, `appointment:checkin`（预约签到）, `power_admin:manage`（superAdmin 管理 powerAdmin 账号及分组）
 
 #### `herbs` — 中药
 
@@ -652,6 +701,104 @@ menzhen/
 | `created_at` | `time.Time` | 创建时间（复合索引） |
 | `updated_at` | `time.Time` | 更新时间 |
 
+#### `queue_doctors` — 接诊医生配置（租户隔离，无软删除）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | `uint` | 主键 |
+| `tenant_id` | `uint` | 租户 ID（唯一复合索引 idx_qd_tenant_user） |
+| `user_id` | `uint` | 关联员工用户 ID（唯一复合索引 idx_qd_tenant_user） |
+| `room` | `varchar(50)` | 诊室名称 |
+| `sort_order` | `int` | 排序（默认 0） |
+| `enabled` | `bool` | 是否启用（默认 true，复合索引 idx_qd_tenant_enabled） |
+| `created_at` | `time.Time` | 创建时间 |
+| `updated_at` | `time.Time` | 更新时间 |
+
+#### `appointments` — 预约记录（租户隔离，无软删除）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | `uint` | 主键 |
+| `tenant_id` | `uint` | 租户 ID（索引） |
+| `patient_id` | `*uint` | 关联患者 ID（nullable） |
+| `patient_name` | `varchar(50)` | 患者姓名（冗余） |
+| `doctor_id` | `uint` | 接诊医生用户 ID |
+| `doctor_name` | `varchar(50)` | 医生姓名（冗余） |
+| `room` | `varchar(50)` | 诊室 |
+| `appoint_date` | `date` | 预约日期（索引） |
+| `slot_start` | `varchar(5)` | 时段开始，如 "08:30" |
+| `slot_end` | `varchar(5)` | 时段结束 |
+| `status` | `varchar(20)` | 状态：pending/queued/cancelled/no_show（默认 pending） |
+| `queue_entry_id` | `*uint` | 关联排队记录 ID（入队后填写） |
+| `created_at` | `time.Time` | 创建时间 |
+| `updated_at` | `time.Time` | 更新时间 |
+
+#### `appointment_slot_configs` — 预约时段配置（租户隔离，无软删除）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | `uint` | 主键 |
+| `tenant_id` | `uint` | 租户 ID（唯一复合索引 idx_slot_config） |
+| `doctor_id` | `uint` | 医生用户 ID（唯一复合索引 idx_slot_config） |
+| `slot_start` | `varchar(5)` | 时段开始（唯一复合索引 idx_slot_config） |
+| `slot_end` | `varchar(5)` | 时段结束 |
+| `max_count` | `int` | 最大预约数（默认 1） |
+
+#### `doctor_schedule_configs` — 医生出诊规则（租户隔离，无软删除）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | `uint` | 主键 |
+| `tenant_id` | `uint` | 租户 ID（唯一复合索引 uk_doctor_schedule） |
+| `doctor_id` | `uint` | 医生用户 ID（唯一复合索引 uk_doctor_schedule） |
+| `weekdays` | `uint8` | 出诊星期 bitmask（bit0=周日 … bit6=周六，0=全部） |
+| `range_start` | `int` | 可预约起始天数（默认 1） |
+| `range_end` | `int` | 可预约结束天数（默认 30） |
+
+#### `patient_users` — 患者门户账号（租户隔离，无软删除）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | `uint64` | 主键 |
+| `tenant_id` | `uint64` | 租户 ID（唯一复合索引 idx_pu_tenant_phone） |
+| `phone` | `varchar(20)` | 手机号（唯一复合索引 idx_pu_tenant_phone） |
+| `name` | `varchar(50)` | 姓名 |
+| `password_hash` | `varchar(255)` | bcrypt 密码（初始为手机号后4位） |
+| `patient_id` | `*uint64` | 关联患者 ID（nullable，索引） |
+| `created_at` | `time.Time` | 创建时间 |
+| `updated_at` | `time.Time` | 更新时间 |
+
+#### `patient_portal_configs` — 患者门户功能开关（租户级，无软删除）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `tenant_id` | `uint64` | 主键（每租户一行） |
+| `login_enabled` | `bool` | 登录开关（默认 true） |
+| `register_enabled` | `bool` | 注册开关（默认 true） |
+| `appointment_enabled` | `bool` | 预约功能开关（默认 true） |
+| `queue_enabled` | `bool` | 排队功能开关（默认 true） |
+| `records_enabled` | `bool` | 查看记录开关（默认 true） |
+
+#### `daily_staff_stats` — 员工每日营收统计（租户隔离，无软删除）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | `uint64` | 主键 |
+| `tenant_id` | `uint64` | 租户 ID（唯一复合索引 idx_staff_tenant_user_date） |
+| `user_id` | `uint64` | 员工用户 ID（唯一复合索引 idx_staff_tenant_user_date） |
+| `stat_date` | `date` | 统计日期（唯一复合索引 idx_staff_tenant_user_date） |
+| `revenue` | `decimal(12,2)` | 实收总额 |
+| `consultation_fee` | `decimal(12,2)` | 诊金合计 |
+| `drug_fee` | `decimal(12,2)` | 药费合计 |
+| `record_count` | `int` | 诊疗记录数 |
+
+#### `system_settings` — 系统键值配置（全局，无软删除）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `key` | `varchar(100)` | 主键，配置键名 |
+| `value` | `text` | 配置值 |
+
 ---
 
 ## API 路由清单
@@ -845,6 +992,7 @@ menzhen/
 | 方法 | 路径 | 权限 | 说明 |
 |------|------|------|------|
 | GET | `/api/v1/tenants` | `tenant:manage` | 租户列表 |
+| GET | `/api/v1/tenants/accessible` | superAdmin 或 powerAdmin | 可访问租户列表（powerAdmin 按授权分组过滤） |
 | POST | `/api/v1/tenants` | `tenant:manage` | 创建租户 |
 | PUT | `/api/v1/tenants/:id` | `tenant:manage` | 更新租户 |
 | DELETE | `/api/v1/tenants/:id` | `tenant:manage` | 删除租户 |
@@ -895,6 +1043,7 @@ menzhen/
 |------|------|------|------|
 | GET | `/api/v1/statistics/dashboard` | `statistics:read` | 统计仪表盘（参数：start_date, end_date）返回 summary（含 cure_rate/cure_rate_change_percent）、daily_trend、breakdown |
 | POST | `/api/v1/statistics/rebuild` | `tenant:manage` | 重建全部统计数据 |
+| GET | `/api/v1/statistics/staff` | `statistics:read` | 员工营收统计（按人员分组汇总，返回 staff_stats 列表） |
 | GET | `/api/v1/admin/statistics/global` | 内部验证（superAdmin 或 powerAdmin） | 全局统计：superAdmin 看全部，powerAdmin 按授权分组过滤 |
 
 #### SuperAdmin — powerAdmin 管理
@@ -949,6 +1098,112 @@ menzhen/
 | GET | `/api/v1/backup/list/cloud` | `user:manage` | 云端备份文件列表 |
 | POST | `/api/v1/restore/trigger` | `user:manage` | 触发恢复 |
 | GET | `/api/v1/restore/status/:task_id` | `user:manage` | 恢复任务状态 |
+
+### 排队叫号配置（租户隔离）
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| GET | `/api/v1/queue-doctors` | `queue:read` | 接诊医生列表（含用户名） |
+| POST | `/api/v1/queue-doctors` | `tenant:user:manage` | 新增接诊医生配置 |
+| PUT | `/api/v1/queue-doctors/:id` | `tenant:user:manage` | 更新接诊医生配置 |
+| DELETE | `/api/v1/queue-doctors/:id` | `tenant:user:manage` | 删除接诊医生配置 |
+| GET | `/api/v1/queue-doctors/:id/schedule` | `appointment:read` | 获取医生出诊规则 |
+| PUT | `/api/v1/queue-doctors/:id/schedule` | `appointment:update` | 更新医生出诊规则 |
+| GET | `/api/v1/tenant/queue-enabled` | `queue:read` | 获取排队功能开关 |
+| PUT | `/api/v1/tenant/queue-enabled` | `tenant:user:manage` | 设置排队功能开关 |
+| GET | `/api/v1/tenant/call-duration` | `queue:read` | 获取叫号显示时长（秒） |
+| PUT | `/api/v1/tenant/call-duration` | `tenant:user:manage` | 设置叫号显示时长 |
+| GET | `/api/v1/tenant/show-arrival-time` | `queue:read` | 获取是否显示到达时间 |
+| PUT | `/api/v1/tenant/show-arrival-time` | `tenant:user:manage` | 设置是否显示到达时间 |
+| GET | `/api/v1/tenant/call-sound-enabled` | `queue:read` | 获取叫号声音开关 |
+| PUT | `/api/v1/tenant/call-sound-enabled` | `queue:read` | 设置叫号声音开关 |
+| GET | `/api/v1/tenant/appointment-enabled` | `appointment:read` | 获取预约功能开关 |
+| PUT | `/api/v1/tenant/appointment-enabled` | `appointment:update` | 设置预约功能开关 |
+| GET | `/api/v1/tenant/appointment-config` | `appointment:read` | 获取预约高级配置 |
+| PUT | `/api/v1/tenant/appointment-config` | `appointment:update` | 设置预约高级配置 |
+
+### 预约管理（租户隔离）
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| GET | `/api/v1/appointments` | `appointment:read` | 预约列表（支持日期/状态/医生筛选） |
+| POST | `/api/v1/appointments` | `appointment:create` | 创建预约 |
+| GET | `/api/v1/appointments/slots` | `appointment:read` | 查询某日时段剩余可预约数 |
+| GET | `/api/v1/appointments/matrix` | `appointment:read` | 预约矩阵（时段×医生二维数据） |
+| POST | `/api/v1/appointments/enqueue-today` | `appointment:update` | 手动将当日待入队预约入队 |
+| PUT | `/api/v1/appointments/:id` | `appointment:update` | 更新预约 |
+| POST | `/api/v1/appointments/:id/checkin` | `appointment:checkin` | 预约签到 |
+| POST | `/api/v1/appointments/:id/cancel` | `appointment:update` | 取消预约 |
+| DELETE | `/api/v1/appointments/:id` | `appointment:delete` | 删除预约（仅 cancelled/no_show 状态） |
+
+### 预约时段配置（租户隔离）
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| GET | `/api/v1/appointment-slots` | `appointment:read` | 时段配置列表（按医生分组） |
+| POST | `/api/v1/appointment-slots` | `appointment:update` | 新建时段配置 |
+| PUT | `/api/v1/appointment-slots/:id` | `appointment:update` | 更新时段配置 |
+| DELETE | `/api/v1/appointment-slots/:id` | `appointment:update` | 删除时段配置 |
+
+### 磁盘监控（需 user:manage）
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| GET | `/api/v1/disk/status` | `user:manage` | 磁盘/MySQL/MinIO 使用状态（含定时采集结果） |
+| PUT | `/api/v1/disk/interval` | `user:manage` | 设置采集间隔（秒） |
+| GET | `/api/v1/disk/volumes` | `user:manage` | 列出 Docker 命名卷（via Docker API，跨平台） |
+| POST | `/api/v1/disk/migrate` | `user:manage` | 启动 MySQL 数据目录迁移（异步） |
+| GET | `/api/v1/disk/migrate/status` | `user:manage` | 迁移任务状态 |
+| POST | `/api/v1/disk/backup-dir` | `user:manage` | 更改备份目录（异步） |
+| GET | `/api/v1/disk/backup-dir/status` | `user:manage` | 备份目录变更任务状态 |
+
+### 租户数据迁移（需 user:manage）
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| POST | `/api/v1/tenant-migrate/upload` | `user:manage` | 上传备份文件（ZIP/SQL） |
+| POST | `/api/v1/tenant-migrate/parse` | `user:manage` | 从已有备份文件解析（可用本地备份） |
+| GET | `/api/v1/tenant-migrate/status/:task_id` | `user:manage` | 迁移任务状态 |
+| POST | `/api/v1/tenant-migrate/execute` | `user:manage` | 执行导入（将源租户数据导入目标租户） |
+| GET | `/api/v1/tenant-migrate/backup-files` | `user:manage` | 列出可用本地备份文件 |
+
+### 患者门户（独立 JWT，30 天有效期）
+
+#### 公开路由（无需认证）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/v1/patient/auth/login` | 患者登录（手机号+密码，返回 patient_token） |
+| GET | `/api/v1/patient/auth/tenant-list` | 按手机号查找已注册的诊所列表 |
+| GET | `/api/v1/patient/auth/tenant-info` | 获取诊所信息（功能开关） |
+| GET | `/api/v1/patient/ws` | 患者 WebSocket（patient_token via query param） |
+
+#### 认证患者路由（需 patient_token）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/v1/patient/me` | 获取当前患者信息 |
+| GET | `/api/v1/patient/doctors` | 医生列表（可预约医生） |
+| GET | `/api/v1/patient/doctors/:id/schedule` | 医生出诊计划 |
+| GET | `/api/v1/patient/appointments` | 患者预约列表 |
+| POST | `/api/v1/patient/appointments` | 创建预约 |
+| GET | `/api/v1/patient/appointments/slots` | 查询可用时段 |
+| POST | `/api/v1/patient/appointments/:id/cancel` | 取消预约 |
+| DELETE | `/api/v1/patient/appointments/:id` | 删除预约 |
+| POST | `/api/v1/patient/appointments/:id/checkin` | 预约签到 |
+| POST | `/api/v1/patient/queue/take` | 患者取号 |
+| GET | `/api/v1/patient/queue/my-status` | 查询我的排队状态 |
+| GET | `/api/v1/patient/queue/list` | 查看当前队列 |
+| GET | `/api/v1/patient/records` | 患者诊疗记录列表（只读） |
+| GET | `/api/v1/patient/records/:id` | 诊疗记录详情（只读） |
+| GET | `/api/v1/patient/billings` | 患者账单列表（只读） |
+
+#### 管理端患者门户配置路由（需 tenant:user:manage）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/v1/tenant/patient-portal-config` | 获取患者门户功能开关配置 |
+| PUT | `/api/v1/tenant/patient-portal-config` | 更新患者门户功能开关配置 |
 
 ---
 
@@ -1015,6 +1270,59 @@ menzhen/
   -> 点击标签可直接查看缓存结果
   -> Drawer 中提供「重新分析」按钮强制刷新
   -> Markdown 渲染使用 remark-gfm 插件，支持 GFM 表格/删除线等扩展语法
+```
+
+### 预约管理流程
+
+```
+管理端创建预约（POST /appointments）
+  -> 保存 Appointment（status=pending）
+  -> main.go goroutine：启动即执行预约自动入队（AutoEnqueueByDate，每隔30秒重试，直至成功）
+  -> 每天0点：预约日期到达时自动将 status=pending 的预约入队（status=queued）
+
+患者签到（POST /appointments/:id/checkin）
+  -> 找到对应 QueueEntry，患者到场确认
+  -> 状态转换: pending/queued -> 签到状态记录（checkin_status=done）
+
+患者门户预约（POST /patient/appointments）
+  -> PatientAuthMiddleware 验证 patient_token（30天有效）
+  -> 检查 PatientPortalConfig.AppointmentEnabled
+  -> 同 Create 流程
+```
+
+### 患者门户流程
+
+```
+患者登录（POST /patient/auth/login）
+  -> 手机号 + 诊所 code 登录
+  -> PatientUser 不存在时自动注册（password=手机号后4位 bcrypt）
+  -> 返回 patient_token（30天有效，独立于员工 JWT）
+
+患者自助预约
+  -> GET /patient/doctors 获取可预约医生
+  -> GET /patient/appointments/slots 查询时段余量
+  -> POST /patient/appointments 创建预约
+
+患者查看诊疗记录
+  -> GET /patient/records（只读，仅本人关联记录）
+  -> GET /patient/records/:id（处方/账单不含敏感价格）
+```
+
+### 磁盘监控与数据迁移流程
+
+```
+磁盘状态采集（定时任务）
+  -> DiskService 定时采集磁盘/MySQL data目录/MinIO 存储使用情况
+  -> GET /disk/status 返回最新采集结果
+
+MySQL 数据目录迁移（异步）
+  -> POST /disk/migrate（source_path + target_path）
+  -> 停服 -> rsync 数据 -> 更改 MySQL datadir -> 重启
+  -> GET /disk/migrate/status 轮询进度
+
+备份目录变更（异步）
+  -> POST /disk/backup-dir（new_path）
+  -> 复制现有备份 -> 更新配置 -> GET /disk/backup-dir/status 轮询
 ```
 
 ### 租户隔离
@@ -1110,18 +1418,19 @@ menzhen/
 ### 种子数据
 
 启动时 `Seed()` 幂等写入：
-1. **29 个权限** — upsert 模式（逐条检查 code，不存在则创建）
-2. **默认租户** — code=`default`, name=`默认诊所`
+1. **39 个权限** — upsert 模式（逐条检查 code，不存在则创建）
+2. **默认租户** — code=`1000`, name=`默认诊所`
 3. **管理员角色** — 关联全部权限（已存在则同步权限集）
 4. **管理员用户** — username=`admin`, password=`admin123`
-5. **诊所运营角色** — 关联 `tenant:user:manage`, `tenant:role:manage`
+5. **诊所运营角色** — 关联 `tenant:user:manage`, `tenant:role:manage`, `statistics:read`
 6. **24 节气** — 幂等写入（如已存在则跳过）
 7. **64 卦象** — 从 hexagram_seed.json 加载（如已存在则跳过）
 8. **空日统计回填** — 重建缺失的 daily_stats 记录
+9. **空员工统计回填** — 重建缺失的 daily_staff_stats 记录
 
 ### 默认角色
 
 | 角色名 | 权限 | 说明 |
 |--------|------|------|
-| 管理员 | 全部 29 个权限 | 超级管理员，自动由 seed 创建 |
-| 诊所运营 | `tenant:user:manage`, `tenant:role:manage` | 可管理本诊所用户和角色，但不可跨租户操作 |
+| 管理员 | 全部 39 个权限 | 超级管理员，自动由 seed 创建，每次启动同步最新全量权限 |
+| 诊所运营 | `tenant:user:manage`, `tenant:role:manage`, `statistics:read` | 可管理本诊所用户和角色、查看统计，但不可跨租户操作 |

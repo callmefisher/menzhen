@@ -22,29 +22,30 @@ export interface DiskTask {
   start_at: string;
 }
 
-export interface DirEntry {
+export interface DockerVolume {
   name: string;
-  path: string;
-  is_dir: boolean;
+  driver: string;
+  mountpoint: string;
+  created_at: string;
 }
 
 export const getDiskStatus = () =>
-  request.get<{ code: number; data: DiskStatus }>('/disk/status');
+  request.get<DiskStatus>('/disk/status');
 
 export const setDiskInterval = (interval: number) =>
-  request.put<{ code: number }>('/disk/interval', { interval });
+  request.put<void>('/disk/interval', { interval });
 
-export const browseFS = (path: string) =>
-  request.get<{ code: number; data: DirEntry[] }>('/disk/fs', { params: { path } });
+export const listVolumes = () =>
+  request.get<DockerVolume[]>('/disk/volumes');
 
-export const startMigrate = (target: 'mysql' | 'minio', newPath: string) =>
-  request.post<{ code: number; data: DiskTask }>('/disk/migrate', { target, new_path: newPath });
+export const startMigrate = (target: 'mysql' | 'minio', newDest: string) =>
+  request.post<DiskTask>('/disk/migrate', { target, new_path: newDest });
 
 export const getMigrateStatus = (taskId: string) =>
-  request.get<{ code: number; data: DiskTask }>('/disk/migrate/status', { params: { task_id: taskId } });
+  request.get<DiskTask>('/disk/migrate/status', { params: { task_id: taskId } });
 
-export const changeBackupDir = (newPath: string) =>
-  request.post<{ code: number; data: DiskTask }>('/disk/backup-dir', { new_path: newPath });
+export const changeBackupDir = (newDest: string) =>
+  request.post<DiskTask>('/disk/backup-dir', { new_path: newDest });
 
 export const getBackupDirStatus = (taskId: string) =>
-  request.get<{ code: number; data: DiskTask }>('/disk/backup-dir/status', { params: { task_id: taskId } });
+  request.get<DiskTask>('/disk/backup-dir/status', { params: { task_id: taskId } });

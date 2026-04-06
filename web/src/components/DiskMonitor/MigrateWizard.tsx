@@ -5,7 +5,7 @@ import {
 } from 'antd'
 import { startMigrate, getMigrateStatus } from '../../api/disk'
 import type { DiskTask } from '../../api/disk'
-import DirBrowser from './DirBrowser'
+import VolumePicker from './VolumePicker'
 
 interface Props {
   open: boolean
@@ -49,12 +49,12 @@ const MigrateWizard: React.FC<Props> = ({ open, onClose }) => {
     }
     try {
       const res = await startMigrate(target, newPath.trim())
-      const t = res.data.data
+      const t = res.data
       setTask(t)
       pollRef.current = setInterval(async () => {
         try {
           const r = await getMigrateStatus(t.task_id)
-          const updated = r.data.data
+          const updated = r.data
           setTask(updated)
           if (updated.status !== 'running') stopPoll()
         } catch {
@@ -102,14 +102,14 @@ const MigrateWizard: React.FC<Props> = ({ open, onClose }) => {
                   ]}
                 />
               </Form.Item>
-              <Form.Item label="新目标路径（宿主机绝对路径）">
+              <Form.Item label="新目标路径（volume 名或宿主机绝对路径）">
                 <Space.Compact style={{ width: '100%' }}>
                   <Input
                     value={newPath}
                     onChange={e => setNewPath(e.target.value)}
-                    placeholder="/new/data/path"
+                    placeholder="mysql-data-ssd 或 /mnt/ssd/mysql"
                   />
-                  <Button onClick={() => setBrowsing(true)}>📁 浏览</Button>
+                  <Button onClick={() => setBrowsing(true)}>📦 选择</Button>
                 </Space.Compact>
               </Form.Item>
             </Form>
@@ -145,9 +145,11 @@ const MigrateWizard: React.FC<Props> = ({ open, onClose }) => {
         )}
       </Modal>
 
-      <DirBrowser
+      <VolumePicker
         open={browsing}
-        onSelect={path => { setNewPath(path); setBrowsing(false) }}
+        title="选择迁移目标 volume"
+        value={newPath}
+        onChange={path => setNewPath(path)}
         onClose={() => setBrowsing(false)}
       />
     </>

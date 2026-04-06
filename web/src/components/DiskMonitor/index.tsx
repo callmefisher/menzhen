@@ -46,7 +46,7 @@ const DiskMonitor: React.FC = () => {
     setLoading(true)
     setError(null)
     getDiskStatus()
-      .then(res => { setStatus(res.data.data) })
+      .then(res => { setStatus(res.data) })
       .catch(() => {
         if (!controller.signal.aborted) setError('磁盘状态获取失败')
       })
