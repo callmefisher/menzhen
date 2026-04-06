@@ -31,7 +31,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.04.06.210000"
+WIZARD_VERSION = "2026.04.06.223900"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -1577,7 +1577,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                         f"git checkout -f origin/main -- . {EXCLUDE} && "
                         "git reset origin/main && "
                         "echo '代码下载完成，开始构建...' && "
-                        f"docker pull minio/minio; {build_cmd}"
+                        f"(docker pull minio/minio || true) && {build_cmd}"
                     )
                     stream_command(self, ["bash", "-c", clone_and_build])
             else:
@@ -1593,7 +1593,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                     stream_command(self, ["bash", "-c",
                                           f"cd {q_dir} && "
                                           f"{vol_cleanup}"
-                                          f"docker pull minio/minio; {build_cmd}"])
+                                          f"(docker pull minio/minio || true) && {build_cmd}"])
             return
 
         if self.path == "/api/check-repo":
@@ -2097,7 +2097,7 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                 docker_cmd = [
                     "bash", "-c",
                     "echo '[2/3] 正在重新构建程序（约5-15分钟）...' && "
-                    f"docker pull minio/minio; {build_cmd} && "
+                    f"(docker pull minio/minio || true) && {build_cmd} && "
                     "echo '[3/3] 正在重启服务...' && "
                     "docker compose up -d --force-recreate && "
                     "docker compose up -d nginx && "

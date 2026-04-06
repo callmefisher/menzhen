@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button } from 'antd';
 import { formatRoom } from '../utils/format';
 
@@ -27,6 +27,9 @@ export default function CallOverlay({
   const [progress, setProgress] = useState(100);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startRef = useRef(0);
+  // Keep onClose in a ref so timer effect doesn't re-run when parent re-renders
+  const onCloseRef = useRef(onClose);
+  useLayoutEffect(() => { onCloseRef.current = onClose; });
 
   const displayRoom = formatRoom(room);
 
@@ -43,13 +46,13 @@ export default function CallOverlay({
       setProgress(remaining);
       if (remaining <= 0) {
         if (timerRef.current) clearInterval(timerRef.current);
-        onClose();
+        onCloseRef.current();
       }
     }, 50);
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [visible, duration, onClose]);
+  }, [visible, duration]); // onClose intentionally excluded — stored in ref above
 
   if (!visible) return null;
 
