@@ -31,7 +31,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.04.06.224101"
+WIZARD_VERSION = "2026.04.06.224501"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -283,7 +283,7 @@ def _per_service_build_cmd(os_key, standalone=True):
         # Use "set VAR=val & ..." to export for the whole cmd session.
         # & chains all steps unconditionally; wizard verifies via check-images.
         steps = [
-            f"echo === [{i}/{n}] 构建 {svc} === & docker compose build --progress=plain {svc}"
+            f"echo === [{i}/{n}] 构建 {svc} === & docker compose build --no-cache --progress=plain {svc}"
             for i, svc in enumerate(BUILD_SERVICES, 1)
         ]
         return "set DOCKER_BUILDKIT=1 & " + " & ".join(steps)
@@ -293,7 +293,7 @@ def _per_service_build_cmd(os_key, standalone=True):
         # Wrapped in (...) subshell so the ';' separators don't break an
         # outer && chain (e.g. git fetch && ... && BUILD_CMD).
         steps = [
-            f"echo '=== [{i}/{n}] 构建 {svc} ==='; DOCKER_BUILDKIT=1 docker compose build --progress=plain {svc} || _f=1"
+            f"echo '=== [{i}/{n}] 构建 {svc} ==='; DOCKER_BUILDKIT=1 docker compose build --no-cache --progress=plain {svc} || _f=1"
             for i, svc in enumerate(BUILD_SERVICES, 1)
         ]
         inner = "_f=0; " + "; ".join(steps)
