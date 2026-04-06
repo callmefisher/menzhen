@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/callmefisher/menzhen/server/service"
@@ -70,7 +71,11 @@ func (h *DiskHandler) StartMigrate(c *gin.Context) {
 	}
 	task, err := h.svc.StartMigrate(req.Target, req.NewPath)
 	if err != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		status := http.StatusBadRequest
+		if errors.Is(err, service.ErrTaskAlreadyRunning) {
+			status = http.StatusConflict
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": task})
@@ -102,7 +107,11 @@ func (h *DiskHandler) ChangeBackupDir(c *gin.Context) {
 	}
 	task, err := h.svc.ChangeBackupDir(req.NewPath)
 	if err != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		status := http.StatusBadRequest
+		if errors.Is(err, service.ErrTaskAlreadyRunning) {
+			status = http.StatusConflict
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": task})

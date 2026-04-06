@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -26,6 +27,9 @@ const (
 	defaultInterval        = 3600 // 1 hour in seconds
 	hostFSRoot             = "/hostfs"
 )
+
+// ErrTaskAlreadyRunning is returned when an identical task type is already running.
+var ErrTaskAlreadyRunning = errors.New("task already running")
 
 // DiskService 磁盘监控服务
 type DiskService struct {
@@ -568,6 +572,66 @@ func (s *DiskService) updateComposeVolume(oldBind, newBind string) error {
 	return nil
 }
 
+// ─── getContainerMount ─────────────────────────────────────────────────────
+
+// getContainerMount inspects a container and returns the host path for the given container path.
+func (s *DiskService) getContainerMount(container, containerPath string) (string, error) {
+	req, err := http.NewRequest("GET",
+		s.dockerURL(fmt.Sprintf("/containers/%s/json", container)), nil)
+	if err != nil {
+		return "", fmt.Errorf("inspect request: %w", err)
+	}
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("docker inspect %s: %w", container, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		b, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("docker inspect %s (%d): %s", container, resp.StatusCode, b)
+	}
+
+	var info struct {
+		Mounts []struct {
+			Type        string `json:"Type"`
+			Source      string `json:"Source"`
+			Destination string `json:"Destination"`
+			Name        string `json:"Name"`
+		} `json:"Mounts"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return "", fmt.Errorf("parse inspect: %w", err)
+	}
+
+	for _, m := range info.Mounts {
+		if m.Destination == containerPath {
+			return m.Source, nil
+		}
+	}
+	return "", fmt.Errorf("mount %q not found in container %s", containerPath, container)
+}
+
+// ─── findCurrentBackupsBind ────────────────────────────────────────────────
+
+// findCurrentBackupsBind reads docker-compose.yml and finds the current /backups bind mount.
+// Returns the bind string (e.g. "./backups:/backups" or "/mnt/backup:/backups").
+func (s *DiskService) findCurrentBackupsBind() (string, error) {
+	data, err := os.ReadFile(composePath)
+	if err != nil {
+		return "", fmt.Errorf("read compose: %w", err)
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "- ") {
+			bind := strings.TrimPrefix(trimmed, "- ")
+			if strings.HasSuffix(bind, ":/backups") {
+				return bind, nil
+			}
+		}
+	}
+	return "", fmt.Errorf(":/backups bind not found in compose file")
+}
+
 // ─── StartMigrate ──────────────────────────────────────────────────────────
 
 // StartMigrate starts an async 6-step MySQL or MinIO data directory migration.
@@ -576,7 +640,7 @@ func (s *DiskService) updateComposeVolume(oldBind, newBind string) error {
 func (s *DiskService) StartMigrate(target, newPath string) (*model.DiskTask, error) {
 	taskType := "migrate_" + target
 	if s.HasRunningTask(taskType) {
-		return nil, fmt.Errorf("%s 迁移任务正在进行中", target)
+		return nil, fmt.Errorf("%s 迁移任务正在进行中: %w", target, ErrTaskAlreadyRunning)
 	}
 
 	// Validate newPath: must be absolute and not escape hostFSRoot
@@ -681,7 +745,7 @@ func (s *DiskService) StartMigrate(target, newPath string) (*model.DiskTask, err
 // Steps: rsync/copy files → update compose → restart backup+api → verify
 func (s *DiskService) ChangeBackupDir(newPath string) (*model.DiskTask, error) {
 	if s.HasRunningTask("backup_dir") {
-		return nil, fmt.Errorf("备份目录更换任务正在进行中")
+		return nil, fmt.Errorf("备份目录更换任务正在进行中: %w", ErrTaskAlreadyRunning)
 	}
 
 	// Validate newPath
@@ -705,20 +769,27 @@ func (s *DiskService) ChangeBackupDir(newPath string) (*model.DiskTask, error) {
 			s.finishTask(taskID, "failed", fmt.Sprintf("创建目标目录失败: %v", err))
 			return
 		}
-		// Copy from backup container's /backups to new host path via exec
-		cpOut, cpErr := s.dockerExec(backupContainer(), "sh", "-c",
-			"cp -a /backups/. /hostfs_dest/ 2>&1 || true")
-		_ = cpOut
-		if cpErr != nil {
-			// Non-fatal: log and continue (new directory will be empty initially)
-			log.Printf("[disk] backup copy warning: %v", cpErr)
+		// Get current backup host path to copy from
+		backupHostPath, getErr := s.getContainerMount(backupContainer(), "/backups")
+		if getErr != nil {
+			log.Printf("[disk] could not get current backup mount path: %v — skipping file copy", getErr)
+		} else if backupHostPath != "" && backupHostPath != newPath {
+			// runCopyContainer accepts either a named volume or a host path as source
+			if copyErr := s.runCopyContainer(backupHostPath, newPath); copyErr != nil {
+				log.Printf("[disk] backup copy warning: %v — new directory may be empty", copyErr)
+			}
 		}
 		s.updateTask(taskID, 1, "文件复制完成（或已跳过）")
 
 		// Step 2: update docker-compose.yml
 		s.updateTask(taskID, 2, "Step 2/4: 更新 docker-compose.yml...")
-		oldBind := "./backups:/backups"
-		newBind := newPath + ":/backups"
+		newBind := cleanPath + ":/backups"
+		// Read current compose to find actual bind (handles repeated changes)
+		oldBind, readErr := s.findCurrentBackupsBind()
+		if readErr != nil {
+			log.Printf("[disk] could not read current backups bind, using default: %v", readErr)
+			oldBind = "./backups:/backups"
+		}
 		if err := s.updateComposeVolume(oldBind, newBind); err != nil {
 			s.finishTask(taskID, "failed", fmt.Sprintf("更新配置失败: %v", err))
 			return
