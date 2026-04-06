@@ -440,7 +440,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		{
 			diskRoutes.GET("/status", middleware.RequirePermission(db, "user:manage"), diskHandler.GetStatus)
 			diskRoutes.PUT("/interval", middleware.RequirePermission(db, "user:manage"), diskHandler.SetInterval)
-			diskRoutes.GET("/fs", middleware.RequirePermission(db, "user:manage"), diskHandler.BrowseFS)
+			diskRoutes.GET("/volumes", middleware.RequirePermission(db, "user:manage"), diskHandler.ListVolumes)
 			diskRoutes.POST("/migrate", middleware.RequirePermission(db, "user:manage"), diskHandler.StartMigrate)
 			diskRoutes.GET("/migrate/status", middleware.RequirePermission(db, "user:manage"), diskHandler.GetMigrateStatus)
 			diskRoutes.POST("/backup-dir", middleware.RequirePermission(db, "user:manage"), diskHandler.ChangeBackupDir)

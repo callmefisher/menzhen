@@ -38,7 +38,6 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./backups:/backups
       - ./docker-compose.yml:/app/docker-compose.yml
-      - /:/hostfs:ro
     depends_on:
       mysql:
         condition: service_healthy

@@ -21,31 +21,70 @@ func setupDiskRouter(t *testing.T) *gin.Engine {
 	t.Cleanup(h.Shutdown)
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	r.GET("/disk/fs", h.BrowseFS)
+	r.GET("/disk/volumes", h.ListVolumes)
 	r.PUT("/disk/interval", h.SetInterval)
+	r.POST("/disk/migrate", h.StartMigrate)
+	r.POST("/disk/backup-dir", h.ChangeBackupDir)
 	return r
 }
 
-func TestBrowseFS_InvalidPath(t *testing.T) {
+func TestListVolumes_ReturnsJSONNotPanic(t *testing.T) {
 	r := setupDiskRouter(t)
-
-	// path traversal must be rejected or return empty list — NOT expose /etc contents
-	req := httptest.NewRequest("GET", "/disk/fs?path=../../etc", nil)
+	// Docker socket is unavailable in CI — expect 200 or 500, never a panic or empty response.
+	req := httptest.NewRequest("GET", "/disk/volumes", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
+	assert.Contains(t, []int{http.StatusOK, http.StatusInternalServerError}, w.Code)
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	_, hasCode := resp["code"]
+	_, hasError := resp["error"]
+	assert.True(t, hasCode || hasError, "response must have 'code' or 'error' field")
+}
 
-	if w.Code == http.StatusOK {
-		var resp map[string]interface{}
-		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-		data, _ := resp["data"].([]interface{})
-		for _, entry := range data {
-			m, _ := entry.(map[string]interface{})
-			path, _ := m["path"].(string)
-			assert.False(t, strings.Contains(path, "etc"),
-				"path traversal must not expose /etc: %s", path)
-		}
-	} else {
-		assert.Equal(t, http.StatusBadRequest, w.Code)
+func TestStartMigrate_Validation(t *testing.T) {
+	r := setupDiskRouter(t)
+
+	cases := []struct {
+		name     string
+		body     map[string]string
+		wantCode int
+	}{
+		{"unknown target", map[string]string{"target": "redis", "new_path": "vol"}, http.StatusBadRequest},
+		{"empty new_path", map[string]string{"target": "mysql", "new_path": ""}, http.StatusBadRequest},
+		{"missing target field", map[string]string{"new_path": "vol"}, http.StatusBadRequest},
+	}
+
+	for _, tc := range cases {
+		b, err := json.Marshal(tc.body)
+		require.NoError(t, err)
+		req := httptest.NewRequest("POST", "/disk/migrate", strings.NewReader(string(b)))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		assert.Equal(t, tc.wantCode, w.Code, "case: %s", tc.name)
+	}
+}
+
+func TestChangeBackupDir_Validation(t *testing.T) {
+	r := setupDiskRouter(t)
+
+	cases := []struct {
+		name     string
+		body     string
+		wantCode int
+	}{
+		{"empty new_path value", `{"new_path":""}`, http.StatusBadRequest},
+		{"missing new_path field", `{"other":"x"}`, http.StatusBadRequest},
+		{"whitespace only", `{"new_path":"   "}`, http.StatusBadRequest},
+	}
+
+	for _, tc := range cases {
+		req := httptest.NewRequest("POST", "/disk/backup-dir", strings.NewReader(tc.body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		assert.Equal(t, tc.wantCode, w.Code, "case: %s", tc.name)
 	}
 }
 
@@ -74,13 +113,4 @@ func TestSetInterval_ValidValues(t *testing.T) {
 		assert.Equal(t, tc.wantCode, w.Code,
 			"interval=%d expected %d got %d", tc.interval, tc.wantCode, w.Code)
 	}
-}
-
-func TestBrowseFS_RootPath(t *testing.T) {
-	r := setupDiskRouter(t)
-	// In test environment /hostfs likely doesn't exist → should return 200 with empty list, not 500
-	req := httptest.NewRequest("GET", "/disk/fs?path=/", nil)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-	assert.NotEqual(t, http.StatusInternalServerError, w.Code)
 }

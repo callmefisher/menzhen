@@ -145,7 +145,7 @@ export default function PatientAppointment() {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                 <Tag color={statusColor[a.status]}>{statusLabel[a.status] ?? a.status}</Tag>
-                {(a.status === 'pending' || a.status === 'queued') && a.appoint_date === today && a.checkin_status !== 'done' && (
+                {(a.status === 'pending' || a.status === 'queued') && a.appoint_date.slice(0, 10) === today && a.checkin_status !== 'done' && (
                   <Button size="small" type="primary"
                     style={{ background: '#52C41A', borderColor: '#52C41A' }}
                     loading={checkinLoading[a.id]}

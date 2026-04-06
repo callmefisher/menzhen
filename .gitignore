@@ -21,6 +21,7 @@ node_modules/
 
 # Build artifacts
 server/menzhen-api
+web/stats.html
 
 # Coverage reports
 web/coverage/

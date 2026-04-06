@@ -4,7 +4,7 @@ import {
 } from 'antd'
 import { changeBackupDir, getBackupDirStatus } from '../../api/disk'
 import type { DiskTask } from '../../api/disk'
-import DirBrowser from './DirBrowser'
+import VolumePicker from './VolumePicker'
 
 interface Props {
   open: boolean
@@ -39,12 +39,12 @@ const BackupDirChange: React.FC<Props> = ({ open, onClose }) => {
     if (!newPath.trim()) { message.warning('请填写目标路径'); return }
     try {
       const res = await changeBackupDir(newPath.trim())
-      const t = res.data.data
+      const t = res.data
       setTask(t)
       pollRef.current = setInterval(async () => {
         try {
           const r = await getBackupDirStatus(t.task_id)
-          const updated = r.data.data
+          const updated = r.data
           setTask(updated)
           if (updated.status !== 'running') stopPoll()
         } catch { stopPoll() }
@@ -77,14 +77,14 @@ const BackupDirChange: React.FC<Props> = ({ open, onClose }) => {
               message="更换过程中 MySQL/MinIO 不停机。backup 和 api 容器将短暂重启（约 10 秒）。"
             />
             <Form layout="vertical">
-              <Form.Item label="新备份目录（宿主机绝对路径）">
+              <Form.Item label="新备份目录（volume 名或宿主机绝对路径）">
                 <Space.Compact style={{ width: '100%' }}>
                   <Input
                     value={newPath}
                     onChange={e => setNewPath(e.target.value)}
-                    placeholder="/new/backup/path"
+                    placeholder="backup-vol 或 /mnt/nas/backups"
                   />
-                  <Button onClick={() => setBrowsing(true)}>📁 浏览</Button>
+                  <Button onClick={() => setBrowsing(true)}>📦 选择</Button>
                 </Space.Compact>
               </Form.Item>
             </Form>
@@ -118,9 +118,11 @@ const BackupDirChange: React.FC<Props> = ({ open, onClose }) => {
         )}
       </Modal>
 
-      <DirBrowser
+      <VolumePicker
         open={browsing}
-        onSelect={path => { setNewPath(path); setBrowsing(false) }}
+        title="选择备份目录"
+        value={newPath}
+        onChange={path => setNewPath(path)}
         onClose={() => setBrowsing(false)}
       />
     </>

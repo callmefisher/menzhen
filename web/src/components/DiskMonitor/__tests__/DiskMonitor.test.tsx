@@ -15,21 +15,18 @@ describe('DiskMonitor', () => {
     vi.clearAllMocks()
     mockGetStatus.mockResolvedValue({
       data: {
-        code: 0,
-        data: {
-          total: 500 * 1024 ** 3,
-          used: 200 * 1024 ** 3,
-          free: 300 * 1024 ** 3,
-          used_pct: 40,
-          mysql_used: 20 * 1024 ** 3,
-          minio_used: 100 * 1024 ** 3,
-          backup_used: 30 * 1024 ** 3,
-          collected_at: '2026-04-06T10:00:00Z',
-          interval: 3600,
-        }
+        total: 500 * 1024 ** 3,
+        used: 200 * 1024 ** 3,
+        free: 300 * 1024 ** 3,
+        used_pct: 40,
+        mysql_used: 20 * 1024 ** 3,
+        minio_used: 100 * 1024 ** 3,
+        backup_used: 30 * 1024 ** 3,
+        collected_at: '2026-04-06T10:00:00Z',
+        interval: 3600,
       }
     } as any)
-    mockSetInterval.mockResolvedValue({ data: { code: 0 } } as any)
+    mockSetInterval.mockResolvedValue({ data: {} } as any)
   })
 
   it('renders disk usage stats', async () => {
@@ -42,18 +39,15 @@ describe('DiskMonitor', () => {
   it('shows red border and warning banner when usage >= 90%', async () => {
     mockGetStatus.mockResolvedValueOnce({
       data: {
-        code: 0,
-        data: {
-          total: 100 * 1024 ** 3,
-          used: 92 * 1024 ** 3,
-          free: 8 * 1024 ** 3,
-          used_pct: 92,
-          mysql_used: 0,
-          minio_used: 0,
-          backup_used: 0,
-          collected_at: '2026-04-06T10:00:00Z',
-          interval: 60,
-        }
+        total: 100 * 1024 ** 3,
+        used: 92 * 1024 ** 3,
+        free: 8 * 1024 ** 3,
+        used_pct: 92,
+        mysql_used: 0,
+        minio_used: 0,
+        backup_used: 0,
+        collected_at: '2026-04-06T10:00:00Z',
+        interval: 60,
       }
     } as any)
     render(<DiskMonitor />)

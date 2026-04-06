@@ -64,6 +64,14 @@ vi.mock('echarts-for-react', () => ({
   default: ({ option: _option, ...props }: any) => <div data-testid="echarts-mock" {...props} />,
 }));
 
+vi.mock('echarts-for-react/lib/core', () => ({
+  default: ({ option: _option, echarts: _echarts, ...props }: any) => <div data-testid="echarts-mock" {...props} />,
+}));
+
+vi.mock('../../../utils/echartsConfig', () => ({
+  default: { use: vi.fn() },
+}));
+
 function renderWithRouter() {
   return render(
     <BrowserRouter>

@@ -50,18 +50,14 @@ func (h *DiskHandler) SetInterval(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": 0})
 }
 
-// BrowseFS GET /api/disk/fs?path=/opt
-func (h *DiskHandler) BrowseFS(c *gin.Context) {
-	path := c.Query("path")
-	if path == "" {
-		path = "/"
-	}
-	entries, err := h.svc.BrowseFS(path)
+// ListVolumes GET /api/disk/volumes
+func (h *DiskHandler) ListVolumes(c *gin.Context) {
+	volumes, err := h.svc.ListVolumes()
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"code": 0, "data": entries})
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": volumes})
 }
 
 // StartMigrate POST /api/disk/migrate

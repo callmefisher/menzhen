@@ -15,22 +15,12 @@ type DiskStatus struct {
 	Interval    int       `json:"interval"` // 秒
 }
 
-// DirEntry 目录浏览条目
-type DirEntry struct {
-	Name  string `json:"name"`
-	Path  string `json:"path"`  // 宿主机绝对路径
-	IsDir bool   `json:"is_dir"`
-}
-
-// MigrateRequest MySQL 或 MinIO 迁移请求
-type MigrateRequest struct {
-	Target  string `json:"target" binding:"required,oneof=mysql minio"` // "mysql" or "minio"
-	NewPath string `json:"new_path" binding:"required"`
-}
-
-// BackupDirRequest 备份目录更换请求
-type BackupDirRequest struct {
-	NewPath string `json:"new_path" binding:"required"`
+// DockerVolume Docker 命名卷信息
+type DockerVolume struct {
+	Name       string `json:"name"`
+	Driver     string `json:"driver"`
+	Mountpoint string `json:"mountpoint"`
+	CreatedAt  string `json:"created_at"`
 }
 
 // DiskTask 磁盘操作任务状态
