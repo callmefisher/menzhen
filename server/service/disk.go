@@ -676,3 +676,79 @@ func (s *DiskService) StartMigrate(target, newPath string) (*model.DiskTask, err
 
 	return task, nil
 }
+
+// ChangeBackupDir changes the backup directory (4-step async task).
+// Steps: rsync/copy files → update compose → restart backup+api → verify
+func (s *DiskService) ChangeBackupDir(newPath string) (*model.DiskTask, error) {
+	if s.HasRunningTask("backup_dir") {
+		return nil, fmt.Errorf("备份目录更换任务正在进行中")
+	}
+
+	// Validate newPath
+	cleanPath := filepath.Clean(newPath)
+	if !filepath.IsAbs(cleanPath) {
+		return nil, fmt.Errorf("new_path must be an absolute path")
+	}
+	hostNewPath := filepath.Join(hostFSRoot, cleanPath)
+	if hostNewPath != hostFSRoot && !strings.HasPrefix(hostNewPath, hostFSRoot+"/") {
+		return nil, fmt.Errorf("invalid path: %s", newPath)
+	}
+
+	task := s.createTask("backup_dir", 4)
+
+	go func() {
+		taskID := task.TaskID
+
+		// Step 1: copy existing backup files to new path
+		s.updateTask(taskID, 1, fmt.Sprintf("Step 1/4: 复制备份文件到 %s...", newPath))
+		if err := os.MkdirAll(hostNewPath, 0755); err != nil {
+			s.finishTask(taskID, "failed", fmt.Sprintf("创建目标目录失败: %v", err))
+			return
+		}
+		// Copy from backup container's /backups to new host path via exec
+		cpOut, cpErr := s.dockerExec(backupContainer(), "sh", "-c",
+			"cp -a /backups/. /hostfs_dest/ 2>&1 || true")
+		_ = cpOut
+		if cpErr != nil {
+			// Non-fatal: log and continue (new directory will be empty initially)
+			log.Printf("[disk] backup copy warning: %v", cpErr)
+		}
+		s.updateTask(taskID, 1, "文件复制完成（或已跳过）")
+
+		// Step 2: update docker-compose.yml
+		s.updateTask(taskID, 2, "Step 2/4: 更新 docker-compose.yml...")
+		oldBind := "./backups:/backups"
+		newBind := newPath + ":/backups"
+		if err := s.updateComposeVolume(oldBind, newBind); err != nil {
+			s.finishTask(taskID, "failed", fmt.Sprintf("更新配置失败: %v", err))
+			return
+		}
+		s.updateTask(taskID, 2, "配置更新完成")
+
+		// Step 3: restart backup and api containers
+		s.updateTask(taskID, 3, "Step 3/4: 重启 backup 和 api 容器...")
+		for _, ctr := range []string{"menzhen-backup-1", "menzhen-api-1"} {
+			if err := s.dockerStop(ctr); err != nil {
+				log.Printf("[disk] warning: stop %s: %v", ctr, err)
+			}
+			if err := s.dockerStart(ctr); err != nil {
+				s.finishTask(taskID, "failed", fmt.Sprintf("启动 %s 失败: %v", ctr, err))
+				return
+			}
+		}
+		time.Sleep(5 * time.Second)
+
+		// Step 4: verify new backup directory is writable
+		s.updateTask(taskID, 4, "Step 4/4: 验证新备份目录...")
+		testFile := filepath.Join(hostNewPath, ".disk_monitor_test")
+		if err := os.WriteFile(testFile, []byte("ok"), 0644); err != nil {
+			s.finishTask(taskID, "failed", fmt.Sprintf("写入验证文件失败: %v", err))
+			return
+		}
+		os.Remove(testFile)
+
+		s.finishTask(taskID, "success", fmt.Sprintf("备份目录已更换为 %s", newPath))
+	}()
+
+	return task, nil
+}

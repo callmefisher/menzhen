@@ -441,6 +441,10 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			diskRoutes.GET("/status", middleware.RequirePermission(db, "user:manage"), diskHandler.GetStatus)
 			diskRoutes.PUT("/interval", middleware.RequirePermission(db, "user:manage"), diskHandler.SetInterval)
 			diskRoutes.GET("/fs", middleware.RequirePermission(db, "user:manage"), diskHandler.BrowseFS)
+			diskRoutes.POST("/migrate", middleware.RequirePermission(db, "user:manage"), diskHandler.StartMigrate)
+			diskRoutes.GET("/migrate/status", middleware.RequirePermission(db, "user:manage"), diskHandler.GetMigrateStatus)
+			diskRoutes.POST("/backup-dir", middleware.RequirePermission(db, "user:manage"), diskHandler.ChangeBackupDir)
+			diskRoutes.GET("/backup-dir/status", middleware.RequirePermission(db, "user:manage"), diskHandler.GetBackupDirStatus)
 		}
 
 		// Tenant migration routes (super admin only) — independent from backup/restore.

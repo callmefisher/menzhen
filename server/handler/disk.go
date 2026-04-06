@@ -57,3 +57,68 @@ func (h *DiskHandler) BrowseFS(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": entries})
 }
+
+// StartMigrate POST /api/disk/migrate
+func (h *DiskHandler) StartMigrate(c *gin.Context) {
+	var req struct {
+		Target  string `json:"target" binding:"required"`
+		NewPath string `json:"new_path" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	task, err := h.svc.StartMigrate(req.Target, req.NewPath)
+	if err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": task})
+}
+
+// GetMigrateStatus GET /api/disk/migrate/status?task_id=xxx
+func (h *DiskHandler) GetMigrateStatus(c *gin.Context) {
+	taskID := c.Query("task_id")
+	if taskID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "task_id required"})
+		return
+	}
+	task, ok := h.svc.GetTask(taskID)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": task})
+}
+
+// ChangeBackupDir POST /api/disk/backup-dir
+func (h *DiskHandler) ChangeBackupDir(c *gin.Context) {
+	var req struct {
+		NewPath string `json:"new_path" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	task, err := h.svc.ChangeBackupDir(req.NewPath)
+	if err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": task})
+}
+
+// GetBackupDirStatus GET /api/disk/backup-dir/status?task_id=xxx
+func (h *DiskHandler) GetBackupDirStatus(c *gin.Context) {
+	taskID := c.Query("task_id")
+	if taskID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "task_id required"})
+		return
+	}
+	task, ok := h.svc.GetTask(taskID)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": task})
+}
