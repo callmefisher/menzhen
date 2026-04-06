@@ -31,7 +31,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.04.06.124500"
+WIZARD_VERSION = "2026.04.06.130500"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 IMAGE_REGISTRY = "https://your-registry.example.com"
@@ -5079,12 +5079,71 @@ def main():
 
     threading.Thread(target=heartbeat_watchdog, daemon=True).start()
 
+    def _kill_sibling_wizards():
+        """Kill all other deploy-wizard.py processes (not self) so their terminal windows auto-close."""
+        my_pid = os.getpid()
+        try:
+            if sys.platform == "win32":
+                # Windows: wmic to find PIDs, taskkill to terminate
+                result = subprocess.run(
+                    ["wmic", "process", "where", "name like '%python%'",
+                     "get", "ProcessId,CommandLine", "/format:csv"],
+                    capture_output=True, timeout=5, encoding="utf-8", errors="replace"
+                )
+                for line in result.stdout.splitlines():
+                    if "deploy-wizard.py" in line:
+                        parts = line.split(",")
+                        for part in reversed(parts):
+                            part = part.strip()
+                            if part.isdigit():
+                                pid = int(part)
+                                if pid != my_pid:
+                                    subprocess.run(
+                                        ["taskkill", "/f", "/pid", str(pid)],
+                                        capture_output=True, timeout=5
+                                    )
+                                break
+            else:
+                # Mac/Linux: pgrep + SIGTERM
+                result = subprocess.run(
+                    ["pgrep", "-f", "deploy-wizard.py"],
+                    capture_output=True, text=True, timeout=5
+                )
+                import signal as _signal
+                for pid_str in result.stdout.strip().splitlines():
+                    pid_str = pid_str.strip()
+                    if pid_str.isdigit():
+                        pid = int(pid_str)
+                        if pid != my_pid:
+                            try:
+                                os.kill(pid, _signal.SIGTERM)
+                            except ProcessLookupError:
+                                pass
+        except Exception:
+            pass
+
+    # Windows: register console ctrl handler to catch X-button (CTRL_CLOSE_EVENT)
+    # so siblings are killed even when the window is force-closed.
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_uint)
+            def _win_ctrl_handler(ctrl_type):
+                # 2 = CTRL_CLOSE_EVENT (X button), 0 = CTRL_C, 1 = CTRL_BREAK
+                if ctrl_type in (0, 1, 2):
+                    _kill_sibling_wizards()
+                return False  # let default handler proceed (i.e., exit)
+            ctypes.windll.kernel32.SetConsoleCtrlHandler(_win_ctrl_handler, True)
+        except Exception:
+            pass
+
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         print("\n向导已停止。")
     finally:
         server.server_close()
+        _kill_sibling_wizards()
 
 
 if __name__ == "__main__":
