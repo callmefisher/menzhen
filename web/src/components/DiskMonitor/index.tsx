@@ -140,12 +140,14 @@ const DiskMonitor: React.FC = () => {
               <Row key={item.label} gutter={8} align="middle" style={{ marginBottom: 8 }}>
                 <Col xs={6} sm={4}><Text style={{ fontSize: 13 }}>{item.label}</Text></Col>
                 <Col xs={12} sm={16}>
-                  <Progress
-                    percent={Math.round(pct)}
-                    strokeColor={statusColor(pct)}
-                    showInfo={false}
-                    size={isMobile ? 'small' : 'default'}
-                  />
+                  <div className={pct >= 90 ? 'disk-bar-critical' : undefined}>
+                    <Progress
+                      percent={Math.round(pct)}
+                      strokeColor={statusColor(pct)}
+                      showInfo={false}
+                      size={isMobile ? 'small' : 'default'}
+                    />
+                  </div>
                 </Col>
                 <Col xs={6} sm={4} style={{ textAlign: 'right' }}>
                   <Text style={{ fontSize: 12, color: statusColor(pct) }}>

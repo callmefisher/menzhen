@@ -506,3 +506,12 @@ tr.current-user-row:hover > td {
     font-size: 48px;
   }
 }
+
+/* Disk monitor — critical progress bar blink */
+@keyframes disk-bar-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+.disk-bar-critical {
+  animation: disk-bar-blink 1.5s ease-in-out infinite;
+}
