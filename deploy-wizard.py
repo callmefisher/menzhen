@@ -31,7 +31,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.04.06.224602"
+WIZARD_VERSION = "2026.04.06.224705"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 
@@ -292,13 +292,14 @@ def _per_service_build_cmd(os_key, standalone=True):
     n = len(BUILD_SERVICES)
     if os_key == "windows":
         # cmd.exe does NOT support inline "VAR=val command" syntax.
-        # Use "set VAR=val & ..." to export for the whole cmd session.
+        # Use 'set "VAR=val"' with quotes to prevent trailing spaces from
+        # being included in the value (cmd.exe treats 'set X=1 &' as X="1 ").
         # & chains all steps unconditionally; wizard verifies via check-images.
         steps = [
             f"echo === [{i}/{n}] 构建 {svc} === & docker compose build --no-cache --progress=plain {svc}"
             for i, svc in enumerate(BUILD_SERVICES, 1)
         ]
-        return "set DOCKER_BUILDKIT=1 & " + " & ".join(steps)
+        return 'set "DOCKER_BUILDKIT=1" & ' + " & ".join(steps)
     else:
         # bash/zsh (macOS + Linux): inline VAR=val before each command so the
         # env var is scoped to that child process and doesn't leak out.
