@@ -25,6 +25,9 @@ export default defineConfig({
     }),
   ],
   build: {
+    // esbuild 替换 terser：压缩速度快 10-20x，内存占用低 80%
+    // terser 单线程压缩 1.4MB vendor-antd 在 8GB Windows 上会卡死 rendering chunks 阶段
+    minify: 'esbuild',
     rollupOptions: {
       output: {
         manualChunks: {
