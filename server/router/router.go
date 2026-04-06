@@ -434,6 +434,15 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			restoreRoutes.GET("/status/:task_id", middleware.RequirePermission(db, "user:manage"), backupHandler.GetTaskStatus)
 		}
 
+		// Disk monitor & migration routes (super admin only).
+		diskHandler := handler.NewDiskHandler(db)
+		diskRoutes := authenticated.Group("/disk")
+		{
+			diskRoutes.GET("/status", middleware.RequirePermission(db, "user:manage"), diskHandler.GetStatus)
+			diskRoutes.PUT("/interval", middleware.RequirePermission(db, "user:manage"), diskHandler.SetInterval)
+			diskRoutes.GET("/fs", middleware.RequirePermission(db, "user:manage"), diskHandler.BrowseFS)
+		}
+
 		// Tenant migration routes (super admin only) — independent from backup/restore.
 		migrateSvc := service.NewTenantMigrateService(db)
 		migrateHandler := handler.NewTenantMigrateHandler(migrateSvc, db)
