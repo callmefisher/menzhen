@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/callmefisher/menzhen/server/model"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -327,4 +328,324 @@ func (s *DiskService) BrowseFS(path string) ([]model.DirEntry, error) {
 // Shutdown stops the background collection loop.
 func (s *DiskService) Shutdown() {
 	s.cancel()
+}
+
+// ─── Task management helpers ───────────────────────────────────────────────
+
+// createTask creates a new DiskTask and stores it in the task map.
+func (s *DiskService) createTask(taskType string, total int) *model.DiskTask {
+	task := &model.DiskTask{
+		TaskID:  uuid.New().String(),
+		Type:    taskType,
+		Status:  "running",
+		Step:    0,
+		Total:   total,
+		StartAt: time.Now(),
+	}
+	s.mu.Lock()
+	s.tasks[task.TaskID] = task
+	s.mu.Unlock()
+	return task
+}
+
+// GetTask returns a task by ID (nil, false if not found).
+func (s *DiskService) GetTask(taskID string) (*model.DiskTask, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	t, ok := s.tasks[taskID]
+	return t, ok
+}
+
+// updateTask appends output and updates step number (thread-safe).
+func (s *DiskService) updateTask(taskID string, step int, output string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if t, ok := s.tasks[taskID]; ok {
+		t.Step = step
+		t.Output += output + "\n"
+	}
+}
+
+// finishTask sets final status and appends a final message.
+func (s *DiskService) finishTask(taskID, status, msg string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if t, ok := s.tasks[taskID]; ok {
+		t.Status = status
+		t.Output += msg
+	}
+}
+
+// HasRunningTask checks if any task of the given type is currently running.
+func (s *DiskService) HasRunningTask(taskType string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, t := range s.tasks {
+		if t.Type == taskType && t.Status == "running" {
+			return true
+		}
+	}
+	return false
+}
+
+// ─── Docker container helpers ──────────────────────────────────────────────
+
+// dockerStop stops a container (30s grace period).
+func (s *DiskService) dockerStop(container string) error {
+	req, err := http.NewRequest("POST",
+		s.dockerURL(fmt.Sprintf("/containers/%s/stop?t=30", container)), nil)
+	if err != nil {
+		return err
+	}
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("docker stop %s: %w", container, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 204 && resp.StatusCode != 304 {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("docker stop %s (%d): %s", container, resp.StatusCode, b)
+	}
+	return nil
+}
+
+// dockerStart starts a container.
+func (s *DiskService) dockerStart(container string) error {
+	req, err := http.NewRequest("POST",
+		s.dockerURL(fmt.Sprintf("/containers/%s/start", container)), nil)
+	if err != nil {
+		return err
+	}
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("docker start %s: %w", container, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 204 && resp.StatusCode != 304 {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("docker start %s (%d): %s", container, resp.StatusCode, b)
+	}
+	return nil
+}
+
+// ─── runCopyContainer ──────────────────────────────────────────────────────
+
+// runCopyContainer copies data from a named Docker volume to a host directory.
+// srcVolume: named volume name (e.g. "mysql-data")
+// destHostPath: absolute host path (writable via /hostfs mount)
+func (s *DiskService) runCopyContainer(srcVolume, destHostPath string) error {
+	body, _ := json.Marshal(map[string]interface{}{
+		"Image": "alpine",
+		"Cmd":   []string{"sh", "-c", "cp -a /source/. /dest/"},
+		"HostConfig": map[string]interface{}{
+			"Binds": []string{
+				srcVolume + ":/source:ro",
+				destHostPath + ":/dest:rw",
+			},
+			"AutoRemove": false,
+		},
+	})
+	createReq, err := http.NewRequest("POST",
+		s.dockerURL("/containers/create"), bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("create copy container request: %w", err)
+	}
+	createReq.Header.Set("Content-Type", "application/json")
+
+	createResp, err := s.httpClient.Do(createReq)
+	if err != nil {
+		return fmt.Errorf("create copy container: %w", err)
+	}
+	defer createResp.Body.Close()
+	if createResp.StatusCode != 201 {
+		b, _ := io.ReadAll(createResp.Body)
+		return fmt.Errorf("create copy container (%d): %s", createResp.StatusCode, b)
+	}
+	var created struct {
+		ID string `json:"Id"`
+	}
+	if err := json.NewDecoder(createResp.Body).Decode(&created); err != nil {
+		return fmt.Errorf("parse create response: %w", err)
+	}
+	if created.ID == "" {
+		return fmt.Errorf("create copy container returned empty ID")
+	}
+
+	// Start container
+	startReq, err := http.NewRequest("POST",
+		s.dockerURL(fmt.Sprintf("/containers/%s/start", created.ID)), nil)
+	if err != nil {
+		return fmt.Errorf("start copy container request: %w", err)
+	}
+	startResp, err := s.httpClient.Do(startReq)
+	if err != nil {
+		return fmt.Errorf("start copy container: %w", err)
+	}
+	startResp.Body.Close()
+
+	// Wait for container to exit
+	waitReq, err := http.NewRequest("POST",
+		s.dockerURL(fmt.Sprintf("/containers/%s/wait", created.ID)), nil)
+	if err != nil {
+		return fmt.Errorf("wait copy container request: %w", err)
+	}
+	waitResp, err := s.httpClient.Do(waitReq)
+	if err != nil {
+		return fmt.Errorf("wait copy container: %w", err)
+	}
+	defer waitResp.Body.Close()
+	var waitResult struct {
+		StatusCode int `json:"StatusCode"`
+	}
+	if err := json.NewDecoder(waitResp.Body).Decode(&waitResult); err != nil {
+		return fmt.Errorf("parse wait response: %w", err)
+	}
+
+	// Delete the temporary container
+	delReq, err := http.NewRequest("DELETE",
+		s.dockerURL(fmt.Sprintf("/containers/%s", created.ID)), nil)
+	if err == nil {
+		delResp, err := s.httpClient.Do(delReq)
+		if err == nil {
+			delResp.Body.Close()
+		}
+	}
+
+	if waitResult.StatusCode != 0 {
+		return fmt.Errorf("copy container exited with code %d", waitResult.StatusCode)
+	}
+	return nil
+}
+
+// ─── updateComposeVolume ───────────────────────────────────────────────────
+
+const composePath = "/app/docker-compose.yml"
+
+// updateComposeVolume replaces oldBind with newBind in the compose file.
+// Creates a .bak backup before writing. Restores on write failure.
+func (s *DiskService) updateComposeVolume(oldBind, newBind string) error {
+	data, err := os.ReadFile(composePath)
+	if err != nil {
+		return fmt.Errorf("read compose file: %w", err)
+	}
+
+	// Backup original
+	backupPath := composePath + ".bak"
+	if err := os.WriteFile(backupPath, data, 0644); err != nil {
+		return fmt.Errorf("backup compose file: %w", err)
+	}
+
+	original := string(data)
+	updated := strings.ReplaceAll(original, "      - "+oldBind, "      - "+newBind)
+	if updated == original {
+		return fmt.Errorf("bind %q not found in compose file", oldBind)
+	}
+
+	if err := os.WriteFile(composePath, []byte(updated), 0644); err != nil {
+		// Restore backup
+		if restoreErr := os.WriteFile(composePath, data, 0644); restoreErr != nil {
+			log.Printf("[disk] failed to restore compose backup: %v", restoreErr)
+		}
+		return fmt.Errorf("write compose file: %w", err)
+	}
+	return nil
+}
+
+// ─── StartMigrate ──────────────────────────────────────────────────────────
+
+// StartMigrate starts an async 6-step MySQL or MinIO data directory migration.
+// target: "mysql" or "minio"
+// newPath: absolute host path for the new data location
+func (s *DiskService) StartMigrate(target, newPath string) (*model.DiskTask, error) {
+	taskType := "migrate_" + target
+	if s.HasRunningTask(taskType) {
+		return nil, fmt.Errorf("%s 迁移任务正在进行中", target)
+	}
+
+	var containerName, volumeName, composeBind, mountPoint string
+	switch target {
+	case "mysql":
+		containerName = "menzhen-mysql-1"
+		volumeName = "mysql-data"
+		composeBind = "mysql-data:/var/lib/mysql"
+		mountPoint = "/var/lib/mysql"
+	case "minio":
+		containerName = "menzhen-minio-1"
+		volumeName = "minio-data"
+		composeBind = "minio-data:/data"
+		mountPoint = "/data"
+	default:
+		return nil, fmt.Errorf("unknown target: %s", target)
+	}
+
+	task := s.createTask(taskType, 6)
+
+	go func() {
+		taskID := task.TaskID
+
+		// Step 1: trigger full backup
+		s.updateTask(taskID, 1, "Step 1/6: 触发完整备份...")
+		if _, err := s.dockerExec(backupContainer(), "python3", "/scripts/backup.py", "--type", "full"); err != nil {
+			s.finishTask(taskID, "failed", fmt.Sprintf("备份失败: %v", err))
+			return
+		}
+		s.updateTask(taskID, 1, "备份完成")
+
+		// Step 2: stop target container
+		s.updateTask(taskID, 2, fmt.Sprintf("Step 2/6: 停止容器 %s...", containerName))
+		if err := s.dockerStop(containerName); err != nil {
+			s.finishTask(taskID, "failed", fmt.Sprintf("停止容器失败: %v", err))
+			return
+		}
+
+		// Step 3: copy data to new path
+		s.updateTask(taskID, 3, fmt.Sprintf("Step 3/6: 复制数据到 %s...", newPath))
+		hostNewPath := filepath.Join(hostFSRoot, newPath)
+		if err := os.MkdirAll(hostNewPath, 0755); err != nil {
+			if startErr := s.dockerStart(containerName); startErr != nil {
+				log.Printf("[disk] failed to restart %s after mkdirall failure: %v", containerName, startErr)
+			}
+			s.finishTask(taskID, "failed", fmt.Sprintf("创建目标目录失败: %v", err))
+			return
+		}
+		if err := s.runCopyContainer(volumeName, newPath); err != nil {
+			if startErr := s.dockerStart(containerName); startErr != nil {
+				log.Printf("[disk] failed to restart %s after copy failure: %v", containerName, startErr)
+			}
+			s.finishTask(taskID, "failed", fmt.Sprintf("数据复制失败: %v", err))
+			return
+		}
+		s.updateTask(taskID, 3, "数据复制完成")
+
+		// Step 4: update docker-compose.yml
+		s.updateTask(taskID, 4, "Step 4/6: 更新 docker-compose.yml...")
+		newBind := newPath + ":" + mountPoint
+		if err := s.updateComposeVolume(composeBind, newBind); err != nil {
+			if startErr := s.dockerStart(containerName); startErr != nil {
+				log.Printf("[disk] failed to restart %s after compose update failure: %v", containerName, startErr)
+			}
+			s.finishTask(taskID, "failed", fmt.Sprintf("更新配置失败: %v", err))
+			return
+		}
+
+		// Step 5: restart container
+		s.updateTask(taskID, 5, fmt.Sprintf("Step 5/6: 重启容器 %s...", containerName))
+		if err := s.dockerStart(containerName); err != nil {
+			s.finishTask(taskID, "failed", fmt.Sprintf("启动容器失败: %v", err))
+			return
+		}
+		time.Sleep(5 * time.Second)
+
+		// Step 6: verify
+		s.updateTask(taskID, 6, "Step 6/6: 验证容器运行状态...")
+		out, err := s.dockerExec(containerName, "echo", "ok")
+		if err != nil || !strings.Contains(out, "ok") {
+			s.finishTask(taskID, "failed", fmt.Sprintf("容器验证失败: %v", err))
+			return
+		}
+
+		s.finishTask(taskID, "success", fmt.Sprintf("迁移完成。新路径: %s", newPath))
+	}()
+
+	return task, nil
 }
