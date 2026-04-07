@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
+import { OrbitControls } from '../../lib/drei-lite';
 import * as THREE from 'three';
 import HumanBodyModel from './HumanBodyModel';
 import type { ModelType } from './HumanBodyModel';

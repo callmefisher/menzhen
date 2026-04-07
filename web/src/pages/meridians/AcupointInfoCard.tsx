@@ -1,4 +1,4 @@
-import { Html } from '@react-three/drei';
+import { Html } from '../../lib/drei-lite';
 import type { AcupointData } from './data/types';
 
 interface AcupointInfoCardProps {
