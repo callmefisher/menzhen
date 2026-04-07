@@ -1,6 +1,6 @@
 import { useRef, useMemo, useEffect } from 'react';
 import * as THREE from 'three';
-import { useGLTF } from '@react-three/drei';
+import { useGLTF } from '../../lib/drei-lite';
 
 export type ModelType = 'female' | 'male';
 
