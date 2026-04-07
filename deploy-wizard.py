@@ -296,7 +296,7 @@ def _per_service_build_cmd(os_key, standalone=True):
         # being included in the value (cmd.exe treats 'set X=1 &' as X="1 ").
         # & chains all steps unconditionally; wizard verifies via check-images.
         steps = [
-            f"echo === [{i}/{n}] 构建 {svc} === & docker compose build --no-cache --progress=plain {svc}"
+            f"echo === [{i}/{n}] 构建 {svc} === & docker compose build --progress=plain {svc}"
             for i, svc in enumerate(BUILD_SERVICES, 1)
         ]
         return 'set "DOCKER_BUILDKIT=1" & ' + " & ".join(steps)
@@ -306,7 +306,7 @@ def _per_service_build_cmd(os_key, standalone=True):
         # Wrapped in (...) subshell so the ';' separators don't break an
         # outer && chain (e.g. git fetch && ... && BUILD_CMD).
         steps = [
-            f"echo '=== [{i}/{n}] 构建 {svc} ==='; DOCKER_BUILDKIT=1 docker compose build --no-cache --progress=plain {svc} || _f=1"
+            f"echo '=== [{i}/{n}] 构建 {svc} ==='; DOCKER_BUILDKIT=1 docker compose build --progress=plain {svc} || _f=1"
             for i, svc in enumerate(BUILD_SERVICES, 1)
         ]
         inner = "_f=0; " + "; ".join(steps)
