@@ -390,6 +390,77 @@ func TestFollowUpStatsTotalCount(t *testing.T) {
 	assert.Equal(t, stats.PendingCount+stats.OverdueCount+stats.CompletedCount, stats.TotalCount)
 }
 
+func TestFollowUpListAllStatusSorting(t *testing.T) {
+	svc, tenantID, userID, patientID, recordID := setupFollowUpTest(t)
+
+	// Create 2 pending (future dates) and 2 completed follow-ups with interleaved dates
+	// Pending: 2099-06-01, 2099-06-03
+	// Completed: 2099-06-02, 2099-06-04
+	pendingDates := []string{"2099-06-01", "2099-06-03"}
+	completedDates := []string{"2099-06-02", "2099-06-04"}
+
+	for _, d := range pendingDates {
+		_, err := svc.Create(tenantID, userID, &CreateFollowUpRequest{
+			PatientID: patientID, RecordID: recordID, PlannedDate: d, Method: "电话",
+		})
+		require.NoError(t, err)
+	}
+	for _, d := range completedDates {
+		fu, err := svc.Create(tenantID, userID, &CreateFollowUpRequest{
+			PatientID: patientID, RecordID: recordID, PlannedDate: d, Method: "微信",
+		})
+		require.NoError(t, err)
+		ad := d
+		_, _, err = svc.Update(tenantID, fu.ID, &UpdateFollowUpRequest{ActualDate: &ad})
+		require.NoError(t, err)
+	}
+
+	// "全部" (status="") ASC: pending first by date, then completed by date
+	items, total, err := svc.List(tenantID, 0, 0, "", "", "", "", "", 1, 10, "asc")
+	require.NoError(t, err)
+	assert.Equal(t, int64(4), total)
+	assert.Len(t, items, 4)
+	// First 2 should be pending, sorted by planned_date ASC
+	assert.Equal(t, "pending", items[0].Status)
+	assert.Equal(t, "2099-06-01", items[0].PlannedDate)
+	assert.Equal(t, "pending", items[1].Status)
+	assert.Equal(t, "2099-06-03", items[1].PlannedDate)
+	// Last 2 should be completed, sorted by planned_date ASC
+	assert.Equal(t, "completed", items[2].Status)
+	assert.Equal(t, "2099-06-02", items[2].PlannedDate)
+	assert.Equal(t, "completed", items[3].Status)
+	assert.Equal(t, "2099-06-04", items[3].PlannedDate)
+
+	// "全部" DESC: pending first by date DESC, then completed by date DESC
+	items, _, err = svc.List(tenantID, 0, 0, "", "", "", "", "", 1, 10, "desc")
+	require.NoError(t, err)
+	assert.Equal(t, "pending", items[0].Status)
+	assert.Equal(t, "2099-06-03", items[0].PlannedDate)
+	assert.Equal(t, "pending", items[1].Status)
+	assert.Equal(t, "2099-06-01", items[1].PlannedDate)
+	assert.Equal(t, "completed", items[2].Status)
+	assert.Equal(t, "2099-06-04", items[2].PlannedDate)
+	assert.Equal(t, "completed", items[3].Status)
+	assert.Equal(t, "2099-06-02", items[3].PlannedDate)
+
+	// Specific status filter should NOT have grouping — just planned_date order
+	// "completed" filter: only completed items by planned_date ASC
+	items, total, err = svc.List(tenantID, 0, 0, "", "completed", "", "", "", 1, 10, "asc")
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), total)
+	assert.Equal(t, "completed", items[0].Status)
+	assert.Equal(t, "2099-06-02", items[0].PlannedDate)
+	assert.Equal(t, "completed", items[1].Status)
+	assert.Equal(t, "2099-06-04", items[1].PlannedDate)
+
+	// "pending" filter: only pending items by planned_date ASC
+	items, total, err = svc.List(tenantID, 0, 0, "", "pending", "", "", "", 1, 10, "asc")
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), total)
+	assert.Equal(t, "pending", items[0].Status)
+	assert.Equal(t, "2099-06-01", items[0].PlannedDate)
+}
+
 func TestFollowUpListByRecordID(t *testing.T) {
 	svc, tenantID, userID, patientID, recordID := setupFollowUpTest(t)
 

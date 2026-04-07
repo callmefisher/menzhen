@@ -134,6 +134,10 @@ func (s *FollowUpService) List(tenantID uint64, patientID uint64, recordID uint6
 	if sortOrder == "desc" {
 		orderClause = "f.planned_date DESC"
 	}
+	// "全部" view: pending first, completed second, each group by planned_date
+	if status == "" {
+		orderClause = "CASE WHEN f.status = 'completed' THEN 1 ELSE 0 END, " + orderClause
+	}
 
 	var items []FollowUpListItem
 	if err := query.Order(orderClause).
