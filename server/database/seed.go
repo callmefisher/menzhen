@@ -74,6 +74,7 @@ func seedPermissions(db *gorm.DB) {
 		{Code: "appointment:delete",  Name: "删除预约",  Description: "删除已取消或未到诊的预约"},
 		{Code: "appointment:checkin", Name: "预约签到",  Description: "为预约患者签到"},
 		{Code: "power_admin:manage", Name: "超级管理员管理", Description: "管理 powerAdmin 账号及其授权分组"},
+		{Code: "license:manage", Name: "授权管理", Description: "管理软件授权、查看授权信息、签发授权"},
 	}
 
 	for _, p := range permissions {

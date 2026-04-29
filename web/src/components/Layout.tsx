@@ -435,6 +435,11 @@ export default function AppLayout() {
           icon: <TeamOutlined />,
           label: '超级管理员',
         });
+        settingsChildren.push({
+          key: '/settings/license',
+          icon: <KeyOutlined />,
+          label: '授权',
+        });
       }
       items.push({
         key: '/settings',

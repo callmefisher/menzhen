@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>授权管理 V2 - 设计预览</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --warm-primary: #52C41A;
+  --warm-primary-light: #95DE64;
+  --warm-primary-dark: #389E0D;
+  --warm-orange: #FA8C16;
+  --warm-red: #FF4D4F;
+  --warm-blue: #1677FF;
+  --warm-purple: #722ED1;
+  --warm-cyan: #13C2C2;
+  --warm-bg: #FAFAF5;
+  --warm-card-bg: #FFFEF9;
+  --warm-sidebar: #1A2E1A;
+  --warm-text: #5C4A32;
+  --warm-text-light: #8B7355;
+  --warm-text-secondary: #A39480;
+  --warm-border: #EDE8DC;
+  --warm-hover-bg: #FFFEF0;
+  --warm-shadow: 0 2px 8px rgba(44,24,16,0.08);
+  --warm-card-radius: 16px;
+  --warm-transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background:var(--warm-bg);color:var(--warm-text);min-height:100vh;display:flex;overflow-x:hidden}
+
+.sidebar{width:220px;background:var(--warm-sidebar);min-height:100vh;padding:20px 0;flex-shrink:0;position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100}
+.sidebar-logo{display:flex;align-items:center;gap:10px;padding:0 20px 24px;border-bottom:1px solid rgba(255,255,255,0.08);margin-bottom:12px}
+.sidebar-logo .logo-icon{width:36px;height:36px;background:linear-gradient(135deg,var(--warm-primary),var(--warm-primary-light));border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;font-weight:700}
+.sidebar-logo span{color:#95DE64;font-size:16px;font-weight:600;letter-spacing:1px}
+.sidebar-section{padding:8px 12px;color:rgba(255,255,255,0.35);font-size:11px;text-transform:uppercase;letter-spacing:2px;margin-top:8px}
+.sidebar-item{display:flex;align-items:center;gap:10px;padding:10px 20px;color:rgba(255,255,255,0.65);font-size:14px;cursor:pointer;transition:var(--warm-transition);margin:2px 8px;border-radius:8px}
+.sidebar-item:hover{background:rgba(149,222,100,0.15);color:rgba(255,255,255,0.9)}
+.sidebar-item.active{background:rgba(82,196,26,0.2);color:#95DE64}
+.sidebar-item i{width:18px;text-align:center;font-size:14px}
+
+.main-content{flex:1;padding:24px 32px;overflow-y:auto;overflow-x:hidden;max-height:100vh;margin-left:220px;min-width:0;width:0}
+
+.page-header{margin-bottom:24px}
+.page-header h1{font-size:22px;font-weight:600;color:var(--warm-text);display:flex;align-items:center;gap:10px}
+.page-header h1 i{color:var(--warm-primary);font-size:20px}
+.page-header p{font-size:13px;color:var(--warm-text-secondary);margin-top:4px}
+
+.card{background:var(--warm-card-bg);border-radius:var(--warm-card-radius);border:1px solid var(--warm-border);box-shadow:var(--warm-shadow);margin-bottom:20px;overflow:hidden}
+.card-header{padding:16px 20px;border-bottom:1px solid var(--warm-border);display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:14px;font-weight:600;color:var(--warm-text);background:rgba(26,46,26,0.02)}
+.card-header-left{display:flex;align-items:center;gap:8px}
+.card-header i{color:var(--warm-primary);font-size:14px}
+.card-body{padding:20px 24px}
+
+.page-switcher{display:flex;gap:12px;margin-bottom:24px;padding:4px;background:rgba(26,46,26,0.04);border-radius:12px;border:1px solid var(--warm-border)}
+.page-switch-btn{flex:1;padding:10px 20px;border-radius:10px;border:none;font-size:14px;font-weight:500;cursor:pointer;transition:var(--warm-transition);background:transparent;color:var(--warm-text-light);display:flex;align-items:center;justify-content:center;gap:8px}
+.page-switch-btn.active{background:var(--warm-card-bg);color:var(--warm-primary-dark);box-shadow:0 2px 8px rgba(44,24,16,0.08);font-weight:600}
+.page-switch-btn:hover:not(.active){color:var(--warm-text);background:rgba(255,255,255,0.5)}
+.page-panel{display:none}
+.page-panel.active{display:block;animation:fadeIn 0.3s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+.auth-status-card{background:var(--warm-card-bg);border-radius:var(--warm-card-radius);border:1px solid var(--warm-border);box-shadow:var(--warm-shadow);padding:24px 28px;margin-bottom:20px;position:relative;overflow:hidden}
+.auth-status-card::before{content:'';position:absolute;top:0;left:0;right:0;height:4px}
+.auth-status-card.authorized::before{background:linear-gradient(90deg,var(--warm-primary),var(--warm-primary-light))}
+.auth-status-card.unauthorized::before{background:linear-gradient(90deg,var(--warm-red),#ff7875)}
+.auth-status-card.expiring::before{background:linear-gradient(90deg,var(--warm-orange),#ffc53d)}
+.status-row{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.status-left{display:flex;align-items:center;gap:14px}
+.status-icon{width:52px;height:52px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0}
+.authorized .status-icon{background:rgba(82,196,26,0.1);color:var(--warm-primary)}
+.unauthorized .status-icon{background:rgba(255,77,79,0.1);color:var(--warm-red)}
+.expiring .status-icon{background:rgba(250,140,22,0.1);color:var(--warm-orange)}
+.status-info h2{font-size:17px;font-weight:600;margin-bottom:3px}
+.authorized .status-info h2{color:var(--warm-primary-dark)}
+.unauthorized .status-info h2{color:var(--warm-red)}
+.expiring .status-info h2{color:var(--warm-orange)}
+.status-info p{font-size:13px;color:var(--warm-text-light)}
+.status-badge{padding:5px 14px;border-radius:20px;font-size:12px;font-weight:500;white-space:nowrap}
+.authorized .status-badge{background:rgba(82,196,26,0.1);color:var(--warm-primary-dark);border:1px solid rgba(82,196,26,0.2)}
+.unauthorized .status-badge{background:rgba(255,77,79,0.1);color:var(--warm-red);border:1px solid rgba(255,77,79,0.2)}
+.expiring .status-badge{background:rgba(250,140,22,0.1);color:var(--warm-orange);border:1px solid rgba(250,140,22,0.2)}
+
+.site-id-bar{margin-top:14px;padding-top:14px;border-top:1px solid var(--warm-border);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.site-id-label{font-size:12px;color:var(--warm-text-secondary);font-weight:500;letter-spacing:0.5px}
+.site-id-value{font-family:'SF Mono','Fira Code','Cascadia Code',monospace;font-size:12px;background:rgba(26,46,26,0.04);padding:4px 10px;border-radius:6px;color:var(--warm-text);display:inline-flex;align-items:center;gap:6px;word-break:break-all}
+.copy-btn{width:26px;height:26px;border-radius:6px;border:1px solid var(--warm-border);background:var(--warm-card-bg);color:var(--warm-text-light);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:11px;transition:var(--warm-transition);flex-shrink:0}
+.copy-btn:hover{border-color:var(--warm-primary);color:var(--warm-primary)}
+.copy-btn.copied{border-color:var(--warm-primary);color:#fff;background:var(--warm-primary)}
+
+.countdown{font-size:13px;color:var(--warm-text-light);margin-top:10px;padding-top:10px;border-top:1px solid var(--warm-border);display:flex;align-items:center;gap:8px}
+.countdown strong{color:var(--warm-primary-dark);font-size:18px}
+.expiring .countdown strong{color:var(--warm-orange)}
+
+.auth-detail-body{padding:20px 24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px}
+.auth-field{display:flex;flex-direction:column;gap:5px}
+.auth-field-label{font-size:11px;color:var(--warm-text-secondary);text-transform:uppercase;letter-spacing:1px}
+.auth-field-value{font-size:14px;font-weight:500;color:var(--warm-text)}
+
+.auth-method-tag{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:500}
+.auth-method-tag.day{background:rgba(82,196,26,0.1);color:var(--warm-primary-dark);border:1px solid rgba(82,196,26,0.15)}
+.auth-method-tag.week{background:rgba(250,140,22,0.1);color:#d46b08;border:1px solid rgba(250,140,22,0.15)}
+.auth-method-tag.month{background:rgba(22,119,255,0.1);color:#0958d9;border:1px solid rgba(22,119,255,0.15)}
+.auth-method-tag.year{background:rgba(114,46,209,0.1);color:#722ED1;border:1px solid rgba(114,46,209,0.15)}
+.auth-method-tag.permanent{background:rgba(19,194,194,0.1);color:#08979c;border:1px solid rgba(19,194,194,0.15)}
+
+.feature-tag{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500}
+.feature-tag.basic{background:rgba(82,196,26,0.08);color:var(--warm-primary-dark)}
+.feature-tag.ai{background:rgba(114,46,209,0.08);color:#722ED1}
+.feature-tag.cloud{background:rgba(22,119,255,0.08);color:#0958d9}
+
+.timeline-bar-wrapper{position:relative;margin:8px 0 20px}
+.timeline-bar-bg{height:8px;background:rgba(26,46,26,0.06);border-radius:4px;overflow:hidden}
+.timeline-bar-fill{height:100%;border-radius:4px;transition:width 1s ease}
+.timeline-bar-fill.green{background:linear-gradient(90deg,var(--warm-primary),var(--warm-primary-light))}
+.timeline-bar-fill.orange{background:linear-gradient(90deg,var(--warm-orange),#ffc53d)}
+.timeline-bar-fill.red{background:linear-gradient(90deg,var(--warm-red),#ff7875)}
+.timeline-labels{display:flex;justify-content:space-between;margin-top:8px;font-size:12px;color:var(--warm-text-secondary)}
+.timeline-labels span{color:var(--warm-text);font-weight:500}
+
+.action-bar{display:flex;gap:12px;margin-top:4px;flex-wrap:wrap}
+
+.btn{display:inline-flex;align-items:center;gap:8px;padding:8px 20px;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;transition:var(--warm-transition);border:1px solid transparent}
+.btn-primary{background:var(--warm-primary);color:#fff;border-color:var(--warm-primary)}
+.btn-primary:hover{background:var(--warm-primary-dark);border-color:var(--warm-primary-dark);box-shadow:0 4px 12px rgba(82,196,26,0.3)}
+.btn-default{background:var(--warm-card-bg);color:var(--warm-text);border-color:var(--warm-border)}
+.btn-default:hover{border-color:var(--warm-primary);color:var(--warm-primary)}
+.btn-link{background:none;border:none;color:var(--warm-primary);padding:4px 8px;font-size:13px;cursor:pointer}
+.btn-link:hover{color:var(--warm-primary-dark);text-decoration:underline}
+.btn-sm{padding:4px 12px;font-size:13px;border-radius:6px}
+
+.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;z-index:1000;opacity:0;visibility:hidden;transition:var(--warm-transition)}
+.modal-overlay.show{opacity:1;visibility:visible}
+.modal{background:var(--warm-card-bg);border-radius:var(--warm-card-radius);width:560px;max-width:92vw;max-height:88vh;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,0.15);transform:translateY(20px);transition:var(--warm-transition)}
+.modal-overlay.show .modal{transform:translateY(0)}
+.modal-header{padding:20px 24px;border-bottom:1px solid var(--warm-border);display:flex;align-items:center;justify-content:space-between}
+.modal-header h3{font-size:16px;font-weight:600;display:flex;align-items:center;gap:8px}
+.modal-close{width:32px;height:32px;border-radius:8px;border:none;background:transparent;color:var(--warm-text-light);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;transition:var(--warm-transition)}
+.modal-close:hover{background:rgba(255,77,79,0.1);color:var(--warm-red)}
+.modal-body{padding:24px}
+.form-group{margin-bottom:16px}
+.form-group:last-child{margin-bottom:0}
+.form-label{display:block;font-size:13px;font-weight:500;color:var(--warm-text);margin-bottom:6px}
+.form-label .required{color:var(--warm-red);margin-left:2px}
+.form-input{width:100%;padding:8px 12px;border:1px solid var(--warm-border);border-radius:8px;font-size:14px;color:var(--warm-text);background:var(--warm-card-bg);transition:var(--warm-transition);outline:none}
+.form-input:focus{border-color:var(--warm-primary);box-shadow:0 0 0 2px rgba(82,196,26,0.1)}
+.form-input::placeholder{color:var(--warm-text-secondary)}
+.form-input[readonly]{background:rgba(26,46,26,0.03);color:var(--warm-text-light);cursor:default}
+.form-select{width:100%;padding:8px 12px;border:1px solid var(--warm-border);border-radius:8px;font-size:14px;color:var(--warm-text);background:var(--warm-card-bg);outline:none;cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M6 8L1 3h10z' fill='%238B7355'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center}
+.form-select:focus{border-color:var(--warm-primary);box-shadow:0 0 0 2px rgba(82,196,26,0.1)}
+.form-hint{font-size:12px;color:var(--warm-text-secondary);margin-top:4px}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.modal-footer{padding:16px 24px;border-top:1px solid var(--warm-border);display:flex;justify-content:flex-end;gap:10px}
+
+.checkbox-group{display:flex;flex-wrap:wrap;gap:10px}
+.checkbox-item{display:flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid var(--warm-border);border-radius:8px;cursor:pointer;transition:var(--warm-transition);font-size:13px;font-weight:500;user-select:none}
+.checkbox-item:hover{border-color:var(--warm-primary)}
+.checkbox-item.checked{border-color:var(--warm-primary);background:rgba(82,196,26,0.05);color:var(--warm-primary-dark)}
+.checkbox-item input{display:none}
+.checkbox-dot{width:16px;height:16px;border-radius:4px;border:2px solid var(--warm-border);display:flex;align-items:center;justify-content:center;transition:var(--warm-transition);flex-shrink:0}
+.checkbox-item.checked .checkbox-dot{border-color:var(--warm-primary);background:var(--warm-primary)}
+.checkbox-dot i{font-size:9px;color:#fff;opacity:0;transition:var(--warm-transition)}
+.checkbox-item.checked .checkbox-dot i{opacity:1}
+
+.key-display{background:rgba(26,46,26,0.03);border:1px solid var(--warm-border);border-radius:8px;padding:12px;font-family:'SF Mono','Fira Code',monospace;font-size:11px;color:var(--warm-text-light);word-break:break-all;line-height:1.6;max-height:80px;overflow-y:auto}
+.key-label{font-size:12px;font-weight:500;color:var(--warm-text);margin-bottom:4px;display:flex;align-items:center;gap:6px}
+.key-label i{font-size:12px}
+
+.drawer-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.35);z-index:900;opacity:0;visibility:hidden;transition:var(--warm-transition)}
+.drawer-overlay.show{opacity:1;visibility:visible}
+.drawer{position:fixed;top:0;right:-560px;width:560px;max-width:90vw;height:100vh;background:var(--warm-card-bg);box-shadow:-8px 0 30px rgba(0,0,0,0.12);z-index:950;transition:right 0.3s cubic-bezier(0.4,0,0.2,1);display:flex;flex-direction:column}
+.drawer.show{right:0}
+.drawer-header{padding:20px 24px;border-bottom:1px solid var(--warm-border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.drawer-header h3{font-size:16px;font-weight:600;display:flex;align-items:center;gap:8px}
+.drawer-body{flex:1;overflow-y:auto;padding:24px}
+.drawer-footer{padding:16px 24px;border-top:1px solid var(--warm-border);display:flex;justify-content:flex-end;gap:10px;flex-shrink:0}
+
+.toast{position:fixed;top:24px;left:50%;transform:translateX(-50%) translateY(-100px);padding:10px 24px;border-radius:8px;font-size:14px;font-weight:500;z-index:2000;transition:transform 0.3s ease;display:flex;align-items:center;gap:8px;box-shadow:0 6px 20px rgba(0,0,0,0.12)}
+.toast.show{transform:translateX(-50%) translateY(0)}
+.toast.success{background:var(--warm-primary);color:#fff}
+.toast.info{background:var(--warm-blue);color:#fff}
+
+.tenant-table{width:100%;border-collapse:separate;border-spacing:0;min-width:700px}
+.tenant-table thead th{padding:12px 14px;font-size:12px;font-weight:600;color:var(--warm-text-light);text-transform:uppercase;letter-spacing:0.5px;text-align:left;background:rgba(26,46,26,0.03);border-bottom:1px solid var(--warm-border);white-space:nowrap}
+.tenant-table tbody td{padding:12px 14px;font-size:13px;color:var(--warm-text);border-bottom:1px solid rgba(237,232,220,0.5);vertical-align:middle}
+.tenant-table tbody tr:hover{background:var(--warm-hover-bg)}
+.tenant-table tbody tr:last-child td{border-bottom:none}
+.tenant-name-cell{display:flex;align-items:center;gap:8px}
+.tenant-avatar{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:#fff;flex-shrink:0}
+.tenant-name-text{font-weight:500;font-size:13px}
+.tenant-code{font-size:11px;color:var(--warm-text-secondary)}
+.license-status{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:500}
+.license-status.active{background:rgba(82,196,26,0.1);color:var(--warm-primary-dark)}
+.license-status.expiring{background:rgba(250,140,22,0.1);color:#d46b08}
+.license-status.expired{background:rgba(255,77,79,0.1);color:var(--warm-red)}
+.license-status.none{background:rgba(0,0,0,0.04);color:var(--warm-text-secondary)}
+.license-status i{font-size:8px}
+.remaining-days{font-weight:600;font-size:12px}
+.remaining-days.safe{color:var(--warm-primary-dark)}
+.remaining-days.warn{color:var(--warm-orange)}
+.remaining-days.danger{color:var(--warm-red)}
+.remaining-days.none{color:var(--warm-text-secondary);font-weight:400}
+.action-links{display:flex;gap:2px;align-items:center;flex-wrap:wrap}
+.action-links .sep{color:var(--warm-border);font-size:12px}
+.amount-cell{font-weight:600;color:var(--warm-orange);font-size:13px}
+
+.search-bar{display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap}
+.search-input-wrap{position:relative;flex:1;min-width:200px;max-width:320px}
+.search-input-wrap i{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--warm-text-secondary);font-size:13px}
+.search-input{width:100%;padding:8px 12px 8px 36px;border:1px solid var(--warm-border);border-radius:8px;font-size:14px;color:var(--warm-text);background:var(--warm-card-bg);outline:none}
+.search-input:focus{border-color:var(--warm-primary);box-shadow:0 0 0 2px rgba(82,196,26,0.1)}
+.filter-select{padding:8px 28px 8px 12px;border:1px solid var(--warm-border);border-radius:8px;font-size:13px;color:var(--warm-text);background:var(--warm-card-bg);outline:none;cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M6 8L1 3h10z' fill='%238B7355'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
+.table-footer{display:flex;align-items:center;justify-content:space-between;padding:12px 0 0;font-size:13px;color:var(--warm-text-secondary)}
+.pagination{display:flex;gap:4px;align-items:center}
+.page-btn{width:32px;height:32px;border-radius:6px;border:1px solid var(--warm-border);background:var(--warm-card-bg);color:var(--warm-text);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;transition:var(--warm-transition)}
+.page-btn:hover{border-color:var(--warm-primary);color:var(--warm-primary)}
+.page-btn.active{background:var(--warm-primary);color:#fff;border-color:var(--warm-primary)}
+
+.license-timeline{position:relative;padding-left:24px}
+.license-timeline::before{content:'';position:absolute;left:7px;top:4px;bottom:4px;width:2px;background:var(--warm-border)}
+.timeline-item{position:relative;padding-bottom:18px}
+.timeline-item:last-child{padding-bottom:0}
+.timeline-dot{position:absolute;left:-20px;top:4px;width:12px;height:12px;border-radius:50%;border:2px solid var(--warm-primary);background:var(--warm-card-bg)}
+.timeline-item.current .timeline-dot{background:var(--warm-primary);box-shadow:0 0 0 3px rgba(82,196,26,0.2)}
+.timeline-item.expired .timeline-dot{border-color:var(--warm-text-secondary);background:var(--warm-text-secondary)}
+.timeline-item-content{background:rgba(26,46,26,0.02);border:1px solid var(--warm-border);border-radius:10px;padding:12px 14px}
+.timeline-item.current .timeline-item-content{border-color:rgba(82,196,26,0.2);background:rgba(82,196,26,0.03)}
+.timeline-item-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:4px}
+.timeline-item-dates{font-size:13px;font-weight:500;color:var(--warm-text)}
+.timeline-item-details{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;font-size:11px;color:var(--warm-text-light)}
+.timeline-item-details span{display:flex;align-items:center;gap:4px}
+.timeline-item-details strong{color:var(--warm-text);font-weight:500}
+
+.chart-container{position:relative;height:260px;width:100%}
+.chart-period-btns{display:flex;gap:6px;flex-wrap:wrap}
+.chart-period-btn{padding:4px 12px;border-radius:6px;border:1px solid var(--warm-border);background:var(--warm-card-bg);color:var(--warm-text-light);font-size:12px;cursor:pointer;transition:var(--warm-transition);font-weight:500}
+.chart-period-btn:hover{border-color:var(--warm-primary);color:var(--warm-primary)}
+.chart-period-btn.active{background:var(--warm-primary);color:#fff;border-color:var(--warm-primary)}
+
+.jwt-decode-box{background:rgba(26,46,26,0.02);border:1px solid var(--warm-border);border-radius:10px;padding:16px;font-family:'SF Mono','Fira Code',monospace;font-size:12px;line-height:1.8}
+.jwt-decode-box .jwt-key{color:var(--warm-text-light)}
+.jwt-decode-box .jwt-val{color:var(--warm-text);font-weight:500}
+.jwt-decode-box .jwt-sep{color:var(--warm-border)}
+
+.features-display{display:flex;gap:6px;flex-wrap:wrap}
+
+@media(max-width:768px){
+  .sidebar{display:none}
+  .main-content{margin-left:0;padding:12px;max-height:none}
+  .form-row{grid-template-columns:1fr}
+  .drawer{width:100vw;max-width:100vw}
+  .tenant-table{font-size:11px}
+  .tenant-table thead th,.tenant-table tbody td{padding:6px 4px;white-space:nowrap}
+  .tenant-table .hide-mobile{display:none}
+  .auth-detail-body{grid-template-columns:1fr 1fr}
+  .status-row{flex-direction:column;align-items:flex-start}
+  .page-switcher{flex-direction:column;gap:6px}
+  .page-switch-btn{padding:8px 12px;font-size:13px}
+  .search-bar{flex-direction:column;align-items:stretch}
+  .search-input-wrap{max-width:100%}
+  .chart-container{height:200px}
+  .action-links{flex-direction:column;gap:2px;align-items:flex-start}
+  .action-links .sep{display:none}
+  .site-id-bar{flex-direction:column;align-items:flex-start;gap:4px}
+  .site-id-value{max-width:100%;font-size:11px}
+  .card-body{padding:12px}
+  .card-header{padding:10px 12px;flex-wrap:wrap}
+  .auth-status-card{padding:16px}
+  .modal{max-width:100vw;border-radius:12px 12px 0 0;max-height:90vh}
+  .modal-body{padding:16px}
+  .checkbox-group{gap:6px}
+  .checkbox-item{padding:6px 10px;font-size:12px}
+  .chart-period-btns{gap:4px}
+  .chart-period-btn{padding:3px 8px;font-size:11px}
+  #customRangePicker{flex-direction:column;align-items:stretch;gap:4px}
+  #customRangePicker .form-input{width:100%!important}
+  .tenant-name-cell{gap:4px}
+  .tenant-avatar{width:24px;height:24px;font-size:11px}
+  .tenant-name-text{font-size:12px}
+  .tenant-code{font-size:10px}
+  .auth-method-tag{font-size:10px;padding:2px 6px}
+  .feature-tag{font-size:10px;padding:1px 5px}
+  .btn{padding:6px 14px;font-size:13px}
+  .btn-sm{padding:3px 10px;font-size:12px}
+}
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="sidebar-logo"><div class="logo-icon">门</div><span>门诊系统</span></div>
+  <div class="sidebar-section">系统设置</div>
+  <div class="sidebar-item" data-page="tenant"><i class="fas fa-hospital"></i> 诊所管理</div>
+  <div class="sidebar-item"><i class="fas fa-users"></i> 用户管理</div>
+  <div class="sidebar-item"><i class="fas fa-shield-halved"></i> 角色管理</div>
+  <div class="sidebar-item"><i class="fas fa-volume-high"></i> 排队设置</div>
+  <div class="sidebar-item"><i class="fas fa-mobile-screen"></i> 患者端管理</div>
+  <div class="sidebar-item"><i class="fas fa-wrench"></i> 软件配置</div>
+  <div class="sidebar-item"><i class="fas fa-cloud-arrow-up"></i> 备份与恢复</div>
+  <div class="sidebar-item active" data-page="license"><i class="fas fa-key"></i> 授权</div>
+</div>
+
+<div class="main-content">
+  <div class="page-switcher">
+    <button class="page-switch-btn active" data-page="license"><i class="fas fa-key"></i> 授权管理（本站点）</button>
+    <button class="page-switch-btn" data-page="tenant"><i class="fas fa-hospital"></i> 诊所授权管理</button>
+  </div>
+
+  <!-- ===== PAGE 1: 授权管理（本站点） ===== -->
+  <div class="page-panel active" id="page-license">
+    <div class="page-header">
+      <h1><i class="fas fa-key"></i> 授权</h1>
+      <p>查看本站点授权状态，管理软件授权</p>
+    </div>
+
+    <div class="auth-status-card authorized" id="authCard">
+      <div class="status-row">
+        <div class="status-left">
+          <div class="status-icon"><i class="fas fa-shield-check"></i></div>
+          <div class="status-info">
+            <h2>已授权</h2>
+            <p>软件授权有效，所有功能正常可用</p>
+          </div>
+        </div>
+        <div class="status-badge">已激活</div>
+      </div>
+      <div class="site-id-bar">
+        <span class="site-id-label">站点标识</span>
+        <span class="site-id-value" id="siteIdFull">hospital-a-beijing:3d78JJ_2026-04-19 13:43:01
+          <button class="copy-btn" onclick="copyText('siteIdFull',this)" title="复制"><i class="fas fa-copy"></i></button>
+        </span>
+      </div>
+      <div class="form-hint" style="margin-top:6px;margin-left:0"><i class="fas fa-microchip" style="color:var(--warm-primary)"></i> Machine ID 由 API 启动时自动生成并持久化存储，不依赖操作系统信息</div>
+      <div class="countdown">
+        <i class="fas fa-clock"></i> 授权剩余 <strong>28</strong> 天
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-header-left"><i class="fas fa-file-contract"></i> 授权详情（JWT 解码）</div>
+      </div>
+      <div class="auth-detail-body">
+        <div class="auth-field">
+          <div class="auth-field-label">授权日期</div>
+          <div class="auth-field-value">2026-04-01</div>
+        </div>
+        <div class="auth-field">
+          <div class="auth-field-label">截止日期</div>
+          <div class="auth-field-value">2026-04-30</div>
+        </div>
+        <div class="auth-field">
+          <div class="auth-field-label">授权方式</div>
+          <div class="auth-field-value"><span class="auth-method-tag month"><i class="fas fa-calendar-days"></i> 按月</span></div>
+        </div>
+        <div class="auth-field">
+          <div class="auth-field-label">付费金额</div>
+          <div class="auth-field-value" style="color:var(--warm-orange);font-weight:600">¥2,000</div>
+        </div>
+        <div class="auth-field">
+          <div class="auth-field-label">授权功能</div>
+          <div class="auth-field-value">
+            <div class="features-display">
+              <span class="feature-tag basic"><i class="fas fa-check-circle"></i> 基础功能</span>
+              <span class="feature-tag ai"><i class="fas fa-brain"></i> AI增值</span>
+              <span class="feature-tag cloud"><i class="fas fa-cloud"></i> 云存储</span>
+            </div>
+          </div>
+        </div>
+        <div class="auth-field">
+          <div class="auth-field-label">授权状态</div>
+          <div class="auth-field-value" style="color:var(--warm-primary-dark)"><i class="fas fa-circle-check"></i> 有效</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-header-left"><i class="fas fa-timeline"></i> 授权周期</div>
+      </div>
+      <div class="card-body">
+        <div class="timeline-bar-wrapper">
+          <div class="timeline-bar-bg"><div class="timeline-bar-fill green" style="width:93%"></div></div>
+          <div class="timeline-labels"><span>2026-04-01</span><span>2026-04-30</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-header-left"><i class="fas fa-barcode"></i> JWT 签名信息</div>
+      </div>
+      <div class="card-body">
+        <div class="jwt-decode-box">
+          <div><span class="jwt-key">alg:</span> <span class="jwt-val">RS256</span></div>
+          <div><span class="jwt-key">typ:</span> <span class="jwt-val">JWT</span></div>
+          <div style="margin:8px 0;border-top:1px dashed var(--warm-border)"></div>
+          <div><span class="jwt-key">site_id:</span> <span class="jwt-val">hospital-a-beijing</span></div>
+          <div><span class="jwt-key">machine_id:</span> <span class="jwt-val">3d78JJ_2026-04-19 13:43:01</span></div>
+          <div><span class="jwt-key">method:</span> <span class="jwt-val">month</span></div>
+          <div><span class="jwt-key">duration:</span> <span class="jwt-val">1</span></div>
+          <div><span class="jwt-key">features:</span> <span class="jwt-val">["basic","ai","cloud"]</span></div>
+          <div><span class="jwt-key">amount:</span> <span class="jwt-val">2000</span></div>
+          <div><span class="jwt-key">iat:</span> <span class="jwt-val">1743465600</span></div>
+          <div><span class="jwt-key">exp:</span> <span class="jwt-val">1746057600</span></div>
+        </div>
+        <div class="form-hint" style="margin-top:8px"><i class="fas fa-lock" style="color:var(--warm-primary)"></i> 此信息由公钥解码 JWT 数字签名获得，确保授权数据不可篡改</div>
+      </div>
+    </div>
+
+    <div class="action-bar">
+      <button class="btn btn-primary" onclick="showModal('authModal')"><i class="fas fa-pen-to-square"></i> 更新授权</button>
+      <button class="btn btn-default" onclick="showToast('授权状态已刷新','info')"><i class="fas fa-arrows-rotate"></i> 刷新状态</button>
+    </div>
+  </div>
+
+  <!-- ===== PAGE 2: 诊所授权管理 ===== -->
+  <div class="page-panel" id="page-tenant">
+    <div class="page-header">
+      <h1><i class="fas fa-hospital"></i> 诊所授权管理</h1>
+      <p>管理所有诊所的授权信息，查看授权历史与付费统计</p>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-header-left"><i class="fas fa-chart-line"></i> 付费统计</div>
+      </div>
+      <div class="card-body">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+          <div class="chart-period-btns">
+            <button class="chart-period-btn" data-period="lastweek">上周</button>
+            <button class="chart-period-btn" data-period="thisweek">本周</button>
+            <button class="chart-period-btn" data-period="lastmonth">上月</button>
+            <button class="chart-period-btn" data-period="thismonth">本月</button>
+            <button class="chart-period-btn" data-period="lastyear">去年</button>
+            <button class="chart-period-btn active" data-period="thisyear">今年</button>
+            <button class="chart-period-btn" data-period="custom" id="customRangeBtn">自定义</button>
+          </div>
+          <div id="customRangePicker" style="display:none;align-items:center;gap:6px;flex-wrap:wrap">
+            <input type="date" class="form-input" style="width:auto;padding:4px 8px;font-size:12px" value="2026-01-01" id="chartDateFrom">
+            <span style="font-size:12px;color:var(--warm-text-secondary)">至</span>
+            <input type="date" class="form-input" style="width:auto;padding:4px 8px;font-size:12px" value="2026-04-29" id="chartDateTo">
+            <button class="btn btn-primary btn-sm" style="padding:4px 10px;font-size:12px" onclick="showToast('图表已更新','info')">查询</button>
+          </div>
+        </div>
+        <div class="chart-container"><canvas id="revenueChart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="search-bar">
+      <div class="search-input-wrap">
+        <i class="fas fa-search"></i>
+        <input type="text" class="search-input" placeholder="搜索诊所名称或编码...">
+      </div>
+      <select class="filter-select">
+        <option value="">全部状态</option>
+        <option value="active">有效</option>
+        <option value="expiring">即将到期</option>
+        <option value="expired">已过期</option>
+        <option value="none">未授权</option>
+      </select>
+      <div style="flex:1"></div>
+      <button class="btn btn-primary btn-sm" onclick="showModal('addLicenseModal')"><i class="fas fa-plus"></i> 新增授权</button>
+    </div>
+
+    <div class="card">
+      <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+      <table class="tenant-table">
+        <thead>
+          <tr>
+            <th>诊所</th>
+            <th>状态</th>
+            <th>方式</th>
+            <th>功能</th>
+            <th class="hide-mobile">授权日期</th>
+            <th>截止日期</th>
+            <th>剩余</th>
+            <th>金额</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><div class="tenant-name-cell"><div class="tenant-avatar" style="background:linear-gradient(135deg,#52c41a,#73d13d)">朝</div><div><div class="tenant-name-text">朝阳口腔</div><div class="tenant-code">chaoyang-dental</div></div></div></td>
+            <td><span class="license-status active"><i class="fas fa-circle"></i> 有效</span></td>
+            <td><span class="auth-method-tag month" style="font-size:11px;padding:2px 8px"><i class="fas fa-calendar-days"></i> 月</span></td>
+            <td><span class="feature-tag basic">基础</span><span class="feature-tag ai">AI</span></td>
+            <td class="hide-mobile">2026-04-01</td>
+            <td>2026-04-30</td>
+            <td><span class="remaining-days safe">28天</span></td>
+            <td><span class="amount-cell">¥2,000</span></td>
+            <td><div class="action-links"><button class="btn-link" onclick="openDrawer('detailDrawer')">详情</button><span class="sep">|</span><button class="btn-link" onclick="showModal('addLicenseModal')">续期</button></div></td>
+          </tr>
+          <tr>
+            <td><div class="tenant-name-cell"><div class="tenant-avatar" style="background:linear-gradient(135deg,#fa8c16,#ffc53d)">海</div><div><div class="tenant-name-text">海淀中医</div><div class="tenant-code">haidian-tcm</div></div></div></td>
+            <td><span class="license-status expiring"><i class="fas fa-circle"></i> 即将到期</span></td>
+            <td><span class="auth-method-tag year" style="font-size:11px;padding:2px 8px"><i class="fas fa-calendar"></i> 年</span></td>
+            <td><span class="feature-tag basic">基础</span><span class="feature-tag ai">AI</span><span class="feature-tag cloud">云</span></td>
+            <td class="hide-mobile">2025-05-01</td>
+            <td>2026-05-01</td>
+            <td><span class="remaining-days warn">2天</span></td>
+            <td><span class="amount-cell">¥18,000</span></td>
+            <td><div class="action-links"><button class="btn-link" onclick="openDrawer('detailDrawer')">详情</button><span class="sep">|</span><button class="btn-link" onclick="showModal('addLicenseModal')">续期</button></div></td>
+          </tr>
+          <tr>
+            <td><div class="tenant-name-cell"><div class="tenant-avatar" style="background:linear-gradient(135deg,#ff4d4f,#ff7875)">西</div><div><div class="tenant-name-text">西城社区</div><div class="tenant-code">xicheng-community</div></div></div></td>
+            <td><span class="license-status expired"><i class="fas fa-circle"></i> 已过期</span></td>
+            <td><span class="auth-method-tag week" style="font-size:11px;padding:2px 8px"><i class="fas fa-calendar-week"></i> 周</span></td>
+            <td><span class="feature-tag basic">基础</span></td>
+            <td class="hide-mobile">2026-04-15</td>
+            <td>2026-04-22</td>
+            <td><span class="remaining-days danger">-7天</span></td>
+            <td><span class="amount-cell">¥500</span></td>
+            <td><div class="action-links"><button class="btn-link" onclick="openDrawer('detailDrawer')">详情</button><span class="sep">|</span><button class="btn-link" onclick="showModal('addLicenseModal')">续期</button></div></td>
+          </tr>
+          <tr>
+            <td><div class="tenant-name-cell"><div class="tenant-avatar" style="background:linear-gradient(135deg,#1677ff,#69b1ff)">东</div><div><div class="tenant-name-text">东城综合</div><div class="tenant-code">dongcheng-general</div></div></div></td>
+            <td><span class="license-status active"><i class="fas fa-circle"></i> 有效</span></td>
+            <td><span class="auth-method-tag permanent" style="font-size:11px;padding:2px 8px"><i class="fas fa-infinity"></i> 永久</span></td>
+            <td><span class="feature-tag basic">基础</span><span class="feature-tag cloud">云</span></td>
+            <td class="hide-mobile">2026-01-01</td>
+            <td>永久</td>
+            <td><span class="remaining-days safe">∞</span></td>
+            <td><span class="amount-cell">¥50,000</span></td>
+            <td><div class="action-links"><button class="btn-link" onclick="openDrawer('detailDrawer')">详情</button></div></td>
+          </tr>
+          <tr>
+            <td><div class="tenant-name-cell"><div class="tenant-avatar" style="background:linear-gradient(135deg,#999,#bbb)">丰</div><div><div class="tenant-name-text">丰台康复</div><div class="tenant-code">fengtai-rehab</div></div></div></td>
+            <td><span class="license-status none"><i class="fas fa-circle"></i> 未授权</span></td>
+            <td>—</td>
+            <td>—</td>
+            <td class="hide-mobile">—</td>
+            <td>—</td>
+            <td><span class="remaining-days none">—</span></td>
+            <td>—</td>
+            <td><div class="action-links"><button class="btn-link" onclick="showModal('addLicenseModal')">授权</button></div></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="table-footer"><span>共 5 条记录</span><div class="pagination"><button class="page-btn"><i class="fas fa-chevron-left" style="font-size:11px"></i></button><button class="page-btn active">1</button><button class="page-btn"><i class="fas fa-chevron-right" style="font-size:11px"></i></button></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 更新授权弹窗（本站点） ===== -->
+<div class="modal-overlay" id="authModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3><i class="fas fa-pen-to-square" style="color:var(--warm-primary)"></i> 更新授权</h3>
+      <button class="modal-close" onclick="hideModal('authModal')"><i class="fas fa-xmark"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">SITE_ID</label>
+        <input type="text" class="form-input" value="hospital-a-beijing">
+        <div class="form-hint">自动获取，如获取失败可手动修改</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Machine ID</label>
+        <input type="text" class="form-input" value="3d78JJ_2026-04-19 13:43:01">
+        <div class="form-hint">API 启动时自动生成并持久化，如获取失败可手动修改</div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">授权方式 <span class="required">*</span></label>
+          <select class="form-select" id="formMethod">
+            <option value="day">按天</option>
+            <option value="week">按周</option>
+            <option value="month" selected>按月</option>
+            <option value="year">按年</option>
+            <option value="permanent">永久</option>
+          </select>
+        </div>
+        <div class="form-group" id="durationGroup">
+          <label class="form-label">授权数量 <span class="required">*</span></label>
+          <input type="number" class="form-input" id="formDuration" value="1" min="1">
+          <div class="form-hint" id="durationHint">按月授权，1 表示 1 个月</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">授权功能 <span class="required">*</span></label>
+        <div class="checkbox-group" id="featureCheckboxes">
+          <label class="checkbox-item checked" data-feature="basic"><input type="checkbox" checked><span class="checkbox-dot"><i class="fas fa-check"></i></span> <i class="fas fa-check-circle" style="color:var(--warm-primary)"></i> 基础功能</label>
+          <label class="checkbox-item" data-feature="ai"><input type="checkbox"><span class="checkbox-dot"><i class="fas fa-check"></i></span> <i class="fas fa-brain" style="color:#722ED1"></i> AI增值服务</label>
+          <label class="checkbox-item" data-feature="cloud"><input type="checkbox"><span class="checkbox-dot"><i class="fas fa-check"></i></span> <i class="fas fa-cloud" style="color:#1677FF"></i> 云存储</label>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">授权日期</label>
+          <input type="date" class="form-input" id="formAuthDate" value="2026-04-01">
+        </div>
+        <div class="form-group">
+          <label class="form-label">截止日期</label>
+          <input type="date" class="form-input" id="formExpiryDate" value="2026-04-30" readonly>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">付费金额（元）</label>
+        <input type="number" class="form-input" value="2000" min="0" step="0.01" placeholder="输入授权费用">
+      </div>
+      <div class="form-group">
+        <div class="key-label"><i class="fas fa-key" style="color:var(--warm-orange)"></i> 私钥（本地）</div>
+        <div class="key-display">-----BEGIN RSA PRIVATE KEY-----<br>MIIEpAIBAAKCAQEA3c7b1a2f8e4d5690abcdef...<br>...（仅管理员本地可见）<br>-----END RSA PRIVATE KEY-----</div>
+      </div>
+      <div class="form-group">
+        <div class="key-label"><i class="fas fa-lock-open" style="color:var(--warm-primary)"></i> 公钥（GitHub）</div>
+        <div class="key-display">-----BEGIN PUBLIC KEY-----<br>MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCg<br>...（所有部署站点可见）<br>-----END PUBLIC KEY-----</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-default" onclick="hideModal('authModal')">取消</button>
+      <button class="btn btn-primary" onclick="hideModal('authModal');showToast('授权已更新，JWT已签发','success')"><i class="fas fa-check"></i> 签发授权</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 新增授权弹窗（诊所） ===== -->
+<div class="modal-overlay" id="addLicenseModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3><i class="fas fa-plus-circle" style="color:var(--warm-primary)"></i> 新增授权</h3>
+      <button class="modal-close" onclick="hideModal('addLicenseModal')"><i class="fas fa-xmark"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">诊所 <span class="required">*</span></label>
+        <select class="form-select" id="tenantSelect">
+          <option value="">请选择诊所</option>
+          <option value="1">朝阳口腔 (chaoyang-dental)</option>
+          <option value="2">海淀中医 (haidian-tcm)</option>
+          <option value="3">西城社区 (xicheng-community)</option>
+          <option value="4">东城综合 (dongcheng-general)</option>
+          <option value="5">丰台康复 (fengtai-rehab)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">站点标识 (SITE_ID)</label>
+        <input type="text" class="form-input" id="tenantSiteId" placeholder="选择诊所后自动填充，失败可手动输入">
+        <div class="form-hint">自动填充，如失败可手动修改</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Machine ID</label>
+        <input type="text" class="form-input" id="tenantMachineId" placeholder="选择诊所后自动填充，失败可手动输入">
+        <div class="form-hint">API 自动生成并持久化，如失败可手动修改</div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">授权方式 <span class="required">*</span></label>
+          <select class="form-select" id="tenantFormMethod">
+            <option value="day">按天</option>
+            <option value="week">按周</option>
+            <option value="month" selected>按月</option>
+            <option value="year">按年</option>
+            <option value="permanent">永久</option>
+          </select>
+        </div>
+        <div class="form-group" id="tenantDurationGroup">
+          <label class="form-label">授权数量 <span class="required">*</span></label>
+          <input type="number" class="form-input" id="tenantFormDuration" value="1" min="1">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">授权功能 <span class="required">*</span></label>
+        <div class="checkbox-group" id="tenantFeatureCheckboxes">
+          <label class="checkbox-item checked" data-feature="basic"><input type="checkbox" checked><span class="checkbox-dot"><i class="fas fa-check"></i></span> <i class="fas fa-check-circle" style="color:var(--warm-primary)"></i> 基础功能</label>
+          <label class="checkbox-item" data-feature="ai"><input type="checkbox"><span class="checkbox-dot"><i class="fas fa-check"></i></span> <i class="fas fa-brain" style="color:#722ED1"></i> AI增值</label>
+          <label class="checkbox-item" data-feature="cloud"><input type="checkbox"><span class="checkbox-dot"><i class="fas fa-check"></i></span> <i class="fas fa-cloud" style="color:#1677FF"></i> 云存储</label>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">授权日期</label>
+          <input type="date" class="form-input" id="tenantFormAuthDate" value="2026-04-29">
+        </div>
+        <div class="form-group">
+          <label class="form-label">截止日期</label>
+          <input type="date" class="form-input" id="tenantFormExpiryDate" value="2026-05-29" readonly>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">付费金额（元）</label>
+        <input type="number" class="form-input" value="2000" min="0" step="0.01">
+      </div>
+      <div class="form-group">
+        <label class="form-label">备注</label>
+        <input type="text" class="form-input" placeholder="可选">
+      </div>
+      <div class="form-group">
+        <div class="key-label"><i class="fas fa-key" style="color:var(--warm-orange)"></i> 私钥（本地 scripts/）</div>
+        <div class="key-display">-----BEGIN RSA PRIVATE KEY-----<br>MIIEpAIBAAKCAQEA3c7b1a2f...<br>-----END RSA PRIVATE KEY-----</div>
+      </div>
+      <div class="form-group">
+        <div class="key-label"><i class="fas fa-lock-open" style="color:var(--warm-primary)"></i> 公钥（GitHub）</div>
+        <div class="key-display">-----BEGIN PUBLIC KEY-----<br>MIIBIjANBgkqhkiG9w0BAQEF...<br>-----END PUBLIC KEY-----</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-default" onclick="hideModal('addLicenseModal')">取消</button>
+      <button class="btn btn-primary" onclick="hideModal('addLicenseModal');showToast('JWT授权已签发','success')"><i class="fas fa-stamp"></i> 签发授权</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 授权详情抽屉 ===== -->
+<div class="drawer-overlay" id="detailDrawerOverlay" onclick="closeDrawer('detailDrawer')"></div>
+<div class="drawer" id="detailDrawer">
+  <div class="drawer-header">
+    <h3><i class="fas fa-file-contract" style="color:var(--warm-primary)"></i> 朝阳口腔 — 授权详情</h3>
+    <button class="modal-close" onclick="closeDrawer('detailDrawer')"><i class="fas fa-xmark"></i></button>
+  </div>
+  <div class="drawer-body">
+    <div class="auth-status-card authorized" style="margin-bottom:20px">
+      <div class="status-row">
+        <div class="status-left">
+          <div class="status-icon"><i class="fas fa-shield-check"></i></div>
+          <div class="status-info"><h2>已授权</h2><p>剩余 28 天</p></div>
+        </div>
+        <div class="status-badge">已激活</div>
+      </div>
+      <div class="site-id-bar">
+        <span class="site-id-label">站点标识</span>
+        <span class="site-id-value">chaoyang-dental:5fA2k9_2026-03-15 09:22:17</span>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">
+        <div class="card-header-left"><i class="fas fa-info-circle"></i> 当前授权（JWT 解码）</div>
+        <button class="btn btn-default btn-sm" onclick="showModal('addLicenseModal')"><i class="fas fa-pen"></i> 编辑</button>
+      </div>
+      <div class="auth-detail-body">
+        <div class="auth-field"><div class="auth-field-label">授权日期</div><div class="auth-field-value">2026-04-01</div></div>
+        <div class="auth-field"><div class="auth-field-label">截止日期</div><div class="auth-field-value">2026-04-30</div></div>
+        <div class="auth-field"><div class="auth-field-label">授权方式</div><div class="auth-field-value"><span class="auth-method-tag month"><i class="fas fa-calendar-days"></i> 按月</span></div></div>
+        <div class="auth-field"><div class="auth-field-label">付费金额</div><div class="auth-field-value" style="color:var(--warm-orange);font-weight:600">¥2,000</div></div>
+        <div class="auth-field"><div class="auth-field-label">授权功能</div><div class="auth-field-value"><div class="features-display"><span class="feature-tag basic"><i class="fas fa-check-circle"></i> 基础</span><span class="feature-tag ai"><i class="fas fa-brain"></i> AI</span></div></div></div>
+        <div class="auth-field"><div class="auth-field-label">签发者</div><div class="auth-field-value">admin</div></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:0">
+      <div class="card-header"><div class="card-header-left"><i class="fas fa-clock-rotate-left"></i> 授权历史</div></div>
+      <div class="card-body">
+        <div class="license-timeline">
+          <div class="timeline-item current">
+            <div class="timeline-dot"></div>
+            <div class="timeline-item-content">
+              <div class="timeline-item-header">
+                <span class="timeline-item-dates">2026-04-01 ~ 2026-04-30</span>
+                <span class="license-status active"><i class="fas fa-circle"></i> 有效</span>
+              </div>
+              <div class="timeline-item-details">
+                <span><i class="fas fa-tag"></i> <span class="auth-method-tag month" style="font-size:10px;padding:1px 6px">月</span></span>
+                <span><i class="fas fa-coins"></i> <strong>¥2,000</strong></span>
+                <span><i class="fas fa-puzzle-piece"></i> 基础+AI</span>
+                <span><i class="fas fa-user"></i> <strong>admin</strong></span>
+              </div>
+            </div>
+          </div>
+          <div class="timeline-item expired">
+            <div class="timeline-dot"></div>
+            <div class="timeline-item-content">
+              <div class="timeline-item-header">
+                <span class="timeline-item-dates">2026-03-01 ~ 2026-03-31</span>
+                <span class="license-status expired"><i class="fas fa-circle"></i> 已过期</span>
+              </div>
+              <div class="timeline-item-details">
+                <span><i class="fas fa-tag"></i> <span class="auth-method-tag month" style="font-size:10px;padding:1px 6px">月</span></span>
+                <span><i class="fas fa-coins"></i> <strong>¥2,000</strong></span>
+                <span><i class="fas fa-puzzle-piece"></i> 基础</span>
+                <span><i class="fas fa-user"></i> <strong>admin</strong></span>
+              </div>
+            </div>
+          </div>
+          <div class="timeline-item expired">
+            <div class="timeline-dot"></div>
+            <div class="timeline-item-content">
+              <div class="timeline-item-header">
+                <span class="timeline-item-dates">2026-02-01 ~ 2026-02-28</span>
+                <span class="license-status expired"><i class="fas fa-circle"></i> 已过期</span>
+              </div>
+              <div class="timeline-item-details">
+                <span><i class="fas fa-tag"></i> <span class="auth-method-tag week" style="font-size:10px;padding:1px 6px">周</span></span>
+                <span><i class="fas fa-coins"></i> <strong>¥500</strong></span>
+                <span><i class="fas fa-puzzle-piece"></i> 基础</span>
+                <span><i class="fas fa-user"></i> <strong>admin</strong></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="drawer-footer">
+    <button class="btn btn-default" onclick="closeDrawer('detailDrawer')">关闭</button>
+    <button class="btn btn-primary" onclick="showModal('addLicenseModal')"><i class="fas fa-plus"></i> 续期授权</button>
+  </div>
+</div>
+
+<div class="toast success" id="toast"><i class="fas fa-circle-check"></i><span id="toastText">操作成功</span></div>
+
+<script>
+document.querySelectorAll('.page-switch-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.page-switch-btn').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.page-panel').forEach(p=>p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('page-'+btn.dataset.page).classList.add('active');
+    document.querySelectorAll('.sidebar-item').forEach(s=>s.classList.toggle('active',s.dataset.page===btn.dataset.page));
+  });
+});
+
+document.querySelectorAll('.checkbox-item').forEach(item=>{
+  item.addEventListener('click',(e)=>{
+    e.preventDefault();
+    item.classList.toggle('checked');
+    const cb=item.querySelector('input');
+    cb.checked=!cb.checked;
+  });
+});
+
+function copyText(id,btn){
+  const el=document.getElementById(id);
+  const text=el.childNodes[0].textContent.trim();
+  navigator.clipboard.writeText(text).then(()=>{
+    btn.classList.add('copied');btn.innerHTML='<i class="fas fa-check"></i>';
+    showToast('已复制','success');
+    setTimeout(()=>{btn.classList.remove('copied');btn.innerHTML='<i class="fas fa-copy"></i>'},1500);
+  });
+}
+function showModal(id){document.getElementById(id).classList.add('show')}
+function hideModal(id){document.getElementById(id).classList.remove('show')}
+function openDrawer(id){document.getElementById(id).classList.add('show');document.getElementById(id+'Overlay').classList.add('show')}
+function closeDrawer(id){document.getElementById(id).classList.remove('show');document.getElementById(id+'Overlay').classList.remove('show')}
+function showToast(t,type){const toast=document.getElementById('toast');document.getElementById('toastText').textContent=t;toast.className='toast '+type;toast.classList.add('show');setTimeout(()=>toast.classList.remove('show'),2000)}
+
+const methodLabels={day:'天',week:'周',month:'月',year:'年',permanent:'永久'};
+function setupCalc(methodId,durationId,authDateId,expiryId,durationGroupId){
+  const m=document.getElementById(methodId),d=document.getElementById(durationId),a=document.getElementById(authDateId),e=document.getElementById(expiryId),g=document.getElementById(durationGroupId);
+  function calc(){
+    const method=m.value;
+    if(g){g.style.display=method==='permanent'?'none':''}
+    const duration=parseInt(d.value)||1;
+    const start=a.value?new Date(a.value):new Date();
+    const expiry=new Date(start);
+    if(method==='day')expiry.setDate(expiry.getDate()+duration);
+    else if(method==='week')expiry.setDate(expiry.getDate()+duration*7);
+    else if(method==='month')expiry.setMonth(expiry.getMonth()+duration);
+    else if(method==='year')expiry.setFullYear(expiry.getFullYear()+duration);
+    else if(method==='permanent'){e.value='2099-12-31';return}
+    e.value=expiry.toISOString().split('T')[0];
+  }
+  m.addEventListener('change',calc);d.addEventListener('input',calc);a.addEventListener('change',calc);calc();
+}
+setupCalc('formMethod','formDuration','formAuthDate','formExpiryDate','durationGroup');
+setupCalc('tenantFormMethod','tenantFormDuration','tenantFormAuthDate','tenantFormExpiryDate','tenantDurationGroup');
+
+document.querySelectorAll('.modal-overlay').forEach(o=>{o.addEventListener('click',function(e){if(e.target===this)this.classList.remove('show')})});
+
+document.querySelectorAll('.chart-period-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.chart-period-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    const picker=document.getElementById('customRangePicker');
+    if(btn.dataset.period==='custom'){picker.style.display='flex'}
+    else{picker.style.display='none'}
+  });
+});
+
+const ctx=document.getElementById('revenueChart');
+if(ctx){
+  new Chart(ctx,{
+    type:'bar',
+    data:{
+      labels:['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'],
+      datasets:[
+        {label:'基础功能',data:[2000,2000,2000,6000,0,0,0,0,0,0,0,0],backgroundColor:'rgba(82,196,26,0.7)',borderRadius:4},
+        {label:'AI增值',data:[0,0,1000,2000,0,0,0,0,0,0,0,0],backgroundColor:'rgba(114,46,209,0.7)',borderRadius:4},
+        {label:'云存储',data:[0,0,0,3000,0,0,0,0,0,0,0,0],backgroundColor:'rgba(22,119,255,0.7)',borderRadius:4}
+      ]
+    },
+    options:{
+      responsive:true,
+      maintainAspectRatio:false,
+      plugins:{legend:{position:'bottom',labels:{usePointStyle:true,padding:16,font:{size:12}}}},
+      scales:{
+        x:{stacked:true,grid:{display:false},ticks:{font:{size:11}}},
+        y:{stacked:true,grid:{color:'rgba(26,46,26,0.06)'},ticks:{font:{size:11},callback:v=>'¥'+v.toLocaleString()}}
+      }
+    }
+  });
+}
+</script>
+</body>
+</html>

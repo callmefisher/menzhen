@@ -41,6 +41,7 @@ services:
       - mysql-data:/var/lib/mysql:ro
       - minio-data:/data:ro
       - /:/hostfs:ro
+      - ./data/license:/data
     depends_on:
       mysql:
         condition: service_healthy
@@ -101,3 +102,4 @@ services:
 volumes:
   mysql-data:
   minio-data:
+
