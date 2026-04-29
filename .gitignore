@@ -16,6 +16,9 @@ backups/*
 # Keep specific backup files in main branch
 !backups/minio/xyj_minio_20260323_151726.tar.gz
 
+# License data (machine-id, persistent per deployment)
+data/
+
 # Node modules
 node_modules/
 
