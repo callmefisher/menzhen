@@ -490,6 +490,23 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			powerAdmins.GET("/groups", middleware.RequireSuperAdmin(db), powerAdminHandler.ListAllGroups)
 		}
 
+		// License management routes (superAdmin only).
+		licenseHandler := handler.NewLicenseHandler(db)
+		licenses := authenticated.Group("/licenses")
+		{
+			licenses.GET("/identity", middleware.RequirePermission(db, "license:manage"), licenseHandler.GetIdentity)
+			licenses.PUT("/identity", middleware.RequirePermission(db, "license:manage"), licenseHandler.UpdateIdentity)
+			licenses.GET("/site", middleware.RequirePermission(db, "license:manage"), licenseHandler.GetSiteLicense)
+			licenses.GET("/keys", middleware.RequirePermission(db, "license:manage"), licenseHandler.GetKeys)
+			licenses.GET("", middleware.RequirePermission(db, "license:manage"), licenseHandler.ListAllLicenses)
+			licenses.POST("", middleware.RequirePermission(db, "license:manage"), licenseHandler.CreateLicense)
+			licenses.GET("/stats", middleware.RequirePermission(db, "license:manage"), licenseHandler.GetStats)
+			licenses.GET("/:id", middleware.RequirePermission(db, "license:manage"), licenseHandler.GetLicense)
+			licenses.PUT("/:id", middleware.RequirePermission(db, "license:manage"), licenseHandler.UpdateLicense)
+			licenses.DELETE("/:id", middleware.RequirePermission(db, "license:manage"), licenseHandler.DeleteLicense)
+			licenses.GET("/tenant/:tenant_id", middleware.RequirePermission(db, "license:manage"), licenseHandler.ListTenantLicenses)
+		}
+
 		// Prescription list by record (nested under records).
 		records.GET("/:id/prescriptions", middleware.RequirePermission(db, "prescription:read"), prescriptionHandler.ListByRecord)
 

@@ -23,6 +23,8 @@ type Config struct {
 	DeepSeekAPIKey  string
 	DeepSeekBaseURL string
 	DeepSeekModel   string
+
+	SiteID string
 }
 
 // fileVars caches values read from .env file at startup.
@@ -46,6 +48,8 @@ func Load() *Config {
 		DeepSeekAPIKey:  getVal("DEEPSEEK_API_KEY", ""),
 		DeepSeekBaseURL: getVal("DEEPSEEK_BASE_URL", ""),
 		DeepSeekModel:   getVal("DEEPSEEK_MODEL", ""),
+
+		SiteID: getVal("SITE_ID", ""),
 	}
 }
 

@@ -18,6 +18,7 @@ const PERMISSION_NAME_MAP: Record<string, string> = {
   'prescription:create': '开方',
   'prescription:read': '查看处方',
   'tenant:manage': '诊所管理',
+  'license:manage': '授权管理',
 };
 
 const request = axios.create({

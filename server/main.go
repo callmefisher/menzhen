@@ -157,6 +157,20 @@ func main() {
 		}
 	}()
 
+	// License: ensure machine-id on startup
+	machineID := service.EnsureMachineID()
+	log.Printf("Machine ID: %s", machineID)
+
+	// License expiry check: runs every 1 minute
+	go func() {
+		service.CheckExpiredLicenses(db)
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			service.CheckExpiredLicenses(db)
+		}
+	}()
+
 	// Start server
 	log.Printf("Server starting on port %s", cfg.ServerPort)
 	if err := r.Run(":" + cfg.ServerPort); err != nil {
