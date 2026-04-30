@@ -137,9 +137,11 @@ request.interceptors.response.use(
     if (error.response?.status === 403 && data?.message === 'license_required') {
       emitLicenseExpired(true);
       if (window.location.pathname !== '/settings/license' && window.location.pathname !== '/login') {
+        const licenseType = data?.license_type || 'site';
+        const tabParam = licenseType === 'clinic' ? '?tab=clinic' : '';
         message.error({ content: '软件授权已过期，请联系管理员', key: 'license_expired', duration: 0 });
         setTimeout(() => {
-          window.location.href = '/settings/license';
+          window.location.href = `/settings/license${tabParam}`;
         }, 1500);
       }
       return Promise.reject(error);

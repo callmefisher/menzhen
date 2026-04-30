@@ -1,6 +1,7 @@
 package service
 
 import (
+	"crypto/md5"
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
@@ -22,6 +23,22 @@ type LicenseService struct {
 
 func NewLicenseService(db *gorm.DB) *LicenseService {
 	return &LicenseService{DB: db}
+}
+
+const ExpectedPublicKeyMD5 = "e795fca8f9c01eb8d0947c508d0ace34"
+
+func ValidatePublicKeyMD5(publicKeyPEM string) error {
+	if publicKeyPEM == "" {
+		return fmt.Errorf("公钥为空，无法校验")
+	}
+	hash := md5.Sum([]byte(publicKeyPEM))
+	actual := fmt.Sprintf("%x", hash)
+	if actual != ExpectedPublicKeyMD5 {
+		log.Printf("[license] public key MD5 mismatch: expected=%s, actual=%s", ExpectedPublicKeyMD5, actual)
+		return fmt.Errorf("公钥MD5校验失败: 期望 %s, 实际 %s", ExpectedPublicKeyMD5, actual)
+	}
+	log.Printf("[license] public key MD5 validated: %s", actual)
+	return nil
 }
 
 const machineIDFile = "/data/machine-id"
@@ -64,12 +81,13 @@ func GetSiteID() string {
 }
 
 type LicenseClaims struct {
-	SiteID    string   `json:"site_id"`
-	MachineID string   `json:"machine_id"`
-	Method    string   `json:"method"`
-	Duration  int      `json:"duration"`
-	Features  []string `json:"features"`
-	Amount    float64  `json:"amount"`
+	SiteID     string   `json:"site_id"`
+	MachineID  string   `json:"machine_id"`
+	ClinicCode string   `json:"clinic_code,omitempty"`
+	Method     string   `json:"method"`
+	Duration   int      `json:"duration"`
+	Features   []string `json:"features"`
+	Amount     float64  `json:"amount"`
 	jwt.RegisteredClaims
 }
 
@@ -104,6 +122,8 @@ func VerifyLicense(publicKeyPEM string, tokenStr string) (*LicenseClaims, error)
 }
 
 type CreateLicenseRequest struct {
+	LicenseType  string   `json:"license_type"`
+	ClinicCode   string   `json:"clinic_code"`
 	SiteID       string   `json:"site_id" binding:"required"`
 	MachineID    string   `json:"machine_id" binding:"required"`
 	Method       string   `json:"method" binding:"required"`
@@ -116,6 +136,8 @@ type CreateLicenseRequest struct {
 }
 
 type UpdateLicenseRequest struct {
+	LicenseType  string   `json:"license_type"`
+	ClinicCode   string   `json:"clinic_code"`
 	SiteID       string   `json:"site_id"`
 	MachineID    string   `json:"machine_id"`
 	Method       string   `json:"method"`
@@ -128,6 +150,27 @@ type UpdateLicenseRequest struct {
 }
 
 func (s *LicenseService) CreateSiteLicense(req CreateLicenseRequest, creator string, privateKeyPEM string) (*model.License, error) {
+	if req.LicenseType == "" {
+		req.LicenseType = "site"
+	} else if req.LicenseType != "site" && req.LicenseType != "clinic" {
+		return nil, fmt.Errorf("invalid license_type: %s, must be 'site' or 'clinic'", req.LicenseType)
+	}
+
+	if req.LicenseType == "clinic" && req.ClinicCode == "" {
+		return nil, fmt.Errorf("clinic license requires clinic_code")
+	}
+
+	publicKeyPEM := LoadPublicKey()
+	if publicKeyPEM != "" {
+		if err := ValidatePublicKeyMD5(publicKeyPEM); err != nil {
+			log.Printf("[license] CreateSiteLicense rejected: public key MD5 validation failed: %v", err)
+			return nil, fmt.Errorf("公钥校验失败，拒绝生成license: %w", err)
+		}
+		log.Printf("[license] public key MD5 validated before license creation")
+	} else {
+		log.Printf("[license] WARNING: no public key loaded, skipping MD5 validation (test mode)")
+	}
+
 	var authDate, expiryDate *time.Time
 	if req.AuthDate != "" {
 		loc, _ := time.LoadLocation("Asia/Shanghai")
@@ -156,19 +199,32 @@ func (s *LicenseService) CreateSiteLicense(req CreateLicenseRequest, creator str
 
 	featuresJSON, _ := json.Marshal(req.Features)
 
-	var existingActive model.License
-	if err := s.DB.Where("site_id = ? AND machine_id = ? AND status = 'active' AND (expiry_date IS NULL OR expiry_date > NOW())", req.SiteID, req.MachineID).First(&existingActive).Error; err == nil {
-		existingActive.Status = "superseded"
-		s.DB.Save(&existingActive)
+	if req.LicenseType == "clinic" {
+		var existingActive model.License
+		now := time.Now()
+		if err := s.DB.Where("license_type = 'clinic' AND clinic_code = ? AND site_id = ? AND machine_id = ? AND status = 'active' AND (expiry_date IS NULL OR expiry_date > ?)", req.ClinicCode, req.SiteID, req.MachineID, now).First(&existingActive).Error; err == nil {
+			existingActive.Status = "superseded"
+			s.DB.Save(&existingActive)
+			log.Printf("[license] clinic license superseded: id=%d, clinic_code=%s, site_id=%s", existingActive.ID, req.ClinicCode, req.SiteID)
+		}
+	} else if req.LicenseType == "site" {
+		var existingActive model.License
+		now := time.Now()
+		if err := s.DB.Where("license_type = 'site' AND site_id = ? AND machine_id = ? AND status = 'active' AND (expiry_date IS NULL OR expiry_date > ?)", req.SiteID, req.MachineID, now).First(&existingActive).Error; err == nil {
+			existingActive.Status = "superseded"
+			s.DB.Save(&existingActive)
+			log.Printf("[license] site license superseded: id=%d, site_id=%s", existingActive.ID, req.SiteID)
+		}
 	}
 
 	claims := LicenseClaims{
-		SiteID:    req.SiteID,
-		MachineID: req.MachineID,
-		Method:    req.Method,
-		Duration:  req.Duration,
-		Features:  req.Features,
-		Amount:    req.Amount,
+		ClinicCode: req.ClinicCode,
+		SiteID:     req.SiteID,
+		MachineID:  req.MachineID,
+		Method:     req.Method,
+		Duration:   req.Duration,
+		Features:   req.Features,
+		Amount:     req.Amount,
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  jwt.NewNumericDate(*authDate),
 			ExpiresAt: jwt.NewNumericDate(*expiryDate),
@@ -181,30 +237,40 @@ func (s *LicenseService) CreateSiteLicense(req CreateLicenseRequest, creator str
 	} else if privateKeyPEM != "" {
 		signed, err := s.SignLicense(privateKeyPEM, claims)
 		if err != nil {
-			log.Printf("WARNING: failed to sign license JWT: %v", err)
+			log.Printf("[license] WARNING: failed to sign license JWT: %v", err)
 		} else {
 			jwtToken = signed
 		}
 	}
 
+	var tenantID uint64
+	if req.ClinicCode != "" {
+		s.DB.Table("tenants").Where("code = ?", req.ClinicCode).Select("id").Scan(&tenantID)
+		log.Printf("[license] resolved clinic_code=%s to tenant_id=%d", req.ClinicCode, tenantID)
+	}
+
 	lic := model.License{
-		SiteID:     req.SiteID,
-		MachineID:  req.MachineID,
-		Method:     req.Method,
-		Duration:   req.Duration,
-		AuthDate:   authDate,
-		ExpiryDate: expiryDate,
-		Features:   string(featuresJSON),
-		Amount:     req.Amount,
-		JWTToken:   jwtToken,
-		Status:     "active",
-		Remark:     req.Remark,
-		CreatedBy:  creator,
+		TenantID:    tenantID,
+		LicenseType: req.LicenseType,
+		ClinicCode:  req.ClinicCode,
+		SiteID:      req.SiteID,
+		MachineID:   req.MachineID,
+		Method:      req.Method,
+		Duration:    req.Duration,
+		AuthDate:    authDate,
+		ExpiryDate:  expiryDate,
+		Features:    string(featuresJSON),
+		Amount:      req.Amount,
+		JWTToken:    jwtToken,
+		Status:      "active",
+		Remark:      req.Remark,
+		CreatedBy:   creator,
 	}
 
 	if err := s.DB.Create(&lic).Error; err != nil {
 		return nil, fmt.Errorf("create license: %w", err)
 	}
+	log.Printf("[license] created license: id=%d, type=%s, clinic_code=%s, site_id=%s, method=%s", lic.ID, lic.LicenseType, lic.ClinicCode, lic.SiteID, lic.Method)
 	return &lic, nil
 }
 
@@ -214,12 +280,18 @@ func (s *LicenseService) UpdateLicense(id uint64, req UpdateLicenseRequest, priv
 		return nil, fmt.Errorf("license not found")
 	}
 
+	originalLicenseType := lic.LicenseType
+
 	if req.LicenseToken != "" {
 		lic.JWTToken = req.LicenseToken
 
 		publicKeyPEM := LoadPublicKey()
 		if publicKeyPEM != "" {
 			if decodedClaims, err := VerifyLicense(publicKeyPEM, req.LicenseToken); err == nil {
+				if decodedClaims.ClinicCode != "" {
+					lic.ClinicCode = decodedClaims.ClinicCode
+					lic.LicenseType = "clinic"
+				}
 				if decodedClaims.SiteID != "" {
 					lic.SiteID = decodedClaims.SiteID
 				}
@@ -246,6 +318,7 @@ func (s *LicenseService) UpdateLicense(id uint64, req UpdateLicenseRequest, priv
 					auth := decodedClaims.IssuedAt.Time
 					lic.AuthDate = &auth
 				}
+				log.Printf("[license] decoded JWT token for license update: id=%d, clinic_code=%s, site_id=%s", lic.ID, decodedClaims.ClinicCode, decodedClaims.SiteID)
 			}
 		}
 
@@ -258,6 +331,9 @@ func (s *LicenseService) UpdateLicense(id uint64, req UpdateLicenseRequest, priv
 
 		lic.Status = "active"
 	} else {
+		if req.ClinicCode != "" {
+			lic.ClinicCode = req.ClinicCode
+		}
 		if req.SiteID != "" {
 			lic.SiteID = req.SiteID
 		}
@@ -300,12 +376,13 @@ func (s *LicenseService) UpdateLicense(id uint64, req UpdateLicenseRequest, priv
 		var features []string
 		json.Unmarshal([]byte(lic.Features), &features)
 		claims := LicenseClaims{
-			SiteID:    lic.SiteID,
-			MachineID: lic.MachineID,
-			Method:    lic.Method,
-			Duration:  lic.Duration,
-			Features:  features,
-			Amount:    lic.Amount,
+			ClinicCode: lic.ClinicCode,
+			SiteID:     lic.SiteID,
+			MachineID:  lic.MachineID,
+			Method:     lic.Method,
+			Duration:   lic.Duration,
+			Features:   features,
+			Amount:     lic.Amount,
 			RegisteredClaims: jwt.RegisteredClaims{
 				IssuedAt:  jwt.NewNumericDate(*lic.AuthDate),
 				ExpiresAt: jwt.NewNumericDate(*lic.ExpiryDate),
@@ -315,6 +392,40 @@ func (s *LicenseService) UpdateLicense(id uint64, req UpdateLicenseRequest, priv
 			signed, err := s.SignLicense(privateKeyPEM, claims)
 			if err == nil {
 				lic.JWTToken = signed
+			}
+		}
+	}
+
+	if lic.LicenseType == "clinic" && lic.ClinicCode != "" {
+		var newTenantID uint64
+		s.DB.Table("tenants").Where("code = ?", lic.ClinicCode).Select("id").Scan(&newTenantID)
+		lic.TenantID = newTenantID
+	}
+
+	if lic.Status == "active" {
+		now := time.Now()
+		if lic.LicenseType == "clinic" && lic.ClinicCode != "" {
+			s.DB.Model(&model.License{}).
+				Where("license_type = 'clinic' AND clinic_code = ? AND site_id = ? AND machine_id = ? AND status = 'active' AND id != ? AND (expiry_date IS NULL OR expiry_date > ?)",
+					lic.ClinicCode, lic.SiteID, lic.MachineID, lic.ID, now).
+				Update("status", "superseded")
+		} else if lic.LicenseType == "site" {
+			s.DB.Model(&model.License{}).
+				Where("license_type = 'site' AND site_id = ? AND machine_id = ? AND status = 'active' AND id != ? AND (expiry_date IS NULL OR expiry_date > ?)",
+					lic.SiteID, lic.MachineID, lic.ID, now).
+				Update("status", "superseded")
+		}
+		if originalLicenseType != lic.LicenseType {
+			if originalLicenseType == "site" {
+				s.DB.Model(&model.License{}).
+					Where("license_type = 'site' AND site_id = ? AND machine_id = ? AND status = 'active' AND id != ?",
+						lic.SiteID, lic.MachineID, lic.ID).
+					Update("status", "superseded")
+			} else if originalLicenseType == "clinic" {
+				s.DB.Model(&model.License{}).
+					Where("license_type = 'clinic' AND clinic_code = ? AND site_id = ? AND machine_id = ? AND status = 'active' AND id != ?",
+						lic.ClinicCode, lic.SiteID, lic.MachineID, lic.ID).
+					Update("status", "superseded")
 			}
 		}
 	}
@@ -341,7 +452,41 @@ func (s *LicenseService) GetActiveLicense(tenantID uint64) (*model.License, erro
 
 func (s *LicenseService) GetSiteActiveLicense(siteID, machineID string) (*model.License, error) {
 	var lic model.License
-	q := s.DB.Where("status = 'active' AND (expiry_date IS NULL OR expiry_date > NOW())")
+	now := time.Now()
+	q := s.DB.Where("license_type = 'site' AND status = 'active' AND (expiry_date IS NULL OR expiry_date > ?)", now)
+	if siteID != "" {
+		q = q.Where("site_id = ?", siteID)
+	}
+	if machineID != "" {
+		q = q.Where("machine_id = ?", machineID)
+	}
+	if err := q.First(&lic).Error; err != nil {
+		log.Printf("[license] GetSiteActiveLicense: no active site license found for site_id=%s, machine_id=%s, err=%v", siteID, machineID, err)
+		return nil, err
+	}
+	log.Printf("[license] GetSiteActiveLicense: found active site license id=%d for site_id=%s", lic.ID, siteID)
+	return &lic, nil
+}
+
+func (s *LicenseService) GetSiteLatestLicense(siteID, machineID string) (*model.License, error) {
+	var lic model.License
+	q := s.DB.Where("license_type = 'site'")
+	if siteID != "" {
+		q = q.Where("site_id = ?", siteID)
+	}
+	if machineID != "" {
+		q = q.Where("machine_id = ?", machineID)
+	}
+	if err := q.Order("created_at DESC").First(&lic).Error; err != nil {
+		return nil, err
+	}
+	return &lic, nil
+}
+
+func (s *LicenseService) GetClinicActiveLicense(clinicCode, siteID, machineID string) (*model.License, error) {
+	var lic model.License
+	now := time.Now()
+	q := s.DB.Where("license_type = 'clinic' AND clinic_code = ? AND status = 'active' AND (expiry_date IS NULL OR expiry_date > ?)", clinicCode, now)
 	if siteID != "" {
 		q = q.Where("site_id = ?", siteID)
 	}
@@ -354,9 +499,9 @@ func (s *LicenseService) GetSiteActiveLicense(siteID, machineID string) (*model.
 	return &lic, nil
 }
 
-func (s *LicenseService) GetSiteLatestLicense(siteID, machineID string) (*model.License, error) {
+func (s *LicenseService) GetClinicLatestLicense(clinicCode, siteID, machineID string) (*model.License, error) {
 	var lic model.License
-	q := s.DB.Where("1=1")
+	q := s.DB.Where("license_type = 'clinic' AND clinic_code = ?", clinicCode)
 	if siteID != "" {
 		q = q.Where("site_id = ?", siteID)
 	}
@@ -367,6 +512,26 @@ func (s *LicenseService) GetSiteLatestLicense(siteID, machineID string) (*model.
 		return nil, err
 	}
 	return &lic, nil
+}
+
+func (s *LicenseService) HasAnyClinicLicense(clinicCode string) (bool, error) {
+	var count int64
+	if err := s.DB.Model(&model.License{}).Where("license_type = 'clinic' AND clinic_code = ?", clinicCode).Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func (s *LicenseService) ResolveTenantCode(tenantID uint64) string {
+	var code string
+	s.DB.Table("tenants").Where("id = ?", tenantID).Select("code").Scan(&code)
+	return code
+}
+
+func (s *LicenseService) ResolveTenantName(tenantID uint64) string {
+	var name string
+	s.DB.Table("tenants").Where("id = ?", tenantID).Select("name").Scan(&name)
+	return name
 }
 
 func (s *LicenseService) ListLicenses(tenantID uint64) ([]model.License, error) {
@@ -502,13 +667,13 @@ func CheckExpiredLicenses(db *gorm.DB) int {
 	var licenses []model.License
 	now := time.Now()
 	if err := db.Where("status = 'active' AND expiry_date < ?", now).Find(&licenses).Error; err != nil {
-		log.Printf("license expiry check error: %v", err)
+		log.Printf("[license] expiry check error: %v", err)
 		return 0
 	}
 	for _, lic := range licenses {
 		lic.Status = "expired"
 		db.Save(&lic)
-		log.Printf("license %d (tenant %d) expired", lic.ID, lic.TenantID)
+		log.Printf("[license] license expired: id=%d, tenant_id=%d, type=%s, clinic_code=%s, site_id=%s", lic.ID, lic.TenantID, lic.LicenseType, lic.ClinicCode, lic.SiteID)
 	}
 	return len(licenses)
 }

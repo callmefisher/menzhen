@@ -84,9 +84,10 @@ export default function AppLayout() {
   useEffect(() => {
     if (licenseExpired && location.pathname !== '/settings/license' && location.pathname !== '/login' && location.pathname !== '/register') {
       message.error({ content: '软件授权已过期，请联系管理员', key: 'license_expired', duration: 0 });
-      // 只有有授权管理权限的用户才跳转到授权页面
       if (hasPermission('license:manage')) {
-        navigate('/settings/license', { replace: true });
+        const hasClinic = user && user.tenant_id && user.tenant_id > 0;
+        const tab = hasClinic ? '?tab=clinic' : '';
+        navigate(`/settings/license${tab}`, { replace: true });
       }
     }
     if (!licenseExpired) {

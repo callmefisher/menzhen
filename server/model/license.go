@@ -9,6 +9,8 @@ import (
 type License struct {
 	ID          uint64         `gorm:"primaryKey;autoIncrement" json:"id"`
 	TenantID    uint64         `gorm:"column:tenant_id;not null;index" json:"tenant_id"`
+	LicenseType string         `gorm:"column:license_type;type:varchar(20);not null;default:'site'" json:"license_type"`
+	ClinicCode  string         `gorm:"column:clinic_code;type:varchar(100);default:''" json:"clinic_code"`
 	SiteID      string         `gorm:"column:site_id;type:varchar(100);not null" json:"site_id"`
 	MachineID   string         `gorm:"column:machine_id;type:varchar(100);not null" json:"machine_id"`
 	Method      string         `gorm:"column:method;type:varchar(20);not null" json:"method"`

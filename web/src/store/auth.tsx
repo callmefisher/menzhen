@@ -8,7 +8,7 @@ import {
 import type { ReactNode } from 'react';
 import { login as loginApi, getMe, logout as logoutApi } from '../api/auth';
 import { getQueueEnabled, getAppointmentEnabled } from '../api/queue-doctor';
-import { getSiteLicense } from '../api/license';
+import { getSiteLicense, getClinicLicense } from '../api/license';
 import { LICENSE_EXPIRED_EVENT } from '../utils/request';
 
 interface User {
@@ -87,16 +87,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const checkLicenseStatus = useCallback(async () => {
     try {
-      const res = await getSiteLicense() as any;
-      const data = res.data;
-      const expired = data?.status === 'expired' || data?.status === 'none';
-      setState(prev => ({ ...prev, licenseExpired: expired }));
-    } catch (err: any) {
-      // 如果后端返回 403 license_required，明确标记为过期
-      if (err?.response?.status === 403 && err?.response?.data?.message === 'license_required') {
+      const siteRes = await getSiteLicense() as any;
+      const siteData = siteRes.data;
+      const siteOk = siteData?.status === 'active' || siteData?.status === 'expiring';
+
+      if (siteOk) {
+        setState(prev => ({ ...prev, licenseExpired: false }));
+        return;
+      }
+
+      try {
+        const clinicRes = await getClinicLicense() as any;
+        const clinicData = clinicRes.data;
+        const clinicOk = clinicData?.status === 'active' || clinicData?.status === 'expiring';
+        setState(prev => ({ ...prev, licenseExpired: !clinicOk }));
+      } catch {
         setState(prev => ({ ...prev, licenseExpired: true }));
       }
-      // 其他错误不修改状态，避免网络波动导致状态错误切换
+    } catch (err: any) {
+      if (err?.response?.status === 403 && err?.response?.data?.message === 'license_required') {
+        try {
+          const clinicRes = await getClinicLicense() as any;
+          const clinicData = clinicRes.data;
+          const clinicOk = clinicData?.status === 'active' || clinicData?.status === 'expiring';
+          setState(prev => ({ ...prev, licenseExpired: !clinicOk }));
+        } catch {
+          setState(prev => ({ ...prev, licenseExpired: true }));
+        }
+      }
     }
   }, []);
 
