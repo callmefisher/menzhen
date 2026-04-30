@@ -59,7 +59,7 @@ export default function AppLayout() {
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [passwordForm] = Form.useForm();
-  const { user, logout, hasPermission, isSuperAdmin, queueEnabled, fetchQueueEnabled, appointmentEnabled, fetchAppointmentEnabled } = useAuth();
+  const { user, logout, hasPermission, isSuperAdmin, queueEnabled, fetchQueueEnabled, appointmentEnabled, fetchAppointmentEnabled, licenseExpired } = useAuth();
   const { themeKey, themeConfig, setTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
@@ -81,7 +81,19 @@ export default function AppLayout() {
     }
   }, [a11yMode, isMobile]);
 
-  // Scroll to top only on initial mount (e.g. after login redirect)
+  useEffect(() => {
+    if (licenseExpired && location.pathname !== '/settings/license' && location.pathname !== '/login' && location.pathname !== '/register') {
+      message.error({ content: '软件授权已过期，请联系管理员', key: 'license_expired', duration: 0 });
+      // 只有有授权管理权限的用户才跳转到授权页面
+      if (hasPermission('license:manage')) {
+        navigate('/settings/license', { replace: true });
+      }
+    }
+    if (!licenseExpired) {
+      message.destroy('license_expired');
+    }
+  }, [licenseExpired, hasPermission, location.pathname, navigate]);
+
   useEffect(() => {
     window.scrollTo(0, 0);
     fetchQueueEnabled();
@@ -435,6 +447,8 @@ export default function AppLayout() {
           icon: <TeamOutlined />,
           label: '超级管理员',
         });
+      }
+      if (isSuperAdmin || hasPermission('license:manage')) {
         settingsChildren.push({
           key: '/settings/license',
           icon: <KeyOutlined />,

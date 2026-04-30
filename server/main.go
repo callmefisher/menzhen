@@ -6,6 +6,7 @@ import (
 
 	"github.com/callmefisher/menzhen/server/config"
 	"github.com/callmefisher/menzhen/server/database"
+	"github.com/callmefisher/menzhen/server/middleware"
 	"github.com/callmefisher/menzhen/server/router"
 	"github.com/callmefisher/menzhen/server/service"
 	"github.com/callmefisher/menzhen/server/storage"
@@ -163,11 +164,17 @@ func main() {
 
 	// License expiry check: runs every 1 minute
 	go func() {
-		service.CheckExpiredLicenses(db)
+		if expired := service.CheckExpiredLicenses(db); expired > 0 {
+			middleware.InvalidateLicenseCache()
+			log.Printf("[CheckExpiredLicenses] %d license(s) expired on startup, cache invalidated", expired)
+		}
 		ticker := time.NewTicker(1 * time.Minute)
 		defer ticker.Stop()
 		for range ticker.C {
-			service.CheckExpiredLicenses(db)
+			if expired := service.CheckExpiredLicenses(db); expired > 0 {
+				middleware.InvalidateLicenseCache()
+				log.Printf("[CheckExpiredLicenses] %d license(s) expired, cache invalidated", expired)
+			}
 		}
 	}()
 

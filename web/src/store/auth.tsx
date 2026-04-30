@@ -8,6 +8,8 @@ import {
 import type { ReactNode } from 'react';
 import { login as loginApi, getMe, logout as logoutApi } from '../api/auth';
 import { getQueueEnabled, getAppointmentEnabled } from '../api/queue-doctor';
+import { getSiteLicense } from '../api/license';
+import { LICENSE_EXPIRED_EVENT } from '../utils/request';
 
 interface User {
   id: number;
@@ -25,20 +27,19 @@ interface AuthState {
   queueEnabled: boolean;
   appointmentEnabled: boolean;
   managedGroups: string[];
+  licenseExpired: boolean;
 }
 
 interface AuthContextValue extends AuthState {
   login: (username: string, password: string, remember?: boolean) => Promise<void>;
   logout: () => Promise<void>;
   hasPermission: (code: string) => boolean;
-  /** True when user has user:manage permission (system-level admin). */
   isGlobalAdmin: boolean;
-  /** True only for username=admin with user:manage — can see across all tenants. */
   isSuperAdmin: boolean;
-  /** True when user manages one or more groups and is not superAdmin. */
   isPowerAdmin: boolean;
   fetchQueueEnabled: () => Promise<void>;
   fetchAppointmentEnabled: () => Promise<void>;
+  checkLicenseStatus: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -61,6 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     queueEnabled: true,
     appointmentEnabled: true,
     managedGroups: [],
+    licenseExpired: false,
   });
 
   const fetchQueueEnabled = useCallback(async () => {
@@ -83,6 +85,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const checkLicenseStatus = useCallback(async () => {
+    try {
+      const res = await getSiteLicense() as any;
+      const data = res.data;
+      const expired = data?.status === 'expired' || data?.status === 'none';
+      setState(prev => ({ ...prev, licenseExpired: expired }));
+    } catch (err: any) {
+      // 如果后端返回 403 license_required，明确标记为过期
+      if (err?.response?.status === 403 && err?.response?.data?.message === 'license_required') {
+        setState(prev => ({ ...prev, licenseExpired: true }));
+      }
+      // 其他错误不修改状态，避免网络波动导致状态错误切换
+    }
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { expired } = (e as CustomEvent).detail;
+      setState(prev => ({ ...prev, licenseExpired: expired }));
+    };
+    window.addEventListener(LICENSE_EXPIRED_EVENT, handler);
+    return () => window.removeEventListener(LICENSE_EXPIRED_EVENT, handler);
+  }, []);
+
   // Restore session on mount
   useEffect(() => {
     if (state.token) {
@@ -103,6 +129,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
           fetchQueueEnabled();
           fetchAppointmentEnabled();
+          checkLicenseStatus();
         })
         .catch(() => {
           clearStoredToken();
@@ -114,6 +141,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             queueEnabled: true,
             appointmentEnabled: true,
             managedGroups: [],
+            licenseExpired: false,
           });
         });
     } else {
@@ -143,6 +171,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       queueEnabled: true,
       appointmentEnabled: true,
       managedGroups: body.data.managed_groups || [],
+      licenseExpired: false,
     });
     if (body.data.user.tenant_name) {
       document.title = body.data.user.tenant_name;
@@ -158,6 +187,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const aBody = aRes as unknown as { data?: { enabled?: boolean } };
       setState(prev => ({ ...prev, appointmentEnabled: aBody.data?.enabled ?? true }));
     } catch { /* keep default true */ }
+    checkLicenseStatus();
   }, []);
 
   const logout = useCallback(async () => {
@@ -173,6 +203,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         queueEnabled: true,
         appointmentEnabled: true,
         managedGroups: [],
+        licenseExpired: false,
       });
     }
   }, []);
@@ -200,6 +231,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isPowerAdmin,
         fetchQueueEnabled,
         fetchAppointmentEnabled,
+        checkLicenseStatus,
       }}
     >
       {children}

@@ -1,6 +1,12 @@
 import axios from 'axios';
 import { message } from 'antd';
 
+export const LICENSE_EXPIRED_EVENT = 'license_expired_change';
+
+export function emitLicenseExpired(expired: boolean) {
+  window.dispatchEvent(new CustomEvent(LICENSE_EXPIRED_EVENT, { detail: { expired } }));
+}
+
 const PERMISSION_NAME_MAP: Record<string, string> = {
   'patient:create': '创建患者',
   'patient:read': '查看患者',
@@ -11,6 +17,7 @@ const PERMISSION_NAME_MAP: Record<string, string> = {
   'record:update': '修改诊疗记录',
   'record:delete': '删除诊疗记录',
   'oplog:read': '查看操作日志',
+  'oplog:delete': '删除操作日志',
   'user:manage': '用户管理',
   'role:manage': '角色管理',
   'herb:read': '查询中药',
@@ -19,6 +26,29 @@ const PERMISSION_NAME_MAP: Record<string, string> = {
   'prescription:read': '查看处方',
   'tenant:manage': '诊所管理',
   'license:manage': '授权管理',
+  'power_admin:manage': '超级管理员管理',
+  'inventory:create': '新增库存',
+  'inventory:read': '查看库存',
+  'inventory:update': '修改库存',
+  'inventory:delete': '删除库存',
+  'billing:create': '收费',
+  'billing:read': '查看收费',
+  'tenant:user:manage': '诊所用户管理',
+  'tenant:role:manage': '诊所角色管理',
+  'followup:create': '新增回访',
+  'followup:read': '查看回访',
+  'followup:update': '编辑回访',
+  'followup:delete': '删除回访',
+  'statistics:read': '统计数据',
+  'queue:read': '查看排队',
+  'queue:create': '取号',
+  'queue:update': '叫号/完成',
+  'queue:clear': '清空排队',
+  'appointment:create': '创建预约',
+  'appointment:read': '查看预约',
+  'appointment:update': '修改预约',
+  'appointment:delete': '删除预约',
+  'appointment:checkin': '预约签到',
 };
 
 const request = axios.create({
@@ -39,7 +69,15 @@ request.interceptors.request.use((config) => {
 let isRefreshing = false;
 
 request.interceptors.response.use(
-  (response) => response.data,
+  (response) => {
+    const licenseActive = response.headers['x-license-active'];
+    if (licenseActive === 'true') {
+      emitLicenseExpired(false);
+    } else if (licenseActive === 'false') {
+      emitLicenseExpired(true);
+    }
+    return response.data;
+  },
   async (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
@@ -91,6 +129,18 @@ request.interceptors.response.use(
       message.error('该诊所已被禁用，请联系管理员');
       if (window.location.pathname !== '/login') {
         window.location.href = '/login';
+      }
+      return Promise.reject(error);
+    }
+
+    // 403 license_required: block all operations except license page
+    if (error.response?.status === 403 && data?.message === 'license_required') {
+      emitLicenseExpired(true);
+      if (window.location.pathname !== '/settings/license' && window.location.pathname !== '/login') {
+        message.error({ content: '软件授权已过期，请联系管理员', key: 'license_expired', duration: 0 });
+        setTimeout(() => {
+          window.location.href = '/settings/license';
+        }, 1500);
       }
       return Promise.reject(error);
     }

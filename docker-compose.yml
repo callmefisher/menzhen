@@ -42,6 +42,7 @@ services:
       - minio-data:/data:ro
       - /:/hostfs:ro
       - ./data/license:/data
+      - ./scripts:/app/scripts
     depends_on:
       mysql:
         condition: service_healthy

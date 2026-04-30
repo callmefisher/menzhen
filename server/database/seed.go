@@ -68,11 +68,11 @@ func seedPermissions(db *gorm.DB) {
 		{Code: "queue:create", Name: "取号", Description: "新增排队号"},
 		{Code: "queue:update", Name: "叫号/完成", Description: "叫号或完成就诊"},
 		{Code: "queue:clear", Name: "清空排队", Description: "清空当日排队"},
-		{Code: "appointment:create",  Name: "创建预约",  Description: "创建预约记录"},
-		{Code: "appointment:read",    Name: "查看预约",  Description: "查看预约列表"},
-		{Code: "appointment:update",  Name: "修改预约",  Description: "修改/取消预约"},
-		{Code: "appointment:delete",  Name: "删除预约",  Description: "删除已取消或未到诊的预约"},
-		{Code: "appointment:checkin", Name: "预约签到",  Description: "为预约患者签到"},
+		{Code: "appointment:create", Name: "创建预约", Description: "创建预约记录"},
+		{Code: "appointment:read", Name: "查看预约", Description: "查看预约列表"},
+		{Code: "appointment:update", Name: "修改预约", Description: "修改/取消预约"},
+		{Code: "appointment:delete", Name: "删除预约", Description: "删除已取消或未到诊的预约"},
+		{Code: "appointment:checkin", Name: "预约签到", Description: "为预约患者签到"},
 		{Code: "power_admin:manage", Name: "超级管理员管理", Description: "管理 powerAdmin 账号及其授权分组"},
 		{Code: "license:manage", Name: "授权管理", Description: "管理软件授权、查看授权信息、签发授权"},
 	}
@@ -83,9 +83,29 @@ func seedPermissions(db *gorm.DB) {
 		if result.Error != nil {
 			if err := db.Create(&p).Error; err != nil {
 				log.Printf("Warning: failed to create permission %s: %v", p.Code, err)
+			} else {
+				log.Printf("[seed] Created permission: code=%s name=%s id=%d", p.Code, p.Name, p.ID)
+			}
+		} else {
+			existing.Name = p.Name
+			existing.Description = p.Description
+			if err := db.Save(&existing).Error; err != nil {
+				log.Printf("Warning: failed to update permission %s: %v", p.Code, err)
 			}
 		}
 	}
+
+	var permCount int64
+	db.Model(&model.Permission{}).Count(&permCount)
+	log.Printf("[seed] Total permissions in DB: %d", permCount)
+
+	var licensePerm model.Permission
+	if err := db.Where("code = ?", "license:manage").First(&licensePerm).Error; err != nil {
+		log.Printf("[seed] WARNING: license:manage permission NOT found in DB after seed: %v", err)
+	} else {
+		log.Printf("[seed] license:manage permission verified: id=%d name=%s", licensePerm.ID, licensePerm.Name)
+	}
+
 	log.Println("Permissions upsert completed")
 }
 

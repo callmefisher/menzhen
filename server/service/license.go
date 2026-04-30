@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/callmefisher/menzhen/server/model"
+	"github.com/golang-jwt/jwt/v5"
 	"gorm.io/gorm"
 )
 
@@ -70,7 +70,6 @@ type LicenseClaims struct {
 	Duration  int      `json:"duration"`
 	Features  []string `json:"features"`
 	Amount    float64  `json:"amount"`
-	TenantID  uint64   `json:"tenant_id"`
 	jwt.RegisteredClaims
 }
 
@@ -105,7 +104,6 @@ func VerifyLicense(publicKeyPEM string, tokenStr string) (*LicenseClaims, error)
 }
 
 type CreateLicenseRequest struct {
-	TenantID     uint64   `json:"tenant_id" binding:"required"`
 	SiteID       string   `json:"site_id" binding:"required"`
 	MachineID    string   `json:"machine_id" binding:"required"`
 	Method       string   `json:"method" binding:"required"`
@@ -129,10 +127,11 @@ type UpdateLicenseRequest struct {
 	LicenseToken string   `json:"license_token"`
 }
 
-func (s *LicenseService) CreateLicense(req CreateLicenseRequest, creator string, privateKeyPEM string) (*model.License, error) {
+func (s *LicenseService) CreateSiteLicense(req CreateLicenseRequest, creator string, privateKeyPEM string) (*model.License, error) {
 	var authDate, expiryDate *time.Time
 	if req.AuthDate != "" {
-		t, err := time.Parse("2006-01-02", req.AuthDate)
+		loc, _ := time.LoadLocation("Asia/Shanghai")
+		t, err := time.ParseInLocation("2006-01-02", req.AuthDate, loc)
 		if err != nil {
 			return nil, fmt.Errorf("invalid auth_date: %w", err)
 		}
@@ -143,7 +142,8 @@ func (s *LicenseService) CreateLicense(req CreateLicenseRequest, creator string,
 	}
 
 	if req.Method == "permanent" {
-		far := time.Date(2099, 12, 31, 23, 59, 59, 0, time.Local)
+		loc, _ := time.LoadLocation("Asia/Shanghai")
+		far := time.Date(2099, 12, 31, 23, 59, 59, 0, loc)
 		expiryDate = &far
 		req.Duration = 0
 	} else {
@@ -157,7 +157,7 @@ func (s *LicenseService) CreateLicense(req CreateLicenseRequest, creator string,
 	featuresJSON, _ := json.Marshal(req.Features)
 
 	var existingActive model.License
-	if err := s.DB.Where("tenant_id = ? AND status = 'active'", req.TenantID).First(&existingActive).Error; err == nil {
+	if err := s.DB.Where("site_id = ? AND machine_id = ? AND status = 'active' AND (expiry_date IS NULL OR expiry_date > NOW())", req.SiteID, req.MachineID).First(&existingActive).Error; err == nil {
 		existingActive.Status = "superseded"
 		s.DB.Save(&existingActive)
 	}
@@ -169,7 +169,6 @@ func (s *LicenseService) CreateLicense(req CreateLicenseRequest, creator string,
 		Duration:  req.Duration,
 		Features:  req.Features,
 		Amount:    req.Amount,
-		TenantID:  req.TenantID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  jwt.NewNumericDate(*authDate),
 			ExpiresAt: jwt.NewNumericDate(*expiryDate),
@@ -189,7 +188,6 @@ func (s *LicenseService) CreateLicense(req CreateLicenseRequest, creator string,
 	}
 
 	lic := model.License{
-		TenantID:   req.TenantID,
 		SiteID:     req.SiteID,
 		MachineID:  req.MachineID,
 		Method:     req.Method,
@@ -216,64 +214,108 @@ func (s *LicenseService) UpdateLicense(id uint64, req UpdateLicenseRequest, priv
 		return nil, fmt.Errorf("license not found")
 	}
 
-	if req.SiteID != "" {
-		lic.SiteID = req.SiteID
-	}
-	if req.MachineID != "" {
-		lic.MachineID = req.MachineID
-	}
-	if req.Method != "" {
-		lic.Method = req.Method
-	}
-	if req.Duration > 0 {
-		lic.Duration = req.Duration
-	}
-	if req.Features != nil {
-		featuresJSON, _ := json.Marshal(req.Features)
-		lic.Features = string(featuresJSON)
-	}
-	lic.Amount = req.Amount
-	if req.Remark != "" {
-		lic.Remark = req.Remark
-	}
-
-	if req.AuthDate != "" {
-		t, err := time.Parse("2006-01-02", req.AuthDate)
-		if err == nil {
-			lic.AuthDate = &t
-		}
-	}
-
-	if lic.Method == "permanent" {
-		far := time.Date(2099, 12, 31, 23, 59, 59, 0, time.Local)
-		lic.ExpiryDate = &far
-		lic.Duration = 0
-	} else if lic.AuthDate != nil && lic.Duration > 0 {
-		exp := s.calcExpiry(*lic.AuthDate, lic.Method, lic.Duration)
-		lic.ExpiryDate = &exp
-	}
-
-	var features []string
-	json.Unmarshal([]byte(lic.Features), &features)
-	claims := LicenseClaims{
-		SiteID:    lic.SiteID,
-		MachineID: lic.MachineID,
-		Method:    lic.Method,
-		Duration:  lic.Duration,
-		Features:  features,
-		Amount:    lic.Amount,
-		TenantID:  lic.TenantID,
-		RegisteredClaims: jwt.RegisteredClaims{
-			IssuedAt:  jwt.NewNumericDate(*lic.AuthDate),
-			ExpiresAt: jwt.NewNumericDate(*lic.ExpiryDate),
-		},
-	}
 	if req.LicenseToken != "" {
 		lic.JWTToken = req.LicenseToken
-	} else if privateKeyPEM != "" {
-		signed, err := s.SignLicense(privateKeyPEM, claims)
-		if err == nil {
-			lic.JWTToken = signed
+
+		publicKeyPEM := LoadPublicKey()
+		if publicKeyPEM != "" {
+			if decodedClaims, err := VerifyLicense(publicKeyPEM, req.LicenseToken); err == nil {
+				if decodedClaims.SiteID != "" {
+					lic.SiteID = decodedClaims.SiteID
+				}
+				if decodedClaims.MachineID != "" {
+					lic.MachineID = decodedClaims.MachineID
+				}
+				if decodedClaims.Method != "" {
+					lic.Method = decodedClaims.Method
+				}
+				if decodedClaims.Duration > 0 {
+					lic.Duration = decodedClaims.Duration
+				}
+				if len(decodedClaims.Features) > 0 {
+					featuresJSON, _ := json.Marshal(decodedClaims.Features)
+					lic.Features = string(featuresJSON)
+				}
+				lic.Amount = decodedClaims.Amount
+
+				if decodedClaims.ExpiresAt != nil {
+					exp := decodedClaims.ExpiresAt.Time
+					lic.ExpiryDate = &exp
+				}
+				if decodedClaims.IssuedAt != nil {
+					auth := decodedClaims.IssuedAt.Time
+					lic.AuthDate = &auth
+				}
+			}
+		}
+
+		if lic.Method == "permanent" {
+			loc, _ := time.LoadLocation("Asia/Shanghai")
+			far := time.Date(2099, 12, 31, 23, 59, 59, 0, loc)
+			lic.ExpiryDate = &far
+			lic.Duration = 0
+		}
+
+		lic.Status = "active"
+	} else {
+		if req.SiteID != "" {
+			lic.SiteID = req.SiteID
+		}
+		if req.MachineID != "" {
+			lic.MachineID = req.MachineID
+		}
+		if req.Method != "" {
+			lic.Method = req.Method
+		}
+		if req.Duration > 0 {
+			lic.Duration = req.Duration
+		}
+		if req.Features != nil {
+			featuresJSON, _ := json.Marshal(req.Features)
+			lic.Features = string(featuresJSON)
+		}
+		lic.Amount = req.Amount
+		if req.Remark != "" {
+			lic.Remark = req.Remark
+		}
+
+		if req.AuthDate != "" {
+			loc, _ := time.LoadLocation("Asia/Shanghai")
+			t, err := time.ParseInLocation("2006-01-02", req.AuthDate, loc)
+			if err == nil {
+				lic.AuthDate = &t
+			}
+		}
+
+		if lic.Method == "permanent" {
+			loc, _ := time.LoadLocation("Asia/Shanghai")
+			far := time.Date(2099, 12, 31, 23, 59, 59, 0, loc)
+			lic.ExpiryDate = &far
+			lic.Duration = 0
+		} else if lic.AuthDate != nil && lic.Duration > 0 {
+			exp := s.calcExpiry(*lic.AuthDate, lic.Method, lic.Duration)
+			lic.ExpiryDate = &exp
+		}
+
+		var features []string
+		json.Unmarshal([]byte(lic.Features), &features)
+		claims := LicenseClaims{
+			SiteID:    lic.SiteID,
+			MachineID: lic.MachineID,
+			Method:    lic.Method,
+			Duration:  lic.Duration,
+			Features:  features,
+			Amount:    lic.Amount,
+			RegisteredClaims: jwt.RegisteredClaims{
+				IssuedAt:  jwt.NewNumericDate(*lic.AuthDate),
+				ExpiresAt: jwt.NewNumericDate(*lic.ExpiryDate),
+			},
+		}
+		if privateKeyPEM != "" {
+			signed, err := s.SignLicense(privateKeyPEM, claims)
+			if err == nil {
+				lic.JWTToken = signed
+			}
 		}
 	}
 
@@ -297,6 +339,36 @@ func (s *LicenseService) GetActiveLicense(tenantID uint64) (*model.License, erro
 	return &lic, nil
 }
 
+func (s *LicenseService) GetSiteActiveLicense(siteID, machineID string) (*model.License, error) {
+	var lic model.License
+	q := s.DB.Where("status = 'active' AND (expiry_date IS NULL OR expiry_date > NOW())")
+	if siteID != "" {
+		q = q.Where("site_id = ?", siteID)
+	}
+	if machineID != "" {
+		q = q.Where("machine_id = ?", machineID)
+	}
+	if err := q.First(&lic).Error; err != nil {
+		return nil, err
+	}
+	return &lic, nil
+}
+
+func (s *LicenseService) GetSiteLatestLicense(siteID, machineID string) (*model.License, error) {
+	var lic model.License
+	q := s.DB.Where("1=1")
+	if siteID != "" {
+		q = q.Where("site_id = ?", siteID)
+	}
+	if machineID != "" {
+		q = q.Where("machine_id = ?", machineID)
+	}
+	if err := q.Order("created_at DESC").First(&lic).Error; err != nil {
+		return nil, err
+	}
+	return &lic, nil
+}
+
 func (s *LicenseService) ListLicenses(tenantID uint64) ([]model.License, error) {
 	var licenses []model.License
 	q := s.DB.Where("tenant_id = ?", tenantID)
@@ -306,9 +378,19 @@ func (s *LicenseService) ListLicenses(tenantID uint64) ([]model.License, error) 
 	return licenses, nil
 }
 
-func (s *LicenseService) ListAllLicenses() ([]model.License, error) {
+func (s *LicenseService) ListAllLicenses(search string) ([]model.License, error) {
 	var licenses []model.License
-	if err := s.DB.Order("created_at DESC").Find(&licenses).Error; err != nil {
+	q := s.DB.Order("auth_date DESC, created_at DESC")
+	if search != "" {
+		var tenantIDs []uint64
+		s.DB.Table("tenants").Where("name LIKE ?", "%"+search+"%").Pluck("id", &tenantIDs)
+		if len(tenantIDs) > 0 {
+			q = q.Where("tenant_id IN ? OR site_id LIKE ? OR remark LIKE ?", tenantIDs, "%"+search+"%", "%"+search+"%")
+		} else {
+			q = q.Where("site_id LIKE ? OR remark LIKE ?", "%"+search+"%", "%"+search+"%")
+		}
+	}
+	if err := q.Find(&licenses).Error; err != nil {
 		return nil, err
 	}
 	return licenses, nil
@@ -398,32 +480,37 @@ func (s *LicenseService) GetMonthlyStats(startDate, endDate string) ([]MonthlyAm
 }
 
 func (s *LicenseService) calcExpiry(start time.Time, method string, duration int) time.Time {
+	loc, _ := time.LoadLocation("Asia/Shanghai")
+	startCST := start.In(loc)
+	var expiry time.Time
 	switch method {
 	case "day":
-		return start.AddDate(0, 0, duration)
+		expiry = startCST.AddDate(0, 0, duration)
 	case "week":
-		return start.AddDate(0, 0, duration*7)
+		expiry = startCST.AddDate(0, 0, duration*7)
 	case "month":
-		return start.AddDate(0, duration, 0)
+		expiry = startCST.AddDate(0, duration, 0)
 	case "year":
-		return start.AddDate(duration, 0, 0)
+		expiry = startCST.AddDate(duration, 0, 0)
 	default:
-		return start.AddDate(0, duration, 0)
+		expiry = startCST.AddDate(0, duration, 0)
 	}
+	return time.Date(expiry.Year(), expiry.Month(), expiry.Day(), 23, 59, 59, 0, loc)
 }
 
-func CheckExpiredLicenses(db *gorm.DB) {
+func CheckExpiredLicenses(db *gorm.DB) int {
 	var licenses []model.License
 	now := time.Now()
 	if err := db.Where("status = 'active' AND expiry_date < ?", now).Find(&licenses).Error; err != nil {
 		log.Printf("license expiry check error: %v", err)
-		return
+		return 0
 	}
 	for _, lic := range licenses {
 		lic.Status = "expired"
 		db.Save(&lic)
 		log.Printf("license %d (tenant %d) expired", lic.ID, lic.TenantID)
 	}
+	return len(licenses)
 }
 
 func (s *LicenseService) GetMachineIdentity() (string, string) {

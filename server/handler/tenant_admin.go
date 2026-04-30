@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -512,6 +513,13 @@ func (h *TenantAdminHandler) ListTenantPermissions(c *gin.Context) {
 			"message": "failed to list permissions",
 		})
 		return
+	}
+
+	log.Printf("[ListTenantPermissions] Returning %d permissions (filtered by globalAdminPermCodes)", len(permissions))
+	for _, p := range permissions {
+		if p.Code == "license:manage" {
+			log.Printf("[ListTenantPermissions] license:manage found: id=%d name=%s", p.ID, p.Name)
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
