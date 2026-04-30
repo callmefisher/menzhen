@@ -157,7 +157,7 @@ func (s *LicenseService) CreateSiteLicense(req CreateLicenseRequest, creator str
 	featuresJSON, _ := json.Marshal(req.Features)
 
 	var existingActive model.License
-	if err := s.DB.Where("site_id = ? AND machine_id = ? AND status = 'active'", req.SiteID, req.MachineID).First(&existingActive).Error; err == nil {
+	if err := s.DB.Where("site_id = ? AND machine_id = ? AND status = 'active' AND (expiry_date IS NULL OR expiry_date > NOW())", req.SiteID, req.MachineID).First(&existingActive).Error; err == nil {
 		existingActive.Status = "superseded"
 		s.DB.Save(&existingActive)
 	}
@@ -341,7 +341,7 @@ func (s *LicenseService) GetActiveLicense(tenantID uint64) (*model.License, erro
 
 func (s *LicenseService) GetSiteActiveLicense(siteID, machineID string) (*model.License, error) {
 	var lic model.License
-	q := s.DB.Where("status = 'active'")
+	q := s.DB.Where("status = 'active' AND (expiry_date IS NULL OR expiry_date > NOW())")
 	if siteID != "" {
 		q = q.Where("site_id = ?", siteID)
 	}
@@ -498,18 +498,19 @@ func (s *LicenseService) calcExpiry(start time.Time, method string, duration int
 	return time.Date(expiry.Year(), expiry.Month(), expiry.Day(), 23, 59, 59, 0, loc)
 }
 
-func CheckExpiredLicenses(db *gorm.DB) {
+func CheckExpiredLicenses(db *gorm.DB) int {
 	var licenses []model.License
 	now := time.Now()
 	if err := db.Where("status = 'active' AND expiry_date < ?", now).Find(&licenses).Error; err != nil {
 		log.Printf("license expiry check error: %v", err)
-		return
+		return 0
 	}
 	for _, lic := range licenses {
 		lic.Status = "expired"
 		db.Save(&lic)
 		log.Printf("license %d (tenant %d) expired", lic.ID, lic.TenantID)
 	}
+	return len(licenses)
 }
 
 func (s *LicenseService) GetMachineIdentity() (string, string) {
