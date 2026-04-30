@@ -65,7 +65,7 @@ const PERMISSION_GROUPS: { label: string; codes: string[] }[] = [
   },
   {
     label: '操作日志',
-    codes: ['oplog:read'],
+    codes: ['oplog:read', 'oplog:delete'],
   },
   {
     label: '库存管理',
@@ -73,7 +73,7 @@ const PERMISSION_GROUPS: { label: string; codes: string[] }[] = [
   },
   {
     label: '系统管理',
-    codes: ['user:manage', 'role:manage', 'tenant:manage'],
+    codes: ['user:manage', 'role:manage', 'tenant:manage', 'license:manage', 'power_admin:manage'],
   },
   {
     label: '收费管理',
@@ -89,7 +89,7 @@ const PERMISSION_GROUPS: { label: string; codes: string[] }[] = [
   },
   {
     label: '预约管理',
-    codes: ['appointment:read', 'appointment:create', 'appointment:update', 'appointment:checkin'],
+    codes: ['appointment:read', 'appointment:create', 'appointment:update', 'appointment:checkin', 'appointment:delete'],
   },
   {
     label: '诊所运营',
@@ -141,11 +141,25 @@ export default function RoleList() {
 
   const fetchPermissions = useCallback(async () => {
     try {
-      const res = canManageRoles ? await listPermissions() : await listTenantPermissions();
+      const apiFn = canManageRoles ? listPermissions : listTenantPermissions;
+      console.log('[RoleList] fetchPermissions: canManageRoles=', canManageRoles, 'using', canManageRoles ? 'listPermissions' : 'listTenantPermissions');
+      const res = await apiFn();
       const body = res as unknown as { data: PermissionItem[] };
-      setAllPermissions(body.data || []);
-    } catch {
-      // Error already handled by request interceptor
+      const perms = body.data || [];
+      console.log('[RoleList] fetchPermissions: received', perms.length, 'permissions');
+      const licensePerm = perms.find((p: PermissionItem) => p.code === 'license:manage');
+      console.log('[RoleList] license:manage permission:', licensePerm || 'NOT FOUND');
+      const sysGroup = PERMISSION_GROUPS.find(g => g.label === '系统管理');
+      if (sysGroup) {
+        const sysPermIds = sysGroup.codes.map(code => {
+          const found = perms.find((p: PermissionItem) => p.code === code);
+          return { code, found: !!found, id: found?.id };
+        });
+        console.log('[RoleList] 系统管理 group permissions:', sysPermIds);
+      }
+      setAllPermissions(perms);
+    } catch (err) {
+      console.error('[RoleList] fetchPermissions error:', err);
     }
   }, [canManageRoles]);
 

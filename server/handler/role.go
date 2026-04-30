@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -162,6 +163,13 @@ func (h *RoleHandler) ListPermissions(c *gin.Context) {
 			"message": "查询权限列表失败",
 		})
 		return
+	}
+
+	log.Printf("[ListPermissions] Returning %d permissions", len(permissions))
+	for _, p := range permissions {
+		if p.Code == "license:manage" {
+			log.Printf("[ListPermissions] license:manage found: id=%d name=%s", p.ID, p.Name)
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{

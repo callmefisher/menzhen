@@ -9,7 +9,7 @@ import (
 )
 
 // globalAdminPermCodes are permission codes that cannot be assigned by tenant-scoped role management.
-var globalAdminPermCodes = []string{"user:manage", "role:manage", "tenant:manage"}
+var globalAdminPermCodes = []string{"user:manage", "role:manage", "tenant:manage", "license:manage", "power_admin:manage"}
 
 // TenantUpdateUserRequest is the input for a tenant admin updating a user.
 // Deliberately omits tenant_id — tenant ops cannot move users between tenants.
@@ -288,10 +288,12 @@ func (s *TenantAdminService) UpdateRole(tenantID, roleID uint64, req *TenantUpda
 	return &role, nil
 }
 
-// ListTenantPermissions returns all permissions excluding global admin codes.
+// ListTenantPermissions returns all permissions visible to tenant admins.
+// All permissions are shown so admins can see the full permission landscape;
+// assignment of global admin codes is still blocked in CreateRole/UpdateRole.
 func (s *TenantAdminService) ListTenantPermissions() ([]model.Permission, error) {
 	var permissions []model.Permission
-	if err := s.db.Where("code NOT IN ?", globalAdminPermCodes).Find(&permissions).Error; err != nil {
+	if err := s.db.Find(&permissions).Error; err != nil {
 		return nil, err
 	}
 	return permissions, nil

@@ -10,6 +10,16 @@ import (
 	"gorm.io/gorm"
 )
 
+var cstLoc *time.Location
+
+func init() {
+	cstLoc, _ = time.LoadLocation("Asia/Shanghai")
+}
+
+func fmtCST(t time.Time) string {
+	return t.In(cstLoc).Format("2006-01-02 15:04:05")
+}
+
 type LicenseHandler struct {
 	db *gorm.DB
 }
@@ -49,24 +59,45 @@ func (h *LicenseHandler) GetSiteLicense(c *gin.Context) {
 	svc := service.NewLicenseService(h.db)
 	siteID, machineID := svc.GetMachineIdentity()
 
-	var tenantID uint64
-	tenantIDStr := c.Query("tenant_id")
-	if tenantIDStr != "" {
-		id, _ := strconv.ParseUint(tenantIDStr, 10, 64)
-		tenantID = id
-	}
-	if tenantID == 0 {
-		tenantID = middleware.GetTenantID(c)
-	}
-
-	lic, err := svc.GetActiveLicense(tenantID)
+	lic, err := svc.GetSiteActiveLicense(siteID, machineID)
 	if err != nil {
+		lic, err = svc.GetSiteLatestLicense(siteID, machineID)
+		if err != nil {
+			Success(c, gin.H{
+				"site_id":     siteID,
+				"machine_id":  machineID,
+				"license":     nil,
+				"status":      "none",
+				"remaining":   0,
+			})
+			return
+		}
+
+		remaining := 0
+		status := "expired"
+		if lic.Status == "superseded" {
+			status = "superseded"
+		}
+		if lic.ExpiryDate != nil {
+			diff := time.Until(*lic.ExpiryDate)
+			remaining = int(diff.Hours() / 24)
+		}
+
+		publicKey := service.LoadPublicKey()
+		var decodedClaims interface{}
+		if lic.JWTToken != "" && publicKey != "" {
+			if claims, err := service.VerifyLicense(publicKey, lic.JWTToken); err == nil {
+				decodedClaims = claims
+			}
+		}
+
 		Success(c, gin.H{
-			"site_id":     siteID,
-			"machine_id":  machineID,
-			"license":     nil,
-			"status":      "none",
-			"remaining":   0,
+			"site_id":        siteID,
+			"machine_id":     machineID,
+			"license":        lic,
+			"status":         status,
+			"remaining_days": remaining,
+			"decoded_claims": decodedClaims,
 		})
 		return
 	}
@@ -117,11 +148,12 @@ func (h *LicenseHandler) CreateLicense(c *gin.Context) {
 	privateKey := service.LoadPrivateKey()
 
 	svc := service.NewLicenseService(h.db)
-	lic, err := svc.CreateLicense(req, username, privateKey)
+	lic, err := svc.CreateSiteLicense(req, username, privateKey)
 	if err != nil {
 		Error(c, 500, "创建授权失败: "+err.Error())
 		return
 	}
+	middleware.InvalidateLicenseCache()
 	Created(c, lic)
 }
 
@@ -145,6 +177,7 @@ func (h *LicenseHandler) UpdateLicense(c *gin.Context) {
 		Error(c, 500, "更新授权失败: "+err.Error())
 		return
 	}
+	middleware.InvalidateLicenseCache()
 	Success(c, lic)
 }
 
@@ -194,8 +227,9 @@ func (h *LicenseHandler) ListTenantLicenses(c *gin.Context) {
 }
 
 func (h *LicenseHandler) ListAllLicenses(c *gin.Context) {
+	search := c.Query("search")
 	svc := service.NewLicenseService(h.db)
-	licenses, err := svc.ListAllLicenses()
+	licenses, err := svc.ListAllLicenses(search)
 	if err != nil {
 		Error(c, 500, "查询失败")
 		return
@@ -239,13 +273,13 @@ func (h *LicenseHandler) ListAllLicenses(c *gin.Context) {
 
 		var authDateStr, expiryDateStr string
 		if lic.AuthDate != nil {
-			authDateStr = lic.AuthDate.Format("2006-01-02")
+			authDateStr = fmtCST(*lic.AuthDate)
 		}
 		if lic.ExpiryDate != nil {
 			if lic.Method == "permanent" {
 				expiryDateStr = "永久"
 			} else {
-				expiryDateStr = lic.ExpiryDate.Format("2006-01-02")
+				expiryDateStr = fmtCST(*lic.ExpiryDate)
 			}
 		}
 
@@ -284,6 +318,7 @@ func (h *LicenseHandler) DeleteLicense(c *gin.Context) {
 		Error(c, 500, "删除失败")
 		return
 	}
+	middleware.InvalidateLicenseCache()
 	Success(c, nil)
 }
 
@@ -317,5 +352,55 @@ func (h *LicenseHandler) GetKeys(c *gin.Context) {
 		"has_private":      privateKey != "",
 		"public_key_path":  "/app/scripts/public.pem",
 		"private_key_path": "/app/scripts/private.pem",
+	})
+}
+
+func (h *LicenseHandler) VerifyToken(c *gin.Context) {
+	var req struct {
+		Token string `json:"token" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		Error(c, 400, "参数错误")
+		return
+	}
+
+	publicKey := service.LoadPublicKey()
+	if publicKey == "" {
+		Error(c, 500, "公钥未配置，无法验证License")
+		return
+	}
+
+	claims, err := service.VerifyLicense(publicKey, req.Token)
+	if err != nil {
+		Error(c, 400, "License验证失败: "+err.Error())
+		return
+	}
+
+	svc := service.NewLicenseService(h.db)
+	_, localMachineID := svc.GetMachineIdentity()
+	siteID := service.GetSiteID()
+
+	mismatches := []string{}
+	if claims.SiteID != siteID {
+		mismatches = append(mismatches, "SITE_ID不匹配(license="+claims.SiteID+", 本站="+siteID+")")
+	}
+	if claims.MachineID != localMachineID {
+		mismatches = append(mismatches, "MachineID不匹配(license="+claims.MachineID+", 本站="+localMachineID+")")
+	}
+
+	durationDesc := ""
+	if claims.Method == "permanent" {
+		durationDesc = "永久"
+	} else if claims.Duration > 0 {
+		durationDesc = strconv.Itoa(claims.Duration) + map[string]string{
+			"day": "天", "week": "周", "month": "月", "year": "年",
+		}[claims.Method]
+	}
+
+	Success(c, gin.H{
+		"valid":         len(mismatches) == 0,
+		"claims":        claims,
+		"mismatches":    mismatches,
+		"duration_desc": durationDesc,
 	})
 }

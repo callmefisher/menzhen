@@ -12,12 +12,11 @@ export function getSiteLicense(tenantId?: number) {
   return request.get('/licenses/site', { params: tenantId ? { tenant_id: tenantId } : {} });
 }
 
-export function listAllLicenses() {
-  return request.get('/licenses');
+export function listAllLicenses(search?: string) {
+  return request.get('/licenses', { params: search ? { search } : {} });
 }
 
 export function createLicense(data: {
-  tenant_id: number;
   site_id: string;
   machine_id: string;
   method: string;
@@ -63,4 +62,8 @@ export function getLicenseStats(startDate?: string, endDate?: string) {
 
 export function getKeys() {
   return request.get('/licenses/keys');
+}
+
+export function verifyLicenseToken(token: string) {
+  return request.post('/licenses/verify', { token });
 }

@@ -22,7 +22,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 		AllowAllOrigins:  true,
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
-		ExposeHeaders:    []string{"Content-Length"},
+		ExposeHeaders:    []string{"Content-Length", "X-License-Active"},
 		AllowCredentials: false,
 		MaxAge:           12 * time.Hour,
 	}))
@@ -94,6 +94,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	authenticated.Use(middleware.AuthMiddleware(cfg.JWTSecret))
 	authenticated.Use(middleware.TokenVersionMiddleware(db))
 	authenticated.Use(middleware.TenantStatusMiddleware(db))
+	authenticated.Use(middleware.LicenseCheckMiddleware(db))
 	authenticated.Use(middleware.SuperAdminTenantOverrideMiddleware(db))
 	{
 		// File download route (authenticated, tenant-isolated).
@@ -498,6 +499,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			licenses.PUT("/identity", middleware.RequirePermission(db, "license:manage"), licenseHandler.UpdateIdentity)
 			licenses.GET("/site", middleware.RequirePermission(db, "license:manage"), licenseHandler.GetSiteLicense)
 			licenses.GET("/keys", middleware.RequirePermission(db, "license:manage"), licenseHandler.GetKeys)
+			licenses.POST("/verify", middleware.RequirePermission(db, "license:manage"), licenseHandler.VerifyToken)
 			licenses.GET("", middleware.RequirePermission(db, "license:manage"), licenseHandler.ListAllLicenses)
 			licenses.POST("", middleware.RequirePermission(db, "license:manage"), licenseHandler.CreateLicense)
 			licenses.GET("/stats", middleware.RequirePermission(db, "license:manage"), licenseHandler.GetStats)

@@ -87,7 +87,6 @@ func TestSignAndVerifyLicense(t *testing.T) {
 		Duration:  1,
 		Features:  []string{"basic", "ai"},
 		Amount:    2000,
-		TenantID:  1,
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(expiry),
@@ -106,7 +105,6 @@ func TestSignAndVerifyLicense(t *testing.T) {
 	assert.Equal(t, 1, verified.Duration)
 	assert.Equal(t, []string{"basic", "ai"}, verified.Features)
 	assert.Equal(t, float64(2000), verified.Amount)
-	assert.Equal(t, uint64(1), verified.TenantID)
 }
 
 func TestVerifyLicenseWithWrongKey(t *testing.T) {
@@ -132,13 +130,12 @@ func TestVerifyLicenseWithWrongKey(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestCreateLicense(t *testing.T) {
+func TestCreateSiteLicense(t *testing.T) {
 	db := setupTestDB(t)
 	svc := NewLicenseService(db)
 	privateKeyPEM, _ := generateTestRSAKeys(t)
 
 	req := CreateLicenseRequest{
-		TenantID:  1,
 		SiteID:    "test-site",
 		MachineID: "abc123_2026-01-01",
 		Method:    "month",
@@ -147,10 +144,9 @@ func TestCreateLicense(t *testing.T) {
 		Amount:    2000,
 	}
 
-	lic, err := svc.CreateLicense(req, "admin", privateKeyPEM)
+	lic, err := svc.CreateSiteLicense(req, "admin", privateKeyPEM)
 	require.NoError(t, err)
 	assert.NotNil(t, lic)
-	assert.Equal(t, uint64(1), lic.TenantID)
 	assert.Equal(t, "test-site", lic.SiteID)
 	assert.Equal(t, "month", lic.Method)
 	assert.Equal(t, "active", lic.Status)
@@ -164,7 +160,6 @@ func TestCreatePermanentLicense(t *testing.T) {
 	svc := NewLicenseService(db)
 
 	req := CreateLicenseRequest{
-		TenantID:  1,
 		SiteID:    "perm-site",
 		MachineID: "xyz789",
 		Method:    "permanent",
@@ -173,7 +168,7 @@ func TestCreatePermanentLicense(t *testing.T) {
 		Amount:    50000,
 	}
 
-	lic, err := svc.CreateLicense(req, "admin", "")
+	lic, err := svc.CreateSiteLicense(req, "admin", "")
 	require.NoError(t, err)
 	assert.NotNil(t, lic)
 	assert.Equal(t, "permanent", lic.Method)
@@ -188,38 +183,36 @@ func TestListLicenses(t *testing.T) {
 
 	for i := 0; i < 3; i++ {
 		req := CreateLicenseRequest{
-			TenantID:  1,
 			SiteID:    fmt.Sprintf("site-%d", i),
 			MachineID: fmt.Sprintf("machine-%d", i),
 			Method:    "month",
 			Duration:  1,
 			Features:  []string{"basic"},
 		}
-		_, err := svc.CreateLicense(req, "admin", "")
+		_, err := svc.CreateSiteLicense(req, "admin", "")
 		require.NoError(t, err)
 	}
 
-	licenses, err := svc.ListLicenses(1)
+	licenses, err := svc.ListLicenses(0)
 	require.NoError(t, err)
 	assert.Len(t, licenses, 3)
 }
 
-func TestGetActiveLicense(t *testing.T) {
+func TestGetSiteActiveLicense(t *testing.T) {
 	db := setupTestDB(t)
 	svc := NewLicenseService(db)
 
 	req := CreateLicenseRequest{
-		TenantID:  1,
 		SiteID:    "active-site",
 		MachineID: "m1",
 		Method:    "month",
 		Duration:  1,
 		Features:  []string{"basic"},
 	}
-	_, err := svc.CreateLicense(req, "admin", "")
+	_, err := svc.CreateSiteLicense(req, "admin", "")
 	require.NoError(t, err)
 
-	lic, err := svc.GetActiveLicense(1)
+	lic, err := svc.GetSiteActiveLicense("active-site", "m1")
 	require.NoError(t, err)
 	assert.Equal(t, "active", lic.Status)
 }
@@ -229,26 +222,24 @@ func TestSupersedeOldLicense(t *testing.T) {
 	svc := NewLicenseService(db)
 
 	req1 := CreateLicenseRequest{
-		TenantID:  1,
-		SiteID:    "old-site",
+		SiteID:    "same-site",
 		MachineID: "m1",
 		Method:    "month",
 		Duration:  1,
 		Features:  []string{"basic"},
 	}
-	lic1, err := svc.CreateLicense(req1, "admin", "")
+	lic1, err := svc.CreateSiteLicense(req1, "admin", "")
 	require.NoError(t, err)
 	assert.Equal(t, "active", lic1.Status)
 
 	req2 := CreateLicenseRequest{
-		TenantID:  1,
-		SiteID:    "new-site",
+		SiteID:    "same-site",
 		MachineID: "m1",
 		Method:    "year",
 		Duration:  1,
 		Features:  []string{"basic", "ai"},
 	}
-	lic2, err := svc.CreateLicense(req2, "admin", "")
+	lic2, err := svc.CreateSiteLicense(req2, "admin", "")
 	require.NoError(t, err)
 	assert.Equal(t, "active", lic2.Status)
 
@@ -259,20 +250,60 @@ func TestSupersedeOldLicense(t *testing.T) {
 
 func TestCalcExpiry(t *testing.T) {
 	svc := NewLicenseService(nil)
-	start := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+	loc, _ := time.LoadLocation("Asia/Shanghai")
+	start := time.Date(2026, 4, 1, 10, 30, 0, 0, loc)
 
-	assert.Equal(t, time.Date(2026, 4, 2, 0, 0, 0, 0, time.UTC), svc.calcExpiry(start, "day", 1))
-	assert.Equal(t, time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC), svc.calcExpiry(start, "week", 1))
-	assert.Equal(t, time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), svc.calcExpiry(start, "month", 1))
-	assert.Equal(t, time.Date(2027, 4, 1, 0, 0, 0, 0, time.UTC), svc.calcExpiry(start, "year", 1))
+	dayExpiry := svc.calcExpiry(start, "day", 1)
+	assert.Equal(t, time.Date(2026, 4, 2, 23, 59, 59, 0, loc), dayExpiry)
+
+	weekExpiry := svc.calcExpiry(start, "week", 1)
+	assert.Equal(t, time.Date(2026, 4, 8, 23, 59, 59, 0, loc), weekExpiry)
+
+	monthExpiry := svc.calcExpiry(start, "month", 1)
+	assert.Equal(t, time.Date(2026, 5, 1, 23, 59, 59, 0, loc), monthExpiry)
+
+	yearExpiry := svc.calcExpiry(start, "year", 1)
+	assert.Equal(t, time.Date(2027, 4, 1, 23, 59, 59, 0, loc), yearExpiry)
+
+	start2 := time.Date(2026, 4, 29, 0, 0, 0, 0, loc)
+	dayExpiry2 := svc.calcExpiry(start2, "day", 1)
+	assert.Equal(t, time.Date(2026, 4, 30, 23, 59, 59, 0, loc), dayExpiry2)
 }
 
-func TestCheckExpiredLicenses(t *testing.T) {
+func TestExpiryDateConsistency(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewLicenseService(db)
+	privateKeyPEM, _ := generateTestRSAKeys(t)
+
+	req := CreateLicenseRequest{
+		SiteID:    "test-site",
+		MachineID: "m1",
+		Method:    "day",
+		Duration:  1,
+		AuthDate:  "2026-04-29",
+		Features:  []string{"basic"},
+		Amount:    100,
+	}
+
+	lic, err := svc.CreateSiteLicense(req, "admin", privateKeyPEM)
+	require.NoError(t, err)
+	require.NotNil(t, lic.ExpiryDate)
+
+	loc, _ := time.LoadLocation("Asia/Shanghai")
+	expectedExpiry := time.Date(2026, 4, 30, 23, 59, 59, 0, loc)
+	assert.WithinDuration(t, expectedExpiry, *lic.ExpiryDate, time.Second)
+
+	assert.True(t, lic.ExpiryDate.Hour() == 23)
+	assert.True(t, lic.ExpiryDate.Minute() == 59)
+	assert.True(t, lic.ExpiryDate.Second() == 59)
+}
+
+func TestExpiredLicenseDetection(t *testing.T) {
 	db := setupTestDB(t)
 
-	past := time.Now().AddDate(0, 0, -1)
+	loc, _ := time.LoadLocation("Asia/Shanghai")
+	past := time.Date(2020, 1, 1, 0, 0, 0, 0, loc)
 	lic := model.License{
-		TenantID:   1,
 		SiteID:     "expired-site",
 		MachineID:  "m1",
 		Method:     "month",
@@ -311,7 +342,6 @@ func TestGetStats(t *testing.T) {
 
 	for i := 0; i < 3; i++ {
 		req := CreateLicenseRequest{
-			TenantID:  uint64(i + 1),
 			SiteID:    fmt.Sprintf("site-%d", i),
 			MachineID: fmt.Sprintf("machine-%d", i),
 			Method:    "month",
@@ -319,7 +349,7 @@ func TestGetStats(t *testing.T) {
 			Features:  []string{"basic", "ai"},
 			Amount:    2000,
 		}
-		_, err := svc.CreateLicense(req, "admin", "")
+		_, err := svc.CreateSiteLicense(req, "admin", "")
 		require.NoError(t, err)
 	}
 
