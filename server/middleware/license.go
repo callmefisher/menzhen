@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 	"sync"
@@ -12,60 +13,124 @@ import (
 )
 
 type licenseCache struct {
-	mu        sync.RWMutex
-	active    bool
-	checkedAt time.Time
+	mu           sync.RWMutex
+	siteActive   bool
+	clinicActive map[string]bool
+	checkedAt    time.Time
 }
 
 var (
-	lc = &licenseCache{}
+	lc = &licenseCache{
+		clinicActive: make(map[string]bool),
+	}
 )
 
-func isLicenseActive(db *gorm.DB) bool {
-	lc.mu.RLock()
-	if lc.active && time.Since(lc.checkedAt) < 60*time.Second {
-		lc.mu.RUnlock()
-		return true
-	}
-	lc.mu.RUnlock()
-
+func refreshLicenseCache(db *gorm.DB) {
 	lc.mu.Lock()
 	defer lc.mu.Unlock()
 
-	if lc.active && time.Since(lc.checkedAt) < 60*time.Second {
-		return true
+	if time.Since(lc.checkedAt) < 60*time.Second {
+		return
 	}
 
 	siteID := service.GetSiteID()
 	machineID := service.EnsureMachineID()
+	now := time.Now()
 
-	var count int64
-	if siteID != "" && machineID != "" {
-		db.Raw("SELECT COUNT(*) FROM licenses WHERE status = 'active' AND (expiry_date IS NULL OR expiry_date > NOW()) AND site_id = ? AND machine_id = ? AND deleted_at IS NULL", siteID, machineID).Scan(&count)
-	} else if siteID != "" {
-		db.Raw("SELECT COUNT(*) FROM licenses WHERE status = 'active' AND (expiry_date IS NULL OR expiry_date > NOW()) AND site_id = ? AND deleted_at IS NULL", siteID).Scan(&count)
-	} else if machineID != "" {
-		db.Raw("SELECT COUNT(*) FROM licenses WHERE status = 'active' AND (expiry_date IS NULL OR expiry_date > NOW()) AND machine_id = ? AND deleted_at IS NULL", machineID).Scan(&count)
-	} else {
-		count = 0
+	var siteCount int64
+	q := db.Model(&struct {
+		DeletedAt interface{}
+	}{})
+	q = db.Table("licenses").Where("license_type = 'site' AND status = 'active' AND (expiry_date IS NULL OR expiry_date > ?) AND deleted_at IS NULL", now)
+	if siteID != "" {
+		q = q.Where("site_id = ?", siteID)
 	}
-	lc.active = count > 0
+	if machineID != "" {
+		q = q.Where("machine_id = ?", machineID)
+	}
+	q.Count(&siteCount)
+	lc.siteActive = siteCount > 0
+
+	type clinicStatus struct {
+		ClinicCode string
+		Cnt        int64
+	}
+	var results []clinicStatus
+	clinicQ := db.Table("licenses").Where("license_type = 'clinic' AND status = 'active' AND (expiry_date IS NULL OR expiry_date > ?) AND deleted_at IS NULL", now)
+	if siteID != "" {
+		clinicQ = clinicQ.Where("site_id = ?", siteID)
+	}
+	if machineID != "" {
+		clinicQ = clinicQ.Where("machine_id = ?", machineID)
+	}
+	clinicQ.Select("clinic_code, COUNT(*) as cnt").Group("clinic_code").Scan(&results)
+
+	newCache := make(map[string]bool)
+	for _, r := range results {
+		newCache[r.ClinicCode] = r.Cnt > 0
+	}
+	lc.clinicActive = newCache
 	lc.checkedAt = time.Now()
-	return lc.active
+
+	log.Printf("[license:middleware] cache refreshed: site_active=%v, clinic_codes_tracked=%d", lc.siteActive, len(newCache))
 }
 
 func InvalidateLicenseCache() {
 	lc.mu.Lock()
 	lc.checkedAt = time.Time{}
+	lc.clinicActive = make(map[string]bool)
+	lc.siteActive = false
 	lc.mu.Unlock()
+	log.Printf("[license:middleware] cache invalidated")
 }
 
 func LicenseCheckMiddleware(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		path := c.Request.URL.Path
-		active := isLicenseActive(db)
+
+		refreshLicenseCache(db)
+
+		lc.mu.RLock()
+		siteActive := lc.siteActive
+		clinicActive := make(map[string]bool)
+		for k, v := range lc.clinicActive {
+			clinicActive[k] = v
+		}
+		lc.mu.RUnlock()
+
+		active := false
+		licenseType := "site"
+
+		if siteActive {
+			active = true
+			licenseType = "site"
+			log.Printf("[license:middleware] site license active, all requests pass")
+		} else {
+			tenantID := GetTenantID(c)
+			var clinicCode string
+			if tenantID > 0 {
+				db.Table("tenants").Where("id = ?", tenantID).Select("code").Scan(&clinicCode)
+			}
+
+			if clinicCode != "" {
+				if clinicOk, exists := clinicActive[clinicCode]; exists && clinicOk {
+					active = true
+					licenseType = "clinic"
+					log.Printf("[license:middleware] site license inactive, clinic license active: clinic_code=%s", clinicCode)
+				} else {
+					active = false
+					licenseType = "clinic"
+					log.Printf("[license:middleware] site license inactive, clinic license inactive: clinic_code=%s", clinicCode)
+				}
+			} else {
+				active = false
+				licenseType = "site"
+				log.Printf("[license:middleware] site license inactive, no tenant context")
+			}
+		}
 
 		c.Header("X-License-Active", strconv.FormatBool(active))
+		c.Header("X-License-Type", licenseType)
 
 		if active {
 			c.Next()
@@ -106,8 +171,9 @@ func LicenseCheckMiddleware(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
-			"code":    403,
-			"message": "license_required",
+			"code":         403,
+			"message":      "license_required",
+			"license_type": licenseType,
 		})
 	}
 }

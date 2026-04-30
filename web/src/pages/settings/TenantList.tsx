@@ -72,11 +72,11 @@ export default function TenantList() {
   const handleGroupSearch = useCallback(async (val: string) => {
     try {
       const res = await listAllGroups();
-      const body = res as unknown as { code: number; data: string[] };
-      const groups = body.data || [];
+      const body = res as unknown as { code: number; data: { name: string; count: number }[] };
+      const groups = (body.data || []).map(g => g.name);
       const filtered = groups.filter(g => !val || g.includes(val)).map(g => ({ value: g }));
       if (val && !groups.includes(val)) {
-        filtered.push({ value: val }); // allow creating new group by typing
+        filtered.push({ value: val });
       }
       setGroupOptions(filtered);
     } catch { /* ignore */ }

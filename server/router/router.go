@@ -498,6 +498,8 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 			licenses.GET("/identity", middleware.RequirePermission(db, "license:manage"), licenseHandler.GetIdentity)
 			licenses.PUT("/identity", middleware.RequirePermission(db, "license:manage"), licenseHandler.UpdateIdentity)
 			licenses.GET("/site", middleware.RequirePermission(db, "license:manage"), licenseHandler.GetSiteLicense)
+			licenses.GET("/clinic", middleware.RequirePermission(db, "license:manage"), licenseHandler.GetClinicLicense)
+			licenses.GET("/tenants/search", middleware.RequirePermission(db, "license:manage"), licenseHandler.SearchTenantsForLicense)
 			licenses.GET("/keys", middleware.RequirePermission(db, "license:manage"), licenseHandler.GetKeys)
 			licenses.POST("/verify", middleware.RequirePermission(db, "license:manage"), licenseHandler.VerifyToken)
 			licenses.GET("", middleware.RequirePermission(db, "license:manage"), licenseHandler.ListAllLicenses)

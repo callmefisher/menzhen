@@ -1,19 +1,21 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Card, Table, Button, Modal, Form, Input, Select, InputNumber,
   Tag, Space, Statistic, Row, Col, DatePicker, message, Spin,
-  Descriptions, Timeline, Divider, Alert, Checkbox, Typography, Drawer, Popconfirm
+  Descriptions, Timeline, Divider, Alert, Checkbox, Typography, Drawer, Popconfirm, AutoComplete
 } from 'antd';
 import {
   KeyOutlined, SafetyCertificateOutlined, ClockCircleOutlined,
   PlusOutlined, CopyOutlined, ReloadOutlined, EditOutlined,
   CheckCircleOutlined, ExclamationCircleOutlined, CloseCircleOutlined,
-  BarChartOutlined, HistoryOutlined, LockOutlined, DeleteOutlined
+  BarChartOutlined, HistoryOutlined, LockOutlined, DeleteOutlined,
+  BankOutlined
 } from '@ant-design/icons';
 import {
-  getSiteLicense, listAllLicenses, createLicense, updateLicense,
+  getSiteLicense, getClinicLicense, listAllLicenses, createLicense, updateLicense,
   getLicense, getLicenseStats, getKeys,
-  listTenantLicenses, verifyLicenseToken, deleteLicense
+  listTenantLicenses, verifyLicenseToken, deleteLicense, searchTenantsForLicense
 } from '../../api/license';
 import useIsMobile from '../../hooks/useIsMobile';
 import { useAuth } from '../../store/auth';
@@ -47,7 +49,13 @@ const FEATURE_MAP: Record<string, { label: string; color: string }> = {
   cloud: { label: '云存储', color: 'blue' },
 };
 
+const LICENSE_TYPE_MAP: Record<string, { label: string; color: string }> = {
+  site: { label: '站点', color: 'blue' },
+  clinic: { label: '诊所', color: 'purple' },
+};
+
 type QuickRange = 'thisWeek' | 'lastWeek' | 'thisMonth' | 'lastMonth' | 'thisYear' | 'lastYear' | '';
+type TabType = 'site' | 'clinic' | 'tenant';
 
 function getQuickRange(range: QuickRange): [dayjs.Dayjs, dayjs.Dayjs] {
   const now = dayjs();
@@ -140,9 +148,11 @@ function copyText(text: string) {
 
 export default function LicensePage() {
   const isMobile = useIsMobile();
-  const { checkLicenseStatus } = useAuth();
+  const [searchParams] = useSearchParams();
+  const { checkLicenseStatus, isSuperAdmin, isPowerAdmin, hasPermission } = useAuth();
   const [loading, setLoading] = useState(false);
   const [siteData, setSiteData] = useState<any>(null);
+  const [clinicData, setClinicData] = useState<any>(null);
   const [allLicenses, setAllLicenses] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [modalVisible, setModalVisible] = useState(false);
@@ -152,7 +162,11 @@ export default function LicensePage() {
   const [keysData, setKeysData] = useState<any>(null);
   const [form] = Form.useForm();
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<'site' | 'tenant'>('site');
+  const [activeTab, setActiveTab] = useState<TabType>(() => {
+    const tab = searchParams.get('tab');
+    if (tab === 'clinic') return 'clinic';
+    return 'site';
+  });
   const [updateModalVisible, setUpdateModalVisible] = useState(false);
   const [updateToken, setUpdateToken] = useState('');
   const [updateDecoded, setUpdateDecoded] = useState<any>(null);
@@ -162,6 +176,10 @@ export default function LicensePage() {
   const [currentLicenseToken, setCurrentLicenseToken] = useState('');
   const [chartReady, setChartReady] = useState(false);
   const [previewExpiry, setPreviewExpiry] = useState('');
+  const [licenseType, setLicenseType] = useState<string>('site');
+  const [tenantOptions, setTenantOptions] = useState<{ value: string; label: string }[]>([]);
+  const [tenantSearchLoading, setTenantSearchLoading] = useState(false);
+  const [expiringDays, setExpiringDays] = useState<number>(0);
   const chartCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const chartInstanceRef = useRef<Chart | null>(null);
 
@@ -171,9 +189,13 @@ export default function LicensePage() {
     setLoading(false);
   }, []);
 
-  const fetchAllLicenses = useCallback(async (search?: string) => {
+  const fetchClinicData = useCallback(async () => {
+    try { const res: any = await getClinicLicense(); setClinicData(res.data); } catch { /* ignore */ }
+  }, []);
+
+  const fetchAllLicenses = useCallback(async (search?: string, expDays?: number) => {
     try {
-      const res: any = await listAllLicenses(search);
+      const res: any = await listAllLicenses(search, expDays);
       setAllLicenses(Array.isArray(res.data) ? res.data : []);
     } catch { /* ignore */ }
   }, []);
@@ -188,8 +210,8 @@ export default function LicensePage() {
 
   useEffect(() => {
     const [s, e] = getQuickRange('thisYear');
-    fetchSiteData(); fetchAllLicenses(); fetchStats(s.format('YYYY-MM-DD'), e.format('YYYY-MM-DD')); fetchKeys();
-  }, [fetchSiteData, fetchAllLicenses, fetchStats, fetchKeys]);
+    fetchSiteData(); fetchClinicData(); fetchAllLicenses(); fetchStats(s.format('YYYY-MM-DD'), e.format('YYYY-MM-DD')); fetchKeys();
+  }, [fetchSiteData, fetchClinicData, fetchAllLicenses, fetchStats, fetchKeys]);
 
   useEffect(() => {
     if (activeTab === 'tenant') { setTimeout(() => setChartReady(true), 50); }
@@ -234,12 +256,28 @@ export default function LicensePage() {
     }
   }, [form]);
 
+  const handleTenantSearch = useCallback(async (value: string) => {
+    if (!value || value.length < 1) { setTenantOptions([]); return; }
+    setTenantSearchLoading(true);
+    try {
+      const res: any = await searchTenantsForLicense(value);
+      const tenants = Array.isArray(res.data) ? res.data : [];
+      setTenantOptions(tenants.map((t: any) => ({
+        value: t.code,
+        label: `${t.name} (${t.code})`,
+      })));
+    } catch { setTenantOptions([]); }
+    setTenantSearchLoading(false);
+  }, []);
+
   const handleCreate = () => {
     setEditingId(null);
     setCurrentLicenseToken('');
     setPreviewExpiry('');
+    setLicenseType('site');
     form.resetFields();
     form.setFieldsValue({
+      license_type: 'site',
       method: 'month', duration: 1, features: ['basic'], amount: 0,
       auth_date: dayjs().tz(CNSH).format('YYYY-MM-DD'),
       site_id: siteData?.site_id || '',
@@ -250,6 +288,10 @@ export default function LicensePage() {
   };
 
   const handleUpdateSiteLicense = () => {
+    setUpdateToken(''); setUpdateDecoded(null); setUpdateModalVisible(true);
+  };
+
+  const handleUpdateClinicLicense = () => {
     setUpdateToken(''); setUpdateDecoded(null); setUpdateModalVisible(true);
   };
 
@@ -273,29 +315,45 @@ export default function LicensePage() {
       return;
     }
     try {
-      let targetId = siteData?.license?.id;
-      if (!targetId) {
-        const matched = allLicenses.find((lic: any) =>
-          lic.site_id === siteID && lic.machine_id === machineID
-        );
-        targetId = matched?.id;
+      const isClinicTab = activeTab === 'clinic';
+      let targetId: number | undefined;
+
+      if (isClinicTab) {
+        targetId = clinicData?.license?.id;
+      } else {
+        targetId = siteData?.license?.id;
+        if (!targetId) {
+          const matched = allLicenses.find((lic: any) =>
+            lic.site_id === siteID && lic.machine_id === machineID
+          );
+          targetId = matched?.id;
+        }
       }
 
       if (targetId) {
         await updateLicense(targetId, { license_token: updateToken.trim() });
         message.success('授权已更新');
       } else {
-        await createLicense({
-          site_id: siteID, machine_id: machineID,
-          method: updateDecoded?.claims?.method || 'month', duration: updateDecoded?.claims?.duration || 1,
-          features: updateDecoded?.claims?.features || ['basic'], amount: updateDecoded?.claims?.amount || 0,
+        const payload: any = {
+          site_id: isClinicTab ? (clinicData?.site_id || siteID) : siteID,
+          machine_id: isClinicTab ? (clinicData?.machine_id || machineID) : machineID,
+          method: updateDecoded?.claims?.method || 'month',
+          duration: updateDecoded?.claims?.duration || 1,
+          features: updateDecoded?.claims?.features || ['basic'],
+          amount: updateDecoded?.claims?.amount || 0,
           license_token: updateToken.trim(),
-        });
+        };
+        if (isClinicTab && clinicData?.clinic_code) {
+          payload.license_type = 'clinic';
+          payload.clinic_code = clinicData.clinic_code;
+        }
+        await createLicense(payload);
         message.success('授权已签发');
       }
       setUpdateModalVisible(false);
       message.destroy('license_expired');
       await fetchSiteData();
+      await fetchClinicData();
       fetchAllLicenses(searchKeyword);
       fetchStats();
       await checkLicenseStatus();
@@ -309,9 +367,12 @@ export default function LicensePage() {
       if (lic) {
         setEditingId(id);
         setCurrentLicenseToken(lic.jwt_token || '');
+        setLicenseType(lic.license_type || 'site');
         let features: string[] = [];
         try { features = JSON.parse(lic.features || '[]'); } catch { /* ignore */ }
         form.setFieldsValue({
+          license_type: lic.license_type || 'site',
+          clinic_code: lic.clinic_code || '',
           site_id: lic.site_id, machine_id: lic.machine_id,
           method: lic.method, duration: lic.duration || 1,
           auth_date: lic.auth_date ? parseCST(lic.auth_date).format('YYYY-MM-DD') : undefined,
@@ -330,6 +391,7 @@ export default function LicensePage() {
       await deleteLicense(id);
       message.success('已删除');
       await fetchSiteData();
+      await fetchClinicData();
       fetchAllLicenses(searchKeyword);
       fetchStats();
       await checkLicenseStatus();
@@ -350,6 +412,7 @@ export default function LicensePage() {
       setModalVisible(false);
       message.destroy('license_expired');
       await fetchSiteData();
+      await fetchClinicData();
       fetchAllLicenses(searchKeyword);
       fetchStats();
       await checkLicenseStatus();
@@ -383,13 +446,47 @@ export default function LicensePage() {
     else { fetchStats(); }
   };
 
-  const handleSearch = (value: string) => { setSearchKeyword(value); fetchAllLicenses(value); };
+  const handleSearch = (value: string) => { setSearchKeyword(value); fetchAllLicenses(value, expiringDays); };
+
+  const handleExpiringFilter = (days: number) => {
+    setExpiringDays(days);
+    fetchAllLicenses(searchKeyword, days);
+  };
+
+  const clearExpiringFilter = () => {
+    setExpiringDays(0);
+    fetchAllLicenses(searchKeyword, 0);
+  };
 
   const handleSiteKeyInput = (value: string) => {
-    if (value.includes(':')) {
-      const idx = value.indexOf(':');
-      form.setFieldsValue({ site_id: value.substring(0, idx).trim(), machine_id: value.substring(idx + 1).trim() });
+    const currentType = form.getFieldValue('license_type') || licenseType;
+    if (currentType === 'clinic') {
+      const firstColon = value.indexOf(':');
+      if (firstColon < 0) {
+        form.setFieldsValue({ clinic_code: value.trim() });
+        return;
+      }
+      const clinicCode = value.substring(0, firstColon).trim();
+      const rest = value.substring(firstColon + 1);
+      const secondColon = rest.indexOf(':');
+      if (secondColon < 0) {
+        form.setFieldsValue({ clinic_code: clinicCode, site_id: rest.trim() });
+        return;
+      }
+      const siteId = rest.substring(0, secondColon).trim();
+      const machineId = rest.substring(secondColon + 1).trim();
+      form.setFieldsValue({ clinic_code: clinicCode, site_id: siteId, machine_id: machineId });
+    } else {
+      if (value.includes(':')) {
+        const idx = value.indexOf(':');
+        form.setFieldsValue({ site_id: value.substring(0, idx).trim(), machine_id: value.substring(idx + 1).trim() });
+      }
     }
+  };
+
+  const handleLicenseTypeChange = (type: string) => {
+    setLicenseType(type);
+    form.setFieldsValue({ license_type: type });
   };
 
   const siteID = siteData?.site_id || '';
@@ -402,6 +499,16 @@ export default function LicensePage() {
   const isExpiredOrNone = status === 'expired' || status === 'none';
   const monthlyCount = Array.isArray(stats?.monthly) ? stats.monthly.length : 0;
 
+  const clinicLicense = clinicData?.license;
+  const clinicStatus = clinicData?.status || 'none';
+  const clinicRemaining = clinicData?.remaining_days || 0;
+  const clinicDecoded = clinicData?.decoded_claims;
+  const clinicCode = clinicData?.clinic_code || '';
+  const clinicName = clinicData?.clinic_name || '';
+  const clinicIsExpiredOrNone = clinicStatus === 'expired' || clinicStatus === 'none';
+
+  const showClinicTab = isSuperAdmin || isPowerAdmin || hasPermission('license:manage');
+
   const quickRangeButtons: { key: QuickRange; label: string }[] = [
     { key: 'thisWeek', label: '本周' }, { key: 'lastWeek', label: '上周' },
     { key: 'thisMonth', label: '本月' }, { key: 'lastMonth', label: '上月' },
@@ -413,10 +520,17 @@ export default function LicensePage() {
       title: '诊所', dataIndex: 'tenant_name', key: 'tenant_name', width: 160,
       render: (name: string, r: any) => (
         <div>
-          <div style={{ fontWeight: 500 }}>{r.site_id ? <span style={{ color: '#722ed1', marginRight: 4 }}>{r.site_id}:</span> : ''}{name || '—'}</div>
+          <div style={{ fontWeight: 500 }}>
+            {r.license_type === 'clinic' && r.clinic_code ? <Tag color="purple" style={{ marginRight: 4, fontSize: 10 }}>诊所:{r.clinic_code}</Tag> : null}
+            {r.site_id ? <span style={{ color: '#722ed1', marginRight: 4 }}>{r.site_id}:</span> : ''}{name || '—'}
+          </div>
           <div style={{ fontSize: 11, color: '#999' }}>{r.tenant_code || ''}</div>
         </div>
       ),
+    },
+    {
+      title: '类型', dataIndex: 'license_type', key: 'license_type', width: 70,
+      render: (t: string) => { const c = LICENSE_TYPE_MAP[t || 'site']; return c ? <Tag color={c.color}>{c.label}</Tag> : t; },
     },
     { title: '状态', dataIndex: 'status', key: 'status', width: 80, render: (s: string) => <StatusTag status={s} remaining={0} /> },
     {
@@ -454,6 +568,106 @@ export default function LicensePage() {
     },
   ];
 
+  const renderLicenseStatusCard = (
+    licStatus: string,
+    licRemaining: number,
+    lic: any,
+    identLabel: string,
+    identValue: string,
+    typeLabel: string,
+  ) => (
+    <Card style={{ marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{
+          width: isMobile ? 36 : 48, height: isMobile ? 36 : 48, borderRadius: 12,
+          background: licStatus === 'active' ? 'rgba(82,196,26,0.1)' : licStatus === 'expiring' ? 'rgba(250,140,22,0.1)' : 'rgba(255,77,79,0.1)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: isMobile ? 18 : 22,
+          color: licStatus === 'active' ? '#52c41a' : licStatus === 'expiring' ? '#fa8c16' : '#ff4d4f',
+        }}>
+          {licStatus === 'active' ? <SafetyCertificateOutlined /> : licStatus === 'expiring' ? <ExclamationCircleOutlined /> : <CloseCircleOutlined />}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: isMobile ? 14 : 16, fontWeight: 600,
+            color: licStatus === 'active' ? '#389e0d' : licStatus === 'expiring' ? '#d46b08' : '#cf1322',
+          }}>
+            {licStatus === 'active' ? `${typeLabel}已授权` : licStatus === 'expiring' ? `${typeLabel}即将到期` : licStatus === 'expired' ? `${typeLabel}已过期` : `${typeLabel}未授权`}
+          </div>
+          <div style={{ fontSize: 11, color: '#999', marginTop: 2 }}>
+            {licStatus === 'active' ? `${typeLabel}授权有效，所有功能正常可用` : licStatus === 'expiring' ? '授权即将到期，请及时续期' : licStatus === 'expired' ? '授权已过期，部分功能可能受限' : `暂无${typeLabel}授权信息`}
+          </div>
+        </div>
+        <StatusTag status={licStatus} remaining={licRemaining} />
+      </div>
+      <Divider style={{ margin: '12px 0' }} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <Text type="secondary" style={{ fontSize: 12 }}>{identLabel}</Text>
+        <Text code style={{ fontSize: isMobile ? 10 : 12, wordBreak: 'break-all' }}>
+          {identValue}
+          {identValue && <CopyOutlined style={{ marginLeft: 6, cursor: 'pointer', color: '#52c41a' }} onClick={() => copyText(identValue)} />}
+        </Text>
+      </div>
+      {lic && licStatus !== 'none' && (
+        <div style={{ marginTop: 8, fontSize: 13, color: '#8B7355' }}>
+          <ClockCircleOutlined style={{ marginRight: 4 }} />
+          授权剩余 <Text strong style={{ fontSize: 18, color: licStatus === 'active' ? '#389e0d' : licStatus === 'expiring' ? '#d46b08' : '#cf1322' }}>
+            {lic.method === 'permanent' ? '∞' : licRemaining}
+          </Text> 天
+        </div>
+      )}
+    </Card>
+  );
+
+  const renderLicenseDetailCard = (lic: any, licDecoded: any, showClinicCode = false, clinicCodeVal = '') => (
+    <>
+      {lic && (
+        <Card title={<><SafetyCertificateOutlined style={{ color: '#52c41a', marginRight: 8 }} />授权详情（JWT 解码）</>}
+          style={{ marginBottom: 16 }} size={isMobile ? 'small' : 'default'}>
+          <Descriptions column={isMobile ? 1 : 3} size="small" bordered>
+            {showClinicCode && clinicCodeVal && (
+              <Descriptions.Item label="诊所编码"><Tag color="purple">{clinicCodeVal}</Tag></Descriptions.Item>
+            )}
+            <Descriptions.Item label="SITE_ID">{lic.site_id || '—'}</Descriptions.Item>
+            <Descriptions.Item label="Machine ID">{lic.machine_id || '—'}</Descriptions.Item>
+            <Descriptions.Item label="授权时长">
+              {lic.method === 'permanent' ? <Tag color="cyan">永久</Tag> :
+                `${lic.duration || 1}${METHOD_MAP[lic.method]?.label?.replace('按', '') || lic.method}`}
+            </Descriptions.Item>
+            <Descriptions.Item label="授权日期">{fmtCST(lic.auth_date)}</Descriptions.Item>
+            <Descriptions.Item label="截止日期">{lic.method === 'permanent' ? '永久' : fmtCST(lic.expiry_date)}</Descriptions.Item>
+            <Descriptions.Item label="授权方式">{METHOD_MAP[lic.method] ? <Tag color={METHOD_MAP[lic.method].color}>{METHOD_MAP[lic.method].label}</Tag> : lic.method}</Descriptions.Item>
+            <Descriptions.Item label="付费金额"><span style={{ color: '#fa8c16', fontWeight: 600 }}>¥{(lic.amount || 0).toLocaleString()}</span></Descriptions.Item>
+            <Descriptions.Item label="授权功能">
+              <Space size={4}>{(() => { let f: string[] = []; try { f = JSON.parse(lic.features || '[]'); } catch { /* ignore */ } return f.map((ft: string) => { const c = FEATURE_MAP[ft]; return c ? <Tag key={ft} color={c.color}>{c.label}</Tag> : ft; }); })()}</Space>
+            </Descriptions.Item>
+          </Descriptions>
+        </Card>
+      )}
+
+      {licDecoded && (
+        <Card title={<><KeyOutlined style={{ color: '#52c41a', marginRight: 8 }} />JWT 签名信息</>}
+          style={{ marginBottom: 16 }} size={isMobile ? 'small' : 'default'}>
+          <div style={{ background: 'rgba(0,0,0,0.02)', border: '1px solid #f0f0f0', borderRadius: 8, padding: 12, fontFamily: 'monospace', fontSize: 12, lineHeight: 2, overflowX: 'auto' }}>
+            <div><span style={{ color: '#999' }}>alg:</span> RS256</div>
+            <div><span style={{ color: '#999' }}>typ:</span> JWT</div>
+            <Divider style={{ margin: '4px 0', borderStyle: 'dashed' }} />
+            {licDecoded.clinic_code && <div><span style={{ color: '#722ed1' }}>clinic_code:</span> {licDecoded.clinic_code}</div>}
+            <div><span style={{ color: '#999' }}>site_id:</span> {licDecoded.site_id}</div>
+            <div><span style={{ color: '#999' }}>machine_id:</span> {licDecoded.machine_id}</div>
+            <div><span style={{ color: '#999' }}>method:</span> {licDecoded.method}</div>
+            <div><span style={{ color: '#999' }}>duration:</span> {licDecoded.duration}</div>
+            <div><span style={{ color: '#999' }}>授权时长:</span> {lic.method === 'permanent' ? '永久' : `${lic.duration || 1}${METHOD_MAP[lic.method]?.label?.replace('按', '') || lic.method}`}</div>
+            <div><span style={{ color: '#999' }}>features:</span> {JSON.stringify(licDecoded.features)}</div>
+            <div><span style={{ color: '#999' }}>amount:</span> {licDecoded.amount}</div>
+            <div><span style={{ color: '#999' }}>iat:</span> {licDecoded.iat}</div>
+            <div><span style={{ color: '#999' }}>exp:</span> {licDecoded.exp}</div>
+          </div>
+          <Alert type="info" style={{ marginTop: 8 }} message="此信息由公钥解码 JWT 数字签名获得，确保授权数据不可篡改" showIcon />
+        </Card>
+      )}
+    </>
+  );
+
   return (
     <div style={{ padding: isMobile ? 0 : undefined, maxWidth: '100%', overflowX: 'hidden' }}>
       {isExpiredOrNone && (
@@ -464,96 +678,20 @@ export default function LicensePage() {
 
       <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
         <Button type={activeTab === 'site' ? 'primary' : 'default'} icon={<KeyOutlined />}
-          onClick={() => setActiveTab('site')}>授权管理（本站点）</Button>
+          onClick={() => setActiveTab('site')}>本站点授权</Button>
+        {showClinicTab && (
+          <Button type={activeTab === 'clinic' ? 'primary' : 'default'} icon={<BankOutlined />}
+            onClick={() => setActiveTab('clinic')}>本诊所授权</Button>
+        )}
         <Button type={activeTab === 'tenant' ? 'primary' : 'default'} icon={<BarChartOutlined />}
-          onClick={() => setActiveTab('tenant')}>诊所授权管理</Button>
+          onClick={() => setActiveTab('tenant')}>授权管理</Button>
       </div>
 
       {activeTab === 'site' && (
         <Spin spinning={loading}>
-          <Card style={{ marginBottom: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <div style={{
-                width: isMobile ? 36 : 48, height: isMobile ? 36 : 48, borderRadius: 12,
-                background: status === 'active' ? 'rgba(82,196,26,0.1)' : status === 'expiring' ? 'rgba(250,140,22,0.1)' : 'rgba(255,77,79,0.1)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: isMobile ? 18 : 22,
-                color: status === 'active' ? '#52c41a' : status === 'expiring' ? '#fa8c16' : '#ff4d4f',
-              }}>
-                {status === 'active' ? <SafetyCertificateOutlined /> : status === 'expiring' ? <ExclamationCircleOutlined /> : <CloseCircleOutlined />}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: isMobile ? 14 : 16, fontWeight: 600,
-                  color: status === 'active' ? '#389e0d' : status === 'expiring' ? '#d46b08' : '#cf1322',
-                }}>
-                  {status === 'active' ? '已授权' : status === 'expiring' ? '即将到期' : status === 'expired' ? '已过期' : '未授权'}
-                </div>
-                <div style={{ fontSize: 11, color: '#999', marginTop: 2 }}>
-                  {status === 'active' ? '软件授权有效，所有功能正常可用' : status === 'expiring' ? '授权即将到期，请及时续期' : status === 'expired' ? '授权已过期，部分功能可能受限' : '暂无授权信息'}
-                </div>
-              </div>
-              <StatusTag status={status} remaining={remaining} />
-            </div>
-            <Divider style={{ margin: '12px 0' }} />
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <Text type="secondary" style={{ fontSize: 12 }}>站点标识</Text>
-              <Text code style={{ fontSize: isMobile ? 10 : 12, wordBreak: 'break-all' }}>
-                {siteID}{siteID && machineID ? ':' : ''}{machineID}
-                {(siteID || machineID) && <CopyOutlined style={{ marginLeft: 6, cursor: 'pointer', color: '#52c41a' }} onClick={() => copyText(`${siteID}:${machineID}`)} />}
-              </Text>
-            </div>
-            {license && status !== 'none' && (
-              <div style={{ marginTop: 8, fontSize: 13, color: '#8B7355' }}>
-                <ClockCircleOutlined style={{ marginRight: 4 }} />
-                授权剩余 <Text strong style={{ fontSize: 18, color: status === 'active' ? '#389e0d' : status === 'expiring' ? '#d46b08' : '#cf1322' }}>
-                  {license.method === 'permanent' ? '∞' : remaining}
-                </Text> 天
-              </div>
-            )}
-          </Card>
+          {renderLicenseStatusCard(status, remaining, license, '站点标识', `${siteID}${siteID && machineID ? ':' : ''}${machineID}`, '站点')}
 
-          {license && (
-            <Card title={<><SafetyCertificateOutlined style={{ color: '#52c41a', marginRight: 8 }} />授权详情（JWT 解码）</>}
-              style={{ marginBottom: 16 }} size={isMobile ? 'small' : 'default'}>
-              <Descriptions column={isMobile ? 1 : 3} size="small" bordered>
-                <Descriptions.Item label="SITE_ID">{license.site_id || '—'}</Descriptions.Item>
-                <Descriptions.Item label="Machine ID">{license.machine_id || '—'}</Descriptions.Item>
-                <Descriptions.Item label="授权时长">
-                  {license.method === 'permanent' ? <Tag color="cyan">永久</Tag> :
-                    `${license.duration || 1}${METHOD_MAP[license.method]?.label?.replace('按', '') || license.method}`}
-                </Descriptions.Item>
-                <Descriptions.Item label="授权日期">{fmtCST(license.auth_date)}</Descriptions.Item>
-                <Descriptions.Item label="截止日期">{license.method === 'permanent' ? '永久' : fmtCST(license.expiry_date)}</Descriptions.Item>
-                <Descriptions.Item label="授权方式">{METHOD_MAP[license.method] ? <Tag color={METHOD_MAP[license.method].color}>{METHOD_MAP[license.method].label}</Tag> : license.method}</Descriptions.Item>
-                <Descriptions.Item label="付费金额"><span style={{ color: '#fa8c16', fontWeight: 600 }}>¥{(license.amount || 0).toLocaleString()}</span></Descriptions.Item>
-                <Descriptions.Item label="授权功能">
-                  <Space size={4}>{(() => { let f: string[] = []; try { f = JSON.parse(license.features || '[]'); } catch { /* ignore */ } return f.map((ft: string) => { const c = FEATURE_MAP[ft]; return c ? <Tag key={ft} color={c.color}>{c.label}</Tag> : ft; }); })()}</Space>
-                </Descriptions.Item>
-                <Descriptions.Item label="授权状态"><StatusTag status={status} remaining={remaining} /></Descriptions.Item>
-              </Descriptions>
-            </Card>
-          )}
-
-          {decoded && (
-            <Card title={<><KeyOutlined style={{ color: '#52c41a', marginRight: 8 }} />JWT 签名信息</>}
-              style={{ marginBottom: 16 }} size={isMobile ? 'small' : 'default'}>
-              <div style={{ background: 'rgba(0,0,0,0.02)', border: '1px solid #f0f0f0', borderRadius: 8, padding: 12, fontFamily: 'monospace', fontSize: 12, lineHeight: 2, overflowX: 'auto' }}>
-                <div><span style={{ color: '#999' }}>alg:</span> RS256</div>
-                <div><span style={{ color: '#999' }}>typ:</span> JWT</div>
-                <Divider style={{ margin: '4px 0', borderStyle: 'dashed' }} />
-                <div><span style={{ color: '#999' }}>site_id:</span> {decoded.site_id}</div>
-                <div><span style={{ color: '#999' }}>machine_id:</span> {decoded.machine_id}</div>
-                <div><span style={{ color: '#999' }}>method:</span> {decoded.method}</div>
-                <div><span style={{ color: '#999' }}>duration:</span> {decoded.duration}</div>
-                <div><span style={{ color: '#999' }}>授权时长:</span> {license.method === 'permanent' ? '永久' : `${license.duration || 1}${METHOD_MAP[license.method]?.label?.replace('按', '') || license.method}`}</div>
-                <div><span style={{ color: '#999' }}>features:</span> {JSON.stringify(decoded.features)}</div>
-                <div><span style={{ color: '#999' }}>amount:</span> {decoded.amount}</div>
-                <div><span style={{ color: '#999' }}>iat:</span> {decoded.iat}</div>
-                <div><span style={{ color: '#999' }}>exp:</span> {decoded.exp}</div>
-              </div>
-              <Alert type="info" style={{ marginTop: 8 }} message="此信息由公钥解码 JWT 数字签名获得，确保授权数据不可篡改" showIcon />
-            </Card>
-          )}
+          {renderLicenseDetailCard(license, decoded)}
 
           <Card title={<><KeyOutlined style={{ color: '#fa8c16', marginRight: 8 }} />密钥信息</>}
             style={{ marginBottom: 16 }} size={isMobile ? 'small' : 'default'}>
@@ -589,6 +727,33 @@ export default function LicensePage() {
         </Spin>
       )}
 
+      {activeTab === 'clinic' && showClinicTab && (
+        <Spin spinning={loading}>
+          {clinicIsExpiredOrNone && (
+            <Alert type="warning" showIcon icon={<BankOutlined />} style={{ marginBottom: 16 }}
+              message="本诊所无独立授权"
+              description={clinicData?.has_any === false
+                ? `诊所"${clinicName}"(${clinicCode})暂无独立授权，当前使用站点通用授权。如需独立授权，请在"诊所授权管理"中为该诊所创建授权。`
+                : `诊所"${clinicName}"(${clinicCode})的独立授权已过期，请联系管理员续期。`}
+            />
+          )}
+
+          {renderLicenseStatusCard(
+            clinicStatus, clinicRemaining, clinicLicense,
+            '诊所标识',
+            clinicCode ? `${clinicCode}:${clinicData?.site_id || ''}:${clinicData?.machine_id || ''}` : '—',
+            '诊所',
+          )}
+
+          {renderLicenseDetailCard(clinicLicense, clinicDecoded, true, clinicCode)}
+
+          <Space>
+            <Button type="primary" icon={<EditOutlined />} onClick={handleUpdateClinicLicense} disabled={!clinicCode}>更新授权</Button>
+            <Button icon={<ReloadOutlined />} onClick={fetchClinicData}>刷新状态</Button>
+          </Space>
+        </Spin>
+      )}
+
       {activeTab === 'tenant' && (
         <>
           <Card title={<><BarChartOutlined style={{ color: '#52c41a', marginRight: 8 }} />付费统计</>}
@@ -619,10 +784,25 @@ export default function LicensePage() {
 
           <Card title="授权列表" size={isMobile ? 'small' : 'default'}
             extra={
-              <Space>
+              <Space wrap>
                 <Input.Search placeholder="搜索诊所/站点" allowClear size="small" style={{ width: isMobile ? 120 : 200 }}
                   onSearch={handleSearch} onChange={e => { if (!e.target.value) handleSearch(''); }} />
-                <Button type="primary" size="small" icon={<PlusOutlined />} onClick={handleCreate}>新增授权</Button>
+                <Space size={4}>
+                  {(isSuperAdmin || isPowerAdmin) && (
+                    <>
+                      <Button size="small" type={expiringDays === 15 ? 'primary' : 'default'}
+                        icon={<ExclamationCircleOutlined />} onClick={() => handleExpiringFilter(15)}>即将过期</Button>
+                      <InputNumber size="small" min={1} max={365} placeholder="天数"
+                        style={{ width: 60 }} value={expiringDays || undefined}
+                        onChange={v => { if (v && v > 0) handleExpiringFilter(v); }}
+                      />
+                      {expiringDays > 0 && (
+                        <Button size="small" onClick={clearExpiringFilter}>清除过滤</Button>
+                      )}
+                    </>
+                  )}
+                </Space>
+                {isSuperAdmin && <Button type="primary" size="small" icon={<PlusOutlined />} onClick={handleCreate}>新增授权</Button>}
               </Space>
             }>
             <Table dataSource={allLicenses} columns={columns} rowKey="id"
@@ -642,15 +822,36 @@ export default function LicensePage() {
               <Button size="small" icon={<CopyOutlined />} onClick={() => copyText(currentLicenseToken)} style={{ marginTop: 4 }}>复制 License</Button>
             </Form.Item>
           )}
-          <Form.Item label="站点标识（输入组合key自动拆解，如 xyj:kL0Wxn_2026-04-29 17:55:46）">
-            <Input placeholder="输入 SITE_ID:Machine_ID 自动拆解" onChange={e => handleSiteKeyInput(e.target.value)} />
+          <Form.Item name="license_type" label="授权类型" rules={[{ required: true }]}>
+            <Select onChange={handleLicenseTypeChange}>
+              <Select.Option value="site">站点</Select.Option>
+              <Select.Option value="clinic">诊所</Select.Option>
+            </Select>
+          </Form.Item>
+          <Form.Item label={licenseType === 'clinic' ? '组合标识（诊所编码:SITE_ID:Machine_ID）' : '站点标识（输入组合key自动拆解，如 xyj:kL0Wxn_2026-04-29 17:55:46）'}>
+            <Input placeholder={licenseType === 'clinic' ? '输入 诊所编码:SITE_ID:Machine_ID 自动拆解' : '输入 SITE_ID:Machine_ID 自动拆解'} onChange={e => handleSiteKeyInput(e.target.value)} />
           </Form.Item>
           <Row gutter={12}>
-            <Col span={12}>
+            {licenseType === 'clinic' && (
+              <Col span={12}>
+                <Form.Item name="clinic_code" label="诊所编码" rules={[{ required: licenseType === 'clinic', message: '请输入或搜索诊所编码' }]}>
+                  <AutoComplete
+                    options={tenantOptions}
+                    onSearch={handleTenantSearch}
+                    placeholder="输入诊所编码或搜索"
+                  >
+                    <Input suffix={tenantSearchLoading ? <Spin size="small" /> : null} />
+                  </AutoComplete>
+                </Form.Item>
+              </Col>
+            )}
+            <Col span={licenseType === 'clinic' ? 12 : 12}>
               <Form.Item name="site_id" label="SITE_ID" rules={[{ required: true }]}>
                 <Input placeholder="站点标识" />
               </Form.Item>
             </Col>
+          </Row>
+          <Row gutter={12}>
             <Col span={12}>
               <Form.Item name="machine_id" label="Machine ID" rules={[{ required: true }]}>
                 <Input placeholder="机器标识" />
@@ -741,6 +942,9 @@ export default function LicensePage() {
               </Card>
             )}
             <Descriptions column={2} size="small" bordered style={{ marginBottom: 16 }}>
+              {detailData.license?.clinic_code && (
+                <Descriptions.Item label="诊所编码" span={2}><Tag color="purple">{detailData.license.clinic_code}</Tag></Descriptions.Item>
+              )}
               <Descriptions.Item label="SITE_ID" span={1}>{detailData.license?.site_id || '—'}</Descriptions.Item>
               <Descriptions.Item label="Machine ID" span={1}>{detailData.license?.machine_id || '—'}</Descriptions.Item>
               <Descriptions.Item label="授权时长" span={1}>
@@ -783,10 +987,12 @@ export default function LicensePage() {
         open={updateModalVisible} onCancel={() => setUpdateModalVisible(false)} footer={null}
         width={isMobile ? '100%' : 520} destroyOnClose>
         <div style={{ marginBottom: 16 }}>
-          <Text type="secondary" style={{ fontSize: 12 }}>站点标识</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>{activeTab === 'clinic' ? '诊所标识' : '站点标识'}</Text>
           <div style={{ background: 'rgba(0,0,0,0.02)', border: '1px solid #f0f0f0', borderRadius: 8, padding: '8px 12px', fontFamily: 'monospace', fontSize: 13, fontWeight: 500, wordBreak: 'break-all', marginTop: 4 }}>
-            {siteID}{siteID && machineID ? ':' : ''}{machineID}
-            {(siteID || machineID) && <CopyOutlined style={{ marginLeft: 8, cursor: 'pointer', color: '#52c41a' }} onClick={() => copyText(`${siteID}:${machineID}`)} />}
+            {activeTab === 'clinic'
+              ? (clinicCode ? `${clinicCode}:${clinicData?.site_id || ''}:${clinicData?.machine_id || ''}` : '—')
+              : `${siteID}${siteID && machineID ? ':' : ''}${machineID}`}
+            <CopyOutlined style={{ marginLeft: 8, cursor: 'pointer', color: '#52c41a' }} onClick={() => copyText(activeTab === 'clinic' ? `${clinicCode}:${clinicData?.site_id || ''}:${clinicData?.machine_id || ''}` : `${siteID}:${machineID}`)} />
           </div>
         </div>
         <div style={{ marginBottom: 16 }}>
@@ -808,6 +1014,9 @@ export default function LicensePage() {
               <Alert type="error" style={{ marginBottom: 8 }} message={updateDecoded.mismatches.join('; ')} showIcon />
             )}
             <Descriptions column={isMobile ? 1 : 2} size="small">
+              {updateDecoded.claims?.clinic_code && (
+                <Descriptions.Item label="诊所编码"><Tag color="purple">{updateDecoded.claims.clinic_code}</Tag></Descriptions.Item>
+              )}
               <Descriptions.Item label="授权方式">{METHOD_MAP[updateDecoded.claims?.method] ? <Tag color={METHOD_MAP[updateDecoded.claims.method].color}>{METHOD_MAP[updateDecoded.claims.method].label}</Tag> : updateDecoded.claims?.method}</Descriptions.Item>
               <Descriptions.Item label="授权时长">{updateDecoded.duration_desc || '—'}</Descriptions.Item>
               <Descriptions.Item label="授权日期">{updateDecoded.claims?.iat ? dayjs.unix(updateDecoded.claims.iat).tz(CNSH).format('YYYY/MM/DD HH:mm:ss') : '—'}</Descriptions.Item>

@@ -12,11 +12,24 @@ export function getSiteLicense(tenantId?: number) {
   return request.get('/licenses/site', { params: tenantId ? { tenant_id: tenantId } : {} });
 }
 
-export function listAllLicenses(search?: string) {
-  return request.get('/licenses', { params: search ? { search } : {} });
+export function getClinicLicense() {
+  return request.get('/licenses/clinic');
+}
+
+export function searchTenantsForLicense(keyword: string, size = 20) {
+  return request.get('/licenses/tenants/search', { params: { keyword, size } });
+}
+
+export function listAllLicenses(search?: string, expiringDays?: number) {
+  const params: Record<string, string | number> = {};
+  if (search) params.search = search;
+  if (expiringDays && expiringDays > 0) params.expiring_days = expiringDays;
+  return request.get('/licenses', { params });
 }
 
 export function createLicense(data: {
+  license_type?: string;
+  clinic_code?: string;
   site_id: string;
   machine_id: string;
   method: string;
@@ -31,6 +44,8 @@ export function createLicense(data: {
 }
 
 export function updateLicense(id: number, data: {
+  license_type?: string;
+  clinic_code?: string;
   site_id?: string;
   machine_id?: string;
   method?: string;
