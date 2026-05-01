@@ -72,6 +72,7 @@ func SetupRouter(db *gorm.DB, minioClient *minio.Client, cfg *config.Config) *gi
 	{
 		auth.POST("/login", authHandler.Login)
 		auth.POST("/register", authHandler.Register)
+		v1.GET("/version", handler.GetVersion)
 	}
 
 	// WebSocket upgrade (handles its own JWT auth via query param or header).

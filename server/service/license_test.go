@@ -292,10 +292,16 @@ func TestSupersedeOldLicense(t *testing.T) {
 	lic2, err := svc.CreateSiteLicense(req2, "admin", "")
 	require.NoError(t, err)
 	assert.Equal(t, "active", lic2.Status)
+	assert.NotEqual(t, lic1.ID, lic2.ID, "different JWT token should create new record")
 
 	old, err := svc.GetLicense(lic1.ID)
 	require.NoError(t, err)
-	assert.Equal(t, "superseded", old.Status)
+	assert.Equal(t, "superseded", old.Status, "old license should be superseded")
+
+	newLic, err := svc.GetLicense(lic2.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "active", newLic.Status)
+	assert.Equal(t, "year", newLic.Method)
 }
 
 func TestCalcExpiry(t *testing.T) {
@@ -489,10 +495,87 @@ func TestClinicLicenseSupersede(t *testing.T) {
 	lic2, err := svc.CreateSiteLicense(req2, "admin", "")
 	require.NoError(t, err)
 	assert.Equal(t, "active", lic2.Status)
+	assert.NotEqual(t, lic1.ID, lic2.ID, "different JWT token should create new record")
 
 	old, err := svc.GetLicense(lic1.ID)
 	require.NoError(t, err)
-	assert.Equal(t, "superseded", old.Status)
+	assert.Equal(t, "superseded", old.Status, "old clinic license should be superseded")
+
+	newLic, err := svc.GetLicense(lic2.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "active", newLic.Status)
+	assert.Equal(t, "year", newLic.Method)
+}
+
+func TestSameJWTToken_UpdatesInPlace(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewLicenseService(db)
+
+	fakeToken := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test-token-1"
+
+	lic1, err := svc.CreateSiteLicense(CreateLicenseRequest{
+		LicenseType: "clinic", ClinicCode: "1001", SiteID: "xyj", MachineID: "m1",
+		Method: "month", Duration: 1, Features: []string{"basic"},
+		LicenseToken: fakeToken,
+	}, "admin", "")
+	require.NoError(t, err)
+	assert.Equal(t, "active", lic1.Status)
+	assert.Equal(t, fakeToken, lic1.JWTToken)
+
+	lic2, err := svc.CreateSiteLicense(CreateLicenseRequest{
+		LicenseType: "clinic", ClinicCode: "1001", SiteID: "xyj", MachineID: "m1",
+		Method: "year", Duration: 1, Features: []string{"basic", "ai"},
+		LicenseToken: fakeToken,
+	}, "admin", "")
+	require.NoError(t, err)
+	assert.Equal(t, lic1.ID, lic2.ID, "same JWT token should update the same record")
+	assert.Equal(t, "active", lic2.Status)
+	assert.Equal(t, "year", lic2.Method)
+
+	var count int64
+	db.Model(&model.License{}).Where("license_type = 'clinic' AND clinic_code = '1001'").Count(&count)
+	assert.Equal(t, int64(1), count, "should only have 1 record for same JWT token")
+}
+
+func TestUpdateLicense_SameJWTTokenReactivatesOld(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewLicenseService(db)
+
+	tokenA := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.token-A"
+	tokenB := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.token-B"
+
+	licA, err := svc.CreateSiteLicense(CreateLicenseRequest{
+		LicenseType: "clinic", ClinicCode: "1001", SiteID: "xyj", MachineID: "m1",
+		Method: "month", Duration: 1, Features: []string{"basic"},
+		LicenseToken: tokenA,
+	}, "admin", "")
+	require.NoError(t, err)
+	assert.Equal(t, "active", licA.Status)
+
+	licB, err := svc.CreateSiteLicense(CreateLicenseRequest{
+		LicenseType: "clinic", ClinicCode: "1001", SiteID: "xyj", MachineID: "m1",
+		Method: "year", Duration: 1, Features: []string{"basic", "ai"},
+		LicenseToken: tokenB,
+	}, "admin", "")
+	require.NoError(t, err)
+	assert.Equal(t, "active", licB.Status)
+
+	oldA, _ := svc.GetLicense(licA.ID)
+	assert.Equal(t, "superseded", oldA.Status, "LicenseA should be superseded after LicenseB created")
+
+	result, err := svc.UpdateLicense(licB.ID, UpdateLicenseRequest{LicenseToken: tokenA}, "")
+	require.NoError(t, err)
+	assert.Equal(t, licA.ID, result.ID, "should return LicenseA (re-activated)")
+
+	refreshedA, _ := svc.GetLicense(licA.ID)
+	assert.Equal(t, "active", refreshedA.Status, "LicenseA should be re-activated")
+
+	refreshedB, _ := svc.GetLicense(licB.ID)
+	assert.Equal(t, "superseded", refreshedB.Status, "LicenseB should be superseded")
+
+	var count int64
+	db.Model(&model.License{}).Where("jwt_token = ?", tokenA).Count(&count)
+	assert.Equal(t, int64(1), count, "should only have 1 record with tokenA")
 }
 
 func TestGetClinicActiveLicense(t *testing.T) {
@@ -1021,14 +1104,19 @@ func TestMultipleClinicCodes_IndependentLifecycle(t *testing.T) {
 	}, "admin", "")
 	require.NoError(t, err)
 
-	_, err = svc.CreateSiteLicense(CreateLicenseRequest{
+	licA2, err := svc.CreateSiteLicense(CreateLicenseRequest{
 		LicenseType: "clinic", ClinicCode: "A001", SiteID: "xyj", MachineID: "m1",
 		Method: "year", Duration: 1, Features: []string{"basic", "ai"},
 	}, "admin", "")
 	require.NoError(t, err)
 
+	assert.NotEqual(t, licA1.ID, licA2.ID, "different JWT token should create new record for clinic A")
+
 	oldA, _ := svc.GetLicense(licA1.ID)
 	assert.Equal(t, "superseded", oldA.Status, "clinic A old license should be superseded")
+
+	newA, _ := svc.GetLicense(licA2.ID)
+	assert.Equal(t, "active", newA.Status, "clinic A new license should be active")
 
 	oldB, _ := svc.GetLicense(licB1.ID)
 	assert.Equal(t, "active", oldB.Status, "clinic B license should remain active")

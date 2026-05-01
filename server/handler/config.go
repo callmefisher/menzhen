@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/callmefisher/menzhen/server/middleware"
@@ -72,4 +73,14 @@ func (h *ConfigHandler) Restart(c *gin.Context) {
 		log.Println("管理员触发服务重启，进程退出...")
 		exitFunc(0)
 	}()
+}
+
+func GetVersion(c *gin.Context) {
+	data, err := os.ReadFile("scripts/version")
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"version": "unknown"}})
+		return
+	}
+	ver := strings.TrimSpace(string(data))
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"version": ver}})
 }

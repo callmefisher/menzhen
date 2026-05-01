@@ -199,24 +199,6 @@ func (s *LicenseService) CreateSiteLicense(req CreateLicenseRequest, creator str
 
 	featuresJSON, _ := json.Marshal(req.Features)
 
-	if req.LicenseType == "clinic" {
-		var existingActive model.License
-		now := time.Now()
-		if err := s.DB.Where("license_type = 'clinic' AND clinic_code = ? AND site_id = ? AND machine_id = ? AND status = 'active' AND (expiry_date IS NULL OR expiry_date > ?)", req.ClinicCode, req.SiteID, req.MachineID, now).First(&existingActive).Error; err == nil {
-			existingActive.Status = "superseded"
-			s.DB.Save(&existingActive)
-			log.Printf("[license] clinic license superseded: id=%d, clinic_code=%s, site_id=%s", existingActive.ID, req.ClinicCode, req.SiteID)
-		}
-	} else if req.LicenseType == "site" {
-		var existingActive model.License
-		now := time.Now()
-		if err := s.DB.Where("license_type = 'site' AND site_id = ? AND machine_id = ? AND status = 'active' AND (expiry_date IS NULL OR expiry_date > ?)", req.SiteID, req.MachineID, now).First(&existingActive).Error; err == nil {
-			existingActive.Status = "superseded"
-			s.DB.Save(&existingActive)
-			log.Printf("[license] site license superseded: id=%d, site_id=%s", existingActive.ID, req.SiteID)
-		}
-	}
-
 	claims := LicenseClaims{
 		ClinicCode: req.ClinicCode,
 		SiteID:     req.SiteID,
@@ -247,6 +229,44 @@ func (s *LicenseService) CreateSiteLicense(req CreateLicenseRequest, creator str
 	if req.ClinicCode != "" {
 		s.DB.Table("tenants").Where("code = ?", req.ClinicCode).Select("id").Scan(&tenantID)
 		log.Printf("[license] resolved clinic_code=%s to tenant_id=%d", req.ClinicCode, tenantID)
+	}
+
+	if jwtToken != "" {
+		var sameTokenLicense model.License
+		sameTokenQuery := s.DB.Where("jwt_token = ?", jwtToken)
+		if err := sameTokenQuery.First(&sameTokenLicense).Error; err == nil {
+			sameTokenLicense.TenantID = tenantID
+			sameTokenLicense.LicenseType = req.LicenseType
+			sameTokenLicense.ClinicCode = req.ClinicCode
+			sameTokenLicense.SiteID = req.SiteID
+			sameTokenLicense.MachineID = req.MachineID
+			sameTokenLicense.Method = req.Method
+			sameTokenLicense.Duration = req.Duration
+			sameTokenLicense.AuthDate = authDate
+			sameTokenLicense.ExpiryDate = expiryDate
+			sameTokenLicense.Features = string(featuresJSON)
+			sameTokenLicense.Amount = req.Amount
+			sameTokenLicense.Status = "active"
+			sameTokenLicense.Remark = req.Remark
+			sameTokenLicense.CreatedBy = creator
+			s.DB.Save(&sameTokenLicense)
+			log.Printf("[license] same JWT token, updated existing license: id=%d, type=%s, clinic_code=%s, site_id=%s", sameTokenLicense.ID, sameTokenLicense.LicenseType, sameTokenLicense.ClinicCode, sameTokenLicense.SiteID)
+			return &sameTokenLicense, nil
+		}
+	}
+
+	if req.LicenseType == "clinic" {
+		now := time.Now()
+		s.DB.Model(&model.License{}).
+			Where("license_type = 'clinic' AND clinic_code = ? AND site_id = ? AND machine_id = ? AND status = 'active' AND (expiry_date IS NULL OR expiry_date > ?)",
+				req.ClinicCode, req.SiteID, req.MachineID, now).
+			Update("status", "superseded")
+	} else if req.LicenseType == "site" {
+		now := time.Now()
+		s.DB.Model(&model.License{}).
+			Where("license_type = 'site' AND site_id = ? AND machine_id = ? AND status = 'active' AND (expiry_date IS NULL OR expiry_date > ?)",
+				req.SiteID, req.MachineID, now).
+			Update("status", "superseded")
 	}
 
 	lic := model.License{
@@ -280,14 +300,41 @@ func (s *LicenseService) UpdateLicense(id uint64, req UpdateLicenseRequest, priv
 		return nil, fmt.Errorf("license not found")
 	}
 
-	originalLicenseType := lic.LicenseType
-
 	if req.LicenseToken != "" {
+		var existingSameToken model.License
+		if err := s.DB.Where("jwt_token = ? AND id != ?", req.LicenseToken, id).First(&existingSameToken).Error; err == nil {
+			if existingSameToken.ExpiryDate != nil {
+				loc, _ := time.LoadLocation("Asia/Shanghai")
+				nowCST := time.Now().In(loc)
+				expCST := existingSameToken.ExpiryDate.In(loc)
+				if expCST.Before(nowCST) {
+					return nil, fmt.Errorf("授权码已过期（过期时间: %s），无法更新", expCST.Format("2006-01-02 15:04:05"))
+				}
+			}
+			existingSameToken.Status = "active"
+			if lic.Status == "active" {
+				lic.Status = "superseded"
+				s.DB.Save(&lic)
+				log.Printf("[license] current license superseded due to same JWT token re-activation: id=%d", lic.ID)
+			}
+			s.DB.Save(&existingSameToken)
+			log.Printf("[license] re-activated existing license with same JWT token: id=%d", existingSameToken.ID)
+			return &existingSameToken, nil
+		}
+
 		lic.JWTToken = req.LicenseToken
 
 		publicKeyPEM := LoadPublicKey()
 		if publicKeyPEM != "" {
 			if decodedClaims, err := VerifyLicense(publicKeyPEM, req.LicenseToken); err == nil {
+				if decodedClaims.ExpiresAt != nil {
+					loc, _ := time.LoadLocation("Asia/Shanghai")
+					nowCST := time.Now().In(loc)
+					expCST := decodedClaims.ExpiresAt.Time.In(loc)
+					if expCST.Before(nowCST) {
+						return nil, fmt.Errorf("授权码已过期（过期时间: %s），无法更新", expCST.Format("2006-01-02 15:04:05"))
+					}
+				}
 				if decodedClaims.ClinicCode != "" {
 					lic.ClinicCode = decodedClaims.ClinicCode
 					lic.LicenseType = "clinic"
@@ -414,19 +461,6 @@ func (s *LicenseService) UpdateLicense(id uint64, req UpdateLicenseRequest, priv
 				Where("license_type = 'site' AND site_id = ? AND machine_id = ? AND status = 'active' AND id != ? AND (expiry_date IS NULL OR expiry_date > ?)",
 					lic.SiteID, lic.MachineID, lic.ID, now).
 				Update("status", "superseded")
-		}
-		if originalLicenseType != lic.LicenseType {
-			if originalLicenseType == "site" {
-				s.DB.Model(&model.License{}).
-					Where("license_type = 'site' AND site_id = ? AND machine_id = ? AND status = 'active' AND id != ?",
-						lic.SiteID, lic.MachineID, lic.ID).
-					Update("status", "superseded")
-			} else if originalLicenseType == "clinic" {
-				s.DB.Model(&model.License{}).
-					Where("license_type = 'clinic' AND clinic_code = ? AND site_id = ? AND machine_id = ? AND status = 'active' AND id != ?",
-						lic.ClinicCode, lic.SiteID, lic.MachineID, lic.ID).
-					Update("status", "superseded")
-			}
 		}
 	}
 
@@ -665,8 +699,9 @@ func (s *LicenseService) calcExpiry(start time.Time, method string, duration int
 
 func CheckExpiredLicenses(db *gorm.DB) int {
 	var licenses []model.License
-	now := time.Now()
-	if err := db.Where("status = 'active' AND expiry_date < ?", now).Find(&licenses).Error; err != nil {
+	loc, _ := time.LoadLocation("Asia/Shanghai")
+	nowCST := time.Now().In(loc)
+	if err := db.Where("status = 'active' AND expiry_date < ?", nowCST).Find(&licenses).Error; err != nil {
 		log.Printf("[license] expiry check error: %v", err)
 		return 0
 	}
