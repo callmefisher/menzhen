@@ -17,6 +17,7 @@ const AdminRoleName = "管理员"
 
 // CreateRoleRequest is the input for creating a new role.
 type CreateRoleRequest struct {
+	TenantID      uint64   `json:"tenant_id"`
 	Name          string   `json:"name" binding:"required"`
 	Description   string   `json:"description"`
 	PermissionIDs []uint64 `json:"permission_ids"`

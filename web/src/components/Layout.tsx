@@ -37,7 +37,7 @@ import type { MenuProps as AntMenuProps } from 'antd';
 import { useAuth } from '../store/auth';
 import { useTheme } from '../store/theme';
 import { sidebarThemes } from '../theme/sidebarThemes';
-import { changePassword } from '../api/auth';
+import { changePassword, getMe } from '../api/auth';
 import { getVersion } from '../api/version';
 import { listInventoryDrugs } from '../api/inventory';
 import type { InventoryDrug } from '../api/inventory';
@@ -89,6 +89,15 @@ export default function AppLayout() {
       if (v) setAppVersion(v);
     }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    getMe().catch(() => {});
+    const interval = setInterval(() => {
+      getMe().catch(() => {});
+    }, 60_000);
+    return () => clearInterval(interval);
+  }, [user]);
 
   useEffect(() => {
     if (licenseExpired && location.pathname !== '/settings/license' && location.pathname !== '/login' && location.pathname !== '/register') {
@@ -462,7 +471,12 @@ export default function AppLayout() {
         settingsChildren.push({
           key: '/settings/license',
           icon: <KeyOutlined />,
-          label: '授权',
+          label: licenseExpired
+            ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                授权
+                <span style={{ background: '#ff4d4f', color: '#fff', fontSize: 11, lineHeight: '16px', minWidth: 16, height: 16, borderRadius: 8, padding: '0 4px', textAlign: 'center', fontWeight: 500 }}>!</span>
+              </span>
+            : '授权',
         });
       }
       items.push({
@@ -482,7 +496,7 @@ export default function AppLayout() {
     }
 
     return items;
-  }, [hasPermission, isSuperAdmin, alertCount, followUpCount, rxPendingCount, queueWaitingCount, queueEnabled, appointmentEnabled]);
+  }, [hasPermission, isSuperAdmin, alertCount, followUpCount, rxPendingCount, queueWaitingCount, queueEnabled, appointmentEnabled, licenseExpired]);
 
   // Determine selected keys from current path
   const selectedKeys = useMemo(() => {

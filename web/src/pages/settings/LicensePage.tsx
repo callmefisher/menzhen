@@ -9,7 +9,7 @@ import {
   KeyOutlined, SafetyCertificateOutlined, ClockCircleOutlined,
   PlusOutlined, CopyOutlined, ReloadOutlined, EditOutlined,
   CheckCircleOutlined, ExclamationCircleOutlined, CloseCircleOutlined,
-  BarChartOutlined, HistoryOutlined, LockOutlined, DeleteOutlined,
+  BarChartOutlined, HistoryOutlined, DeleteOutlined,
   BankOutlined
 } from '@ant-design/icons';
 import {
@@ -538,7 +538,6 @@ export default function LicensePage() {
   const remaining = siteData?.remaining_days || 0;
   const decoded = siteData?.decoded_claims;
   const summary = stats?.summary;
-  const isExpiredOrNone = status === 'expired' || status === 'none';
   const monthlyCount = Array.isArray(stats?.monthly) ? stats.monthly.length : 0;
 
   const clinicLicense = clinicData?.license;
@@ -725,12 +724,6 @@ export default function LicensePage() {
 
   return (
     <div style={{ padding: isMobile ? 0 : undefined, maxWidth: '100%', overflowX: 'hidden' }}>
-      {isExpiredOrNone && (
-        <Alert type="error" showIcon icon={<LockOutlined />} style={{ marginBottom: 16 }}
-          message="软件授权已过期，请联系管理员"
-          description="系统当前未授权或授权已过期，除授权管理外的所有功能已被锁定。请联系管理员进行授权续期。" />
-      )}
-
       <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
         <Button type={activeTab === 'site' ? 'primary' : 'default'} icon={<KeyOutlined />}
           onClick={() => setActiveTab('site')}>本站点授权</Button>

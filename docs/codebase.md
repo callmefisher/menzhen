@@ -1,7 +1,7 @@
 # Codebase 全局上下文
 
 > 本文件供每次任务执行前快速扫描，保持与代码同步。
-> 最后更新：2026-04-06（预约管理、患者门户、磁盘监控、租户数据迁移、员工营收统计、排队医生配置）
+> 最后更新：2026-05-01（授权管理系统、版本API、ECharts按需加载、drei-lite轻量化、磁盘监控、租户数据迁移、员工营收统计、排队医生配置）
 
 ---
 
@@ -15,7 +15,7 @@
 | 后端 | Go + Gin + GORM |
 | 数据库 | MySQL 8.0 |
 | 文件存储 | MinIO |
-| 认证 | JWT（HS256，24h 过期）+ RBAC |
+| 认证 | JWT（HS256，24h 过期）+ RBAC + License（RS256 JWT 授权校验） |
 | AI | DeepSeek API（Anthropic Messages 格式） |
 | 测试 | Go test（后端）+ Vitest + Testing Library（前端） |
 | 部署 | Docker Compose（6 个服务）+ Nginx 反向代理 |
@@ -27,11 +27,11 @@
 ```
 menzhen/
 ├── server/                          # Go 后端
-│   ├── main.go                      # 入口：加载配置 -> InitDB -> Seed -> InitMinIO -> SetupRouter -> Run + goroutines（处方通知清理/队列跨日清理/预约自动入队[启动即执行+重试]/DB清理[启动即执行+24h ticker]）
+│   ├── main.go                      # 入口：加载配置 -> InitDB -> Seed -> InitMinIO -> SetupRouter -> Run + goroutines（处方通知清理/队列跨日清理/预约自动入队[启动即执行+重试]/DB清理[启动即执行+24h ticker]/License过期检查[启动即执行+1min ticker]）
 │   ├── config/
 │   │   └── config.go                # Config 结构体 + Load()，全部读取环境变量
 │   ├── database/
-│   │   ├── database.go              # InitDB：连接 MySQL + AutoMigrate 全部 37 个模型（DisableForeignKeyConstraintWhenMigrating: true）
+│   │   ├── database.go              # InitDB：连接 MySQL + AutoMigrate 全部 39 个模型（DisableForeignKeyConstraintWhenMigrating: true）
 │   │   ├── seed.go                  # Seed：幂等写入 permissions/tenant/admin role/admin user
 │   │   └── hexagram_seed.json       # 64卦种子数据（卦名/卦辞/爻辞/传文/中医应用）
 │   ├── handler/
@@ -56,7 +56,7 @@ menzhen/
 │   │   ├── tenant_admin.go        # 租户级管理 HTTP 处理器（ListUsers/CreateUser/UpdateUser/DeleteUser/AssignRoles/ResetPassword/ListRoles/CreateRole/UpdateRole/DeleteRole/ListTenantPermissions，ErrProtectedUser→403）
 │   │   ├── hexagram.go              # List/Detail/Create/Update/Delete/Trigrams（卦象管理）
 │   │   ├── ai_analysis.go           # Analyze/AnalyzeStream（AI 辩证论治，含缓存）+ AnalyzeTongue/AnalyzeTongueStream + SaveCached + GetCached
-│   │   ├── config.go                # 系统配置 API handler（Get/Update/Restart，读取 .env 敏感字段掩码）
+│   │   ├── config.go                # 系统配置 API handler（Get/Update/Restart/GetVersion，读取 .env 敏感字段掩码）
 │   │   ├── backup.go                # DockerStatus/TriggerBackup/TriggerRestore/GetTaskStatus/ListLocalFiles/ListCloudFiles（备份恢复管理）
 │   │   ├── ws.go                    # WebSocket Upgrade（JWT auth via query param or header）
 │   │   ├── oplog.go                 # ListOpLogs/DeleteOpLog/BatchDeleteOpLogs
@@ -72,13 +72,14 @@ menzhen/
 │   │   ├── patient_settings.go      # 患者门户配置（GetPortalConfig/UpdatePortalConfig）
 │   │   ├── tenant_migrate.go        # 租户数据迁移（Upload/ParseFromBackup/GetStatus/Execute/ListBackupFiles）
 │   │   ├── disk.go                  # 磁盘监控（GetStatus/SetInterval/ListVolumes/StartMigrate/GetMigrateStatus/ChangeBackupDir/GetBackupDirStatus）
-│   │   └── handler_test.go          # handler 测试
+│   │   ├── license.go               # 授权管理（GetIdentity/UpdateIdentity/GetSiteLicense/GetClinicLicense/SearchTenantsForLicense/CreateLicense/UpdateLicense/GetLicense/ListTenantLicenses/ListAllLicenses/DeleteLicense/GetStats/GetKeys/VerifyToken）
 │   ├── middleware/
 │   │   ├── auth.go                  # JWT 解析（含 TokenVersion + ManagedGroups），GenerateToken/TokenVersionMiddleware/SuperAdminTenantOverrideMiddleware（支持 superAdmin + powerAdmin）/GetManagedGroups
 │   │   ├── rbac.go                  # RequirePermission：检查用户是否拥有指定权限码（支持 OR 匹配）
 │   │   ├── tenant.go                # TenantScope：GORM scope，按 tenant_id 过滤
 │   │   ├── tenant_status.go         # TenantStatusMiddleware：校验租户状态（禁用租户拒绝访问）
 │   │   ├── patient_auth.go          # PatientAuthMiddleware：患者门户 JWT 认证（30 天有效期，独立于员工端）
+│   │   ├── license.go               # LicenseCheckMiddleware：授权校验（60s 内存缓存，白名单路由放行，过期返回 403 license_required）
 │   │   └── oplog.go                 # LogOperation：记录操作审计日志（best-effort）
 │   ├── model/                       # GORM 数据模型（见下方数据模型章节）
 │   ├── router/
@@ -119,7 +120,8 @@ menzhen/
 │   │   ├── appointment_slot.go      # 预约时段配置（List/Create/Update/Delete）
 │   │   ├── patient_auth.go          # 患者门户认证（Login/Me/ListTenantsByPhone/GetOrCreate PatientUser，密码=手机后4位 bcrypt）
 │   │   ├── tenant_migrate.go        # 租户数据迁移（上传备份→解析→执行导入，异步任务状态跟踪）
-│   │   └── disk.go                  # 磁盘监控（定时采集磁盘/MySQL/MinIO状态，MySQL数据目录迁移，备份目录变更）
+│   │   ├── disk.go                  # 磁盘监控（定时采集磁盘/MySQL/MinIO状态，MySQL数据目录迁移，备份目录变更）
+│   │   └── license.go               # 授权管理（RS256 JWT签发/验证，机器标识，站点/诊所授权CRUD，过期检查，付费统计，公钥MD5校验）
 │   └── storage/
 │       └── minio.go                 # InitMinIO/UploadFile/GetObject/DeleteFile/DeleteFiles/ListAllObjects
 ├── web/                             # React 前端
@@ -166,9 +168,11 @@ menzhen/
 │       │   ├── patientPortal.ts     # 患者门户业务 API（doctors/schedule/appointments/queue/records/billings）
 │       │   ├── powerAdmin.ts        # PowerAdmin 管理 API（list/delete/assignGroups/listGroups）
 │       │   ├── tenantMigrate.ts     # 租户数据迁移 API（upload/parse/status/execute/listBackupFiles）
-│       │   └── disk.ts              # 磁盘监控 API（status/setInterval/listVolumes/migrate/migrateStatus/changeBackupDir/backupDirStatus）
+│       │   ├── disk.ts              # 磁盘监控 API（status/setInterval/listVolumes/migrate/migrateStatus/changeBackupDir/backupDirStatus）
+│       │   ├── license.ts            # 授权管理 API（identity/siteLicense/clinicLicense/searchTenants/listAll/create/update/get/delete/stats/keys/verify）
+│       │   └── version.ts            # 版本查询 API（getVersion）
 │       ├── components/
-│       │   ├── Layout.tsx           # 侧边栏 + 顶部导航布局（移动端 Sider→Drawer + 汉堡按钮，待配药 Badge 显示）
+│       │   ├── Layout.tsx           # 侧边栏 + 顶部导航布局（移动端 Sider→Drawer + 汉堡按钮，待配药 Badge 显示，版本号显示，授权过期自动跳转授权页）
 │       │   ├── FileUpload.tsx       # 文件上传组件
 │       │   ├── PrescriptionModal.tsx  # 处方弹窗（开方/编辑，草药+中成药双区域，含药物详情查看，医嘱预填分行，按方开药自动追加方剂备注，选方后横排展示功效/主治/备注，编辑模式自动根据方剂名加载详情，开方时显示库存提示，中成药自动查询方剂功效/主治和库存）
 │       │   ├── HerbDetailModal.tsx   # 通用中药详情弹窗（方剂/处方复用）
@@ -283,17 +287,21 @@ menzhen/
 │       │       ├── QueueSettings.tsx # 排队叫号设置（接诊医生管理、叫号参数、出诊配置）
 │       │       ├── AppointmentSlots.tsx # 预约时段配置（医生时段容量矩阵）
 │       │       ├── PatientPortalSettings.tsx # 患者门户设置（功能开关：登录/注册/预约/排队/查记录）
-│       │       └── TenantMigrate.tsx # 租户数据迁移（嵌入 BackupRestore，上传备份→解析→预览→导入）
+│       │       ├── TenantMigrate.tsx # 租户数据迁移（嵌入 BackupRestore，上传备份→解析→预览→导入）
+│       │       └── LicensePage.tsx  # 授权管理（站点/诊所/管理三标签，授权状态卡片，JWT签发/验证/更新，付费统计Chart.js图表，授权列表CRUD，即将过期筛选）
 │       ├── store/
-│       │   ├── auth.tsx             # 认证状态管理（登录/登出/权限检查/角色信息）
+│       │   ├── auth.tsx             # 认证状态管理（登录/登出/权限检查/角色信息/授权过期状态 checkLicenseStatus）
 │       │   ├── accessibility.tsx    # 无障碍模式状态管理（大字模式/高对比度）
 │       │   └── theme.tsx            # 主题选择状态管理
 │       ├── test/
 │       │   └── setup.ts             # 测试配置（polyfill ResizeObserver、matchMedia）
+│       ├── lib/
+│       │   └── drei-lite/           # @react-three/drei 轻量化替代（Html/OrbitControls/useGLTF，减少打包体积）
 │       └── utils/
-│           ├── request.ts           # axios 封装（自动附加 JWT、401 跳转登录、409 自动刷新 Token + 重载页面）
+│           ├── request.ts           # axios 封装（自动附加 JWT、401 跳转登录、409 自动刷新 Token + 重载页面、403 license_required 自动跳转授权页）
 │           ├── sse.ts               # SSE 流式请求工具（fetch + ReadableStream，支持 abort）
 │           ├── format.ts            # 格式化工具（fmtTotal 金额格式化、chunkToRows 数组分行）
+│           ├── echartsConfig.ts     # ECharts 按需加载配置（仅注册 BarChart/LineChart/Grid/Legend/Tooltip/CanvasRenderer）
 │           └── followUpStyles.ts    # 回访样式工具
 ├── nginx/
 │   └── nginx.conf                   # Nginx 反向代理配置
@@ -305,7 +313,9 @@ menzhen/
 │   ├── upload_to_qiniu.py           # 七牛云上传脚本（AK/SK 从环境变量读取）
 │   ├── download_from_qiniu.py       # 七牛云下载脚本（下载最新备份文件）
 │   ├── seed-herbs-formulas.sh       # 中药/方剂数据播种（通过 API 触发 DeepSeek 回退自动入库）
-│   └── Dockerfile.backup            # 备份容器镜像（alpine + mysql-client + mc + python3 + qiniu SDK）
+│   ├── Dockerfile.backup            # 备份容器镜像（alpine + mysql-client + mc + python3 + qiniu SDK）
+│   ├── version                      # 版本号文件（API /version 读取此文件返回当前版本）
+│   └── public.pem                   # License 公钥（RS256，验证授权 JWT 签名）
 ├── docker-compose.yml               # 6 个服务：nginx、web、api、mysql、minio、backup
 ├── deploy.sh                        # 一键部署脚本（生成 .env + build + 启动 + 可选恢复）
 ├── deploy-wizard.py                 # 交互式部署向导（裸机安装，Python 脚本，支持 macOS/Linux/Windows）
@@ -343,7 +353,7 @@ menzhen/
 | `name` | `varchar(50)` | 权限名称 |
 | `description` | `varchar(200)` | 描述 |
 
-**全部权限码（共 39 个）：** `patient:create`, `patient:read`, `patient:update`, `patient:delete`, `record:create`, `record:read`, `record:update`, `record:delete`, `oplog:read`, `user:manage`, `role:manage`, `herb:read`, `formula:read`, `prescription:create`, `prescription:read`, `tenant:manage`, `inventory:read`, `inventory:create`, `inventory:update`, `inventory:delete`, `billing:read`, `billing:create`, `tenant:user:manage`（诊所用户管理）, `tenant:role:manage`（诊所角色管理）, `followup:create`, `followup:read`, `followup:update`, `followup:delete`, `statistics:read`（统计数据）, `queue:read`（查看排队）, `queue:create`（取号）, `queue:update`（叫号/完成）, `queue:clear`（清空排队）, `appointment:create`, `appointment:read`, `appointment:update`（修改/取消）, `appointment:delete`, `appointment:checkin`（预约签到）, `power_admin:manage`（superAdmin 管理 powerAdmin 账号及分组）
+**全部权限码（共 40 个）：** `patient:create`, `patient:read`, `patient:update`, `patient:delete`, `record:create`, `record:read`, `record:update`, `record:delete`, `oplog:read`, `user:manage`, `role:manage`, `herb:read`, `formula:read`, `prescription:create`, `prescription:read`, `tenant:manage`, `inventory:read`, `inventory:create`, `inventory:update`, `inventory:delete`, `billing:read`, `billing:create`, `tenant:user:manage`（诊所用户管理）, `tenant:role:manage`（诊所角色管理）, `followup:create`, `followup:read`, `followup:update`, `followup:delete`, `statistics:read`（统计数据）, `queue:read`（查看排队）, `queue:create`（取号）, `queue:update`（叫号/完成）, `queue:clear`（清空排队）, `appointment:create`, `appointment:read`, `appointment:update`（修改/取消）, `appointment:delete`, `appointment:checkin`（预约签到）, `power_admin:manage`（superAdmin 管理 powerAdmin 账号及分组）, `license:manage`（授权管理：查看/签发/更新/删除授权）
 
 #### `herbs` — 中药
 
@@ -799,6 +809,41 @@ menzhen/
 | `key` | `varchar(100)` | 主键，配置键名 |
 | `value` | `text` | 配置值 |
 
+#### `licenses` — 软件授权记录（全局，含软删除）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | `uint64` | 主键 |
+| `tenant_id` | `uint64` | 关联租户 ID（clinic 类型时通过 clinic_code 解析） |
+| `license_type` | `varchar(20)` | 授权类型：site=站点, clinic=诊所（默认 site） |
+| `clinic_code` | `varchar(100)` | 诊所编码（clinic 类型时填写，对应 tenants.code） |
+| `site_id` | `varchar(100)` | 站点标识（对应 SITE_ID） |
+| `machine_id` | `varchar(100)` | 机器标识（自动生成，持久化到 /data/machine-id） |
+| `method` | `varchar(20)` | 授权方式：day/week/month/year/permanent |
+| `duration` | `int` | 授权时长数量（method=permanent 时为 0） |
+| `auth_date` | `datetime` | 授权起始日期 |
+| `expiry_date` | `datetime` | 授权截止日期（permanent 时为 2099-12-31） |
+| `features` | `varchar(200)` | 授权功能 JSON 数组，如 `["basic","ai","cloud"]` |
+| `amount` | `decimal(10,2)` | 付费金额 |
+| `jwt_token` | `text` | RS256 签名的 JWT 授权码 |
+| `status` | `varchar(20)` | 状态：active/expired/superseded（默认 active） |
+| `remark` | `varchar(500)` | 备注 |
+| `created_by` | `varchar(50)` | 创建者用户名 |
+| `created_at` | `time.Time` | 创建时间 |
+| `updated_at` | `time.Time` | 更新时间 |
+| `deleted_at` | `gorm.DeletedAt` | 软删除时间 |
+
+#### `machine_identities` — 机器标识（全局，含软删除）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | `uint64` | 主键 |
+| `machine_id` | `varchar(100)` | 机器标识（唯一索引，自动生成 6位随机+时间戳） |
+| `site_id` | `varchar(100)` | 站点标识（对应 SITE_ID 环境变量） |
+| `created_at` | `time.Time` | 创建时间 |
+| `updated_at` | `time.Time` | 更新时间 |
+| `deleted_at` | `gorm.DeletedAt` | 软删除时间 |
+
 ---
 
 ## API 路由清单
@@ -1205,6 +1250,31 @@ menzhen/
 | GET | `/api/v1/tenant/patient-portal-config` | 获取患者门户功能开关配置 |
 | PUT | `/api/v1/tenant/patient-portal-config` | 更新患者门户功能开关配置 |
 
+### 授权管理（需 license:manage）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/v1/licenses/identity` | 获取机器标识（site_id + machine_id + public_key） |
+| PUT | `/api/v1/licenses/identity` | 更新机器标识的 site_id |
+| GET | `/api/v1/licenses/site` | 获取站点授权状态（active/expiring/expired/none + remaining_days + decoded_claims） |
+| GET | `/api/v1/licenses/clinic` | 获取当前诊所授权状态（clinic 级别，按 tenant_id 解析 clinic_code） |
+| GET | `/api/v1/licenses/tenants/search` | 搜索诊所（用于授权时选择诊所，keyword 匹配 name/code） |
+| GET | `/api/v1/licenses/keys` | 获取密钥信息（公钥内容、私钥是否存在、路径） |
+| POST | `/api/v1/licenses/verify` | 验证 License JWT 授权码（解码 claims，校验 site_id/machine_id/clinic_code 匹配） |
+| GET | `/api/v1/licenses` | 授权列表（支持 search 搜索、expiring_days 即将过期筛选，按角色过滤可见范围） |
+| POST | `/api/v1/licenses` | 创建授权（RS256 JWT 签发，同类型旧授权自动 superseded） |
+| GET | `/api/v1/licenses/stats` | 授权付费统计（按 method/feature 汇总 + 月度分组） |
+| GET | `/api/v1/licenses/:id` | 授权详情（含 JWT 解码 claims） |
+| PUT | `/api/v1/licenses/:id` | 更新授权（支持粘贴新 license_token 自动解码更新） |
+| DELETE | `/api/v1/licenses/:id` | 删除授权记录 |
+| GET | `/api/v1/licenses/tenant/:tenant_id` | 某租户的授权历史列表 |
+
+### 版本查询（公开）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/v1/version` | 获取当前版本号（读取 scripts/version 文件） |
+
 ---
 
 ## 核心业务流程
@@ -1325,6 +1395,39 @@ MySQL 数据目录迁移（异步）
   -> 复制现有备份 -> 更新配置 -> GET /disk/backup-dir/status 轮询
 ```
 
+### 授权管理流程
+
+```
+授权校验（LicenseCheckMiddleware，每个认证请求经过）
+  -> 60s 内存缓存检查站点/诊所授权状态
+  -> 站点授权有效 -> 放行所有请求
+  -> 站点授权无效 -> 检查当前诊所是否有独立授权
+  -> 诊所授权有效 -> 放行该诊所请求
+  -> 均无效 -> 白名单路由放行（登录/注册/权限/角色），其余返回 403 license_required
+  -> 前端 403 拦截 -> 自动跳转 /settings/license 页面
+
+授权签发（POST /licenses）
+  -> 校验公钥 MD5（防篡改）
+  -> 计算 auth_date + method + duration -> expiry_date
+  -> RS256 私钥签发 JWT（claims: site_id/machine_id/clinic_code/method/duration/features/amount）
+  -> 同类型同 site_id+machine_id 的旧 active 授权自动 superseded
+  -> 写入 licenses 表 + 刷新缓存
+
+授权更新（PUT /licenses/:id，支持粘贴 license_token）
+  -> 公钥解码 JWT -> 校验过期 + site_id/machine_id/clinic_code 匹配
+  -> 匹配则更新授权字段，不匹配则提示不匹配
+  -> 同 JWT token 已存在时激活旧记录
+
+授权过期检查（goroutine，每 1 分钟）
+  -> 扫描 status=active 且 expiry_date < now 的记录
+  -> 更新 status=expired + 刷新缓存
+
+机器标识（EnsureMachineID）
+  -> 读取 /data/machine-id 文件
+  -> 不存在则生成 6位随机字符+时间戳 并持久化
+  -> 关联 machine_identities 表记录 site_id
+```
+
 ### 租户隔离
 
 - JWT 中嵌入 `tenant_id` 和 `token_version`，`AuthMiddleware` 解析后存入 Gin Context
@@ -1418,7 +1521,7 @@ MySQL 数据目录迁移（异步）
 ### 种子数据
 
 启动时 `Seed()` 幂等写入：
-1. **39 个权限** — upsert 模式（逐条检查 code，不存在则创建）
+1. **40 个权限** — upsert 模式（逐条检查 code，不存在则创建）
 2. **默认租户** — code=`1000`, name=`默认诊所`
 3. **管理员角色** — 关联全部权限（已存在则同步权限集）
 4. **管理员用户** — username=`admin`, password=`admin123`
@@ -1432,5 +1535,5 @@ MySQL 数据目录迁移（异步）
 
 | 角色名 | 权限 | 说明 |
 |--------|------|------|
-| 管理员 | 全部 39 个权限 | 超级管理员，自动由 seed 创建，每次启动同步最新全量权限 |
+| 管理员 | 全部 40 个权限 | 超级管理员，自动由 seed 创建，每次启动同步最新全量权限 |
 | 诊所运营 | `tenant:user:manage`, `tenant:role:manage`, `statistics:read` | 可管理本诊所用户和角色、查看统计，但不可跨租户操作 |

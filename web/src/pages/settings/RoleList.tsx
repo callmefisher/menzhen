@@ -230,6 +230,7 @@ export default function RoleList() {
             name: values.name,
             description: values.description,
             permission_ids: selectedPermissionIds,
+            ...(isSuperAdmin && selectedTenantId ? { tenant_id: selectedTenantId } : {}),
           });
         } else {
           await createTenantRole({
