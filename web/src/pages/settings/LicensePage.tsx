@@ -126,23 +126,34 @@ function RemainingTag({ remaining, method }: { remaining: number; method: string
   return <Tag color="green">{remaining}天</Tag>;
 }
 
-function fallbackCopy(text: string) {
+function fallbackCopy(text: string): boolean {
+  const sel = window.getSelection();
+  if (sel) sel.removeAllRanges();
   const ta = document.createElement('textarea');
   ta.value = text;
+  ta.setAttribute('readonly', '');
   ta.style.position = 'fixed';
   ta.style.left = '-9999px';
+  ta.style.top = '-9999px';
+  ta.style.opacity = '0';
+  ta.style.pointerEvents = 'none';
   document.body.appendChild(ta);
-  ta.select();
-  try { document.execCommand('copy'); } catch { /* ignore */ }
+  ta.focus();
+  ta.setSelectionRange(0, ta.value.length);
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch { /* ignore */ }
   document.body.removeChild(ta);
+  return ok;
 }
 
 function copyText(text: string) {
+  if (!text) { message.warning('内容为空，无法复制'); return; }
   if (navigator.clipboard && window.isSecureContext) {
-    navigator.clipboard.writeText(text).then(() => message.success('已复制')).catch(() => { fallbackCopy(text); message.success('已复制'); });
+    navigator.clipboard.writeText(text).then(() => message.success('已复制')).catch(() => {
+      if (fallbackCopy(text)) { message.success('已复制'); } else { message.error('复制失败，请手动复制'); }
+    });
   } else {
-    fallbackCopy(text);
-    message.success('已复制');
+    if (fallbackCopy(text)) { message.success('已复制'); } else { message.error('复制失败，请手动复制'); }
   }
 }
 
@@ -301,8 +312,25 @@ export default function LicensePage() {
     try {
       const res: any = await verifyLicenseToken(updateToken.trim());
       const data = res.data;
+      const currentToken = activeTab === 'clinic' ? clinicLicense?.jwt_token : license?.jwt_token;
+      if (currentToken && updateToken.trim() === currentToken) {
+        data._sameToken = true;
+      }
+      const expVal = data?.claims?.exp;
+      if (expVal) {
+        const expDate = typeof expVal === 'number' ? dayjs.unix(expVal).tz(CNSH) : dayjs(expVal).tz(CNSH);
+        const nowCST = dayjs().tz(CNSH);
+        if (expDate.isValid() && expDate.isBefore(nowCST)) {
+          data._expired = true;
+          data._expiredDate = expDate.format('YYYY/MM/DD HH:mm:ss');
+        }
+      }
       setUpdateDecoded(data);
-      if (data?.mismatches?.length > 0) {
+      if (data?._expired) {
+        message.error('授权码已过期（过期时间: ' + data._expiredDate + '），无法更新');
+      } else if (data?._sameToken) {
+        message.warning('此授权码与当前在用的授权码相同，更新后授权内容不变');
+      } else if (data?.mismatches?.length > 0) {
         message.warning('License站点标识不匹配: ' + data.mismatches.join('; '));
       }
     } catch (e: any) { message.error(e?.response?.data?.message || 'License验证失败'); }
@@ -310,6 +338,10 @@ export default function LicensePage() {
   };
 
   const handleConfirmUpdate = async () => {
+    if (updateDecoded?._expired) {
+      message.error('授权码已过期，无法更新');
+      return;
+    }
     if (updateDecoded?.mismatches?.length > 0) {
       message.error('站点标识不匹配，无法应用: ' + updateDecoded.mismatches.join('; '));
       return;
@@ -320,11 +352,18 @@ export default function LicensePage() {
 
       if (isClinicTab) {
         targetId = clinicData?.license?.id;
+        if (!targetId) {
+          const matched = allLicenses.find((lic: any) =>
+            lic.license_type === 'clinic' && lic.clinic_code === clinicCode &&
+            lic.site_id === (clinicData?.site_id || siteID) && lic.machine_id === (clinicData?.machine_id || machineID)
+          );
+          targetId = matched?.id;
+        }
       } else {
         targetId = siteData?.license?.id;
         if (!targetId) {
           const matched = allLicenses.find((lic: any) =>
-            lic.site_id === siteID && lic.machine_id === machineID
+            lic.license_type === 'site' && lic.site_id === siteID && lic.machine_id === machineID
           );
           targetId = matched?.id;
         }
@@ -459,27 +498,30 @@ export default function LicensePage() {
   };
 
   const handleSiteKeyInput = (value: string) => {
-    const currentType = form.getFieldValue('license_type') || licenseType;
-    if (currentType === 'clinic') {
-      const firstColon = value.indexOf(':');
-      if (firstColon < 0) {
-        form.setFieldsValue({ clinic_code: value.trim() });
-        return;
+    const colonCount = (value.match(/:/g) || []).length;
+    if (colonCount >= 2) {
+      if (licenseType !== 'clinic') {
+        setLicenseType('clinic');
+        form.setFieldsValue({ license_type: 'clinic' });
       }
+      const firstColon = value.indexOf(':');
       const clinicCode = value.substring(0, firstColon).trim();
       const rest = value.substring(firstColon + 1);
       const secondColon = rest.indexOf(':');
-      if (secondColon < 0) {
-        form.setFieldsValue({ clinic_code: clinicCode, site_id: rest.trim() });
-        return;
-      }
       const siteId = rest.substring(0, secondColon).trim();
       const machineId = rest.substring(secondColon + 1).trim();
       form.setFieldsValue({ clinic_code: clinicCode, site_id: siteId, machine_id: machineId });
+    } else if (colonCount === 1) {
+      if (licenseType !== 'site') {
+        setLicenseType('site');
+        form.setFieldsValue({ license_type: 'site' });
+      }
+      const idx = value.indexOf(':');
+      form.setFieldsValue({ site_id: value.substring(0, idx).trim(), machine_id: value.substring(idx + 1).trim() });
     } else {
-      if (value.includes(':')) {
-        const idx = value.indexOf(':');
-        form.setFieldsValue({ site_id: value.substring(0, idx).trim(), machine_id: value.substring(idx + 1).trim() });
+      const currentType = form.getFieldValue('license_type') || licenseType;
+      if (currentType === 'clinic') {
+        form.setFieldsValue({ clinic_code: value.trim() });
       }
     }
   };
@@ -601,10 +643,10 @@ export default function LicensePage() {
       </div>
       <Divider style={{ margin: '12px 0' }} />
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <Text type="secondary" style={{ fontSize: 12 }}>{identLabel}</Text>
-        <Text code style={{ fontSize: isMobile ? 10 : 12, wordBreak: 'break-all' }}>
+        <Text type="secondary" style={{ fontSize: 14 }}>{identLabel}</Text>
+        <Text code style={{ fontSize: isMobile ? 13 : 14, wordBreak: 'break-all' }}>
           {identValue}
-          {identValue && <CopyOutlined style={{ marginLeft: 6, cursor: 'pointer', color: '#52c41a' }} onClick={() => copyText(identValue)} />}
+          {identValue && <CopyOutlined style={{ marginLeft: 8, cursor: 'pointer', color: '#52c41a', fontSize: 16 }} onClick={() => copyText(identValue)} />}
         </Text>
       </div>
       {lic && licStatus !== 'none' && (
@@ -647,6 +689,19 @@ export default function LicensePage() {
       {licDecoded && (
         <Card title={<><KeyOutlined style={{ color: '#52c41a', marginRight: 8 }} />JWT 签名信息</>}
           style={{ marginBottom: 16 }} size={isMobile ? 'small' : 'default'}>
+          <div style={{ background: 'rgba(82,196,26,0.04)', border: '1px solid rgba(82,196,26,0.15)', borderRadius: 8, padding: 12, marginBottom: 8 }}>
+            <div style={{ fontWeight: 600, fontSize: 13, color: '#389e0d', marginBottom: 4 }}>
+              <SafetyCertificateOutlined style={{ marginRight: 4 }} />当前在用授权
+            </div>
+            {lic.jwt_token ? (
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                <Paragraph ellipsis={{ rows: 2, expandable: true, symbol: '展开' }} style={{ fontFamily: 'monospace', fontSize: 11, marginBottom: 0, wordBreak: 'break-all', flex: 1, background: 'rgba(0,0,0,0.02)', padding: '4px 8px', borderRadius: 4 }}>
+                  {lic.jwt_token}
+                </Paragraph>
+                <CopyOutlined style={{ cursor: 'pointer', color: '#52c41a', fontSize: 16, marginTop: 4 }} onClick={() => copyText(lic.jwt_token)} />
+              </div>
+            ) : <Text type="secondary">—</Text>}
+          </div>
           <div style={{ background: 'rgba(0,0,0,0.02)', border: '1px solid #f0f0f0', borderRadius: 8, padding: 12, fontFamily: 'monospace', fontSize: 12, lineHeight: 2, overflowX: 'auto' }}>
             <div><span style={{ color: '#999' }}>alg:</span> RS256</div>
             <div><span style={{ color: '#999' }}>typ:</span> JWT</div>
@@ -927,6 +982,7 @@ export default function LicensePage() {
       </Modal>
 
       <Drawer title={<><HistoryOutlined style={{ color: '#52c41a', marginRight: 8 }} />授权详情</>}
+        key={detailData?.license?.id || 'empty'}
         open={detailVisible} onClose={() => setDetailVisible(false)} width={isMobile ? '100%' : 560} destroyOnClose>
         {detailData && (
           <>
@@ -967,7 +1023,10 @@ export default function LicensePage() {
                     <div style={{ background: lic.status === 'active' ? 'rgba(82,196,26,0.03)' : 'rgba(0,0,0,0.02)', border: `1px solid ${lic.status === 'active' ? 'rgba(82,196,26,0.2)' : '#f0f0f0'}`, borderRadius: 8, padding: 10 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                         <Text strong style={{ fontSize: 12 }}>{fmtCST(lic.auth_date)} ~ {lic.method === 'permanent' ? '永久' : fmtCST(lic.expiry_date)}</Text>
-                        <StatusTag status={lic.status} remaining={0} />
+                        <Space size={4}>
+                          {lic.jwt_token && <Button size="small" type="link" icon={<CopyOutlined />} onClick={() => copyText(lic.jwt_token)} style={{ padding: 0, fontSize: 11 }}>复制</Button>}
+                          <StatusTag status={lic.status} remaining={0} />
+                        </Space>
                       </div>
                       <div style={{ fontSize: 11, color: '#999', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                         <span>{METHOD_MAP[lic.method] ? <Tag color={METHOD_MAP[lic.method].color} style={{ fontSize: 10 }}>{METHOD_MAP[lic.method].label}</Tag> : lic.method}</span>
@@ -987,12 +1046,12 @@ export default function LicensePage() {
         open={updateModalVisible} onCancel={() => setUpdateModalVisible(false)} footer={null}
         width={isMobile ? '100%' : 520} destroyOnClose>
         <div style={{ marginBottom: 16 }}>
-          <Text type="secondary" style={{ fontSize: 12 }}>{activeTab === 'clinic' ? '诊所标识' : '站点标识'}</Text>
-          <div style={{ background: 'rgba(0,0,0,0.02)', border: '1px solid #f0f0f0', borderRadius: 8, padding: '8px 12px', fontFamily: 'monospace', fontSize: 13, fontWeight: 500, wordBreak: 'break-all', marginTop: 4 }}>
+          <Text type="secondary" style={{ fontSize: 14 }}>{activeTab === 'clinic' ? '诊所标识' : '站点标识'}</Text>
+          <div style={{ background: 'rgba(0,0,0,0.02)', border: '1px solid #f0f0f0', borderRadius: 8, padding: '8px 12px', fontFamily: 'monospace', fontSize: 14, fontWeight: 500, wordBreak: 'break-all', marginTop: 4 }}>
             {activeTab === 'clinic'
               ? (clinicCode ? `${clinicCode}:${clinicData?.site_id || ''}:${clinicData?.machine_id || ''}` : '—')
               : `${siteID}${siteID && machineID ? ':' : ''}${machineID}`}
-            <CopyOutlined style={{ marginLeft: 8, cursor: 'pointer', color: '#52c41a' }} onClick={() => copyText(activeTab === 'clinic' ? `${clinicCode}:${clinicData?.site_id || ''}:${clinicData?.machine_id || ''}` : `${siteID}:${machineID}`)} />
+            <CopyOutlined style={{ marginLeft: 8, cursor: 'pointer', color: '#52c41a', fontSize: 16 }} onClick={() => copyText(activeTab === 'clinic' ? `${clinicCode}:${clinicData?.site_id || ''}:${clinicData?.machine_id || ''}` : `${siteID}:${machineID}`)} />
           </div>
         </div>
         <div style={{ marginBottom: 16 }}>
@@ -1002,7 +1061,7 @@ export default function LicensePage() {
         </div>
         <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
           <Button type="primary" onClick={handleVerifyAndUpdate} loading={updateVerifying} icon={<SafetyCertificateOutlined />}>验证并解码</Button>
-          {updateDecoded && <Button type="primary" danger onClick={handleConfirmUpdate} icon={<CheckCircleOutlined />}>确认更新授权</Button>}
+          {updateDecoded && <Button type="primary" danger onClick={handleConfirmUpdate} icon={<CheckCircleOutlined />} disabled={!!updateDecoded._expired}>确认更新授权</Button>}
         </div>
         {updateDecoded && (
           <div style={{ background: updateDecoded.valid ? 'rgba(82,196,26,0.04)' : 'rgba(255,77,79,0.04)', border: `1px solid ${updateDecoded.valid ? 'rgba(82,196,26,0.2)' : 'rgba(255,77,79,0.2)'}`, borderRadius: 8, padding: 12 }}>
@@ -1010,6 +1069,12 @@ export default function LicensePage() {
               {updateDecoded.valid ? <><CheckCircleOutlined style={{ marginRight: 4 }} />License 验证通过</> :
                 <><CloseCircleOutlined style={{ marginRight: 4 }} />License 站点标识不匹配</>}
             </div>
+            {updateDecoded._expired && (
+              <Alert type="error" style={{ marginBottom: 8 }} message="授权码已过期" description={`过期时间: ${updateDecoded._expiredDate}，无法更新`} showIcon />
+            )}
+            {updateDecoded._sameToken && !updateDecoded._expired && (
+              <Alert type="warning" style={{ marginBottom: 8 }} message="此授权码与当前在用的授权码相同" description="更新后授权内容不变，如需续期请使用新的授权码" showIcon />
+            )}
             {updateDecoded.mismatches?.length > 0 && (
               <Alert type="error" style={{ marginBottom: 8 }} message={updateDecoded.mismatches.join('; ')} showIcon />
             )}

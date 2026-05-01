@@ -38,6 +38,7 @@ import { useAuth } from '../store/auth';
 import { useTheme } from '../store/theme';
 import { sidebarThemes } from '../theme/sidebarThemes';
 import { changePassword } from '../api/auth';
+import { getVersion } from '../api/version';
 import { listInventoryDrugs } from '../api/inventory';
 import type { InventoryDrug } from '../api/inventory';
 import { getFollowUpStats } from '../api/followUp';
@@ -72,6 +73,7 @@ export default function AppLayout() {
   const [alertCount, setAlertCount] = useState(0);
   const [followUpCount, setFollowUpCount] = useState(0);
   const [rxPendingCount, setRxPendingCount] = useState(0);
+  const [appVersion, setAppVersion] = useState('');
   const [queueWaitingCount, setQueueWaitingCount] = useState(0);
 
   // Auto-collapse sidebar in large-font mode, auto-expand back in normal mode
@@ -80,6 +82,13 @@ export default function AppLayout() {
       setCollapsed(a11yMode !== 'normal');
     }
   }, [a11yMode, isMobile]);
+
+  useEffect(() => {
+    getVersion().then((res: any) => {
+      const v = res?.data?.version;
+      if (v) setAppVersion(v);
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (licenseExpired && location.pathname !== '/settings/license' && location.pathname !== '/login' && location.pathname !== '/register') {
@@ -588,7 +597,7 @@ export default function AppLayout() {
   ];
 
   const siderContent = (
-    <>
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%', position: 'relative' }}>
       <div
         style={{
           height: 32,
@@ -612,9 +621,25 @@ export default function AppLayout() {
         defaultOpenKeys={openKeys}
         items={menuItems}
         onClick={handleMenuClick}
-        style={{ background: themeConfig.sidebarBg, borderRight: 0 }}
+        style={{ background: themeConfig.sidebarBg, borderRight: 0, flex: 1 }}
       />
-    </>
+      {appVersion && (
+        <div style={{
+          textAlign: 'center',
+          color: themeConfig.titleColor,
+          opacity: 0.5,
+          fontSize: 12,
+          fontFamily: 'monospace',
+          letterSpacing: 1,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          padding: '12px 16px',
+        }}>
+          {collapsed && !isMobile ? appVersion : `版本 ${appVersion}`}
+        </div>
+      )}
+    </div>
   );
 
   const themePickerContent = (
