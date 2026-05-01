@@ -72,6 +72,7 @@ func (h *RoleHandler) List(c *gin.Context) {
 }
 
 // Create handles POST /api/v1/roles.
+// Super admin may specify tenant_id in the request body to create a role in another tenant.
 func (h *RoleHandler) Create(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
 
@@ -82,6 +83,21 @@ func (h *RoleHandler) Create(c *gin.Context) {
 			"message": "请求参数错误: " + err.Error(),
 		})
 		return
+	}
+
+	if req.TenantID > 0 {
+		userID := middleware.GetUserID(c)
+		if service.IsProtectedAdminAccount(h.db, userID) {
+			tenantSvc := service.NewTenantService(h.db)
+			if _, err := tenantSvc.GetTenant(req.TenantID); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"code":    400,
+					"message": "目标诊所不存在",
+				})
+				return
+			}
+			tenantID = req.TenantID
+		}
 	}
 
 	svc := service.NewRoleService(h.db)

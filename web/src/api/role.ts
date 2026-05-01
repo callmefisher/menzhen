@@ -4,7 +4,7 @@ export function listRoles(params?: { tenant_id?: number }) {
   return request.get('/roles', { params });
 }
 
-export function createRole(data: { name: string; description?: string; permission_ids?: number[] }) {
+export function createRole(data: { name: string; description?: string; permission_ids?: number[]; tenant_id?: number }) {
   return request.post('/roles', data);
 }
 
