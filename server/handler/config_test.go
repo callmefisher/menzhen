@@ -107,3 +107,45 @@ func TestConfigHandler_Restart(t *testing.T) {
 	assert.Eventually(t, func() bool { return exitCalled }, 4*time.Second, 100*time.Millisecond)
 	assert.Equal(t, 0, exitCode)
 }
+
+func TestGetVersion(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/version", GetVersion)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/version", nil)
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, float64(0), resp["code"])
+
+	data, ok := resp["data"].(map[string]interface{})
+	require.True(t, ok)
+	ver, ok := data["version"].(string)
+	require.True(t, ok)
+	assert.NotEmpty(t, ver)
+}
+
+func TestGetVersion_FileNotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/version", GetVersion)
+
+	origWd, _ := os.Getwd()
+	tmpDir := t.TempDir()
+	os.Chdir(tmpDir)
+	defer os.Chdir(origWd)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/version", nil)
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	data, _ := resp["data"].(map[string]interface{})
+	assert.Equal(t, "unknown", data["version"])
+}
