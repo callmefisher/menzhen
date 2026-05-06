@@ -127,33 +127,55 @@ function RemainingTag({ remaining, method }: { remaining: number; method: string
 }
 
 function fallbackCopy(text: string): boolean {
-  const sel = window.getSelection();
-  if (sel) sel.removeAllRanges();
-  const ta = document.createElement('textarea');
-  ta.value = text;
-  ta.setAttribute('readonly', '');
-  ta.style.position = 'fixed';
-  ta.style.left = '-9999px';
-  ta.style.top = '-9999px';
-  ta.style.opacity = '0';
-  ta.style.pointerEvents = 'none';
-  document.body.appendChild(ta);
-  ta.focus();
-  ta.setSelectionRange(0, ta.value.length);
-  let ok = false;
-  try { ok = document.execCommand('copy'); } catch { /* ignore */ }
-  document.body.removeChild(ta);
-  return ok;
+  try {
+    let copied = false;
+    const handler = (e: ClipboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      (e.clipboardData as DataTransfer).setData('text/plain', text);
+      copied = true;
+    };
+    document.addEventListener('copy', handler, true);
+    document.execCommand('copy');
+    document.removeEventListener('copy', handler, true);
+    if (copied) return true;
+  } catch { /* ignore */ }
+
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0';
+    const active = document.activeElement as HTMLElement;
+    const lockContainer = (active?.closest('[data-focus-lock]') as HTMLElement) ||
+      (active?.parentElement as HTMLElement) || document.body;
+    lockContainer.appendChild(ta);
+    ta.focus({ preventScroll: true });
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    if (active?.focus) active.focus({ preventScroll: true });
+    return ok;
+  } catch { /* ignore */ }
+
+  return false;
 }
 
-function copyText(text: string) {
+async function copyText(text: string) {
   if (!text) { message.warning('内容为空，无法复制'); return; }
+
   if (navigator.clipboard && window.isSecureContext) {
-    navigator.clipboard.writeText(text).then(() => message.success('已复制')).catch(() => {
-      if (fallbackCopy(text)) { message.success('已复制'); } else { message.error('复制失败，请手动复制'); }
-    });
+    try {
+      await navigator.clipboard.writeText(text);
+      message.success('已复制');
+      return;
+    } catch { /* fall through to execCommand */ }
+  }
+
+  if (fallbackCopy(text)) {
+    message.success('已复制');
   } else {
-    if (fallbackCopy(text)) { message.success('已复制'); } else { message.error('复制失败，请手动复制'); }
+    message.error('复制失败，请手动复制');
   }
 }
 
@@ -400,6 +422,7 @@ export default function LicensePage() {
   };
 
   const handleEdit = async (id: number) => {
+    setCurrentLicenseToken('');
     try {
       const res: any = await getLicense(id);
       const lic = res.data?.license;
@@ -462,6 +485,7 @@ export default function LicensePage() {
   };
 
   const handleViewDetail = async (record: any) => {
+    setDetailData(null);
     try {
       const res: any = await getLicense(record.id);
       setDetailData(res.data);
