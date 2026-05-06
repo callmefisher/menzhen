@@ -126,34 +126,13 @@ function RemainingTag({ remaining, method }: { remaining: number; method: string
   return <Tag color="green">{remaining}天</Tag>;
 }
 
-function fallbackCopy(text: string): boolean {
-  const sel = window.getSelection();
-  if (sel) sel.removeAllRanges();
-  const ta = document.createElement('textarea');
-  ta.value = text;
-  ta.setAttribute('readonly', '');
-  ta.style.position = 'fixed';
-  ta.style.left = '-9999px';
-  ta.style.top = '-9999px';
-  ta.style.opacity = '0';
-  ta.style.pointerEvents = 'none';
-  document.body.appendChild(ta);
-  ta.focus();
-  ta.setSelectionRange(0, ta.value.length);
-  let ok = false;
-  try { ok = document.execCommand('copy'); } catch { /* ignore */ }
-  document.body.removeChild(ta);
-  return ok;
-}
-
-function copyText(text: string) {
+async function copyText(text: string) {
   if (!text) { message.warning('内容为空，无法复制'); return; }
-  if (navigator.clipboard && window.isSecureContext) {
-    navigator.clipboard.writeText(text).then(() => message.success('已复制')).catch(() => {
-      if (fallbackCopy(text)) { message.success('已复制'); } else { message.error('复制失败，请手动复制'); }
-    });
-  } else {
-    if (fallbackCopy(text)) { message.success('已复制'); } else { message.error('复制失败，请手动复制'); }
+  try {
+    await navigator.clipboard.writeText(text);
+    message.success('已复制');
+  } catch {
+    message.error('复制失败，请手动复制');
   }
 }
 
