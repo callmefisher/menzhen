@@ -129,8 +129,28 @@ function RemainingTag({ remaining, method }: { remaining: number; method: string
 async function copyText(text: string) {
   if (!text) { message.warning('内容为空，无法复制'); return; }
   try {
-    await navigator.clipboard.writeText(text);
-    message.success('已复制');
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      message.success('已复制');
+      return;
+    }
+  } catch { /* fallback */ }
+  try {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.left = '-9999px';
+    textArea.style.top = '-9999px';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    const success = document.execCommand('copy');
+    document.body.removeChild(textArea);
+    if (success) {
+      message.success('已复制');
+    } else {
+      message.error('复制失败，请手动复制');
+    }
   } catch {
     message.error('复制失败，请手动复制');
   }
