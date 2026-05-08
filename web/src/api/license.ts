@@ -67,8 +67,10 @@ export function deleteLicense(id: number) {
   return request.delete(`/licenses/${id}`);
 }
 
-export function listTenantLicenses(tenantId: number) {
-  return request.get(`/licenses/tenant/${tenantId}`);
+export function listTenantLicenses(tenantId: number, siteId?: string) {
+  const params: Record<string, string | number> = {};
+  if (siteId) params.site_id = siteId;
+  return request.get(`/licenses/tenant/${tenantId}`, { params });
 }
 
 export function getLicenseStats(startDate?: string, endDate?: string) {

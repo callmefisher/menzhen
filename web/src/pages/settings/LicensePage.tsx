@@ -198,7 +198,8 @@ export default function LicensePage() {
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     const tab = searchParams.get('tab');
     if (tab === 'clinic') return 'clinic';
-    return 'site';
+    if (tab === 'tenant') return 'tenant';
+    return isSuperAdmin ? 'site' : 'tenant';
   });
   const [updateModalVisible, setUpdateModalVisible] = useState(false);
   const [updateToken, setUpdateToken] = useState('');
@@ -490,7 +491,7 @@ export default function LicensePage() {
       const res: any = await getLicense(record.id);
       setDetailData(res.data);
       if (record.tenant_id) {
-        const histRes: any = await listTenantLicenses(record.tenant_id);
+        const histRes: any = await listTenantLicenses(record.tenant_id, record.site_id);
         setDetailHistory(Array.isArray(histRes.data) ? histRes.data : []);
       } else { setDetailHistory([]); }
       setDetailVisible(true);
@@ -749,8 +750,10 @@ export default function LicensePage() {
   return (
     <div style={{ padding: isMobile ? 0 : undefined, maxWidth: '100%', overflowX: 'hidden' }}>
       <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-        <Button type={activeTab === 'site' ? 'primary' : 'default'} icon={<KeyOutlined />}
-          onClick={() => setActiveTab('site')}>本站点授权</Button>
+        {isSuperAdmin && (
+          <Button type={activeTab === 'site' ? 'primary' : 'default'} icon={<KeyOutlined />}
+            onClick={() => setActiveTab('site')}>本站点授权</Button>
+        )}
         {showClinicTab && (
           <Button type={activeTab === 'clinic' ? 'primary' : 'default'} icon={<BankOutlined />}
             onClick={() => setActiveTab('clinic')}>本诊所授权</Button>
@@ -759,7 +762,7 @@ export default function LicensePage() {
           onClick={() => setActiveTab('tenant')}>授权管理</Button>
       </div>
 
-      {activeTab === 'site' && (
+      {isSuperAdmin && activeTab === 'site' && (
         <Spin spinning={loading}>
           {renderLicenseStatusCard(status, remaining, license, '站点标识', `${siteID}${siteID && machineID ? ':' : ''}${machineID}`, '站点')}
 
@@ -828,31 +831,33 @@ export default function LicensePage() {
 
       {activeTab === 'tenant' && (
         <>
-          <Card title={<><BarChartOutlined style={{ color: '#52c41a', marginRight: 8 }} />付费统计</>}
-            style={{ marginBottom: 16 }} size={isMobile ? 'small' : 'default'}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12, alignItems: 'center' }}>
-              {quickRangeButtons.map(q => (
-                <Button key={q.key} size="small" type={activeQuickRange === q.key ? 'primary' : 'default'} onClick={() => handleQuickRange(q.key)}>{q.label}</Button>
-              ))}
-              <RangePicker onChange={handleDateRangeChange} size="small" placeholder={['自定义', '范围']} style={{ marginLeft: 4 }} />
-            </div>
-            {summary && (
-              <Row gutter={isMobile ? 8 : 16} style={{ marginBottom: 16 }}>
-                <Col span={6}><Statistic title="总收入" value={summary.total_amount} prefix="¥" precision={0} /></Col>
-                <Col span={6}><Statistic title="授权数" value={summary.total_count} /></Col>
-                <Col span={6}><Statistic title="基础功能" value={summary.by_feature?.basic || 0} prefix="¥" precision={0} /></Col>
-                <Col span={6}><Statistic title="AI增值" value={summary.by_feature?.ai || 0} prefix="¥" precision={0} /></Col>
-              </Row>
-            )}
-            <div style={{
-              height: isMobile ? 240 : 320,
-              width: '100%',
-              maxWidth: monthlyCount <= 1 ? 320 : monthlyCount <= 3 ? Math.max(320, monthlyCount * 180) : 800,
-              margin: '0 auto',
-            }}>
-              <canvas ref={chartCanvasRef}></canvas>
-            </div>
-          </Card>
+          {isSuperAdmin && (
+            <Card title={<><BarChartOutlined style={{ color: '#52c41a', marginRight: 8 }} />付费统计</>}
+              style={{ marginBottom: 16 }} size={isMobile ? 'small' : 'default'}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12, alignItems: 'center' }}>
+                {quickRangeButtons.map(q => (
+                  <Button key={q.key} size="small" type={activeQuickRange === q.key ? 'primary' : 'default'} onClick={() => handleQuickRange(q.key)}>{q.label}</Button>
+                ))}
+                <RangePicker onChange={handleDateRangeChange} size="small" placeholder={['自定义', '范围']} style={{ marginLeft: 4 }} />
+              </div>
+              {summary && (
+                <Row gutter={isMobile ? 8 : 16} style={{ marginBottom: 16 }}>
+                  <Col span={6}><Statistic title="总收入" value={summary.total_amount} prefix="¥" precision={0} /></Col>
+                  <Col span={6}><Statistic title="授权数" value={summary.total_count} /></Col>
+                  <Col span={6}><Statistic title="基础功能" value={summary.by_feature?.basic || 0} prefix="¥" precision={0} /></Col>
+                  <Col span={6}><Statistic title="AI增值" value={summary.by_feature?.ai || 0} prefix="¥" precision={0} /></Col>
+                </Row>
+              )}
+              <div style={{
+                height: isMobile ? 240 : 320,
+                width: '100%',
+                maxWidth: monthlyCount <= 1 ? 320 : monthlyCount <= 3 ? Math.max(320, monthlyCount * 180) : 800,
+                margin: '0 auto',
+              }}>
+                <canvas ref={chartCanvasRef}></canvas>
+              </div>
+            </Card>
+          )}
 
           <Card title="授权列表" size={isMobile ? 'small' : 'default'}
             extra={
