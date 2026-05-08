@@ -31,7 +31,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.04.07.080909"
+WIZARD_VERSION = "2026.05.08.160909"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 
@@ -372,7 +372,11 @@ def _safe_write_file(path, content, encoding="utf-8", newline="\n", mode="text")
     for attempt in range(2):
         try:
             if mode == "text":
-                path.write_text(content, encoding=encoding, newline=newline)
+                try:
+                    path.write_text(content, encoding=encoding, newline=newline)
+                except TypeError:
+                    with open(path, "w", encoding=encoding, newline=newline) as f:
+                        f.write(content)
             else:
                 path.write_bytes(content)
             return
