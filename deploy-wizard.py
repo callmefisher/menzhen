@@ -31,7 +31,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.05.08.160909"
+WIZARD_VERSION = "2026.05.08.165900"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 
@@ -614,15 +614,20 @@ def stream_command(handler, cmd, cwd=None, headers_sent=False):
         # and auto-detect encoding (UTF-8 from winget vs GBK from dism/system).
         buf = bytearray()
         _line_count = 0
+        _tail_lines = []
+        _TAIL_MAX = 30
         while True:
             b = proc.stdout.read(1)
             if not b:
                 break
             if b in (b'\n', b'\r'):
                 _send_line(buf)
-                # Log first 20 lines to file for diagnosis
+                decoded_line = _decode_bytes(bytes(buf)).strip()[:200]
                 if _line_count < 20:
-                    _debug_log(f"  stdout[{_line_count}]: {_decode_bytes(bytes(buf)).strip()[:200]}")
+                    _debug_log(f"  stdout[{_line_count}]: {decoded_line}")
+                _tail_lines.append(decoded_line)
+                if len(_tail_lines) > _TAIL_MAX:
+                    _tail_lines.pop(0)
                 _line_count += 1
                 buf.clear()
             else:
@@ -635,6 +640,10 @@ def stream_command(handler, cmd, cwd=None, headers_sent=False):
             proc.wait()
 
         _debug_log(f"stream_command: exited, code={proc.returncode}, lines_read={_line_count}")
+        if proc.returncode != 0 and _tail_lines:
+            _debug_log("stream_command: last output lines (error context):")
+            for i, tl in enumerate(_tail_lines):
+                _debug_log(f"  tail[{i}]: {tl}")
         _send_line(f"[DEBUG] stream_command: process exited, code={proc.returncode}, lines_read={_line_count}".encode())
 
         result = "success" if proc.returncode == 0 else "error"
