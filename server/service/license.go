@@ -568,9 +568,12 @@ func (s *LicenseService) ResolveTenantName(tenantID uint64) string {
 	return name
 }
 
-func (s *LicenseService) ListLicenses(tenantID uint64) ([]model.License, error) {
+func (s *LicenseService) ListLicenses(tenantID uint64, siteID string) ([]model.License, error) {
 	var licenses []model.License
 	q := s.DB.Where("tenant_id = ?", tenantID)
+	if siteID != "" {
+		q = q.Where("site_id = ?", siteID)
+	}
 	if err := q.Order("created_at DESC").Find(&licenses).Error; err != nil {
 		return nil, err
 	}

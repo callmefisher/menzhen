@@ -364,8 +364,10 @@ func (h *LicenseHandler) ListTenantLicenses(c *gin.Context) {
 		return
 	}
 
+	siteID := c.Query("site_id")
+
 	svc := service.NewLicenseService(h.db)
-	licenses, err := svc.ListLicenses(tenantID)
+	licenses, err := svc.ListLicenses(tenantID, siteID)
 	if err != nil {
 		Error(c, 500, "查询失败")
 		return
