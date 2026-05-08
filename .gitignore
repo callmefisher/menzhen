@@ -5,6 +5,9 @@
 # Claude Code
 .claude/
 
+#private key
+scripts/private.pem
+
 # Trae IDE
 .trae/
 
