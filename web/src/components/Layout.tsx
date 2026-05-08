@@ -642,7 +642,7 @@ export default function AppLayout() {
           textAlign: 'center',
           color: themeConfig.titleColor,
           opacity: 0.5,
-          fontSize: 14,
+          fontSize: 16,
           fontFamily: 'monospace',
           letterSpacing: 1,
           whiteSpace: 'nowrap',
