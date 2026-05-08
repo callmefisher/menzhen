@@ -197,8 +197,8 @@ download_wizard() {
         elif command -v wget &>/dev/null; then
             wget --timeout=60 --tries=1 -q "$url" -O "$target" 2>/dev/null
         fi
-        # Validate: must start with python shebang
-        if [[ -f "$target" ]] && head -1 "$target" | grep -qE "^#!.*python"; then
+        # Validate: must start with python shebang and end with EOF marker
+        if [[ -f "$target" ]] && head -1 "$target" | grep -qE "^#!.*python" && tail -1 "$target" | grep -q "WIZARD_EOF_MARKER"; then
             return 0
         fi
         rm -f "$target" 2>/dev/null

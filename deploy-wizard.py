@@ -31,7 +31,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.05.08.165900"
+WIZARD_VERSION = "2026.05.08.195900"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 
@@ -615,7 +615,7 @@ def stream_command(handler, cmd, cwd=None, headers_sent=False):
         buf = bytearray()
         _line_count = 0
         _tail_lines = []
-        _TAIL_MAX = 30
+        _TAIL_MAX = 100
         while True:
             b = proc.stdout.read(1)
             if not b:
@@ -4972,7 +4972,7 @@ def self_update():
                 })
                 resp = urllib.request.urlopen(req, timeout=30)
                 content = resp.read().decode("utf-8")
-                if content.startswith("#!/usr/bin/env python") and len(content) > 10000:
+                if content.startswith("#!/usr/bin/env python") and "WIZARD_EOF_MARKER" in content.splitlines()[-1]:
                     remote_content = content
                     break
             except Exception:
@@ -5240,3 +5240,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# WIZARD_EOF_MARKER
