@@ -728,22 +728,6 @@ export default function LicensePage() {
               </div>
             ) : <Text type="secondary">—</Text>}
           </div>
-          <div style={{ background: 'rgba(0,0,0,0.02)', border: '1px solid #f0f0f0', borderRadius: 8, padding: 12, fontFamily: 'monospace', fontSize: 12, lineHeight: 2, overflowX: 'auto' }}>
-            <div><span style={{ color: '#999' }}>alg:</span> RS256</div>
-            <div><span style={{ color: '#999' }}>typ:</span> JWT</div>
-            <Divider style={{ margin: '4px 0', borderStyle: 'dashed' }} />
-            {licDecoded.clinic_code && <div><span style={{ color: '#722ed1' }}>clinic_code:</span> {licDecoded.clinic_code}</div>}
-            <div><span style={{ color: '#999' }}>site_id:</span> {licDecoded.site_id}</div>
-            <div><span style={{ color: '#999' }}>machine_id:</span> {licDecoded.machine_id}</div>
-            <div><span style={{ color: '#999' }}>method:</span> {licDecoded.method}</div>
-            <div><span style={{ color: '#999' }}>duration:</span> {licDecoded.duration}</div>
-            <div><span style={{ color: '#999' }}>授权时长:</span> {lic.method === 'permanent' ? '永久' : `${lic.duration || 1}${METHOD_MAP[lic.method]?.label?.replace('按', '') || lic.method}`}</div>
-            <div><span style={{ color: '#999' }}>features:</span> {JSON.stringify(licDecoded.features)}</div>
-            <div><span style={{ color: '#999' }}>amount:</span> {licDecoded.amount}</div>
-            <div><span style={{ color: '#999' }}>iat:</span> {licDecoded.iat}</div>
-            <div><span style={{ color: '#999' }}>exp:</span> {licDecoded.exp}</div>
-          </div>
-          <Alert type="info" style={{ marginTop: 8 }} message="此信息由公钥解码 JWT 数字签名获得，确保授权数据不可篡改" showIcon />
         </Card>
       )}
     </>
@@ -769,33 +753,6 @@ export default function LicensePage() {
           {renderLicenseStatusCard(status, remaining, license, '站点标识', `${siteID}${siteID && machineID ? ':' : ''}${machineID}`, '站点')}
 
           {renderLicenseDetailCard(license, decoded)}
-
-          <Card title={<><KeyOutlined style={{ color: '#fa8c16', marginRight: 8 }} />密钥信息</>}
-            style={{ marginBottom: 16 }} size={isMobile ? 'small' : 'default'}>
-            <Row gutter={isMobile ? 8 : 16}>
-              <Col span={12}>
-                <div style={{ background: keysData?.has_private ? 'rgba(82,196,26,0.04)' : 'rgba(255,77,79,0.04)', border: `1px solid ${keysData?.has_private ? 'rgba(82,196,26,0.2)' : 'rgba(255,77,79,0.2)'}`, borderRadius: 8, padding: 12 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                    <KeyOutlined style={{ color: keysData?.has_private ? '#52c41a' : '#ff4d4f' }} />
-                    <Text strong style={{ fontSize: 13 }}>私钥（本地）</Text>
-                  </div>
-                  <div style={{ fontSize: 12, color: '#666' }}>{keysData?.has_private ? '已加载' : '未找到'}</div>
-                  <div style={{ fontSize: 11, color: '#999', marginTop: 4, fontFamily: 'monospace' }}>路径: {keysData?.private_key_path || 'scripts/private.pem'}</div>
-                </div>
-              </Col>
-              <Col span={12}>
-                <div style={{ background: keysData?.public_key ? 'rgba(82,196,26,0.04)' : 'rgba(255,77,79,0.04)', border: `1px solid ${keysData?.public_key ? 'rgba(82,196,26,0.2)' : 'rgba(255,77,79,0.2)'}`, borderRadius: 8, padding: 12 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                    <SafetyCertificateOutlined style={{ color: keysData?.public_key ? '#52c41a' : '#ff4d4f' }} />
-                    <Text strong style={{ fontSize: 13 }}>公钥（GitHub）</Text>
-                  </div>
-                  <div style={{ fontSize: 12, color: '#666' }}>{keysData?.public_key ? '已加载' : '未找到'}</div>
-                  <div style={{ fontSize: 11, color: '#999', marginTop: 4, fontFamily: 'monospace' }}>路径: {keysData?.public_key_path || 'scripts/public.pem'}</div>
-                  {keysData?.public_key && <Paragraph ellipsis={{ rows: 2 }} style={{ fontFamily: 'monospace', fontSize: 10, marginTop: 4, marginBottom: 0, background: 'rgba(0,0,0,0.02)', padding: 4, borderRadius: 4 }}>{keysData.public_key}</Paragraph>}
-                </div>
-              </Col>
-            </Row>
-          </Card>
 
           <Space>
             <Button type="primary" icon={<EditOutlined />} onClick={handleUpdateSiteLicense}>更新授权</Button>
