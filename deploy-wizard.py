@@ -31,7 +31,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.05.08.195900"
+WIZARD_VERSION = "2026.05.09.105900"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 
@@ -49,8 +49,9 @@ def _debug_log(msg):
 IMAGE_REGISTRY = "https://your-registry.example.com"
 REPO_URL = "https://github.com/callmefisher/menzhen.git"
 REPO_MIRROR_URLS = [
-    REPO_URL,
+    "https://gitclone.com/github.com/callmefisher/menzhen.git",
     "https://ghfast.top/https://github.com/callmefisher/menzhen.git",
+    REPO_URL,
 ]
 # Cached best git URL after connectivity test (None = not tested yet)
 _best_repo_url = None
