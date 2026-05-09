@@ -621,14 +621,16 @@ export default function LicensePage() {
       width: 120, render: (r: string) => r ? <Text ellipsis style={{ maxWidth: 120 }}>{r}</Text> : '—',
     },
     {
-      title: '操作', key: 'action', width: 160, fixed: 'right' as const,
+      title: '操作', key: 'action', width: isSuperAdmin ? 160 : 80, fixed: 'right' as const,
       render: (_: any, r: any) => (
         <Space size={4}>
           <Button type="link" size="small" onClick={() => handleViewDetail(r)}>详情</Button>
-          <Button type="link" size="small" onClick={() => handleEdit(r.id)}>编辑</Button>
-          <Popconfirm title="确认删除此授权记录？" onConfirm={() => handleDelete(r.id)} okText="删除" cancelText="取消">
-            <Button type="link" size="small" danger icon={<DeleteOutlined />}>删除</Button>
-          </Popconfirm>
+          {isSuperAdmin && <Button type="link" size="small" onClick={() => handleEdit(r.id)}>编辑</Button>}
+          {isSuperAdmin && (
+            <Popconfirm title="确认删除此授权记录？" onConfirm={() => handleDelete(r.id)} okText="删除" cancelText="取消">
+              <Button type="link" size="small" danger icon={<DeleteOutlined />}>删除</Button>
+            </Popconfirm>
+          )}
         </Space>
       ),
     },
