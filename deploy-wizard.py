@@ -31,7 +31,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.05.09.105900"
+WIZARD_VERSION = "2026.05.09.123301"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 
@@ -57,9 +57,10 @@ REPO_MIRROR_URLS = [
 _best_repo_url = None
 WIZARD_RAW_URL = "https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py"
 WIZARD_RAW_URLS = [
-    WIZARD_RAW_URL,
-    "https://cdn.jsdelivr.net/gh/callmefisher/menzhen@main/deploy-wizard.py",
+    "https://gh-proxy.com/https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py",
+    "https://ghproxy.net/https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py",
     "https://ghfast.top/https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py",
+    WIZARD_RAW_URL,
 ]
 
 # Global update status: "updated", "up_to_date", "failed", "skipped"

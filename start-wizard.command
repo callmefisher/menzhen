@@ -178,9 +178,10 @@ fi
 # 6. 检查向导脚本，自动下载或更新到最新版本
 # ------------------------------------------------------------------
 WIZARD_URLS=(
-    "https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py"
-    "https://cdn.jsdelivr.net/gh/callmefisher/menzhen@main/deploy-wizard.py"
+    "https://gh-proxy.com/https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py"
+    "https://ghproxy.net/https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py"
     "https://ghfast.top/https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py"
+    "https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py"
 )
 
 # Helper: download with multi-source fallback, validate shebang

@@ -1,10 +1,10 @@
 @echo off
 setlocal enabledelayedexpansion
-title цеуОо╣мЁ╟╡в╟оР╣╪
+title О©╫О©╫О©╫О©╫о╣мЁО©╫О©╫в╟О©╫О©╫
 
 echo.
 echo =====================================
-echo   цеуОо╣мЁ╟╡в╟оР╣╪ - ╩╥╬Ё╪Л╡Бжп...
+echo   О©╫О©╫О©╫О©╫о╣мЁО©╫О©╫в╟О©╫О©╫ - О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫...
 echo =====================================
 echo.
 
@@ -17,7 +17,7 @@ echo.
 :: Try python3
 python3 -c "import sys; print(sys.version)" >nul 2>&1
 if !ERRORLEVEL! equ 0 (
-    for /f "tokens=*" %%i in ('python3 --version 2^>^&1') do echo [*] ря╟╡в╟: %%i
+    for /f "tokens=*" %%i in ('python3 --version 2^>^&1') do echo [*] О©╫я╟О©╫в╟: %%i
     set "PYTHON_CMD=python3"
     goto :CHECK_FILE
 )
@@ -28,22 +28,22 @@ if !ERRORLEVEL! equ 0 (
     for /f "tokens=2 delims= " %%v in ('python --version 2^>^&1') do set "PY_FULL_VER=%%v"
     for /f "tokens=1 delims=." %%m in ("!PY_FULL_VER!") do set "PY_MAJOR=%%m"
     if "!PY_MAJOR!"=="3" (
-        for /f "tokens=*" %%i in ('python --version 2^>^&1') do echo [*] ря╟╡в╟: %%i
+        for /f "tokens=*" %%i in ('python --version 2^>^&1') do echo [*] О©╫я╟О©╫в╟: %%i
         set "PYTHON_CMD=python"
         goto :CHECK_FILE
     )
-    echo [x] ╪Л╡Б╣╫ Python 2ё╛пХр╙ Python 3
+    echo [x] О©╫О©╫Б╣╫ Python 2О©╫О©╫О©╫О©╫р╙ Python 3
 )
 
 :: Try py launcher (Windows-specific)
 py -3 --version >nul 2>&1
 if !ERRORLEVEL! equ 0 (
-    for /f "tokens=*" %%i in ('py -3 --version 2^>^&1') do echo [*] ря╟╡в╟: %%i
+    for /f "tokens=*" %%i in ('py -3 --version 2^>^&1') do echo [*] О©╫я╟О©╫в╟: %%i
     set "PYTHON_CMD=py -3"
     goto :CHECK_FILE
 )
 
-echo [x] н╢╪Л╡Б╣╫ Python3ё╛пХр╙╟╡в╟
+echo [x] н╢О©╫О©╫Б╣╫ Python3О©╫О©╫О©╫О©╫р╙О©╫О©╫в╟
 goto :INSTALL_PYTHON
 
 :: ------------------------------------------------------------------
@@ -55,40 +55,40 @@ echo.
 :: Method 1: winget auto-install
 winget --version >nul 2>&1
 if !ERRORLEVEL! equ 0 (
-    echo [*] уЩтзвт╤╞╟╡в╟ткпп╩╥╬Ёё╛гКит╨Р...
-    echo     ╟╡в╟╧ЩЁл©идэпХр╙╪╦╥жжсё╛гКдмпд╣х╢Щ...
+    echo [*] О©╫О©╫О©╫О©╫О©╫т╤О©╫О©╫О©╫в╟О©╫О©╫О©╫п╩О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫т╨О©╫...
+    echo     О©╫О©╫в╟О©╫О©╫О©╫л©О©╫О©╫О©╫О©╫О©╫р╙О©╫О©╫О©╫О©╫О©╫сёО©╫О©╫О©╫О©╫О©╫О©╫д╣х╢О©╫...
     echo.
     winget install Python.Python.3.12 --accept-package-agreements --accept-source-agreements
     if !ERRORLEVEL! equ 0 (
         echo.
         echo =============================================
-        echo   ╠ьпХ╣дхМ╪Чря╟╡в╟╨ц║ё
+        echo   О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫я╟О©╫в╟О©╫ц║О©╫
         echo.
-        echo   обр╩╡╫ё╨гК╧ь╠у╢к╢╟©зё╛
-        echo   х╩╨Сты╢нк╚╩В start-wizard.bat ╪лпЬ╟╡в╟║ё
+        echo   О©╫О©╫р╩О©╫О©╫О©╫О©╫О©╫О©╫ь╠у╢к╢О©╫О©╫зёО©╫
+        echo   х╩О©╫О©╫О©╫ы╢О©╫к╚О©╫О©╫ start-wizard.bat О©╫О©╫О©╫О©╫О©╫О©╫в╟О©╫О©╫
         echo =============================================
         echo.
         pause
         exit /b 0
     )
-    echo [x] вт╤╞╟╡в╟й╖╟эё╛гКа╙о╣╪╪йУж╖Ёжхкт╠п╜жЗ
+    echo [x] О©╫т╤О©╫О©╫О©╫в╟й╖О©╫эёО©╫О©╫О©╫О©╫О©╫о╣О©╫О©╫О©╫О©╫ж╖О©╫О©╫О©╫О©╫т╠п╜О©╫О©╫
 )
 
 :: Method 2: manual install guide
 echo.
 echo =============================================
-echo   гКа╙о╣╪╪йУж╖Ёжхкт╠п╜жЗ╟╡в╟║ё
+echo   О©╫О©╫О©╫О©╫о╣О©╫О©╫О©╫О©╫ж╖О©╫О©╫О©╫О©╫т╠п╜О©╫О©╫О©╫О©╫в╟О©╫О©╫
 echo.
-echo   ╩Рвтпп╢с╧ымЬобть╟╡в╟ё╨
+echo   О©╫О©╫О©╫О©╫О©╫п╢с╧О©╫О©╫О©╫О©╫О©╫О©╫ь╟О©╫в╟О©╫О©╫
 echo   https://www.python.org/downloads/
 echo.
-echo   ╟╡в╟й╠гКнЯ╠ь╢Р╧╢ё╨
-echo   ╟я Python ╪схКо╣мЁб╥╬╤
-echo   ё╗╟╡в╟╫ГцФ╣в╡©сп╦Ж╦╢я║©Рё╛нЯ╠ь╧╢иоё╘
-echo   хГ╧Ш╡╩х╥╤╗ё╛╫ьм╪╥╒╦Ь╪╪йУхкт╠х╥хо║ё
+echo   О©╫О©╫в╟й╠О©╫О©╫О©╫О©╫ь╢Р╧╢ёО©╫
+echo   О©╫О©╫ Python О©╫О©╫О©╫О©╫о╣мЁб╥О©╫О©╫
+echo   О©╫О©╫О©╫О©╫в╟О©╫О©╫О©╫О©╫в╡О©╫О©╫п╦О©╫О©╫О©╫я║О©╫О©╫О©╫О©╫ь╧О©╫О©╫оёО©╫
+echo   О©╫О©╫О©╫О©╫О©╫х╥О©╫О©╫О©╫О©╫О©╫О©╫м╪О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫т╠х╥О©╫о║О©╫
 echo.
-echo   ╟╡в╟мЙЁи╨Сё╛╧ь╠у╢к╢╟©зё╛
-echo   жьпбк╚╩В start-wizard.bat ╪╢©и║ё
+echo   О©╫О©╫в╟О©╫О©╫и╨Сё╛╧ь╠у╢к╢О©╫О©╫зёО©╫
+echo   О©╫О©╫О©╫О©╫к╚О©╫О©╫ start-wizard.bat О©╫О©╫О©╫и║О©╫
 echo =============================================
 echo.
 pause
@@ -98,13 +98,13 @@ exit /b 1
 :: 3. Check wizard script, auto-download or update
 :: ------------------------------------------------------------------
 :CHECK_FILE
-set "URL1=https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py"
-set "URL2=https://cdn.jsdelivr.net/gh/callmefisher/menzhen@main/deploy-wizard.py"
+set "URL1=https://gh-proxy.com/https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py"
+set "URL2=https://ghproxy.net/https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py"
 set "URL3=https://ghfast.top/https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py"
 
 if exist "%~dp0deploy-wizard.py" (
     echo.
-    echo [*] ╪Л╡Б╣╫ряспоР╣╪ЁлпРё╛уЩтз╪Л╡И╦Эпб...
+    echo [*] О©╫О©╫Б╣╫О©╫О©╫О©╫О©╫О©╫Р╣╪ЁО©╫О©╫О©╫О©╫О©╫О©╫з╪О©╫О©╫О©╫О©╫О©╫...
     call :DOWNLOAD_FILE "%~dp0deploy-wizard.py.download"
     if exist "%~dp0deploy-wizard.py.download" (
         :: Validate downloaded file
@@ -118,27 +118,27 @@ if exist "%~dp0deploy-wizard.py" (
             if "!REMOTE_VER!" GTR "!LOCAL_VER!" (
                 copy /y "%~dp0deploy-wizard.py" "%~dp0deploy-wizard.py.bak" >nul 2>&1
                 move /y "%~dp0deploy-wizard.py.download" "%~dp0deploy-wizard.py" >nul 2>&1
-                echo [*] оР╣╪ЁлпРря╦Эпб╣╫вНпб╟Ф╠╬
+                echo [*] О©╫Р╣╪ЁО©╫О©╫О©╫О©╫я╦О©╫О©╫б╣О©╫О©╫О©╫О©╫б╟Ф╠╬
             ) else (
-                echo [*] оР╣╪ЁлпРряйгвНпб╟Ф╠╬
+                echo [*] О©╫Р╣╪ЁО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫б╟Ф╠╬
                 del /f "%~dp0deploy-wizard.py.download" >nul 2>&1
             )
         ) else (
-            echo [x] обть╣днд╪Чнчп╖ё╛╪лпЬй╧сц╣╠г╟╟Ф╠╬
+            echo [x] О©╫О©╫О©╫ь╣О©╫О©╫д╪О©╫О©╫О©╫п╖О©╫О©╫О©╫О©╫О©╫О©╫й╧О©╫ц╣О©╫г╟О©╫Ф╠╬
             del /f "%~dp0deploy-wizard.py.download" >nul 2>&1
         )
     ) else (
-        echo [x] нч╥╗╪Л╡И╦Эпбё╛╪лпЬй╧сц╣╠г╟╟Ф╠╬
+        echo [x] О©╫ч╥О©╫О©╫О©╫О©╫О©╫О©╫бёО©╫О©╫О©╫О©╫О©╫й╧О©╫ц╣О©╫г╟О©╫Ф╠╬
     )
 ) else (
     echo.
-    echo [*] н╢ур╣╫оР╣╪ЁлпРё╛уЩтзвт╤╞обть...
+    echo [*] н╢О©╫р╣О©╫О©╫Р╣╪ЁО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫т╤О©╫О©╫О©╫О©╫О©╫...
     call :DOWNLOAD_FILE "%~dp0deploy-wizard.py"
     if not exist "%~dp0deploy-wizard.py" (
         echo.
-        echo [x] кЫспобтьт╢╬Ый╖╟э
-        echo     гКйж╤╞обть deploy-wizard.py ╥е╣╫╠╬╫е╠╬м╛р╩нд╪Ч╪п
-        echo     обть╣ьж╥: %URL1%
+        echo [x] О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫т╢О©╫О©╫й╖О©╫О©╫
+        echo     О©╫О©╫О©╫ж╤О©╫О©╫О©╫О©╫О©╫ deploy-wizard.py О©╫е╣О©╫О©╫О©╫О©╫е╠О©╫м╛р╩О©╫д╪О©╫О©╫О©╫
+        echo     О©╫О©╫О©╫ь╣О©╫ж╥: %URL1%
         echo.
         pause
         exit /b 1
@@ -147,14 +147,14 @@ if exist "%~dp0deploy-wizard.py" (
     findstr /m "WIZARD_VERSION" "%~dp0deploy-wizard.py" >nul 2>&1
     if not !ERRORLEVEL! equ 0 (
         echo.
-        echo [x] обть╣днд╪Чнчп╖ё╗©идэйгмЬбГ╢МнСрЁцФё╘
+        echo [x] О©╫О©╫О©╫ь╣О©╫О©╫д╪О©╫О©╫О©╫п╖О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫рЁО©╫Фё╘
         del /f "%~dp0deploy-wizard.py" >nul 2>&1
-        echo     гК╪Л╡ИмЬбГа╛╫с╨Сжьйт
+        echo     О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫с╨О©╫О©╫О©╫О©╫О©╫
         echo.
         pause
         exit /b 1
     )
-    echo [*] оР╣╪ЁлпРобтьмЙЁи
+    echo [*] О©╫Р╣╪ЁО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫
 )
 
 :: ------------------------------------------------------------------
@@ -162,12 +162,12 @@ if exist "%~dp0deploy-wizard.py" (
 :: ------------------------------------------------------------------
 echo.
 echo =====================================
-echo   уЩтзфТ╤╞╟╡в╟оР╣╪...
-echo   Д╞ююфВ╩Авт╤╞╢Р©╙
-echo   хГ╧Шц╩спвт╤╞╢Р©╙ё╛гК╡И©╢жу╤кйДЁЖ╣д╣ьж╥
+echo   О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫в╟О©╫О©╫...
+echo   О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫т╤О©╫О©╫О©╫
+echo   О©╫О©╫О©╫ц╩О©╫О©╫О©╫т╤О©╫О©╫Р©╙ёО©╫О©╫О©╫И©╢О©╫у╤О©╫О©╫О©╫О©╫О©╫д╣О©╫ж╥
 echo =====================================
 echo.
-echo лАй╬ё╨╟╢ Ctrl+C ©икФй╠мёж╧оР╣╪
+echo О©╫О©╫й╬О©╫О©╫О©╫О©╫ Ctrl+C О©╫О©╫О©╫О©╫й╠мёж╧О©╫О©╫
 echo.
 
 cd /d "%~dp0"
@@ -176,7 +176,7 @@ set WIZARD_SKIP_UPDATE=1
 !PYTHON_CMD! deploy-wizard.py
 
 echo.
-echo оР╣╪рямёж╧║ё
+echo О©╫О©╫О©╫О©╫мёж╧О©╫О©╫
 timeout /t 2 /nobreak >nul
 exit
 
@@ -194,7 +194,7 @@ where curl.exe >nul 2>&1
 if !ERRORLEVEL! equ 0 set "_HAS_CURL=1"
 
 :: --- Source 1/3: raw.githubusercontent.com ---
-echo     Ё╒йтобтьт╢ 1/3 ...
+echo     О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫т╢ 1/3 ...
 if "!_HAS_CURL!"=="1" (
     curl.exe -fsSL --connect-timeout 15 --max-time 60 -o "%_TARGET%" "%URL1%" >nul 2>&1
     if exist "%_TARGET%" (
@@ -211,7 +211,7 @@ if exist "%_TARGET%" (
 )
 
 :: --- Source 2/3: jsDelivr CDN (China-friendly) ---
-echo     Ё╒йтобтьт╢ 2/3 ...
+echo     О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫т╢ 2/3 ...
 if "!_HAS_CURL!"=="1" (
     curl.exe -fsSL --connect-timeout 15 --max-time 60 -o "%_TARGET%" "%URL2%" >nul 2>&1
     if exist "%_TARGET%" (
@@ -228,7 +228,7 @@ if exist "%_TARGET%" (
 )
 
 :: --- Source 3/3: ghfast.top proxy ---
-echo     Ё╒йтобтьт╢ 3/3 ...
+echo     О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫т╢ 3/3 ...
 if "!_HAS_CURL!"=="1" (
     curl.exe -fsSL --connect-timeout 15 --max-time 60 -o "%_TARGET%" "%URL3%" >nul 2>&1
     if exist "%_TARGET%" (
@@ -245,17 +245,17 @@ if exist "%_TARGET%" (
 )
 
 echo.
-echo     [x] кЫспобтьт╢╬Ый╖╟э
+echo     [x] О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫т╢О©╫О©╫й╖О©╫О©╫
 echo.
-echo     уО╤о╫╗рИ:
+echo     О©╫О©╫о╫О©╫О©╫О©╫:
 if "!_HAS_CURL!"=="1" (
-    echo       - curl.exe ©исц╣╚обтьй╖╟эё╛©идэйг╢ЗюМ/╥ю╩Пг╫нйлБ
-    echo       - гКЁ╒йт: curl.exe -v %URL1%
+    echo       - curl.exe О©╫О©╫О©╫ц╣О©╫О©╫О©╫О©╫О©╫й╖О©╫эёО©╫О©╫О©╫О©╫О©╫О©╫г╢О©╫О©╫О©╫/О©╫О©╫О©╫О©╫г╫О©╫О©╫О©╫О©╫
+    echo       - О©╫КЁ╒О©╫О©╫: curl.exe -v %URL1%
 ) else (
-    echo       - н╢╪Л╡Б╣╫ curl.exeё╛╫Жй╧сцак PowerShell обть
+    echo       - н╢О©╫О©╫Б╣╫ curl.exeО©╫О©╫О©╫О©╫й╧О©╫О©╫О©╫О©╫ PowerShell О©╫О©╫О©╫О©╫
 )
-echo       - гКтзД╞ююфВжп╥цнйртоб╣ьж╥╡Бйт:
+echo       - О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫п╥О©╫О©╫О©╫О©╫О©╫О©╫б╣О©╫ж╥О©╫О©╫О©╫О©╫:
 echo         %URL1%
-echo       - хГдэ╥цнйё╛гКйж╤╞обть deploy-wizard.py ╥е╣╫╠╬╫е╠╬м╛д©б╪
+echo       - О©╫О©╫О©╫э╥О©╫О©╫йёО©╫О©╫О©╫О©╫ж╤О©╫О©╫О©╫О©╫О©╫ deploy-wizard.py О©╫е╣О©╫О©╫О©╫О©╫е╠О©╫м╛д©б╪
 :DOWNLOAD_DONE
 goto :eof
