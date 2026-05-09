@@ -464,8 +464,8 @@ export default function LicensePage() {
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
-      if (!editingId && !keysData?.has_private) {
-        message.error('私钥未加载，无法签发License。请确保服务器上存在私钥文件。');
+      if (!keysData?.has_private) {
+        message.error('私钥未加载，无法签发或更新License。请确保服务器上存在私钥文件。');
         return;
       }
       const payload = { ...values };

@@ -378,6 +378,9 @@ func (s *LicenseService) UpdateLicense(id uint64, req UpdateLicenseRequest, priv
 
 		lic.Status = "active"
 	} else {
+		if privateKeyPEM == "" {
+			return nil, fmt.Errorf("私钥未加载，无法更新授权。编辑授权需要重新签名JWT，请确保服务器上存在私钥文件")
+		}
 		if req.ClinicCode != "" {
 			lic.ClinicCode = req.ClinicCode
 		}
