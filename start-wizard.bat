@@ -1,10 +1,10 @@
 @echo off
 setlocal enabledelayedexpansion
-title ����ϵͳ��װ��
+title ???????????
 
 echo.
 echo =====================================
-echo   ����ϵͳ��װ�� - ���������...
+echo   ??????????? - ?????????...
 echo =====================================
 echo.
 
@@ -17,7 +17,7 @@ echo.
 :: Try python3
 python3 -c "import sys; print(sys.version)" >nul 2>&1
 if !ERRORLEVEL! equ 0 (
-    for /f "tokens=*" %%i in ('python3 --version 2^>^&1') do echo [*] �Ѱ�װ: %%i
+    for /f "tokens=*" %%i in ('python3 --version 2^>^&1') do echo [*] ????: %%i
     set "PYTHON_CMD=python3"
     goto :CHECK_FILE
 )
@@ -28,22 +28,22 @@ if !ERRORLEVEL! equ 0 (
     for /f "tokens=2 delims= " %%v in ('python --version 2^>^&1') do set "PY_FULL_VER=%%v"
     for /f "tokens=1 delims=." %%m in ("!PY_FULL_VER!") do set "PY_MAJOR=%%m"
     if "!PY_MAJOR!"=="3" (
-        for /f "tokens=*" %%i in ('python --version 2^>^&1') do echo [*] �Ѱ�װ: %%i
+        for /f "tokens=*" %%i in ('python --version 2^>^&1') do echo [*] ????: %%i
         set "PYTHON_CMD=python"
         goto :CHECK_FILE
     )
-    echo [x] ��⵽ Python 2����Ҫ Python 3
+    echo [x] ??? Python 2????? Python 3
 )
 
 :: Try py launcher (Windows-specific)
 py -3 --version >nul 2>&1
 if !ERRORLEVEL! equ 0 (
-    for /f "tokens=*" %%i in ('py -3 --version 2^>^&1') do echo [*] �Ѱ�װ: %%i
+    for /f "tokens=*" %%i in ('py -3 --version 2^>^&1') do echo [*] ????: %%i
     set "PYTHON_CMD=py -3"
     goto :CHECK_FILE
 )
 
-echo [x] δ��⵽ Python3����Ҫ��װ
+echo [x] ��??? Python3????????
 goto :INSTALL_PYTHON
 
 :: ------------------------------------------------------------------
@@ -55,40 +55,40 @@ echo.
 :: Method 1: winget auto-install
 winget --version >nul 2>&1
 if !ERRORLEVEL! equ 0 (
-    echo [*] �����Զ���װ���л��������Ժ�...
-    echo     ��װ���̿�����Ҫ�����ӣ������ĵȴ�...
+    echo [*] ?????????????��??????????...
+    echo     ????????????????????????????...
     echo.
     winget install Python.Python.3.12 --accept-package-agreements --accept-source-agreements
     if !ERRORLEVEL! equ 0 (
         echo.
         echo =============================================
-        echo   ����������Ѱ�װ�á�
+        echo   ??????????????��?
         echo.
-        echo   ��һ������رմ˴��ڣ�
-        echo   Ȼ���ٴ�˫�� start-wizard.bat ������װ��
+        echo   ????????????????
+        echo   ????????? start-wizard.bat ?????????
         echo =============================================
         echo.
         pause
         exit /b 0
     )
-    echo [x] �Զ���װʧ�ܣ�����ϵ����֧����ԱЭ��
+    echo [x] ?????????????????????????��??
 )
 
 :: Method 2: manual install guide
 echo.
 echo =============================================
-echo   ����ϵ����֧����ԱЭ����װ��
+echo   ???????????????��???????
 echo.
-echo   �����дӹ������ذ�װ��
+echo   ?????��????????????
 echo   https://www.python.org/downloads/
 echo.
-echo   ��װʱ����ش򹴣�
-echo   �� Python ����ϵͳ·��
-echo   ����װ����ײ��и���ѡ����ع��ϣ�
-echo   �����ȷ������ͼ����������Աȷ�ϡ�
+echo   ???????????
+echo   ?? Python ??????��??
+echo   ????????????��?????????????
+echo   ????????????????????????????
 echo.
-echo   ��װ��ɺ󣬹رմ˴��ڣ�
-echo   ����˫�� start-wizard.bat ���ɡ�
+echo   ??????????????
+echo   ??????? start-wizard.bat ???��?
 echo =============================================
 echo.
 pause
@@ -104,7 +104,7 @@ set "URL3=https://ghfast.top/https://raw.githubusercontent.com/callmefisher/menz
 
 if exist "%~dp0deploy-wizard.py" (
     echo.
-    echo [*] ��⵽�����򵼳������ڼ�����...
+    echo [*] ?????????????????????...
     call :DOWNLOAD_FILE "%~dp0deploy-wizard.py.download"
     if exist "%~dp0deploy-wizard.py.download" (
         :: Validate downloaded file
@@ -118,27 +118,27 @@ if exist "%~dp0deploy-wizard.py" (
             if "!REMOTE_VER!" GTR "!LOCAL_VER!" (
                 copy /y "%~dp0deploy-wizard.py" "%~dp0deploy-wizard.py.bak" >nul 2>&1
                 move /y "%~dp0deploy-wizard.py.download" "%~dp0deploy-wizard.py" >nul 2>&1
-                echo [*] �򵼳����Ѹ��µ����°汾
+                echo [*] ??????????????���
             ) else (
-                echo [*] �򵼳����������°汾
+                echo [*] ????????????���
                 del /f "%~dp0deploy-wizard.py.download" >nul 2>&1
             )
         ) else (
-            echo [x] ���ص��ļ���Ч������ʹ�õ�ǰ�汾
+            echo [x] ??????????��????????????��
             del /f "%~dp0deploy-wizard.py.download" >nul 2>&1
         )
     ) else (
-        echo [x] �޷������£�����ʹ�õ�ǰ�汾
+        echo [x] ????????????????????��
     )
 ) else (
     echo.
-    echo [*] δ�ҵ��򵼳��������Զ�����...
+    echo [*] ��???????????????????...
     call :DOWNLOAD_FILE "%~dp0deploy-wizard.py"
     if not exist "%~dp0deploy-wizard.py" (
         echo.
-        echo [x] ��������Դ��ʧ��
-        echo     ���ֶ����� deploy-wizard.py �ŵ����ű�ͬһ�ļ���
-        echo     ���ص�ַ: %URL1%
+        echo [x] ??????????????
+        echo     ????????? deploy-wizard.py ???????????????
+        echo     ??????: %URL1%
         echo.
         pause
         exit /b 1
@@ -147,14 +147,14 @@ if exist "%~dp0deploy-wizard.py" (
     findstr /m "WIZARD_VERSION" "%~dp0deploy-wizard.py" >nul 2>&1
     if not !ERRORLEVEL! equ 0 (
         echo.
-        echo [x] ���ص��ļ���Ч���������������ҳ�棩
+        echo [x] ??????????��?????????????????��
         del /f "%~dp0deploy-wizard.py" >nul 2>&1
-        echo     �����������Ӻ�����
+        echo     ?????????????????
         echo.
         pause
         exit /b 1
     )
-    echo [*] �򵼳����������
+    echo [*] ????????????
 )
 
 :: ------------------------------------------------------------------
@@ -162,12 +162,12 @@ if exist "%~dp0deploy-wizard.py" (
 :: ------------------------------------------------------------------
 echo.
 echo =====================================
-echo   ����������װ��...
-echo   ��������Զ���
-echo   ���û���Զ��򿪣���鿴�ն�����ĵ�ַ
+echo   ?????????????...
+echo   ????????????
+echo   ?????????????????????????
 echo =====================================
 echo.
-echo ��ʾ���� Ctrl+C ����ʱֹͣ��
+echo ??????? Ctrl+C ?????????
 echo.
 
 cd /d "%~dp0"
@@ -176,7 +176,7 @@ set WIZARD_SKIP_UPDATE=1
 !PYTHON_CMD! deploy-wizard.py
 
 echo.
-echo ����ֹͣ��
+echo ????????
 timeout /t 2 /nobreak >nul
 exit
 
@@ -194,7 +194,7 @@ where curl.exe >nul 2>&1
 if !ERRORLEVEL! equ 0 set "_HAS_CURL=1"
 
 :: --- Source 1/3: raw.githubusercontent.com ---
-echo     ��������Դ 1/3 ...
+echo     ????????? 1/3 ...
 if "!_HAS_CURL!"=="1" (
     curl.exe -fsSL --connect-timeout 15 --max-time 60 -o "%_TARGET%" "%URL1%" >nul 2>&1
     if exist "%_TARGET%" (
@@ -211,7 +211,7 @@ if exist "%_TARGET%" (
 )
 
 :: --- Source 2/3: jsDelivr CDN (China-friendly) ---
-echo     ��������Դ 2/3 ...
+echo     ????????? 2/3 ...
 if "!_HAS_CURL!"=="1" (
     curl.exe -fsSL --connect-timeout 15 --max-time 60 -o "%_TARGET%" "%URL2%" >nul 2>&1
     if exist "%_TARGET%" (
@@ -228,7 +228,7 @@ if exist "%_TARGET%" (
 )
 
 :: --- Source 3/3: ghfast.top proxy ---
-echo     ��������Դ 3/3 ...
+echo     ????????? 3/3 ...
 if "!_HAS_CURL!"=="1" (
     curl.exe -fsSL --connect-timeout 15 --max-time 60 -o "%_TARGET%" "%URL3%" >nul 2>&1
     if exist "%_TARGET%" (
@@ -245,17 +245,17 @@ if exist "%_TARGET%" (
 )
 
 echo.
-echo     [x] ��������Դ��ʧ��
+echo     [x] ??????????????
 echo.
-echo     ��Ͻ���:
+echo     ??????:
 if "!_HAS_CURL!"=="1" (
-    echo       - curl.exe ���õ�����ʧ�ܣ������Ǵ���/����ǽ����
-    echo       - �볢��: curl.exe -v %URL1%
+    echo       - curl.exe ??????????????????????/?????????
+    echo       - ????: curl.exe -v %URL1%
 ) else (
-    echo       - δ��⵽ curl.exe����ʹ���� PowerShell ����
+    echo       - ��??? curl.exe????????? PowerShell ????
 )
-echo       - ����������з������µ�ַ����:
+echo       - ??????????��?????????????:
 echo         %URL1%
-echo       - ���ܷ��ʣ����ֶ����� deploy-wizard.py �ŵ����ű�ͬĿ¼
+echo       - ????????????????? deploy-wizard.py ???????????
 :DOWNLOAD_DONE
 goto :eof
