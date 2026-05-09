@@ -1,11 +1,10 @@
 @echo off
 setlocal enabledelayedexpansion
-chcp 65001 >nul 2>&1
-title 门诊系统安装向导
+title ����ϵͳ��װ��
 
 echo.
 echo =====================================
-echo   门诊系统安装向导 - 环境检测中...
+echo   ����ϵͳ��װ�� - ���������...
 echo =====================================
 echo.
 
@@ -18,7 +17,7 @@ echo.
 :: Try python3
 python3 -c "import sys; print(sys.version)" >nul 2>&1
 if !ERRORLEVEL! equ 0 (
-    for /f "tokens=*" %%i in ('python3 --version 2^>^&1') do echo [*] 已安装: %%i
+    for /f "tokens=*" %%i in ('python3 --version 2^>^&1') do echo [*] �Ѱ�װ: %%i
     set "PYTHON_CMD=python3"
     goto :CHECK_FILE
 )
@@ -29,22 +28,22 @@ if !ERRORLEVEL! equ 0 (
     for /f "tokens=2 delims= " %%v in ('python --version 2^>^&1') do set "PY_FULL_VER=%%v"
     for /f "tokens=1 delims=." %%m in ("!PY_FULL_VER!") do set "PY_MAJOR=%%m"
     if "!PY_MAJOR!"=="3" (
-        for /f "tokens=*" %%i in ('python --version 2^>^&1') do echo [*] 已安装: %%i
+        for /f "tokens=*" %%i in ('python --version 2^>^&1') do echo [*] �Ѱ�װ: %%i
         set "PYTHON_CMD=python"
         goto :CHECK_FILE
     )
-    echo [x] 检测到 Python 2，需要 Python 3
+    echo [x] ��⵽ Python 2����Ҫ Python 3
 )
 
 :: Try py launcher (Windows-specific)
 py -3 --version >nul 2>&1
 if !ERRORLEVEL! equ 0 (
-    for /f "tokens=*" %%i in ('py -3 --version 2^>^&1') do echo [*] 已安装: %%i
+    for /f "tokens=*" %%i in ('py -3 --version 2^>^&1') do echo [*] �Ѱ�װ: %%i
     set "PYTHON_CMD=py -3"
     goto :CHECK_FILE
 )
 
-echo [x] 未检测到 Python3，需要安装
+echo [x] δ��⵽ Python3����Ҫ��װ
 goto :INSTALL_PYTHON
 
 :: ------------------------------------------------------------------
@@ -56,40 +55,40 @@ echo.
 :: Method 1: winget auto-install
 winget --version >nul 2>&1
 if !ERRORLEVEL! equ 0 (
-    echo [*] 正在自动安装运行环境，请稍候...
-    echo     安装过程可能需要几分钟，请耐心等待...
+    echo [*] �����Զ���װ���л��������Ժ�...
+    echo     ��װ���̿�����Ҫ�����ӣ������ĵȴ�...
     echo.
     winget install Python.Python.3.12 --accept-package-agreements --accept-source-agreements
     if !ERRORLEVEL! equ 0 (
         echo.
         echo =============================================
-        echo   恭喜！必需的软件已安装好。
+        echo   ��ϲ������������Ѱ�װ�á�
         echo.
-        echo   下一步：请关闭此窗口，
-        echo   然后再次双击 start-wizard.bat 继续安装。
+        echo   ��һ������رմ˴��ڣ�
+        echo   Ȼ���ٴ�˫�� start-wizard.bat ������װ��
         echo =============================================
         echo.
         pause
         exit /b 0
     )
-    echo [x] 自动安装失败，请联系技术支持人员协助
+    echo [x] �Զ���װʧ�ܣ�����ϵ����֧����ԱЭ��
 )
 
 :: Method 2: manual install guide
 echo.
 echo =============================================
-echo   请联系技术支持人员协助安装。
+echo   ����ϵ����֧����ԱЭ����װ��
 echo.
-echo   或自行从官网下载安装：
+echo   �����дӹ������ذ�װ��
 echo   https://www.python.org/downloads/
 echo.
-echo   安装时请务必打勾：
-echo   把 Python 加入系统路径
-echo   （安装界面底部有个复选框，务必勾上）
-echo   如果不确定，截图发给技术人员确认。
+echo   ��װʱ����ش򹴣�
+echo   �� Python ����ϵͳ·��
+echo   ����װ����ײ��и���ѡ����ع��ϣ�
+echo   �����ȷ������ͼ����������Աȷ�ϡ�
 echo.
-echo   安装完成后，关闭此窗口，
-echo   重新双击 start-wizard.bat 即可。
+echo   ��װ��ɺ󣬹رմ˴��ڣ�
+echo   ����˫�� start-wizard.bat ���ɡ�
 echo =============================================
 echo.
 pause
@@ -105,7 +104,7 @@ set "URL3=https://ghfast.top/https://raw.githubusercontent.com/callmefisher/menz
 
 if exist "%~dp0deploy-wizard.py" (
     echo.
-    echo [*] 检测到已有向导程序，正在检查更新...
+    echo [*] ��⵽�����򵼳������ڼ�����...
     call :DOWNLOAD_FILE "%~dp0deploy-wizard.py.download"
     if exist "%~dp0deploy-wizard.py.download" (
         :: Validate downloaded file
@@ -119,27 +118,27 @@ if exist "%~dp0deploy-wizard.py" (
             if "!REMOTE_VER!" GTR "!LOCAL_VER!" (
                 copy /y "%~dp0deploy-wizard.py" "%~dp0deploy-wizard.py.bak" >nul 2>&1
                 move /y "%~dp0deploy-wizard.py.download" "%~dp0deploy-wizard.py" >nul 2>&1
-                echo [*] 向导程序已更新到最新版本！
+                echo [*] �򵼳����Ѹ��µ����°汾��
             ) else (
-                echo [*] 向导程序已是最新版本
+                echo [*] �򵼳����������°汾
                 del /f "%~dp0deploy-wizard.py.download" >nul 2>&1
             )
         ) else (
-            echo [x] 下载的文件缺少版本号，继续使用当前版本
+            echo [x] ���ص��ļ�ȱ�ٰ汾�ţ�����ʹ�õ�ǰ�汾
             del /f "%~dp0deploy-wizard.py.download" >nul 2>&1
         )
     ) else (
-        echo [x] 下载的文件无效，继续使用当前版本
+        echo [x] ���ص��ļ���Ч������ʹ�õ�ǰ�汾
     )
 ) else (
     echo.
-    echo [*] 未找到向导程序，正在自动下载...
+    echo [*] δ�ҵ��򵼳��������Զ�����...
     call :DOWNLOAD_FILE "%~dp0deploy-wizard.py"
     if not exist "%~dp0deploy-wizard.py" (
         echo.
-        echo [x] 下载失败，请手动下载 deploy-wizard.py
-        echo     放到本脚本同一个文件夹里
-        echo     下载地址: %URL1%
+        echo [x] ����ʧ�ܣ����ֶ����� deploy-wizard.py
+        echo     �ŵ����ű�ͬһ���ļ�����
+        echo     ���ص�ַ: %URL1%
         echo.
         pause
         exit /b 1
@@ -148,14 +147,14 @@ if exist "%~dp0deploy-wizard.py" (
     findstr /m "WIZARD_VERSION" "%~dp0deploy-wizard.py" >nul 2>&1
     if not !ERRORLEVEL! equ 0 (
         echo.
-        echo [x] 下载的文件无效（可能是网络错误页面）
+        echo [x] ���ص��ļ���Ч���������������ҳ�棩
         del /f "%~dp0deploy-wizard.py" >nul 2>&1
-        echo     请检查网络连接后重试
+        echo     �����������Ӻ�����
         echo.
         pause
         exit /b 1
     )
-    echo [*] 向导程序下载完成!
+    echo [*] �򵼳����������!
 )
 
 :: ------------------------------------------------------------------
@@ -163,12 +162,12 @@ if exist "%~dp0deploy-wizard.py" (
 :: ------------------------------------------------------------------
 echo.
 echo =====================================
-echo   正在启动安装向导...
-echo   浏览器会自动打开
-echo   如果没有自动打开，请查看终端输出的地址
+echo   ����������װ��...
+echo   ��������Զ���
+echo   ���û���Զ��򿪣���鿴�ն�����ĵ�ַ
 echo =====================================
 echo.
-echo 提示：按 Ctrl+C 可随时停止向导
+echo ��ʾ���� Ctrl+C ����ʱֹͣ��
 echo.
 
 cd /d "%~dp0"
@@ -177,7 +176,7 @@ set WIZARD_SKIP_UPDATE=1
 !PYTHON_CMD! deploy-wizard.py
 
 echo.
-echo 向导已停止。
+echo ����ֹͣ��
 timeout /t 2 /nobreak >nul
 exit
 
@@ -195,7 +194,7 @@ where curl.exe >nul 2>&1
 if !ERRORLEVEL! equ 0 set "_HAS_CURL=1"
 
 :: --- Source 1/3: raw.githubusercontent.com ---
-echo     正在尝试下载源 1/3 ...
+echo     ���ڳ�������Դ 1/3 ...
 if "!_HAS_CURL!"=="1" (
     curl.exe -fsSL --connect-timeout 15 --max-time 60 -o "%_TARGET%" "%URL1%" >nul 2>&1
     if exist "%_TARGET%" (
@@ -212,7 +211,7 @@ if exist "%_TARGET%" (
 )
 
 :: --- Source 2/3: jsDelivr CDN (China-friendly) ---
-echo     正在尝试下载源 2/3 ...
+echo     ���ڳ�������Դ 2/3 ...
 if "!_HAS_CURL!"=="1" (
     curl.exe -fsSL --connect-timeout 15 --max-time 60 -o "%_TARGET%" "%URL2%" >nul 2>&1
     if exist "%_TARGET%" (
@@ -229,7 +228,7 @@ if exist "%_TARGET%" (
 )
 
 :: --- Source 3/3: ghfast.top proxy ---
-echo     正在尝试下载源 3/3 ...
+echo     ���ڳ�������Դ 3/3 ...
 if "!_HAS_CURL!"=="1" (
     curl.exe -fsSL --connect-timeout 15 --max-time 60 -o "%_TARGET%" "%URL3%" >nul 2>&1
     if exist "%_TARGET%" (
@@ -246,17 +245,17 @@ if exist "%_TARGET%" (
 )
 
 echo.
-echo     [x] 所有下载源均失败
+echo     [x] ��������Դ��ʧ��
 echo.
-echo     排查建议:
+echo     �Ų齨��:
 if "!_HAS_CURL!"=="1" (
-    echo       - curl.exe 可能被防火墙拦截或网络不通
-    echo       - 调试: curl.exe -v %URL1%
+    echo       - curl.exe ���ܱ�����ǽ���ػ����粻ͨ
+    echo       - ����: curl.exe -v %URL1%
 ) else (
-    echo       - 未安装 curl.exe，请检查 PowerShell 代理
+    echo       - δ��װ curl.exe������ PowerShell ����
 )
-echo       - 请尝试在浏览器中手动下载:
+echo       - �볢������������ֶ�����:
 echo         %URL1%
-echo       - 下载后重命名为 deploy-wizard.py 放到脚本同目录
+echo       - ���غ�������Ϊ deploy-wizard.py �ŵ��ű�ͬĿ¼
 :DOWNLOAD_DONE
 goto :eof
