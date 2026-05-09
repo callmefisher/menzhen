@@ -62,7 +62,7 @@ if !ERRORLEVEL! equ 0 (
     if !ERRORLEVEL! equ 0 (
         echo.
         echo =============================================
-        echo   必需的软件已安装好。
+        echo   恭喜！必需的软件已安装好。
         echo.
         echo   下一步：请关闭此窗口，
         echo   然后再次双击 start-wizard.bat 继续安装。
@@ -98,8 +98,8 @@ exit /b 1
 :: 3. Check wizard script, auto-download or update
 :: ------------------------------------------------------------------
 :CHECK_FILE
-set "URL1=https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py"
-set "URL2=https://cdn.jsdelivr.net/gh/callmefisher/menzhen@main/deploy-wizard.py"
+set "URL1=https://gh-proxy.com/https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py"
+set "URL2=https://ghproxy.net/https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py"
 set "URL3=https://ghfast.top/https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py"
 
 if exist "%~dp0deploy-wizard.py" (
@@ -118,17 +118,17 @@ if exist "%~dp0deploy-wizard.py" (
             if "!REMOTE_VER!" GTR "!LOCAL_VER!" (
                 copy /y "%~dp0deploy-wizard.py" "%~dp0deploy-wizard.py.bak" >nul 2>&1
                 move /y "%~dp0deploy-wizard.py.download" "%~dp0deploy-wizard.py" >nul 2>&1
-                echo [*] 向导程序已更新到最新版本
+                echo [*] 向导程序已更新到最新版本！
             ) else (
                 echo [*] 向导程序已是最新版本
                 del /f "%~dp0deploy-wizard.py.download" >nul 2>&1
             )
         ) else (
-            echo [x] 下载的文件无效，继续使用当前版本
+            echo [x] 下载的文件缺少版本号，继续使用当前版本
             del /f "%~dp0deploy-wizard.py.download" >nul 2>&1
         )
     ) else (
-        echo [x] 无法检查更新，继续使用当前版本
+        echo [x] 下载的文件无效，继续使用当前版本
     )
 ) else (
     echo.
@@ -136,8 +136,8 @@ if exist "%~dp0deploy-wizard.py" (
     call :DOWNLOAD_FILE "%~dp0deploy-wizard.py"
     if not exist "%~dp0deploy-wizard.py" (
         echo.
-        echo [x] 所有下载源均失败
-        echo     请手动下载 deploy-wizard.py 放到本脚本同一文件夹
+        echo [x] 下载失败，请手动下载 deploy-wizard.py
+        echo     放到本脚本同一个文件夹里
         echo     下载地址: %URL1%
         echo.
         pause
@@ -154,7 +154,7 @@ if exist "%~dp0deploy-wizard.py" (
         pause
         exit /b 1
     )
-    echo [*] 向导程序下载完成
+    echo [*] 向导程序下载完成!
 )
 
 :: ------------------------------------------------------------------
@@ -194,7 +194,7 @@ where curl.exe >nul 2>&1
 if !ERRORLEVEL! equ 0 set "_HAS_CURL=1"
 
 :: --- Source 1/3: raw.githubusercontent.com ---
-echo     尝试下载源 1/3 ...
+echo     正在尝试下载源 1/3 ...
 if "!_HAS_CURL!"=="1" (
     curl.exe -fsSL --connect-timeout 15 --max-time 60 -o "%_TARGET%" "%URL1%" >nul 2>&1
     if exist "%_TARGET%" (
@@ -211,7 +211,7 @@ if exist "%_TARGET%" (
 )
 
 :: --- Source 2/3: jsDelivr CDN (China-friendly) ---
-echo     尝试下载源 2/3 ...
+echo     正在尝试下载源 2/3 ...
 if "!_HAS_CURL!"=="1" (
     curl.exe -fsSL --connect-timeout 15 --max-time 60 -o "%_TARGET%" "%URL2%" >nul 2>&1
     if exist "%_TARGET%" (
@@ -228,7 +228,7 @@ if exist "%_TARGET%" (
 )
 
 :: --- Source 3/3: ghfast.top proxy ---
-echo     尝试下载源 3/3 ...
+echo     正在尝试下载源 3/3 ...
 if "!_HAS_CURL!"=="1" (
     curl.exe -fsSL --connect-timeout 15 --max-time 60 -o "%_TARGET%" "%URL3%" >nul 2>&1
     if exist "%_TARGET%" (
@@ -247,15 +247,15 @@ if exist "%_TARGET%" (
 echo.
 echo     [x] 所有下载源均失败
 echo.
-echo     诊断建议:
+echo     排查建议:
 if "!_HAS_CURL!"=="1" (
-    echo       - curl.exe 可用但下载失败，可能是代理/防火墙问题
-    echo       - 请尝试: curl.exe -v %URL1%
+    echo       - curl.exe 可能被防火墙拦截或网络不通
+    echo       - 调试: curl.exe -v %URL1%
 ) else (
-    echo       - 未检测到 curl.exe，仅使用了 PowerShell 下载
+    echo       - 未安装 curl.exe，请检查 PowerShell 代理
 )
-echo       - 请在浏览器中访问以下地址测试:
+echo       - 请尝试在浏览器中手动下载:
 echo         %URL1%
-echo       - 如能访问，请手动下载 deploy-wizard.py 放到本脚本同目录
+echo       - 下载后重命名为 deploy-wizard.py 放到脚本同目录
 :DOWNLOAD_DONE
 goto :eof
