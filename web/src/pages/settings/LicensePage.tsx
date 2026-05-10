@@ -19,6 +19,7 @@ import {
 } from '../../api/license';
 import useIsMobile from '../../hooks/useIsMobile';
 import { useAuth } from '../../store/auth';
+import { parseLicenseKeyInput } from '../../utils/licenseKeyParser';
 import dayjs from 'dayjs';
 import weekOfYear from 'dayjs/plugin/weekOfYear';
 import utc from 'dayjs/plugin/utc';
@@ -532,33 +533,22 @@ export default function LicensePage() {
   };
 
   const handleSiteKeyInput = (value: string) => {
-    const underscoreIdx = value.indexOf('_');
-    const keyPart = underscoreIdx >= 0 ? value.substring(0, underscoreIdx) : value;
-    const colonCount = (keyPart.match(/:/g) || []).length;
-    if (colonCount >= 2) {
-      if (licenseType !== 'clinic') {
-        setLicenseType('clinic');
-        form.setFieldsValue({ license_type: 'clinic' });
-      }
-      const firstColon = value.indexOf(':');
-      const clinicCode = value.substring(0, firstColon).trim();
-      const rest = value.substring(firstColon + 1);
-      const secondColon = rest.indexOf(':');
-      const siteId = rest.substring(0, secondColon).trim();
-      const machineId = rest.substring(secondColon + 1).trim();
-      form.setFieldsValue({ clinic_code: clinicCode, site_id: siteId, machine_id: machineId });
-    } else if (colonCount === 1) {
-      if (licenseType !== 'site') {
-        setLicenseType('site');
-        form.setFieldsValue({ license_type: 'site' });
-      }
-      const idx = value.indexOf(':');
-      form.setFieldsValue({ site_id: value.substring(0, idx).trim(), machine_id: value.substring(idx + 1).trim() });
-    } else {
+    const parsed = parseLicenseKeyInput(value);
+    if (!parsed) {
       const currentType = form.getFieldValue('license_type') || licenseType;
       if (currentType === 'clinic') {
         form.setFieldsValue({ clinic_code: value.trim() });
       }
+      return;
+    }
+    if (parsed.licenseType !== licenseType) {
+      setLicenseType(parsed.licenseType);
+      form.setFieldsValue({ license_type: parsed.licenseType });
+    }
+    if (parsed.licenseType === 'clinic') {
+      form.setFieldsValue({ clinic_code: parsed.clinicCode, site_id: parsed.siteId, machine_id: parsed.machineId });
+    } else {
+      form.setFieldsValue({ site_id: parsed.siteId, machine_id: parsed.machineId });
     }
   };
 
