@@ -369,8 +369,17 @@ export default function LicensePage() {
       message.error('站点标识不匹配，无法应用: ' + updateDecoded.mismatches.join('; '));
       return;
     }
+    const isClinicTab = activeTab === 'clinic';
+    const tokenIsClinic = !!updateDecoded?.claims?.clinic_code;
+    if (isClinicTab && !tokenIsClinic) {
+      message.error('此授权码为站点类型，不能在本诊所授权中更新。请到"本站点授权"页面操作');
+      return;
+    }
+    if (!isClinicTab && tokenIsClinic) {
+      message.error('此授权码为诊所类型，不能在本站点授权中更新。请到"本诊所授权"页面操作');
+      return;
+    }
     try {
-      const isClinicTab = activeTab === 'clinic';
       let targetId: number | undefined;
 
       if (isClinicTab) {
@@ -523,15 +532,17 @@ export default function LicensePage() {
   };
 
   const handleSiteKeyInput = (value: string) => {
-    const colonCount = (value.match(/:/g) || []).length;
+    const underscoreIdx = value.indexOf('_');
+    const keyPart = underscoreIdx >= 0 ? value.substring(0, underscoreIdx) : value;
+    const colonCount = (keyPart.match(/:/g) || []).length;
     if (colonCount >= 2) {
       if (licenseType !== 'clinic') {
         setLicenseType('clinic');
         form.setFieldsValue({ license_type: 'clinic' });
       }
-      const firstColon = value.indexOf(':');
-      const clinicCode = value.substring(0, firstColon).trim();
-      const rest = value.substring(firstColon + 1);
+      const firstColon = keyPart.indexOf(':');
+      const clinicCode = keyPart.substring(0, firstColon).trim();
+      const rest = keyPart.substring(firstColon + 1);
       const secondColon = rest.indexOf(':');
       const siteId = rest.substring(0, secondColon).trim();
       const machineId = rest.substring(secondColon + 1).trim();
@@ -541,8 +552,8 @@ export default function LicensePage() {
         setLicenseType('site');
         form.setFieldsValue({ license_type: 'site' });
       }
-      const idx = value.indexOf(':');
-      form.setFieldsValue({ site_id: value.substring(0, idx).trim(), machine_id: value.substring(idx + 1).trim() });
+      const idx = keyPart.indexOf(':');
+      form.setFieldsValue({ site_id: keyPart.substring(0, idx).trim(), machine_id: keyPart.substring(idx + 1).trim() });
     } else {
       const currentType = form.getFieldValue('license_type') || licenseType;
       if (currentType === 'clinic') {
