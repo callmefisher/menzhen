@@ -540,9 +540,9 @@ export default function LicensePage() {
         setLicenseType('clinic');
         form.setFieldsValue({ license_type: 'clinic' });
       }
-      const firstColon = keyPart.indexOf(':');
-      const clinicCode = keyPart.substring(0, firstColon).trim();
-      const rest = keyPart.substring(firstColon + 1);
+      const firstColon = value.indexOf(':');
+      const clinicCode = value.substring(0, firstColon).trim();
+      const rest = value.substring(firstColon + 1);
       const secondColon = rest.indexOf(':');
       const siteId = rest.substring(0, secondColon).trim();
       const machineId = rest.substring(secondColon + 1).trim();
@@ -552,8 +552,8 @@ export default function LicensePage() {
         setLicenseType('site');
         form.setFieldsValue({ license_type: 'site' });
       }
-      const idx = keyPart.indexOf(':');
-      form.setFieldsValue({ site_id: keyPart.substring(0, idx).trim(), machine_id: keyPart.substring(idx + 1).trim() });
+      const idx = value.indexOf(':');
+      form.setFieldsValue({ site_id: value.substring(0, idx).trim(), machine_id: value.substring(idx + 1).trim() });
     } else {
       const currentType = form.getFieldValue('license_type') || licenseType;
       if (currentType === 'clinic') {
