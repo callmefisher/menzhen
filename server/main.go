@@ -18,7 +18,7 @@ func main() {
 	if loc, err := time.LoadLocation("Asia/Shanghai"); err == nil {
 		time.Local = loc
 	} else {
-		log.Printf("WARNING: failed to load Beijing timezone: %v — time.Now() will use UTC", err)
+		log.Printf("WARNING: fail to load Beijing timezone: %v — time.Now() will use UTC", err)
 	}
 
 	cfg := config.Load()
