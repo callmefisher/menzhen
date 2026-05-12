@@ -31,7 +31,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.05.09.123301"
+WIZARD_VERSION = "2026.05.12.103801"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 
@@ -49,8 +49,9 @@ def _debug_log(msg):
 IMAGE_REGISTRY = "https://your-registry.example.com"
 REPO_URL = "https://github.com/callmefisher/menzhen.git"
 REPO_MIRROR_URLS = [
-    "https://gitclone.com/github.com/callmefisher/menzhen.git",
+    "https://gh-proxy.com/github.com/callmefisher/menzhen.git",
     "https://ghfast.top/https://github.com/callmefisher/menzhen.git",
+    "https://gitclone.com/github.com/callmefisher/menzhen.git",
     REPO_URL,
 ]
 # Cached best git URL after connectivity test (None = not tested yet)
@@ -58,7 +59,6 @@ _best_repo_url = None
 WIZARD_RAW_URL = "https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py"
 WIZARD_RAW_URLS = [
     "https://gh-proxy.com/https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py",
-    "https://ghproxy.net/https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py",
     "https://ghfast.top/https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py",
     WIZARD_RAW_URL,
 ]
@@ -1791,6 +1791,28 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
                             "message": parts[2] if len(parts) > 2 else "",
                             "date": parts[3] if len(parts) > 3 else "",
                         })
+                # 4. If mirror reported no updates, verify with GitHub directly
+                #    (mirrors like gitclone.com may have stale cache)
+                if len(commits) == 0 and _repo != REPO_URL:
+                    _sse({"type": "log", "data": "镜像源未发现更新，正在验证GitHub源..."})
+                    run_command(["git", "remote", "set-url", "origin", REPO_URL])
+                    rc2, _, _ = run_command(["git", "fetch", "origin"], timeout=30)
+                    if rc2 == 0:
+                        rc, out, _ = run_command(["git", "log", "HEAD..origin/main",
+                                                  "--format=%H|%h|%s|%ai", "--no-decorate", "-n", "200"])
+                        if rc == 0:
+                            commits = []
+                            for line in (out or "").strip().splitlines():
+                                if line.strip():
+                                    parts = line.strip().split("|", 3)
+                                    commits.append({
+                                        "full_hash": parts[0] if len(parts) > 0 else "",
+                                        "hash": parts[1] if len(parts) > 1 else (parts[0][:7] if parts else ""),
+                                        "message": parts[2] if len(parts) > 2 else "",
+                                        "date": parts[3] if len(parts) > 3 else "",
+                                    })
+                    # Restore mirror URL for subsequent operations
+                    run_command(["git", "remote", "set-url", "origin", _repo])
                 _sse_done({
                     "has_updates": len(commits) > 0,
                     "behind_count": len(commits),
