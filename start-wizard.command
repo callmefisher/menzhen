@@ -179,7 +179,6 @@ fi
 # ------------------------------------------------------------------
 WIZARD_URLS=(
     "https://gh-proxy.com/https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py"
-    "https://ghproxy.net/https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py"
     "https://ghfast.top/https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py"
     "https://raw.githubusercontent.com/callmefisher/menzhen/main/deploy-wizard.py"
 )
