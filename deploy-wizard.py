@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 Deploy Wizard - Web UI guided deployment for menzhen system.
 Cross-platform: Mac / Windows / Linux (Ubuntu, CentOS, etc.)
@@ -31,7 +32,7 @@ from pathlib import Path
 WIZARD_PORT = 9527
 # Version format: YYYY.MM.DD.HHMMSS — zero-padded, string-comparable.
 # Update this on EVERY change (date +"%Y.%m.%d.%H%M%S").
-WIZARD_VERSION = "2026.05.12.103801"
+WIZARD_VERSION = "2026.05.12.111101"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = Path(__file__).resolve()
 
