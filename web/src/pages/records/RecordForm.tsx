@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams, useBlocker } from 'react-router-dom';
 import {
   Form,
   Input,
@@ -189,6 +189,38 @@ export default function RecordForm() {
       tongueAbortRef.current?.abort();
     };
   }, []);
+
+  // Auto-save on browser back when form has unsaved changes (edit mode)
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      isEdit && currentLocation.pathname !== nextLocation.pathname && form.isFieldsTouched(),
+  );
+
+  useEffect(() => {
+    if (blocker.state === 'blocked') {
+      const doAutoSave = async () => {
+        try {
+          const values = form.getFieldsValue();
+          await updateRecord(Number(id), {
+            chief_complaint: values.chief_complaint || '',
+            pulse_id: values.pulse_id || null,
+            pulse_name: values.pulse_name || '',
+            tongue_image: values.tongue_image || '',
+            tongue_description: values.tongue_description || '',
+            tongue_analysis: values.tongue_analysis || '',
+            diagnosis: values.diagnosis || '',
+            treatment: values.treatment || '',
+            notes: values.notes || '',
+            visit_date: values.visit_date ? values.visit_date.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD'),
+            attachments: values.attachments || [],
+          });
+        } catch {
+          // Non-blocking
+        }
+      };
+      doAutoSave().finally(() => blocker.proceed());
+    }
+  }, [blocker.state]);
 
   // Auto-expand notes/attachments when they have content
   useEffect(() => {
@@ -1280,7 +1312,13 @@ export default function RecordForm() {
               size="small"
               icon={<RobotOutlined />}
               loading={tongueAnalyzing}
-              onClick={() => handleTongueAnalysis()}
+              onClick={() => {
+              if (tongueResult) {
+                setTongueDrawerOpen(true);
+              } else {
+                handleTongueAnalysis();
+              }
+            }}
             >
               分析舌象
             </Button>
@@ -1322,7 +1360,13 @@ export default function RecordForm() {
                   size="small"
                   icon={<RobotOutlined />}
                   loading={aiAnalyzing}
-                  onClick={() => handleAiAnalysis()}
+                  onClick={() => {
+                    if (aiResult) {
+                      setAiDrawerOpen(true);
+                    } else {
+                      handleAiAnalysis();
+                    }
+                  }}
                 >
                   AI辅助分析
                 </Button>
@@ -1456,6 +1500,30 @@ export default function RecordForm() {
                       setSubmitting(false);
                     }
                   } else {
+                    if (form.isFieldsTouched()) {
+                      try {
+                        setSubmitting(true);
+                        const values = form.getFieldsValue();
+                        await updateRecord(Number(id), {
+                          chief_complaint: values.chief_complaint || '',
+                          pulse_id: values.pulse_id || null,
+                          pulse_name: values.pulse_name || '',
+                          tongue_image: values.tongue_image || '',
+                          tongue_description: values.tongue_description || '',
+                          tongue_analysis: values.tongue_analysis || '',
+                          diagnosis: values.diagnosis || '',
+                          treatment: values.treatment || '',
+                          notes: values.notes || '',
+                          visit_date: values.visit_date ? values.visit_date.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD'),
+                          attachments: values.attachments || [],
+                        });
+                        message.success('诊疗记录已自动保存');
+                      } catch {
+                        // Non-blocking, continue to open modal
+                      } finally {
+                        setSubmitting(false);
+                      }
+                    }
                     handleOpenPrescriptionModal();
                   }
                 }}
