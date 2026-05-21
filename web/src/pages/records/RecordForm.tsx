@@ -746,7 +746,6 @@ export default function RecordForm() {
           attachments: payload.attachments,
         });
         message.success('诊疗记录更新成功');
-        navigate('/records', { state: { highlightId: Number(id) } });
       } else {
         const res = await createRecord(payload);
         const body = res as unknown as { data: { id: number } };
@@ -895,6 +894,7 @@ export default function RecordForm() {
   // 快速创建仅诊疗费空处方并打开收费
   const handleQuickConsultationFee = async () => {
     if (!id) return;
+    await autoSaveIfTouched();
     try {
       const res = await createPrescription({ record_id: Number(id), items: [] });
       const body = res as unknown as { code: number; data: { id: number } };
@@ -1628,7 +1628,8 @@ export default function RecordForm() {
                               type="link"
                               size="small"
                               icon={<DollarOutlined />}
-                              onClick={() => {
+                              onClick={async () => {
+                                await autoSaveIfTouched();
                                 setBillingPrescriptionId(item.id);
                                 setBillingPrintOnly(false);
                                 setBillingDrawerOpen(true);
@@ -1640,14 +1641,15 @@ export default function RecordForm() {
                             {hasPermission('prescription:create') && (
                               <>
                                 <span style={{ color: '#e0e0e0' }}>|</span>
-                                <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleOpenPrescriptionModal(item)} style={{ padding: 0 }}>编辑</Button>
+                                <Button type="link" size="small" icon={<EditOutlined />} onClick={async () => { await autoSaveIfTouched(); handleOpenPrescriptionModal(item); }} style={{ padding: 0 }}>编辑</Button>
                                 <Button
                                   type="link"
                                   size="small"
                                   icon={<DeleteOutlined />}
                                   danger
                                   style={{ padding: 0 }}
-                                  onClick={() => {
+                                  onClick={async () => {
+                                    await autoSaveIfTouched();
                                     Modal.confirm({
                                       title: '确定删除此处方？',
                                       content: '删除后不可恢复',
@@ -1773,7 +1775,8 @@ export default function RecordForm() {
                           type="link"
                           size="small"
                           icon={<DollarOutlined />}
-                          onClick={() => {
+                          onClick={async () => {
+                            await autoSaveIfTouched();
                             setBillingPrescriptionId(item.id);
                             setBillingPrintOnly(false);
                             setBillingDrawerOpen(true);
@@ -1785,14 +1788,15 @@ export default function RecordForm() {
                         {hasPermission('prescription:create') && (
                           <>
                             <span style={{ color: '#e0e0e0' }}>|</span>
-                            <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleOpenPrescriptionModal(item)} style={{ padding: 0 }}>编辑</Button>
+                            <Button type="link" size="small" icon={<EditOutlined />} onClick={async () => { await autoSaveIfTouched(); handleOpenPrescriptionModal(item); }} style={{ padding: 0 }}>编辑</Button>
                             <Button
                               type="link"
                               size="small"
                               icon={<DeleteOutlined />}
                               danger
                               style={{ padding: 0 }}
-                              onClick={() => {
+                              onClick={async () => {
+                                await autoSaveIfTouched();
                                 Modal.confirm({
                                   title: '确定删除此处方？',
                                   content: '删除后不可恢复',
