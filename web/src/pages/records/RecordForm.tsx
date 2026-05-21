@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate, useParams, useSearchParams, useBlocker } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Form,
   Input,
@@ -190,37 +190,42 @@ export default function RecordForm() {
     };
   }, []);
 
-  // Auto-save on browser back when form has unsaved changes (edit mode)
-  const blocker = useBlocker(
-    ({ currentLocation, nextLocation }) =>
-      isEdit && currentLocation.pathname !== nextLocation.pathname && form.isFieldsTouched(),
-  );
-
-  useEffect(() => {
-    if (blocker.state === 'blocked') {
-      const doAutoSave = async () => {
-        try {
-          const values = form.getFieldsValue();
-          await updateRecord(Number(id), {
-            chief_complaint: values.chief_complaint || '',
-            pulse_id: values.pulse_id || null,
-            pulse_name: values.pulse_name || '',
-            tongue_image: values.tongue_image || '',
-            tongue_description: values.tongue_description || '',
-            tongue_analysis: values.tongue_analysis || '',
-            diagnosis: values.diagnosis || '',
-            treatment: values.treatment || '',
-            notes: values.notes || '',
-            visit_date: values.visit_date ? values.visit_date.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD'),
-            attachments: values.attachments || [],
-          });
-        } catch {
-          // Non-blocking
-        }
-      };
-      doAutoSave().finally(() => blocker.proceed());
+  const autoSaveIfTouched = async () => {
+    if (!isEdit || !form.isFieldsTouched()) return;
+    try {
+      const values = form.getFieldsValue();
+      await updateRecord(Number(id), {
+        chief_complaint: values.chief_complaint || '',
+        pulse_id: values.pulse_id || null,
+        pulse_name: values.pulse_name || '',
+        tongue_image: values.tongue_image || '',
+        tongue_description: values.tongue_description || '',
+        tongue_analysis: values.tongue_analysis || '',
+        diagnosis: values.diagnosis || '',
+        treatment: values.treatment || '',
+        notes: values.notes || '',
+        visit_date: values.visit_date ? values.visit_date.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD'),
+        attachments: values.attachments || [],
+      });
+      message.success('诊疗记录已自动保存');
+    } catch {
+      // Non-blocking
     }
-  }, [blocker.state]);
+  };
+
+  // Warn on browser close/refresh when form has unsaved changes
+  useEffect(() => {
+    if (!isEdit) return;
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (form.isFieldsTouched()) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [isEdit]);
 
   // Auto-expand notes/attachments when they have content
   useEffect(() => {
@@ -1500,30 +1505,7 @@ export default function RecordForm() {
                       setSubmitting(false);
                     }
                   } else {
-                    if (form.isFieldsTouched()) {
-                      try {
-                        setSubmitting(true);
-                        const values = form.getFieldsValue();
-                        await updateRecord(Number(id), {
-                          chief_complaint: values.chief_complaint || '',
-                          pulse_id: values.pulse_id || null,
-                          pulse_name: values.pulse_name || '',
-                          tongue_image: values.tongue_image || '',
-                          tongue_description: values.tongue_description || '',
-                          tongue_analysis: values.tongue_analysis || '',
-                          diagnosis: values.diagnosis || '',
-                          treatment: values.treatment || '',
-                          notes: values.notes || '',
-                          visit_date: values.visit_date ? values.visit_date.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD'),
-                          attachments: values.attachments || [],
-                        });
-                        message.success('诊疗记录已自动保存');
-                      } catch {
-                        // Non-blocking, continue to open modal
-                      } finally {
-                        setSubmitting(false);
-                      }
-                    }
+                    await autoSaveIfTouched();
                     handleOpenPrescriptionModal();
                   }
                 }}
@@ -1576,7 +1558,7 @@ export default function RecordForm() {
                     type="primary"
                     size={isMobile ? 'small' : 'middle'}
                     icon={<PlusOutlined />}
-                    onClick={() => handleOpenPrescriptionModal()}
+                    onClick={async () => { await autoSaveIfTouched(); handleOpenPrescriptionModal(); }}
                   >
                     开方
                   </Button>

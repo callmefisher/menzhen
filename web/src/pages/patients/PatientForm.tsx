@@ -142,6 +142,16 @@ export function PatientFormModal({
 
   const isEdit = Boolean(initialData?.id);
 
+  const handleMaskClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      if (isEdit) {
+        handleOk();
+      } else {
+        onClose();
+      }
+    }
+  };
+
   useEffect(() => {
     if (visible && initialData) {
       form.setFieldsValue({
@@ -224,6 +234,8 @@ export function PatientFormModal({
       open={visible}
       onOk={handleOk}
       onCancel={onClose}
+      maskClosable={false}
+      wrapProps={{ onClick: handleMaskClick }}
       confirmLoading={submitting}
       okText="保存"
       cancelText="取消"
