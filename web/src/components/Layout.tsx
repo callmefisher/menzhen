@@ -60,7 +60,7 @@ export default function AppLayout() {
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [passwordForm] = Form.useForm();
-  const { user, logout, hasPermission, isSuperAdmin, queueEnabled, fetchQueueEnabled, appointmentEnabled, fetchAppointmentEnabled, licenseExpired } = useAuth();
+  const { user, logout, hasPermission, isSuperAdmin, queueEnabled, fetchQueueEnabled, appointmentEnabled, fetchAppointmentEnabled, licenseExpired, licenseWarning, refreshLicenseWarning } = useAuth();
   const { themeKey, themeConfig, setTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
@@ -98,6 +98,15 @@ export default function AppLayout() {
     }, 60_000);
     return () => clearInterval(interval);
   }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    refreshLicenseWarning();
+    const interval = setInterval(() => {
+      refreshLicenseWarning();
+    }, 5 * 60_000);
+    return () => clearInterval(interval);
+  }, [user, refreshLicenseWarning]);
 
   useEffect(() => {
     if (licenseExpired && location.pathname !== '/settings/license' && location.pathname !== '/login' && location.pathname !== '/register') {
@@ -471,7 +480,7 @@ export default function AppLayout() {
         settingsChildren.push({
           key: '/settings/license',
           icon: <KeyOutlined />,
-          label: licenseExpired
+          label: licenseWarning
             ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                 授权
                 <span style={{ background: '#ff4d4f', color: '#fff', fontSize: 11, lineHeight: '16px', minWidth: 16, height: 16, borderRadius: 8, padding: '0 4px', textAlign: 'center', fontWeight: 500 }}>!</span>
@@ -496,7 +505,7 @@ export default function AppLayout() {
     }
 
     return items;
-  }, [hasPermission, isSuperAdmin, alertCount, followUpCount, rxPendingCount, queueWaitingCount, queueEnabled, appointmentEnabled, licenseExpired]);
+  }, [hasPermission, isSuperAdmin, alertCount, followUpCount, rxPendingCount, queueWaitingCount, queueEnabled, appointmentEnabled, licenseWarning]);
 
   // Determine selected keys from current path
   const selectedKeys = useMemo(() => {

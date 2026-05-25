@@ -28,6 +28,7 @@ interface AuthState {
   appointmentEnabled: boolean;
   managedGroups: string[];
   licenseExpired: boolean;
+  licenseWarning: boolean;
 }
 
 interface AuthContextValue extends AuthState {
@@ -40,6 +41,7 @@ interface AuthContextValue extends AuthState {
   fetchQueueEnabled: () => Promise<void>;
   fetchAppointmentEnabled: () => Promise<void>;
   checkLicenseStatus: () => Promise<void>;
+  refreshLicenseWarning: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -63,6 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     appointmentEnabled: true,
     managedGroups: [],
     licenseExpired: false,
+    licenseWarning: false,
   });
 
   const fetchQueueEnabled = useCallback(async () => {
@@ -85,14 +88,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const isLicenseSafe = (status: string | undefined, remainingDays: number | undefined): boolean => {
+    if (!status || status === 'none' || status === 'expired' || status === 'superseded') return false;
+    if (status === 'active' && (remainingDays === 0 || remainingDays === undefined)) return true;
+    return (remainingDays ?? 0) > 15;
+  };
+
   const checkLicenseStatus = useCallback(async () => {
     try {
       const siteRes = await getSiteLicense() as any;
       const siteData = siteRes.data;
       const siteOk = siteData?.status === 'active' || siteData?.status === 'expiring';
+      const siteSafe = isLicenseSafe(siteData?.status, siteData?.remaining_days);
 
       if (siteOk) {
-        setState(prev => ({ ...prev, licenseExpired: false }));
+        setState(prev => ({ ...prev, licenseExpired: false, licenseWarning: !siteSafe }));
         return;
       }
 
@@ -100,9 +110,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const clinicRes = await getClinicLicense() as any;
         const clinicData = clinicRes.data;
         const clinicOk = clinicData?.status === 'active' || clinicData?.status === 'expiring';
-        setState(prev => ({ ...prev, licenseExpired: !clinicOk }));
+        const clinicSafe = isLicenseSafe(clinicData?.status, clinicData?.remaining_days);
+        setState(prev => ({
+          ...prev,
+          licenseExpired: !clinicOk,
+          licenseWarning: !(siteSafe || clinicSafe),
+        }));
       } catch {
-        setState(prev => ({ ...prev, licenseExpired: true }));
+        setState(prev => ({ ...prev, licenseExpired: true, licenseWarning: true }));
       }
     } catch (err: any) {
       if (err?.response?.status === 403 && err?.response?.data?.message === 'license_required') {
@@ -110,9 +125,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const clinicRes = await getClinicLicense() as any;
           const clinicData = clinicRes.data;
           const clinicOk = clinicData?.status === 'active' || clinicData?.status === 'expiring';
-          setState(prev => ({ ...prev, licenseExpired: !clinicOk }));
+          const clinicSafe = isLicenseSafe(clinicData?.status, clinicData?.remaining_days);
+          setState(prev => ({
+            ...prev,
+            licenseExpired: !clinicOk,
+            licenseWarning: !clinicSafe,
+          }));
         } catch {
-          setState(prev => ({ ...prev, licenseExpired: true }));
+          setState(prev => ({ ...prev, licenseExpired: true, licenseWarning: true }));
         }
       }
     }
@@ -160,6 +180,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             appointmentEnabled: true,
             managedGroups: [],
             licenseExpired: false,
+            licenseWarning: false,
           });
         });
     } else {
@@ -190,6 +211,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       appointmentEnabled: true,
       managedGroups: body.data.managed_groups || [],
       licenseExpired: false,
+      licenseWarning: false,
     });
     if (body.data.user.tenant_name) {
       document.title = body.data.user.tenant_name;
@@ -222,6 +244,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         appointmentEnabled: true,
         managedGroups: [],
         licenseExpired: false,
+        licenseWarning: false,
       });
     }
   }, []);
@@ -237,6 +260,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isSuperAdmin = state.user?.username === 'admin' && isGlobalAdmin;
   const isPowerAdmin = (state.managedGroups?.length ?? 0) > 0 && !isSuperAdmin;
 
+  const refreshLicenseWarning = useCallback(() => {
+    checkLicenseStatus();
+  }, [checkLicenseStatus]);
+
   return (
     <AuthContext.Provider
       value={{
@@ -250,6 +277,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         fetchQueueEnabled,
         fetchAppointmentEnabled,
         checkLicenseStatus,
+        refreshLicenseWarning,
       }}
     >
       {children}
