@@ -491,7 +491,12 @@ export default function AppLayout() {
       items.push({
         key: '/settings',
         icon: <SettingOutlined />,
-        label: '系统设置',
+        label: licenseWarning
+          ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              系统设置
+              <span style={{ background: '#ff4d4f', color: '#fff', fontSize: 11, lineHeight: '16px', minWidth: 16, height: 16, borderRadius: 8, padding: '0 4px', textAlign: 'center', fontWeight: 500 }}>!</span>
+            </span>
+          : '系统设置',
         children: settingsChildren,
       });
     }
