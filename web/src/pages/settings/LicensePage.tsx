@@ -677,11 +677,18 @@ export default function LicensePage() {
         </Text>
       </div>
       {lic && licStatus !== 'none' && (
-        <div style={{ marginTop: 8, fontSize: 13, color: '#8B7355' }}>
+        <div style={{ marginTop: 8, fontSize: 13, color: '#8B7355', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <ClockCircleOutlined style={{ marginRight: 4 }} />
           授权剩余 <Text strong style={{ fontSize: 18, color: licStatus === 'active' ? '#389e0d' : licStatus === 'expiring' ? '#d46b08' : '#cf1322' }}>
             {lic.method === 'permanent' ? '∞' : licRemaining}
           </Text> 天
+          {lic.method !== 'permanent' && licRemaining <= 15 && (
+            <span style={{
+              background: '#ff4d4f', color: '#fff', fontSize: 11,
+              lineHeight: '16px', minWidth: 16, height: 16,
+              borderRadius: 8, padding: '0 4px', textAlign: 'center', fontWeight: 500,
+            }}>!</span>
+          )}
         </div>
       )}
     </Card>
