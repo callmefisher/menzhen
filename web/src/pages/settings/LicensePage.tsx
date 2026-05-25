@@ -746,11 +746,25 @@ export default function LicensePage() {
       <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
         {isSuperAdmin && (
           <Button type={activeTab === 'site' ? 'primary' : 'default'} icon={<KeyOutlined />}
-            onClick={() => setActiveTab('site')}>本站点授权</Button>
+            onClick={() => setActiveTab('site')}>
+            {license?.method !== 'permanent' && remaining <= 15
+              ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  本站点授权
+                  <span style={{ background: '#ff4d4f', color: '#fff', fontSize: 11, lineHeight: '16px', minWidth: 16, height: 16, borderRadius: 8, padding: '0 4px', textAlign: 'center', fontWeight: 500 }}>!</span>
+                </span>
+              : '本站点授权'}
+          </Button>
         )}
         {showClinicTab && (
           <Button type={activeTab === 'clinic' ? 'primary' : 'default'} icon={<BankOutlined />}
-            onClick={() => setActiveTab('clinic')}>本诊所授权</Button>
+            onClick={() => setActiveTab('clinic')}>
+            {clinicLicense?.method !== 'permanent' && clinicRemaining <= 15
+              ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  本诊所授权
+                  <span style={{ background: '#ff4d4f', color: '#fff', fontSize: 11, lineHeight: '16px', minWidth: 16, height: 16, borderRadius: 8, padding: '0 4px', textAlign: 'center', fontWeight: 500 }}>!</span>
+                </span>
+              : '本诊所授权'}
+          </Button>
         )}
         <Button type={activeTab === 'tenant' ? 'primary' : 'default'} icon={<BarChartOutlined />}
           onClick={() => setActiveTab('tenant')}>授权管理</Button>
