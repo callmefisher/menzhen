@@ -259,17 +259,26 @@ func (s *RecordService) FindRecordPage(tenantID, recordID uint64, size int) (int
 // before the update (for oplog old_data) and the updated record.
 func (s *RecordService) UpdateRecord(tenantID uint64, id uint64, req *UpdateRecordRequest) (*model.MedicalRecord, *model.MedicalRecord, error) {
 	var record model.MedicalRecord
-	if err := s.DB.Where("tenant_id = ?", tenantID).Preload("Attachments").First(&record, id).Error; err != nil {
+	if err := s.DB.Where("tenant_id = ?", tenantID).
+		Preload("Attachments").
+		Preload("Patient").
+		Preload("Prescriptions.Items").
+		First(&record, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil, ErrRecordNotFound
 		}
 		return nil, nil, err
 	}
 
-	// Save a copy of the old data for oplog.
 	oldRecord := record
 	oldRecord.Attachments = make([]model.RecordAttachment, len(record.Attachments))
 	copy(oldRecord.Attachments, record.Attachments)
+	oldRecord.Prescriptions = make([]model.Prescription, len(record.Prescriptions))
+	copy(oldRecord.Prescriptions, record.Prescriptions)
+	for i := range record.Prescriptions {
+		oldRecord.Prescriptions[i].Items = make([]model.PrescriptionItem, len(record.Prescriptions[i].Items))
+		copy(oldRecord.Prescriptions[i].Items, record.Prescriptions[i].Items)
+	}
 
 	// Build update map from non-nil fields.
 	updates := make(map[string]interface{})
@@ -372,7 +381,11 @@ func (s *RecordService) UpdateRecord(tenantID uint64, id uint64, req *UpdateReco
 	s.cleanupFiles(filesToCleanup)
 
 	// Reload to get the updated record with attachments.
-	if err := s.DB.Where("tenant_id = ?", tenantID).Preload("Attachments").Preload("Patient").First(&record, id).Error; err != nil {
+	if err := s.DB.Where("tenant_id = ?", tenantID).
+		Preload("Attachments").
+		Preload("Patient").
+		Preload("Prescriptions.Items").
+		First(&record, id).Error; err != nil {
 		return nil, nil, err
 	}
 
