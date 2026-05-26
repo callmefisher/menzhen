@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"encoding/json"
 	"log"
 
 	"github.com/callmefisher/menzhen/server/model"
@@ -9,14 +10,18 @@ import (
 	"gorm.io/gorm"
 )
 
-// LogOperation is a helper function for recording operation logs from handlers.
-// It extracts user context from the gin.Context and creates an OpLog entry.
-// Errors are logged but do not fail the request (best-effort).
 func LogOperation(db *gorm.DB, c *gin.Context, action, resourceType string, resourceID uint64, oldData, newData interface{}) {
+	if action == "update" && oldData != nil && newData != nil {
+		oldBytes, err1 := json.Marshal(oldData)
+		newBytes, err2 := json.Marshal(newData)
+		if err1 == nil && err2 == nil && string(oldBytes) == string(newBytes) {
+			return
+		}
+	}
+
 	tenantID := GetTenantID(c)
 	userID := GetUserID(c)
 
-	// Try to get real_name from the database for better display.
 	userName := GetUsername(c)
 	var user model.User
 	if err := db.Select("real_name").First(&user, userID).Error; err == nil && user.RealName != "" {
