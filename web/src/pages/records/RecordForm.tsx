@@ -18,7 +18,7 @@ import {
   Drawer,
   Tooltip,
 } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, RobotOutlined, ReloadOutlined, MedicineBoxOutlined, InboxOutlined, SearchOutlined, DownOutlined, RightOutlined, DollarOutlined, CheckOutlined, PrinterOutlined, LeftOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, RobotOutlined, ReloadOutlined, MedicineBoxOutlined, InboxOutlined, SearchOutlined, DownOutlined, RightOutlined, DollarOutlined, CheckOutlined, PrinterOutlined, LeftOutlined, HistoryOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import Markdown from 'react-markdown';
@@ -42,6 +42,7 @@ import PrescriptionPrint from '../../components/PrescriptionPrint';
 import BillingDrawer from '../../components/BillingDrawer';
 import PrintCenterDrawer from '../../components/PrintCenterDrawer';
 import FollowUpPanel from '../../components/FollowUpPanel';
+import HistoryRecordSelectModal from '../../components/HistoryRecordSelectModal';
 import { listRecordBillings, getPrescriptionBilling } from '../../api/billing';
 import type { BillingRecord, BillingDetail } from '../../api/billing';
 import { useAuth } from '../../store/auth';
@@ -172,6 +173,9 @@ export default function RecordForm() {
   // Card 4 collapsible state (notes & attachments)
   const [notesExpanded, setNotesExpanded] = useState(false);
   const [attachmentsExpanded, setAttachmentsExpanded] = useState(false);
+
+  // History records selection modal
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
 
   // Watch form fields for template sync
   const watchedPatientId = Form.useWatch('patient_id', form);
@@ -1375,6 +1379,15 @@ export default function RecordForm() {
                 >
                   AI辅助分析
                 </Button>
+                <Button
+                  size="small"
+                  icon={<HistoryOutlined />}
+                  disabled={!watchedPatientId}
+                  onClick={() => setHistoryModalOpen(true)}
+                  style={{ borderColor: '#fa8c16', color: '#fa8c16' }}
+                >
+                  引用历史诊疗
+                </Button>
                 {aiResult && !aiDrawerOpen && (
                   <Tooltip title="已有分析结果，点击查看">
                     <Tag
@@ -1920,6 +1933,19 @@ export default function RecordForm() {
           highlightFollowUpId={highlightFollowUpId}
         />
       )}
+
+      {/* 历史诊疗记录选择弹窗 */}
+      <HistoryRecordSelectModal
+        open={historyModalOpen}
+        patientId={watchedPatientId}
+        patientName={patients.find((p) => p.id === watchedPatientId)?.name}
+        currentDiagnosis={form.getFieldValue('diagnosis') || ''}
+        onClose={() => setHistoryModalOpen(false)}
+        onConfirm={(assembled) => {
+          form.setFieldValue('diagnosis', assembled);
+          message.success('已引用历史诊疗记录');
+        }}
+      />
 
       {/* 新建患者弹窗 */}
       <Modal

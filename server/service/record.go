@@ -64,6 +64,7 @@ type RecordListItem struct {
 	PatientName    string    `json:"patient_name"`
 	PatientAge     int       `json:"patient_age"`
 	Diagnosis      string    `json:"diagnosis"`
+	Treatment      string    `json:"treatment"`
 	ChiefComplaint string    `json:"chief_complaint"`
 	PulseName      string    `json:"pulse_name"`
 	VisitDate      string    `json:"visit_date"`
@@ -200,7 +201,7 @@ func (s *RecordService) ListRecords(tenantID uint64, name, date string, patientI
 	var total int64
 
 	query := s.DB.Table("medical_records").
-		Select("medical_records.id, medical_records.patient_id, patients.name AS patient_name, patients.age AS patient_age, medical_records.diagnosis, medical_records.chief_complaint, medical_records.pulse_name, DATE_FORMAT(medical_records.visit_date, '%Y-%m-%d') AS visit_date, medical_records.created_at").
+		Select("medical_records.id, medical_records.patient_id, patients.name AS patient_name, patients.age AS patient_age, medical_records.diagnosis, medical_records.treatment, medical_records.chief_complaint, medical_records.pulse_name, DATE_FORMAT(medical_records.visit_date, '%Y-%m-%d') AS visit_date, medical_records.created_at").
 		Joins("JOIN patients ON patients.id = medical_records.patient_id").
 		Where("medical_records.tenant_id = ? AND medical_records.deleted_at IS NULL", tenantID)
 
