@@ -38,9 +38,18 @@ export function extractHeader(diagnosis: string): string {
 /**
  * Assemble the final diagnosis content by combining the current header with
  * selected historical records. Each record contributes its date, diagnosis
- * (with duplicate headers stripped) and treatment, separated by `---`.
+ * (with duplicate headers stripped) and treatment, separated by a long dashed line.
  *
  * Records are sorted by visit date descending (newest first).
+ * 
+ * Format:
+ *   Header (性别/年龄/出生年月/主诉/脉象/舌象)
+ *   --------------------------------------------------
+ *   【日期】YYYY-MM-DD
+ *   【诊断】...
+ *   【治疗】...
+ *   --------------------------------------------------
+ *   ...
  */
 export function assembleHistoryContent(
   currentDiagnosis: string,
@@ -50,12 +59,15 @@ export function assembleHistoryContent(
   const sorted = [...records].sort((a, b) =>
     (b.visit_date || '').localeCompare(a.visit_date || ''),
   );
+  
+  const separator = '\n--------------------------------------------------\n';
   const blocks = sorted.map((r) => {
     const strippedDiag = stripDuplicateHeader(r.diagnosis || '');
-    return `日期：${r.visit_date || ''}\n诊断：${strippedDiag}\n治疗：${r.treatment || ''}`;
+    return `【日期】${r.visit_date || ''}\n【诊断】${strippedDiag}\n【治疗】${r.treatment || ''}`;
   });
+  
   if (blocks.length === 0) return header;
-  return header + '\n---\n' + blocks.join('\n---\n') + '\n---';
+  return header + separator + blocks.join(separator) + separator;
 }
 
 interface HistoryRecordSelectModalProps {

@@ -298,9 +298,9 @@
 年龄：45岁
 出生年月：1980年05月
 主诉：胃脘胀痛反复发作3年，加重1周</span>
-<span class="hl-sep">---</span>
-<span class="hl-date">日期：2024-01-15</span>
-<span class="hl-label">诊断：</span>脉象：弦细
+<span class="hl-sep">--------------------------------------------------</span>
+<span class="hl-date">【日期】2024-01-15</span>
+<span class="hl-label">【诊断】</span>脉象：弦细
 舌象：舌淡红苔薄白
 ---
 1. 大便：偏干
@@ -311,10 +311,10 @@
 11. 脾气：急躁
 12. 睡眠：多梦
 辨证：肝胃不和，气滞血瘀
-<span class="hl-treatment">治疗：柴胡疏肝散加减。柴胡10g，白芍15g，枳壳10g，陈皮6g，香附10g，川芎10g，甘草6g。7剂，水煎服，日一剂。</span>
-<span class="hl-sep">---</span>
-<span class="hl-date">日期：2024-02-20</span>
-<span class="hl-label">诊断：</span>脉象：弦滑
+<span class="hl-treatment">【治疗】柴胡疏肝散加减。柴胡10g，白芍15g，枳壳10g，陈皮6g，香附10g，川芎10g，甘草6g。7剂，水煎服，日一剂。</span>
+<span class="hl-sep">--------------------------------------------------</span>
+<span class="hl-date">【日期】2024-02-20</span>
+<span class="hl-label">【诊断】</span>脉象：弦滑
 舌象：舌淡红苔白腻
 ---
 1. 大便：溏薄
@@ -325,14 +325,14 @@
 11. 脾气：抑郁
 12. 睡眠：差
 辨证：脾虚湿困，肝郁气滞
-<span class="hl-treatment">治疗：香砂六君子汤合柴胡疏肝散。党参15g，白术10g，茯苓15g，陈皮6g，半夏10g，木香6g，砂仁6g，柴胡10g，白芍15g。7剂。</span>
-<span class="hl-sep">---</span>
-<span class="hl-date">日期：2024-03-25</span>
-<span class="hl-label">诊断：</span>脉象：细弱
+<span class="hl-treatment">【治疗】香砂六君子汤合柴胡疏肝散。党参15g，白术10g，茯苓15g，陈皮6g，半夏10g，木香6g，砂仁6g，柴胡10g，白芍15g。7剂。</span>
+<span class="hl-sep">--------------------------------------------------</span>
+<span class="hl-date">【日期】2024-03-25</span>
+<span class="hl-label">【诊断】</span>脉象：细弱
 舌象：舌淡苔薄白
 辨证：脾胃虚弱，气血不足
-<span class="hl-treatment">治疗：归脾汤加减。黄芪20g，党参15g，白术10g，当归10g，龙眼肉10g，酸枣仁15g，远志6g，木香6g，甘草6g。10剂。</span>
-<span class="hl-sep">---</span></div>
+<span class="hl-treatment">【治疗】归脾汤加减。黄芪20g，党参15g，白术10g，当归10g，龙眼肉10g，酸枣仁15g，远志6g，木香6g，甘草6g。10剂。</span>
+<span class="hl-sep">--------------------------------------------------</span></div>
   </div>
 
   <!-- 说明 -->
@@ -554,11 +554,12 @@
       }).join('\n');
     };
 
+    const separator = '\n--------------------------------------------------\n';
     const blocks = selected.map(r => {
-      return `日期：${r.date}\n诊断：${stripHeader(r.diagnosis)}\n治疗：${r.treatment}`;
+      return `【日期】${r.date}\n【诊断】${stripHeader(r.diagnosis)}\n【治疗】${r.treatment}`;
     });
 
-    const assembled = header + '\n---\n' + blocks.join('\n---\n') + '\n---';
+    const assembled = header + separator + blocks.join(separator) + separator;
 
     document.getElementById('diagnosisPreview').textContent = assembled;
     document.getElementById('diagnosisPreview').style.color = '#333';
