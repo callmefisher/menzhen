@@ -95,25 +95,25 @@ describe('assembleHistoryContent', () => {
     expect(result).toContain('脉象：弦细');
 
     // Newer record (2024-03-20) comes first
-    const date1Idx = result.indexOf('日期：2024-03-20');
-    const date2Idx = result.indexOf('日期：2024-01-15');
+    const date1Idx = result.indexOf('【日期】2024-03-20');
+    const date2Idx = result.indexOf('【日期】2024-01-15');
     expect(date1Idx).toBeGreaterThan(-1);
     expect(date2Idx).toBeGreaterThan(-1);
     expect(date1Idx).toBeLessThan(date2Idx);
 
     // Each record has date, diagnosis (stripped), treatment
-    expect(result).toContain('日期：2024-03-20');
+    expect(result).toContain('【日期】2024-03-20');
     expect(result).toContain('辨证：脾虚');
-    expect(result).toContain('治疗：四君子汤');
+    expect(result).toContain('【治疗】四君子汤');
 
     // Duplicate header stripped from records
-    const afterFirstDate = result.slice(result.indexOf('日期：2024-03-20'));
+    const afterFirstDate = result.slice(result.indexOf('【日期】2024-03-20'));
     // The record's diagnosis should not contain 性别：男 (stripped)
-    const recordBlock = afterFirstDate.slice(0, afterFirstDate.indexOf('---'));
+    const recordBlock = afterFirstDate.slice(0, afterFirstDate.indexOf('--------------------------------------------------'));
     expect(recordBlock).not.toContain('性别：男');
 
-    // Separated by ---
-    expect(result.split('---').length).toBeGreaterThanOrEqual(3);
+    // Separated by long dash line
+    expect(result.split('--------------------------------------------------').length).toBeGreaterThanOrEqual(3);
   });
 
   it('returns just header when no records selected', () => {
@@ -121,18 +121,18 @@ describe('assembleHistoryContent', () => {
     expect(result).toBe(extractHeader(currentDiagnosis));
   });
 
-  it('ends with --- separator', () => {
+  it('ends with long dash separator', () => {
     const records = [makeRecord({ id: 1, visit_date: '2024-01-15' })];
     const result = assembleHistoryContent(currentDiagnosis, records);
-    expect(result.endsWith('---')).toBe(true);
+    expect(result.endsWith('--------------------------------------------------\n')).toBe(true);
   });
 
   it('handles records with empty diagnosis/treatment', () => {
     const records = [makeRecord({ id: 1, visit_date: '2024-01-15', diagnosis: '', treatment: '' })];
     const result = assembleHistoryContent(currentDiagnosis, records);
-    expect(result).toContain('日期：2024-01-15');
-    expect(result).toContain('诊断：');
-    expect(result).toContain('治疗：');
+    expect(result).toContain('【日期】2024-01-15');
+    expect(result).toContain('【诊断】');
+    expect(result).toContain('【治疗】');
   });
 });
 
@@ -254,14 +254,17 @@ describe('HistoryRecordSelectModal', () => {
     expect(assembled).toContain('性别：男');
     expect(assembled).toContain('主诉：胃痛');
     // Record content included
-    expect(assembled).toContain('日期：2024-01-15');
+    expect(assembled).toContain('【日期】2024-01-15');
+    expect(assembled).toContain('【诊断】');
     expect(assembled).toContain('脉象：弦细');
     expect(assembled).toContain('辨证：肝胃不和');
-    expect(assembled).toContain('治疗：柴胡疏肝散');
+    expect(assembled).toContain('【治疗】柴胡疏肝散');
     // Duplicate header stripped from record
-    const afterDate = assembled.slice(assembled.indexOf('日期：2024-01-15'));
-    const recordBlock = afterDate.slice(0, afterDate.indexOf('---'));
+    const afterDate = assembled.slice(assembled.indexOf('【日期】2024-01-15'));
+    const recordBlock = afterDate.slice(0, afterDate.indexOf('--------------------------------------------------'));
     expect(recordBlock).not.toContain('性别：男');
+    // Long dash separator used
+    expect(assembled).toContain('--------------------------------------------------');
   });
 
   it('select all fetches all records and selects them', async () => {
