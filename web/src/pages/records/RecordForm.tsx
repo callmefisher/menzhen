@@ -43,6 +43,7 @@ import BillingDrawer from '../../components/BillingDrawer';
 import PrintCenterDrawer from '../../components/PrintCenterDrawer';
 import FollowUpPanel from '../../components/FollowUpPanel';
 import HistoryRecordSelectModal from '../../components/HistoryRecordSelectModal';
+import DiagnosisPreview from '../../components/DiagnosisPreview';
 import { listRecordBillings, getPrescriptionBilling } from '../../api/billing';
 import type { BillingRecord, BillingDetail } from '../../api/billing';
 import { useAuth } from '../../store/auth';
@@ -1405,6 +1406,7 @@ export default function RecordForm() {
           >
             <Input.TextArea rows={isMobile ? 12 : 20} placeholder="请输入诊断内容" />
           </Form.Item>
+          <DiagnosisPreview diagnosis={form.getFieldValue('diagnosis') || ''} />
 
           <Form.Item label="治疗方案" name="treatment" style={{ marginBottom: 0 }}>
             <Input.TextArea rows={isMobile ? 4 : 6} placeholder="请输入治疗方案" />
