@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>历史诊疗记录选择 - 设计原型</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: #f0f2f5;
+    color: rgba(0,0,0,0.88);
+    font-size: 14px;
+    line-height: 1.5715;
+  }
+  .page-wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 60px; }
+
+  /* ===== 顶部说明 ===== */
+  .proto-header {
+    background: linear-gradient(135deg, #e6f4ff 0%, #f0f5ff 100%);
+    border: 1px solid #69b1ff;
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+  }
+  .proto-header h1 { font-size: 18px; color: #1677ff; margin-bottom: 8px; }
+  .proto-header p { font-size: 13px; color: #555; line-height: 1.8; }
+  .proto-header .tag {
+    display: inline-block; background: #1677ff; color: #fff;
+    border-radius: 4px; padding: 1px 8px; font-size: 12px; margin-right: 6px;
+  }
+
+  /* ===== 模拟表单卡片 ===== */
+  .section-card {
+    background: #fff;
+    border-radius: 8px;
+    padding: 16px 24px;
+    margin-bottom: 12px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+  }
+  .section-card-title {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 15px; font-weight: 600; margin-bottom: 16px;
+  }
+  .section-card-icon {
+    width: 22px; height: 22px; border-radius: 6px;
+    color: #fff; display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700;
+  }
+  .form-row { display: flex; gap: 12px; margin-bottom: 12px; }
+  .form-item { flex: 1; }
+  .form-item label { display: block; font-size: 13px; color: #555; margin-bottom: 4px; }
+  .form-item .field {
+    border: 1px solid #d9d9d9; border-radius: 6px; padding: 6px 11px;
+    background: #fff; color: rgba(0,0,0,0.88); min-height: 32px; line-height: 20px;
+  }
+  .form-item .field.placeholder { color: #bfbfbf; }
+
+  /* 诊断标签行 */
+  .diagnosis-label-row {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 8px; flex-wrap: wrap; gap: 8px;
+  }
+  .diagnosis-label-row .label-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .diagnosis-label-row .label-text { font-size: 14px; font-weight: 500; }
+  .diagnosis-textarea {
+    width: 100%; border: 1px solid #d9d9d9; border-radius: 6px;
+    padding: 10px 12px; font-size: 13px; line-height: 1.8;
+    min-height: 200px; background: #fafafa; color: #555;
+    white-space: pre-wrap; font-family: inherit;
+  }
+
+  /* ===== 按钮 ===== */
+  .btn {
+    display: inline-flex; align-items: center; gap: 4px;
+    border: 1px solid #d9d9d9; background: #fff; color: rgba(0,0,0,0.88);
+    border-radius: 6px; padding: 4px 12px; font-size: 13px; cursor: pointer;
+    transition: all 0.2s; line-height: 22px;
+  }
+  .btn:hover { border-color: #1677ff; color: #1677ff; }
+  .btn-primary { background: #1677ff; border-color: #1677ff; color: #fff; }
+  .btn-primary:hover { background: #4096ff; border-color: #4096ff; color: #fff; }
+  .btn-primary-ghost { background: transparent; border-color: #1677ff; color: #1677ff; }
+  .btn-primary-ghost:hover { background: #e6f4ff; }
+  .btn-orange-ghost { background: transparent; border-color: #fa8c16; color: #fa8c16; }
+  .btn-orange-ghost:hover { background: #fff7e6; }
+  .btn-sm { padding: 2px 8px; font-size: 12px; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ===== 弹窗 Modal ===== */
+  .modal-mask {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+    z-index: 1000; display: flex; align-items: flex-start; justify-content: center;
+    padding: 40px 16px; overflow-y: auto;
+  }
+  .modal {
+    background: #fff; border-radius: 12px; width: 100%; max-width: 760px;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.08), 0 3px 6px -4px rgba(0,0,0,0.12);
+    overflow: hidden;
+  }
+  .modal-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 24px; border-bottom: 1px solid #f0f0f0;
+  }
+  .modal-title { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .modal-close { cursor: pointer; font-size: 18px; color: #999; line-height: 1; padding: 4px; }
+  .modal-close:hover { color: #333; }
+  .modal-body { padding: 16px 24px; max-height: 60vh; overflow-y: auto; }
+
+  /* 工具栏 */
+  .modal-toolbar {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 12px; padding: 10px 14px; background: #fafafa;
+    border-radius: 8px; border: 1px solid #f0f0f0; flex-wrap: wrap; gap: 8px;
+  }
+  .modal-toolbar .left { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .modal-toolbar .right { font-size: 13px; color: #888; }
+  .selected-count { color: #1677ff; font-weight: 600; }
+
+  /* 复选框 */
+  .checkbox {
+    width: 16px; height: 16px; border: 1px solid #d9d9d9; border-radius: 3px;
+    display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer; flex-shrink: 0; transition: all 0.2s; background: #fff;
+  }
+  .checkbox:hover { border-color: #1677ff; }
+  .checkbox.checked { background: #1677ff; border-color: #1677ff; }
+  .checkbox.checked::after {
+    content: ''; width: 5px; height: 9px; border: 2px solid #fff;
+    border-top: 0; border-left: 0; transform: rotate(45deg) translate(-1px, -1px);
+  }
+  .checkbox.indeterminate { background: #1677ff; border-color: #1677ff; }
+  .checkbox.indeterminate::after {
+    content: ''; width: 8px; height: 2px; background: #fff;
+  }
+
+  /* 记录卡片 */
+  .record-list { display: flex; flex-direction: column; gap: 10px; }
+  .record-item {
+    border: 1px solid #f0f0f0; border-radius: 8px; padding: 12px 14px;
+    display: flex; gap: 12px; cursor: pointer; transition: all 0.2s;
+    background: #fff;
+  }
+  .record-item:hover { border-color: #91caff; background: #f6faff; }
+  .record-item.selected { border-color: #1677ff; background: #e6f4ff; }
+  .record-item .check-col { padding-top: 2px; }
+  .record-item .content-col { flex: 1; min-width: 0; }
+  .record-item .record-header {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap;
+  }
+  .record-item .visit-date {
+    font-size: 13px; font-weight: 600; color: #1677ff;
+  }
+  .record-item .record-body { font-size: 13px; color: #666; line-height: 1.7; }
+  .record-item .record-body .field-label { color: #999; margin-right: 4px; }
+  .record-item .record-body .diagnosis-preview {
+    color: #555; background: #fafafa; padding: 6px 10px; border-radius: 6px;
+    margin: 4px 0; border-left: 3px solid #e8e8e8; font-size: 12.5px;
+    max-height: 60px; overflow: hidden; white-space: pre-wrap;
+  }
+  .record-item .record-body .treatment-preview {
+    color: #385c4d; font-size: 12.5px; margin-top: 4px;
+  }
+
+  /* 分页 */
+  .pagination {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    margin-top: 16px; padding-top: 12px; border-top: 1px solid #f0f0f0;
+  }
+  .page-btn {
+    min-width: 32px; height: 32px; border: 1px solid #d9d9d9; border-radius: 6px;
+    background: #fff; cursor: pointer; font-size: 13px; display: flex;
+    align-items: center; justify-content: center; padding: 0 8px;
+  }
+  .page-btn:hover:not(:disabled) { border-color: #1677ff; color: #1677ff; }
+  .page-btn.active { background: #1677ff; border-color: #1677ff; color: #fff; }
+  .page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .page-info { font-size: 13px; color: #888; margin: 0 8px; }
+
+  /* 弹窗底部 */
+  .modal-footer {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 24px; border-top: 1px solid #f0f0f0; background: #fafafa;
+    flex-wrap: wrap; gap: 8px;
+  }
+  .modal-footer .footer-left { font-size: 13px; color: #888; }
+  .modal-footer .footer-right { display: flex; gap: 8px; }
+
+  /* ===== 预览区 ===== */
+  .preview-section {
+    background: #fff; border-radius: 8px; padding: 16px 24px; margin-top: 12px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+  }
+  .preview-section .preview-title {
+    font-size: 15px; font-weight: 600; margin-bottom: 4px; color: #fa8c16;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .preview-section .preview-desc { font-size: 12px; color: #999; margin-bottom: 12px; }
+  .preview-content {
+    background: #1e1e1e; color: #d4d4d4; border-radius: 8px; padding: 16px 20px;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace; font-size: 12.5px;
+    line-height: 1.8; white-space: pre-wrap; overflow-x: auto;
+  }
+  .preview-content .hl-header { color: #4fc1ff; }
+  .preview-content .hl-sep { color: #666; }
+  .preview-content .hl-date { color: #ffd700; font-weight: 600; }
+  .preview-content .hl-label { color: #98c379; }
+  .preview-content .hl-treatment { color: #e06c75; }
+
+  .note-box {
+    background: #fffbe6; border: 1px solid #ffe58f; border-radius: 8px;
+    padding: 12px 16px; margin-top: 16px; font-size: 13px; color: #614700; line-height: 1.8;
+  }
+  .note-box strong { color: #d48806; }
+
+  .empty-state {
+    text-align: center; padding: 40px 20px; color: #999;
+  }
+</style>
+</head>
+<body>
+<div class="page-wrap">
+
+  <!-- 顶部说明 -->
+  <div class="proto-header">
+    <h1>历史诊疗记录选择 — 设计原型</h1>
+    <p>
+      <span class="tag">需求</span>
+      新建/编辑诊疗记录时，可选择同一患者的历史诊疗记录（诊断+治疗部分），组装后替换「诊断」文本框，保留 性别/年龄/出生年月/主诉 表头。
+    </p>
+    <p style="margin-top:6px;">
+      <span class="tag" style="background:#52c41a;">交互</span>
+      默认不选 · 可一键全选（全部页）· 每页最多10条 · 可翻页 · 每条含 日期+诊断(去表头)+治疗，横线分隔
+    </p>
+  </div>
+
+  <!-- 模拟表单：诊断治疗卡片 -->
+  <div class="section-card">
+    <div class="section-card-title">
+      <div class="section-card-icon" style="background:#fa8c16;">诊</div>
+      诊断治疗
+    </div>
+
+    <!-- 诊断标签行：新增「引用历史诊疗」按钮 -->
+    <div class="diagnosis-label-row">
+      <div class="label-left">
+        <span class="label-text">诊断</span>
+        <button class="btn btn-primary-ghost btn-sm">AI辅助分析</button>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <!-- ★ 新增按钮 ★ -->
+        <button class="btn btn-orange-ghost btn-sm" id="openModalBtn" style="font-weight:500;">
+          引用历史诊疗
+        </button>
+      </div>
+    </div>
+
+    <!-- 诊断文本框（模拟） -->
+    <div class="diagnosis-textarea" id="diagnosisPreview">性别：男
+年龄：45岁
+出生年月：1980年05月
+主诉：胃脘胀痛反复发作3年，加重1周
+脉象：弦细
+舌象：舌质淡红，苔薄白
+---
+1. 大便：正常
+2. 小便：正常
+3. 胃口：欠佳
+4. 腹泻，腹胀，腹痛：饭后腹胀明显
+5. 年龄，体重，心率，血压：45岁，65kg，72次/分，120/80mmHg
+6. 口干舌燥，反酸口臭，口苦，烧心，呕吐：偶有反酸
+7. 头痛，头晕，腰膝酸软，水肿情况：无
+8. 四肢凉热，出汗，手心脚心发烫情况：正常
+9. 寒热往来，发热出汗情况等：无
+10. 饮食喜好习惯，饮酒吸烟等：喜食生冷
+11. 脾气：易怒
+12. 睡眠：可
+13. 胆结石，肾结石等手术史：无
+14. 耳鸣/耳聋：无
+15. 面色：萎黄
+16. 口渴情况：不渴
+17. 肝脏类诊断情况：无
+18. 感冒情况等：无
+19. 压力和生活工作环境：工作压力大
+20. 舌苔，舌体情况：舌体胖大有齿痕</div>
+
+    <div style="margin-top:12px;">
+      <label style="display:block; font-size:14px; font-weight:500; margin-bottom:4px;">治疗方案</label>
+      <div class="diagnosis-textarea" style="min-height:80px; color:#999;">请输入治疗方案</div>
+    </div>
+  </div>
+
+  <!-- 组装后预览 -->
+  <div class="preview-section">
+    <div class="preview-title">组装后「诊断」文本框预览（点击弹窗「确认插入」后的效果）</div>
+    <div class="preview-desc">保留表头（性别/年龄/出生年月/主诉），其余替换为选中的历史记录，每条用横线分隔</div>
+    <div class="preview-content"><span class="hl-header">性别：男
+年龄：45岁
+出生年月：1980年05月
+主诉：胃脘胀痛反复发作3年，加重1周</span>
+<span class="hl-sep">---</span>
+<span class="hl-date">日期：2024-01-15</span>
+<span class="hl-label">诊断：</span>脉象：弦细
+舌象：舌淡红苔薄白
+---
+1. 大便：偏干
+2. 小便：正常
+3. 胃口：欠佳
+4. 腹胀腹痛：饭后腹胀
+5. 口苦反酸：偶有反酸
+11. 脾气：急躁
+12. 睡眠：多梦
+辨证：肝胃不和，气滞血瘀
+<span class="hl-treatment">治疗：柴胡疏肝散加减。柴胡10g，白芍15g，枳壳10g，陈皮6g，香附10g，川芎10g，甘草6g。7剂，水煎服，日一剂。</span>
+<span class="hl-sep">---</span>
+<span class="hl-date">日期：2024-02-20</span>
+<span class="hl-label">诊断：</span>脉象：弦滑
+舌象：舌淡红苔白腻
+---
+1. 大便：溏薄
+2. 小便：正常
+3. 胃口：不振
+4. 腹胀腹痛：隐痛
+5. 口苦反酸：无
+11. 脾气：抑郁
+12. 睡眠：差
+辨证：脾虚湿困，肝郁气滞
+<span class="hl-treatment">治疗：香砂六君子汤合柴胡疏肝散。党参15g，白术10g，茯苓15g，陈皮6g，半夏10g，木香6g，砂仁6g，柴胡10g，白芍15g。7剂。</span>
+<span class="hl-sep">---</span>
+<span class="hl-date">日期：2024-03-25</span>
+<span class="hl-label">诊断：</span>脉象：细弱
+舌象：舌淡苔薄白
+辨证：脾胃虚弱，气血不足
+<span class="hl-treatment">治疗：归脾汤加减。黄芪20g，党参15g，白术10g，当归10g，龙眼肉10g，酸枣仁15g，远志6g，木香6g，甘草6g。10剂。</span>
+<span class="hl-sep">---</span></div>
+  </div>
+
+  <!-- 说明 -->
+  <div class="note-box">
+    <strong>设计说明：</strong><br/>
+    1. 「引用历史诊疗」按钮在选中患者后可用，未选患者时禁用。<br/>
+    2. 弹窗中每条历史记录展示：就诊日期 + 诊断预览（截断）+ 治疗预览（截断），点击整行或复选框均可选中。<br/>
+    3. 默认不选；「全选」会选中<strong>所有页</strong>的全部记录（非仅当前页）。<br/>
+    4. 每页最多 10 条，支持翻页；翻页后已选状态保留。<br/>
+    5. 确认插入后：保留诊断框中的 性别/年龄/出生年月/主诉 表头行，其余内容替换为选中的历史记录。<br/>
+    6. 每条历史记录格式：日期 → 诊断正文（自动去除 性别/年龄/出生年月/主诉 重复表头行）→ 治疗，条与条之间用 <code>---</code> 横线分隔。<br/>
+    7. 新建和编辑场景均支持此功能。
+  </div>
+
+</div>
+
+<!-- ===== 选择弹窗 ===== -->
+<div class="modal-mask" id="modalMask">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">
+        <span style="color:#fa8c16;">📋</span>
+        引用历史诊疗记录
+        <span style="font-size:13px; color:#888; font-weight:400;">— 张三（共 23 条历史记录）</span>
+      </div>
+      <div class="modal-close" id="closeBtn">×</div>
+    </div>
+
+    <div class="modal-body">
+      <!-- 工具栏 -->
+      <div class="modal-toolbar">
+        <div class="left">
+          <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:13px;">
+            <span class="checkbox" id="selectAllBox"></span>
+            <span>全选（全部页）</span>
+          </label>
+          <button class="btn btn-sm" id="clearBtn">清空选择</button>
+        </div>
+        <div class="right">
+          已选 <span class="selected-count" id="selectedCount">0</span> / 23 条
+        </div>
+      </div>
+
+      <!-- 记录列表 -->
+      <div class="record-list" id="recordList">
+        <!-- JS 渲染 -->
+      </div>
+
+      <!-- 分页 -->
+      <div class="pagination">
+        <button class="page-btn" id="prevBtn">‹ 上一页</button>
+        <span class="page-info" id="pageInfo">第 1 / 3 页</span>
+        <button class="page-btn" id="nextBtn">下一页 ›</button>
+      </div>
+    </div>
+
+    <!-- 底部 -->
+    <div class="modal-footer">
+      <div class="footer-left">确认后将<strong style="color:#fa8c16;">替换</strong>诊断框内容（保留 性别/年龄/出生年月/主诉 表头）</div>
+      <div class="footer-right">
+        <button class="btn" id="cancelBtn">取消</button>
+        <button class="btn btn-primary" id="confirmBtn">确认插入（0 条）</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ===== 模拟数据 =====
+  const ALL_RECORDS = [
+    { id: 1, date: '2024-04-10', diagnosis: '脉象：弦细\n舌象：舌淡红苔薄白\n---\n1. 大便：正常\n2. 小便：正常\n3. 胃口：好转\n4. 腹胀腹痛：偶有\n辨证：肝胃不和，病情好转', treatment: '柴胡疏肝散加减。柴胡10g，白芍15g，枳壳10g，陈皮6g，香附10g。7剂。' },
+    { id: 2, date: '2024-03-25', diagnosis: '脉象：细弱\n舌象：舌淡苔薄白\n辨证：脾胃虚弱，气血不足', treatment: '归脾汤加减。黄芪20g，党参15g，白术10g，当归10g，龙眼肉10g，酸枣仁15g，远志6g，木香6g，甘草6g。10剂。' },
+    { id: 3, date: '2024-02-20', diagnosis: '脉象：弦滑\n舌象：舌淡红苔白腻\n---\n1. 大便：溏薄\n2. 小便：正常\n3. 胃口：不振\n4. 腹胀腹痛：隐痛\n5. 口苦反酸：无\n11. 脾气：抑郁\n12. 睡眠：差\n辨证：脾虚湿困，肝郁气滞', treatment: '香砂六君子汤合柴胡疏肝散。党参15g，白术10g，茯苓15g，陈皮6g，半夏10g，木香6g，砂仁6g，柴胡10g，白芍15g。7剂。' },
+    { id: 4, date: '2024-01-15', diagnosis: '脉象：弦细\n舌象：舌淡红苔薄白\n---\n1. 大便：偏干\n2. 小便：正常\n3. 胃口：欠佳\n4. 腹胀腹痛：饭后腹胀\n5. 口苦反酸：偶有反酸\n11. 脾气：急躁\n12. 睡眠：多梦\n辨证：肝胃不和，气滞血瘀', treatment: '柴胡疏肝散加减。柴胡10g，白芍15g，枳壳10g，陈皮6g，香附10g，川芎10g，甘草6g。7剂，水煎服，日一剂。' },
+    { id: 5, date: '2023-12-20', diagnosis: '脉象：沉细\n舌象：舌淡苔白\n辨证：脾胃虚寒', treatment: '理中汤加减。党参15g，白术10g，干姜6g，甘草6g。5剂。' },
+    { id: 6, date: '2023-11-15', diagnosis: '脉象：弦\n舌象：舌红苔黄\n---\n1. 口苦：明显\n2. 反酸：有\n辨证：肝胆湿热', treatment: '龙胆泻肝汤加减。龙胆草6g，黄芩10g，栀子10g，泽泻10g，木通6g，车前子10g。5剂。' },
+    { id: 7, date: '2023-10-08', diagnosis: '脉象：濡\n舌象：舌淡红苔白腻\n辨证：湿阻中焦', treatment: '平胃散加减。苍术10g，厚朴10g，陈皮6g，甘草6g。5剂。' },
+    { id: 8, date: '2023-09-01', diagnosis: '脉象：细\n舌象：舌淡苔薄\n辨证：气血两虚', treatment: '八珍汤加减。党参15g，白术10g，茯苓10g，甘草6g，当归10g，白芍10g，川芎6g，熟地15g。7剂。' },
+    { id: 9, date: '2023-08-10', diagnosis: '脉象：弦数\n舌象：舌红苔薄黄\n辨证：肝郁化火', treatment: '丹栀逍遥散加减。丹皮10g，栀子10g，柴胡10g，当归10g，白芍15g，白术10g，茯苓10g，甘草6g。7剂。' },
+    { id: 10, date: '2023-07-05', diagnosis: '脉象：缓\n舌象：舌淡苔白\n辨证：脾气虚弱', treatment: '四君子汤加减。党参15g，白术10g，茯苓15g，甘草6g。5剂。' },
+    { id: 11, date: '2023-06-01', diagnosis: '脉象：弦滑\n舌象：舌红苔黄腻\n辨证：痰热内扰', treatment: '温胆汤加减。半夏10g，竹茹10g，枳实10g，陈皮6g，茯苓15g，甘草6g。5剂。' },
+    { id: 12, date: '2023-05-10', diagnosis: '脉象：沉\n舌象：舌暗紫\n辨证：瘀血阻络', treatment: '血府逐瘀汤加减。桃仁10g，红花6g，当归10g，川芎10g，赤芍10g，柴胡6g，枳壳10g。7剂。' },
+    { id: 13, date: '2023-04-15', diagnosis: '脉象：虚\n舌象：舌淡苔白\n辨证：中气下陷', treatment: '补中益气汤加减。黄芪20g，党参15g，白术10g，当归10g，陈皮6g，升麻6g，柴胡6g，甘草6g。7剂。' },
+    { id: 14, date: '2023-03-20', diagnosis: '脉象：弦\n舌象：舌淡红苔薄白\n辨证：肝郁脾虚', treatment: '逍遥散加减。柴胡10g，当归10g，白芍15g，白术10g，茯苓15g，甘草6g，薄荷6g。7剂。' },
+    { id: 15, date: '2023-02-10', diagnosis: '脉象：细弱\n舌象：舌淡苔白\n辨证：脾胃虚寒', treatment: '附子理中丸加减。附子6g，党参15g，白术10g，干姜6g，甘草6g。5剂。' },
+    { id: 16, date: '2023-01-05', diagnosis: '脉象：浮\n舌象：舌淡苔薄白\n辨证：外感风寒', treatment: '荆防败毒散加减。荆芥10g，防风10g，羌活10g，独活10g，川芎10g。3剂。' },
+    { id: 17, date: '2022-12-15', diagnosis: '脉象：弦细\n舌象：舌红少苔\n辨证：胃阴不足', treatment: '益胃汤加减。沙参15g，麦冬15g，生地15g，玉竹10g，冰糖适量。7剂。' },
+    { id: 18, date: '2022-11-08', diagnosis: '脉象：滑\n舌象：舌淡红苔白腻\n辨证：痰湿阻肺', treatment: '二陈汤加减。半夏10g，陈皮6g，茯苓15g，甘草6g。5剂。' },
+    { id: 19, date: '2022-10-01', diagnosis: '脉象：沉迟\n舌象：舌淡苔白滑\n辨证：阳虚水泛', treatment: '真武汤加减。附子10g，白术10g，茯苓15g，白芍15g，生姜10g。5剂。' },
+    { id: 20, date: '2022-09-10', diagnosis: '脉象：弦\n舌象：舌红苔黄\n辨证：肝火上炎', treatment: '天麻钩藤饮加减。天麻10g，钩藤15g，石决明30g，栀子10g，黄芩10g。7剂。' },
+    { id: 21, date: '2022-08-05', diagnosis: '脉象：虚大\n舌象：舌淡苔薄\n辨证：气虚发热', treatment: '补中益气汤加减。黄芪30g，党参15g，白术10g，当归10g，陈皮6g，升麻6g，柴胡6g。7剂。' },
+    { id: 22, date: '2022-07-01', diagnosis: '脉象：细数\n舌象：舌红少津\n辨证：阴虚火旺', treatment: '知柏地黄丸加减。知母10g，黄柏10g，熟地15g，山萸肉10g，山药15g。7剂。' },
+    { id: 23, date: '2022-06-10', diagnosis: '脉象：弦涩\n舌象：舌暗紫有瘀斑\n辨证：气滞血瘀', treatment: '桃红四物汤加减。桃仁10g，红花6g，当归10g，川芎10g，白芍15g，熟地15g。7剂。' },
+  ];
+
+  const PAGE_SIZE = 10;
+  let currentPage = 1;
+  let selectedIds = new Set();
+
+  const totalPages = Math.ceil(ALL_RECORDS.length / PAGE_SIZE);
+
+  function getPageRecords(page) {
+    const start = (page - 1) * PAGE_SIZE;
+    return ALL_RECORDS.slice(start, start + PAGE_SIZE);
+  }
+
+  function renderList() {
+    const list = document.getElementById('recordList');
+    const records = getPageRecords(currentPage);
+    if (records.length === 0) {
+      list.innerHTML = '<div class="empty-state">该患者暂无历史诊疗记录</div>';
+      return;
+    }
+    list.innerHTML = records.map(r => {
+      const checked = selectedIds.has(r.id);
+      // 诊断预览：截断显示
+      const diagPreview = r.diagnosis.length > 80 ? r.diagnosis.slice(0, 80) + '…' : r.diagnosis;
+      const treatPreview = r.treatment.length > 60 ? r.treatment.slice(0, 60) + '…' : r.treatment;
+      return `
+        <div class="record-item ${checked ? 'selected' : ''}" data-id="${r.id}">
+          <div class="check-col">
+            <span class="checkbox ${checked ? 'checked' : ''}"></span>
+          </div>
+          <div class="content-col">
+            <div class="record-header">
+              <span class="visit-date">📅 ${r.date}</span>
+            </div>
+            <div class="record-body">
+              <div class="diagnosis-preview">${diagPreview.replace(/\n/g, ' / ')}</div>
+              <div class="treatment-preview"><span class="field-label">治疗：</span>${treatPreview}</div>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // 绑定点击
+    list.querySelectorAll('.record-item').forEach(el => {
+      el.addEventListener('click', () => {
+        const id = Number(el.dataset.id);
+        if (selectedIds.has(id)) selectedIds.delete(id);
+        else selectedIds.add(id);
+        renderList();
+        updateToolbar();
+      });
+    });
+  }
+
+  function updateToolbar() {
+    document.getElementById('selectedCount').textContent = selectedIds.size;
+    document.getElementById('confirmBtn').textContent = `确认插入（${selectedIds.size} 条）`;
+    document.getElementById('confirmBtn').disabled = selectedIds.size === 0;
+
+    // 全选框状态
+    const selectAllBox = document.getElementById('selectAllBox');
+    if (selectedIds.size === 0) {
+      selectAllBox.className = 'checkbox';
+    } else if (selectedIds.size === ALL_RECORDS.length) {
+      selectAllBox.className = 'checkbox checked';
+    } else {
+      selectAllBox.className = 'checkbox indeterminate';
+    }
+
+    // 分页信息
+    document.getElementById('pageInfo').textContent = `第 ${currentPage} / ${totalPages} 页`;
+    document.getElementById('prevBtn').disabled = currentPage === 1;
+    document.getElementById('nextBtn').disabled = currentPage === totalPages;
+  }
+
+  // 全选（全部页）
+  document.getElementById('selectAllBox').addEventListener('click', () => {
+    if (selectedIds.size === ALL_RECORDS.length) {
+      selectedIds.clear();
+    } else {
+      ALL_RECORDS.forEach(r => selectedIds.add(r.id));
+    }
+    renderList();
+    updateToolbar();
+  });
+
+  // 清空
+  document.getElementById('clearBtn').addEventListener('click', () => {
+    selectedIds.clear();
+    renderList();
+    updateToolbar();
+  });
+
+  // 翻页
+  document.getElementById('prevBtn').addEventListener('click', () => {
+    if (currentPage > 1) { currentPage--; renderList(); updateToolbar(); }
+  });
+  document.getElementById('nextBtn').addEventListener('click', () => {
+    if (currentPage < totalPages) { currentPage++; renderList(); updateToolbar(); }
+  });
+
+  // 关闭弹窗
+  function closeModal() {
+    document.getElementById('modalMask').style.display = 'none';
+  }
+  document.getElementById('closeBtn').addEventListener('click', closeModal);
+  document.getElementById('cancelBtn').addEventListener('click', closeModal);
+
+  // 确认插入（模拟）
+  document.getElementById('confirmBtn').addEventListener('click', () => {
+    if (selectedIds.size === 0) return;
+    const selected = ALL_RECORDS.filter(r => selectedIds.has(r.id))
+      .sort((a, b) => b.date.localeCompare(a.date)); // 按日期倒序
+
+    // 组装内容：保留表头 + 每条记录
+    const header = `性别：男
+年龄：45岁
+出生年月：1980年05月
+主诉：胃脘胀痛反复发作3年，加重1周`;
+
+    // 去除每条诊断中的重复表头行
+    const stripHeader = (text) => {
+      return text.split('\n').filter(line => {
+        return !/^(性别|年龄|出生年月|主诉)：/.test(line.trim());
+      }).join('\n');
+    };
+
+    const blocks = selected.map(r => {
+      return `日期：${r.date}\n诊断：${stripHeader(r.diagnosis)}\n治疗：${r.treatment}`;
+    });
+
+    const assembled = header + '\n---\n' + blocks.join('\n---\n') + '\n---';
+
+    document.getElementById('diagnosisPreview').textContent = assembled;
+    document.getElementById('diagnosisPreview').style.color = '#333';
+    document.getElementById('diagnosisPreview').style.background = '#fff';
+
+    closeModal();
+    // 滚动到预览
+    document.getElementById('diagnosisPreview').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+
+  // 重新打开
+  document.getElementById('openModalBtn').addEventListener('click', () => {
+    document.getElementById('modalMask').style.display = 'flex';
+  });
+
+  // 初始化
+  renderList();
+  updateToolbar();
+</script>
+</body>
+</html>

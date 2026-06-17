@@ -205,6 +205,47 @@ func TestListRecords_FilterByDate(t *testing.T) {
 	assert.Equal(t, "2025-06-15", items[0].VisitDate)
 }
 
+func TestListRecords_IncludesTreatment(t *testing.T) {
+	svc, tenantID, userID, patientID := setupRecordTest(t)
+
+	req := &service.CreateRecordRequest{
+		PatientID:      patientID,
+		Diagnosis:      "感冒\n性别：男\n主诉：头痛",
+		Treatment:      "桂枝汤加减",
+		ChiefComplaint: "头痛发热",
+		VisitDate:      "2025-06-01",
+	}
+	_, err := svc.CreateRecord(tenantID, userID, req)
+	assert.NoError(t, err)
+
+	items, _, err := svc.ListRecords(tenantID, "", "", patientID, 1, 10)
+	assert.NoError(t, err)
+	assert.Len(t, items, 1)
+	assert.Equal(t, "桂枝汤加减", items[0].Treatment)
+	assert.Equal(t, "感冒\n性别：男\n主诉：头痛", items[0].Diagnosis)
+}
+
+func TestListRecords_FilterByPatientID(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	svc := service.NewRecordService(db)
+	tenant := testutil.SeedTestTenant(t, db, "诊所", "clinic")
+	user, _ := testutil.SeedTestUser(t, db, tenant.ID, "doc", "pass", nil)
+	p1 := testutil.SeedTestPatient(t, db, tenant.ID, user.ID, "张三")
+	p2 := testutil.SeedTestPatient(t, db, tenant.ID, user.ID, "李四")
+
+	_, err := svc.CreateRecord(tenant.ID, user.ID, &service.CreateRecordRequest{PatientID: p1.ID, VisitDate: "2025-06-01", Treatment: "方A"})
+	assert.NoError(t, err)
+	_, err = svc.CreateRecord(tenant.ID, user.ID, &service.CreateRecordRequest{PatientID: p2.ID, VisitDate: "2025-06-02", Treatment: "方B"})
+	assert.NoError(t, err)
+
+	items, total, err := svc.ListRecords(tenant.ID, "", "", p1.ID, 1, 10)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	assert.Len(t, items, 1)
+	assert.Equal(t, p1.ID, items[0].PatientID)
+	assert.Equal(t, "方A", items[0].Treatment)
+}
+
 // ---------- UpdateRecord ----------
 
 func TestUpdateRecord_PartialUpdate(t *testing.T) {

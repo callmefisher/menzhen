@@ -14,6 +14,7 @@ export interface RecordListItem {
   patient_name: string;
   patient_age: number;
   diagnosis: string;
+  treatment: string;
   chief_complaint: string;
   pulse_name: string;
   visit_date: string;
