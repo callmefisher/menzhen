@@ -567,11 +567,17 @@
     const separator = '\n--------------------------------------------------\n';
     const blocks = sortedDates.map(date => {
       const dateRecords = groupedByDate[date];
-      let block = `【日期】${date}`;
-      dateRecords.forEach(r => {
-        block += `\n【诊断】${stripHeader(r.diagnosis)}\n【治疗】${r.treatment}`;
-      });
-      return block;
+      // Merge all diagnosis content for this date
+      const allDiagnosis = dateRecords
+        .map(r => stripHeader(r.diagnosis))
+        .filter(d => d.trim())
+        .join('\n');
+      // Merge all treatment content for this date
+      const allTreatment = dateRecords
+        .map(r => (r.treatment || '').trim())
+        .filter(t => t)
+        .join('\n');
+      return `【历史日期】${date}\n【诊断】${allDiagnosis}\n【治疗】${allTreatment}`;
     });
 
     const assembled = header + separator + blocks.join(separator) + separator;

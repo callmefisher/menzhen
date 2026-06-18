@@ -95,19 +95,19 @@ describe('assembleHistoryContent', () => {
     expect(result).toContain('脉象：弦细');
 
     // Newer record (2024-03-20) comes first
-    const date1Idx = result.indexOf('【日期】2024-03-20');
-    const date2Idx = result.indexOf('【日期】2024-01-15');
+    const date1Idx = result.indexOf('【历史日期】2024-03-20');
+    const date2Idx = result.indexOf('【历史日期】2024-01-15');
     expect(date1Idx).toBeGreaterThan(-1);
     expect(date2Idx).toBeGreaterThan(-1);
     expect(date1Idx).toBeLessThan(date2Idx);
 
-    // Each record has date, diagnosis (stripped), treatment
-    expect(result).toContain('【日期】2024-03-20');
+    // Each record has 历史日期, diagnosis (stripped), treatment
+    expect(result).toContain('【历史日期】2024-03-20');
     expect(result).toContain('辨证：脾虚');
     expect(result).toContain('【治疗】四君子汤');
 
     // Duplicate header stripped from records
-    const afterFirstDate = result.slice(result.indexOf('【日期】2024-03-20'));
+    const afterFirstDate = result.slice(result.indexOf('【历史日期】2024-03-20'));
     // The record's diagnosis should not contain 性别：男 (stripped)
     const recordBlock = afterFirstDate.slice(0, afterFirstDate.indexOf('--------------------------------------------------'));
     expect(recordBlock).not.toContain('性别：男');
@@ -116,7 +116,7 @@ describe('assembleHistoryContent', () => {
     expect(result.split('--------------------------------------------------').length).toBeGreaterThanOrEqual(3);
   });
 
-  it('groups records with the same visit date together', () => {
+  it('groups records with the same visit date together, merging diagnosis and treatment', () => {
     const records = [
       makeRecord({ id: 1, visit_date: '2024-01-15', diagnosis: '脉象：弦细\n辨证：肝胃不和', treatment: '柴胡疏肝散' }),
       makeRecord({ id: 2, visit_date: '2024-01-15', diagnosis: '脉象：滑\n辨证：脾虚', treatment: '四君子汤' }),
@@ -125,27 +125,29 @@ describe('assembleHistoryContent', () => {
     const result = assembleHistoryContent(currentDiagnosis, records);
 
     // Should have only 2 date sections (2024-01-15 and 2024-02-20)
-    const dateSections = result.split('【日期】').filter(s => s.trim());
-    expect(dateSections.length).toBe(3); // header counts as one, then two date sections
+    const dateSections = result.split('【历史日期】').filter(s => s.trim());
+    expect(dateSections.length).toBe(2); // two date sections
 
-    // Check 2024-01-15 section contains both records
+    // Check 2024-01-15 section contains both records' diagnosis merged
     const janSection = result.slice(
-      result.indexOf('【日期】2024-01-15'),
-      result.indexOf('【日期】2024-02-20')
+      result.indexOf('【历史日期】2024-01-15'),
+      result.indexOf('【历史日期】2024-02-20')
     );
     expect(janSection).toContain('辨证：肝胃不和');
-    expect(janSection).toContain('【治疗】柴胡疏肝散');
     expect(janSection).toContain('辨证：脾虚');
-    expect(janSection).toContain('【治疗】四君子汤');
 
-    // Check 2024-01-15 section has two diagnoses and two treatments
+    // Merged into ONE 【诊断】 block and ONE 【治疗】 block
     const janDiagnoses = (janSection.match(/【诊断】/g) || []).length;
     const janTreatments = (janSection.match(/【治疗】/g) || []).length;
-    expect(janDiagnoses).toBe(2);
-    expect(janTreatments).toBe(2);
+    expect(janDiagnoses).toBe(1);
+    expect(janTreatments).toBe(1);
+
+    // Both treatments present in the single treatment block
+    expect(janSection).toContain('柴胡疏肝散');
+    expect(janSection).toContain('四君子汤');
 
     // Only one date tag for same date
-    const janDateTags = (janSection.match(/【日期】2024-01-15/g) || []).length;
+    const janDateTags = (janSection.match(/【历史日期】2024-01-15/g) || []).length;
     expect(janDateTags).toBe(1);
   });
 
@@ -163,7 +165,7 @@ describe('assembleHistoryContent', () => {
   it('handles records with empty diagnosis/treatment', () => {
     const records = [makeRecord({ id: 1, visit_date: '2024-01-15', diagnosis: '', treatment: '' })];
     const result = assembleHistoryContent(currentDiagnosis, records);
-    expect(result).toContain('【日期】2024-01-15');
+    expect(result).toContain('【历史日期】2024-01-15');
     expect(result).toContain('【诊断】');
     expect(result).toContain('【治疗】');
   });
@@ -287,13 +289,13 @@ describe('HistoryRecordSelectModal', () => {
     expect(assembled).toContain('性别：男');
     expect(assembled).toContain('主诉：胃痛');
     // Record content included
-    expect(assembled).toContain('【日期】2024-01-15');
+    expect(assembled).toContain('【历史日期】2024-01-15');
     expect(assembled).toContain('【诊断】');
     expect(assembled).toContain('脉象：弦细');
     expect(assembled).toContain('辨证：肝胃不和');
     expect(assembled).toContain('【治疗】柴胡疏肝散');
     // Duplicate header stripped from record
-    const afterDate = assembled.slice(assembled.indexOf('【日期】2024-01-15'));
+    const afterDate = assembled.slice(assembled.indexOf('【历史日期】2024-01-15'));
     const recordBlock = afterDate.slice(0, afterDate.indexOf('--------------------------------------------------'));
     expect(recordBlock).not.toContain('性别：男');
     // Long dash separator used

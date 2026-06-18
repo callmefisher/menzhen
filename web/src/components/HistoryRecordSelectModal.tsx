@@ -38,19 +38,17 @@ export function extractHeader(diagnosis: string): string {
 /**
  * Assemble the final diagnosis content by combining the current header with
  * selected historical records. Records with the same visit date are grouped together.
- * Each group contributes its date, followed by diagnosis and treatment for each record,
- * separated by a long dashed line.
+ * For each date group, all diagnosis content is merged into one 【诊断】 block,
+ * and all treatment content is merged into one 【治疗】 block.
  *
  * Records are sorted by visit date descending (newest first).
  * 
  * Format:
  *   Header (性别/年龄/出生年月/主诉/脉象/舌象)
  *   --------------------------------------------------
- *   【日期】YYYY-MM-DD
- *   【诊断】...
- *   【治疗】...
- *   【诊断】...
- *   【治疗】...
+ *   【历史日期】YYYY-MM-DD
+ *   【诊断】... (all diagnosis content for this date merged)
+ *   【治疗】... (all treatment content for this date merged)
  *   --------------------------------------------------
  *   ...
  */
@@ -76,12 +74,17 @@ export function assembleHistoryContent(
   const separator = '\n--------------------------------------------------\n';
   const blocks = sortedDates.map((date) => {
     const dateRecords = groupedByDate[date];
-    let block = `【日期】${date}`;
-    dateRecords.forEach((r) => {
-      const strippedDiag = stripDuplicateHeader(r.diagnosis || '');
-      block += `\n【诊断】${strippedDiag}\n【治疗】${r.treatment || ''}`;
-    });
-    return block;
+    // Merge all diagnosis content for this date into one block
+    const allDiagnosis = dateRecords
+      .map(r => stripDuplicateHeader(r.diagnosis || ''))
+      .filter(d => d.trim())
+      .join('\n');
+    // Merge all treatment content for this date into one block
+    const allTreatment = dateRecords
+      .map(r => (r.treatment || '').trim())
+      .filter(t => t)
+      .join('\n');
+    return `【历史日期】${date}\n【诊断】${allDiagnosis}\n【治疗】${allTreatment}`;
   });
   
   return header + separator + blocks.join(separator) + separator;
