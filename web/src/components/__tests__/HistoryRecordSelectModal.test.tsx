@@ -116,6 +116,39 @@ describe('assembleHistoryContent', () => {
     expect(result.split('--------------------------------------------------').length).toBeGreaterThanOrEqual(3);
   });
 
+  it('groups records with the same visit date together', () => {
+    const records = [
+      makeRecord({ id: 1, visit_date: '2024-01-15', diagnosis: '脉象：弦细\n辨证：肝胃不和', treatment: '柴胡疏肝散' }),
+      makeRecord({ id: 2, visit_date: '2024-01-15', diagnosis: '脉象：滑\n辨证：脾虚', treatment: '四君子汤' }),
+      makeRecord({ id: 3, visit_date: '2024-02-20', diagnosis: '脉象：细\n辨证：气虚', treatment: '补中益气汤' }),
+    ];
+    const result = assembleHistoryContent(currentDiagnosis, records);
+
+    // Should have only 2 date sections (2024-01-15 and 2024-02-20)
+    const dateSections = result.split('【日期】').filter(s => s.trim());
+    expect(dateSections.length).toBe(3); // header counts as one, then two date sections
+
+    // Check 2024-01-15 section contains both records
+    const janSection = result.slice(
+      result.indexOf('【日期】2024-01-15'),
+      result.indexOf('【日期】2024-02-20')
+    );
+    expect(janSection).toContain('辨证：肝胃不和');
+    expect(janSection).toContain('【治疗】柴胡疏肝散');
+    expect(janSection).toContain('辨证：脾虚');
+    expect(janSection).toContain('【治疗】四君子汤');
+
+    // Check 2024-01-15 section has two diagnoses and two treatments
+    const janDiagnoses = (janSection.match(/【诊断】/g) || []).length;
+    const janTreatments = (janSection.match(/【治疗】/g) || []).length;
+    expect(janDiagnoses).toBe(2);
+    expect(janTreatments).toBe(2);
+
+    // Only one date tag for same date
+    const janDateTags = (janSection.match(/【日期】2024-01-15/g) || []).length;
+    expect(janDateTags).toBe(1);
+  });
+
   it('returns just header when no records selected', () => {
     const result = assembleHistoryContent(currentDiagnosis, []);
     expect(result).toBe(extractHeader(currentDiagnosis));
