@@ -50,8 +50,8 @@ export default function DiagnosisPreview({ diagnosis }: DiagnosisPreviewProps) {
         continue;
       }
 
-      // Date tag
-      if (line.startsWith('【日期】')) {
+      // Date tag (历史日期)
+      if (line.startsWith('【历史日期】')) {
         elements.push(
           <div key={i}>
             <span style={{ color: COLORS.date, fontWeight: 600 }}>{line}</span>
