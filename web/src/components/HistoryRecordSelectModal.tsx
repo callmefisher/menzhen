@@ -37,8 +37,9 @@ export function extractHeader(diagnosis: string): string {
 
 /**
  * Assemble the final diagnosis content by combining the current header with
- * selected historical records. Each record contributes its date, diagnosis
- * (with duplicate headers stripped) and treatment, separated by a long dashed line.
+ * selected historical records. Records with the same visit date are grouped together.
+ * Each group contributes its date, followed by diagnosis and treatment for each record,
+ * separated by a long dashed line.
  *
  * Records are sorted by visit date descending (newest first).
  * 
@@ -46,6 +47,8 @@ export function extractHeader(diagnosis: string): string {
  *   Header (性别/年龄/出生年月/主诉/脉象/舌象)
  *   --------------------------------------------------
  *   【日期】YYYY-MM-DD
+ *   【诊断】...
+ *   【治疗】...
  *   【诊断】...
  *   【治疗】...
  *   --------------------------------------------------
@@ -56,17 +59,31 @@ export function assembleHistoryContent(
   records: RecordListItem[],
 ): string {
   const header = extractHeader(currentDiagnosis);
-  const sorted = [...records].sort((a, b) =>
-    (b.visit_date || '').localeCompare(a.visit_date || ''),
-  );
+  
+  if (records.length === 0) return header;
+
+  // Group records by visit date
+  const groupedByDate = records.reduce((acc, r) => {
+    const date = r.visit_date || '';
+    if (!acc[date]) acc[date] = [];
+    acc[date].push(r);
+    return acc;
+  }, {} as Record<string, RecordListItem[]>);
+
+  // Sort dates descending
+  const sortedDates = Object.keys(groupedByDate).sort((a, b) => b.localeCompare(a));
   
   const separator = '\n--------------------------------------------------\n';
-  const blocks = sorted.map((r) => {
-    const strippedDiag = stripDuplicateHeader(r.diagnosis || '');
-    return `【日期】${r.visit_date || ''}\n【诊断】${strippedDiag}\n【治疗】${r.treatment || ''}`;
+  const blocks = sortedDates.map((date) => {
+    const dateRecords = groupedByDate[date];
+    let block = `【日期】${date}`;
+    dateRecords.forEach((r) => {
+      const strippedDiag = stripDuplicateHeader(r.diagnosis || '');
+      block += `\n【诊断】${strippedDiag}\n【治疗】${r.treatment || ''}`;
+    });
+    return block;
   });
   
-  if (blocks.length === 0) return header;
   return header + separator + blocks.join(separator) + separator;
 }
 

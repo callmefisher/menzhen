@@ -538,8 +538,7 @@
   // 确认插入（模拟）
   document.getElementById('confirmBtn').addEventListener('click', () => {
     if (selectedIds.size === 0) return;
-    const selected = ALL_RECORDS.filter(r => selectedIds.has(r.id))
-      .sort((a, b) => b.date.localeCompare(a.date)); // 按日期倒序
+    const selected = ALL_RECORDS.filter(r => selectedIds.has(r.id));
 
     // 组装内容：保留表头 + 每条记录
     const header = `性别：男
@@ -554,9 +553,25 @@
       }).join('\n');
     };
 
+    // 按日期分组
+    const groupedByDate = selected.reduce((acc, r) => {
+      const date = r.date || '';
+      if (!acc[date]) acc[date] = [];
+      acc[date].push(r);
+      return acc;
+    }, {});
+
+    // 按日期倒序排序
+    const sortedDates = Object.keys(groupedByDate).sort((a, b) => b.localeCompare(a));
+
     const separator = '\n--------------------------------------------------\n';
-    const blocks = selected.map(r => {
-      return `【日期】${r.date}\n【诊断】${stripHeader(r.diagnosis)}\n【治疗】${r.treatment}`;
+    const blocks = sortedDates.map(date => {
+      const dateRecords = groupedByDate[date];
+      let block = `【日期】${date}`;
+      dateRecords.forEach(r => {
+        block += `\n【诊断】${stripHeader(r.diagnosis)}\n【治疗】${r.treatment}`;
+      });
+      return block;
     });
 
     const assembled = header + separator + blocks.join(separator) + separator;
