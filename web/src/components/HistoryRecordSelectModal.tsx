@@ -136,6 +136,10 @@ interface HistoryRecordSelectModalProps {
   patientName?: string;
   /** Current diagnosis text — used to extract the header block to preserve. */
   currentDiagnosis: string;
+  /** Current treatment text — included in the current visit's 【治疗】 block. */
+  currentTreatment?: string;
+  /** Current visit date (YYYY-MM-DD) — used as the 【历史日期】 for the current visit. */
+  currentDate?: string;
   onClose: () => void;
   onConfirm: (assembledContent: string) => void;
 }
@@ -145,6 +149,8 @@ export default function HistoryRecordSelectModal({
   patientId,
   patientName,
   currentDiagnosis,
+  currentTreatment,
+  currentDate,
   onClose,
   onConfirm,
 }: HistoryRecordSelectModalProps) {
@@ -240,7 +246,7 @@ export default function HistoryRecordSelectModal({
     const selected = Array.from(selectedIds)
       .map((id) => selectedRecords.get(id))
       .filter((r): r is RecordListItem => Boolean(r));
-    const assembled = assembleHistoryContent(currentDiagnosis, selected);
+    const assembled = assembleHistoryContent(currentDiagnosis, selected, currentTreatment, currentDate);
     onConfirm(assembled);
     onClose();
   };
