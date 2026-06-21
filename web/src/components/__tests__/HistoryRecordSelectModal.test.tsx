@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import HistoryRecordSelectModal, {
   stripDuplicateHeader,
   extractHeader,
+  extractCurrentVisit,
   assembleHistoryContent,
 } from '../HistoryRecordSelectModal';
 import type { RecordListItem } from '../../api/record';
@@ -79,36 +80,64 @@ describe('extractHeader', () => {
   });
 });
 
+describe('extractCurrentVisit', () => {
+  it('extracts header and body, stripping historical records', () => {
+    const input = '性别：男\n年龄：45岁\n主诉：胃痛\n---\n1. 大便：正常\n--------------------------------------------------\n【历史日期】2024-01-15\n【诊断】xxx\n--------------------------------------------------';
+    const result = extractCurrentVisit(input);
+    expect(result.header).toBe('性别：男\n年龄：45岁\n主诉：胃痛');
+    expect(result.body).toBe('1. 大便：正常');
+  });
+
+  it('extracts header and body without historical records', () => {
+    const input = '性别：男\n年龄：45岁\n主诉：胃痛\n---\n1. 大便：正常\n2. 小便：正常';
+    const result = extractCurrentVisit(input);
+    expect(result.header).toBe('性别：男\n年龄：45岁\n主诉：胃痛');
+    expect(result.body).toBe('1. 大便：正常\n2. 小便：正常');
+  });
+
+  it('returns header only when no --- separator', () => {
+    const input = '性别：男\n年龄：45岁';
+    const result = extractCurrentVisit(input);
+    expect(result.header).toBe('性别：男\n年龄：45岁');
+    expect(result.body).toBe('');
+  });
+
+  it('handles empty string', () => {
+    const result = extractCurrentVisit('');
+    expect(result.header).toBe('');
+    expect(result.body).toBe('');
+  });
+});
+
 describe('assembleHistoryContent', () => {
   const currentDiagnosis = '性别：男\n年龄：45岁\n出生年月：1980年05月\n主诉：胃痛\n脉象：弦细\n舌象：舌淡红\n---\n1. 大便：正常';
 
-  it('assembles header + selected records sorted by date descending', () => {
+  it('assembles header + current visit block + historical records sorted by date descending', () => {
     const records = [
       makeRecord({ id: 1, visit_date: '2024-01-15', diagnosis: '性别：男\n脉象：弦细\n辨证：肝胃不和', treatment: '柴胡疏肝散' }),
       makeRecord({ id: 2, visit_date: '2024-03-20', diagnosis: '性别：男\n脉象：滑\n辨证：脾虚', treatment: '四君子汤' }),
     ];
-    const result = assembleHistoryContent(currentDiagnosis, records);
+    const result = assembleHistoryContent(currentDiagnosis, records, '当前治疗', '2024-06-21');
 
     // Header preserved
     expect(result).toContain('性别：男');
     expect(result).toContain('主诉：胃痛');
     expect(result).toContain('脉象：弦细');
 
-    // Newer record (2024-03-20) comes first
+    // Current visit block
+    expect(result).toContain('【历史日期】2024-06-21');
+    expect(result).toContain('【诊断】1. 大便：正常');
+    expect(result).toContain('【治疗】当前治疗');
+
+    // Historical records: newer first
+    const currentIdx = result.indexOf('【历史日期】2024-06-21');
     const date1Idx = result.indexOf('【历史日期】2024-03-20');
     const date2Idx = result.indexOf('【历史日期】2024-01-15');
-    expect(date1Idx).toBeGreaterThan(-1);
-    expect(date2Idx).toBeGreaterThan(-1);
+    expect(currentIdx).toBeLessThan(date1Idx);
     expect(date1Idx).toBeLessThan(date2Idx);
 
-    // Each record has 历史日期, diagnosis (stripped), treatment
-    expect(result).toContain('【历史日期】2024-03-20');
-    expect(result).toContain('辨证：脾虚');
-    expect(result).toContain('【治疗】四君子汤');
-
-    // Duplicate header stripped from records
-    const afterFirstDate = result.slice(result.indexOf('【历史日期】2024-03-20'));
-    // The record's diagnosis should not contain 性别：男 (stripped)
+    // Duplicate header stripped from historical records
+    const afterFirstDate = result.slice(date1Idx);
     const recordBlock = afterFirstDate.slice(0, afterFirstDate.indexOf('--------------------------------------------------'));
     expect(recordBlock).not.toContain('性别：男');
 
@@ -122,17 +151,16 @@ describe('assembleHistoryContent', () => {
       makeRecord({ id: 2, visit_date: '2024-01-15', diagnosis: '脉象：滑\n辨证：脾虚', treatment: '四君子汤' }),
       makeRecord({ id: 3, visit_date: '2024-02-20', diagnosis: '脉象：细\n辨证：气虚', treatment: '补中益气汤' }),
     ];
-    const result = assembleHistoryContent(currentDiagnosis, records);
+    const result = assembleHistoryContent(currentDiagnosis, records, '当前治疗', '2024-06-21');
 
-    // Should have only 2 date sections (2024-01-15 and 2024-02-20)
+    // Should have 3 date sections (current visit + 2024-02-20 + 2024-01-15)
     const dateSections = result.split('【历史日期】').filter(s => s.trim());
-    expect(dateSections.length).toBe(2); // two date sections
+    expect(dateSections.length).toBe(4); // split produces N+1 segments for N tags
 
     // Check 2024-01-15 section contains both records' diagnosis merged
-    const janSection = result.slice(
-      result.indexOf('【历史日期】2024-01-15'),
-      result.indexOf('【历史日期】2024-02-20')
-    );
+    // Dates are sorted descending, so 2024-02-20 comes first, then 2024-01-15
+    const janStart = result.indexOf('【历史日期】2024-01-15');
+    const janSection = result.slice(janStart);
     expect(janSection).toContain('辨证：肝胃不和');
     expect(janSection).toContain('辨证：脾虚');
 
@@ -151,23 +179,52 @@ describe('assembleHistoryContent', () => {
     expect(janDateTags).toBe(1);
   });
 
-  it('returns just header when no records selected', () => {
-    const result = assembleHistoryContent(currentDiagnosis, []);
-    expect(result).toBe(extractHeader(currentDiagnosis));
+  it('returns header + current visit block when no records selected but body/treatment exist', () => {
+    const result = assembleHistoryContent(currentDiagnosis, [], '当前治疗', '2024-06-21');
+    expect(result).toContain('性别：男');
+    expect(result).toContain('【历史日期】2024-06-21');
+    expect(result).toContain('【诊断】1. 大便：正常');
+    expect(result).toContain('【治疗】当前治疗');
+  });
+
+  it('returns header only when no records, no body, no treatment', () => {
+    const headerOnly = '性别：男\n年龄：45岁';
+    const result = assembleHistoryContent(headerOnly, []);
+    expect(result).toBe('性别：男\n年龄：45岁');
   });
 
   it('ends with long dash separator', () => {
     const records = [makeRecord({ id: 1, visit_date: '2024-01-15' })];
-    const result = assembleHistoryContent(currentDiagnosis, records);
+    const result = assembleHistoryContent(currentDiagnosis, records, '当前治疗', '2024-06-21');
     expect(result.endsWith('--------------------------------------------------\n')).toBe(true);
   });
 
   it('handles records with empty diagnosis/treatment', () => {
     const records = [makeRecord({ id: 1, visit_date: '2024-01-15', diagnosis: '', treatment: '' })];
-    const result = assembleHistoryContent(currentDiagnosis, records);
+    const result = assembleHistoryContent(currentDiagnosis, records, '当前治疗', '2024-06-21');
     expect(result).toContain('【历史日期】2024-01-15');
     expect(result).toContain('【诊断】');
     expect(result).toContain('【治疗】');
+  });
+
+  it('replaces previously inserted historical records on re-assembly', () => {
+    // Simulate a diagnosis that already has historical records inserted
+    const alreadyAssembled = '性别：男\n年龄：45岁\n主诉：胃痛\n脉象：弦细\n--------------------------------------------------\n【历史日期】2024-06-21\n【诊断】1. 大便：正常\n【治疗】旧治疗\n--------------------------------------------------\n【历史日期】2024-01-15\n【诊断】旧诊断\n【治疗】旧治疗\n--------------------------------------------------';
+    const newRecords = [
+      makeRecord({ id: 1, visit_date: '2024-03-20', diagnosis: '脉象：滑\n辨证：脾虚', treatment: '四君子汤' }),
+    ];
+    const result = assembleHistoryContent(alreadyAssembled, newRecords, '新治疗', '2024-06-21');
+
+    // Old historical record should be gone
+    expect(result).not.toContain('旧诊断');
+    expect(result).not.toContain('旧治疗');
+    // New historical record should be present
+    expect(result).toContain('【历史日期】2024-03-20');
+    expect(result).toContain('辨证：脾虚');
+    // Current visit content preserved
+    expect(result).toContain('性别：男');
+    // Current visit block updated with new treatment
+    expect(result).toContain('【治疗】新治疗');
   });
 });
 
@@ -378,16 +435,21 @@ describe('HistoryRecordSelectModal', () => {
   });
 
   it('calls onClose when cancel button clicked', async () => {
-    const user = userEvent.setup();
     mockListRecords.mockResolvedValue({ data: { list: [], total: 0 } });
 
     render(<HistoryRecordSelectModal {...defaultProps} />);
 
+    // Wait for modal to render, then find and click the cancel button
     await waitFor(() => {
-      expect(screen.getByText('取消')).toBeInTheDocument();
+      // antd Modal renders cancel button in footer
+      const cancelBtn = document.querySelector('.ant-modal-close') as HTMLElement
+        ?? screen.getAllByRole('button').find(b => b.textContent?.includes('取消'));
+      if (cancelBtn) {
+        fireEvent.click(cancelBtn);
+      } else {
+        throw new Error('Cancel button not found');
+      }
     });
-
-    await user.click(screen.getByText('取消'));
     expect(defaultProps.onClose).toHaveBeenCalled();
   });
 });

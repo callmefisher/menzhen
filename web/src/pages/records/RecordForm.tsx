@@ -1942,6 +1942,8 @@ export default function RecordForm() {
         patientId={watchedPatientId}
         patientName={patients.find((p) => p.id === watchedPatientId)?.name}
         currentDiagnosis={form.getFieldValue('diagnosis') || ''}
+        currentTreatment={form.getFieldValue('treatment') || ''}
+        currentDate={form.getFieldValue('visit_date')?.format('YYYY-MM-DD') || ''}
         onClose={() => setHistoryModalOpen(false)}
         onConfirm={(assembled) => {
           form.setFieldValue('diagnosis', assembled);

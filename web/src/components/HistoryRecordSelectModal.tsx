@@ -36,31 +36,67 @@ export function extractHeader(diagnosis: string): string {
 }
 
 /**
+ * Extract the current visit's content from the diagnosis text,
+ * stripping any previously inserted historical records.
+ * Returns header (before ---) and body (after ---, before historical records).
+ */
+export function extractCurrentVisit(diagnosis: string): { header: string; body: string } {
+  if (!diagnosis) return { header: '', body: '' };
+
+  // Strip any previously inserted historical records
+  // (everything from the first -------------------------------------------------- onwards)
+  const beforeHistory = diagnosis.split('--------------------------------------------------')[0].trimEnd();
+
+  // Split by --- to separate header and body
+  const parts = beforeHistory.split(/^---$/m);
+  return {
+    header: parts[0].trim(),
+    body: parts.length > 1 ? parts.slice(1).join('---').trim() : '',
+  };
+}
+
+/**
  * Assemble the final diagnosis content by combining the current header with
- * selected historical records. Records with the same visit date are grouped together.
- * For each date group, all diagnosis content is merged into one 【诊断】 block,
- * and all treatment content is merged into one 【治疗】 block.
+ * the current visit block and selected historical records.
+ *
+ * The current visit's body (after ---) and treatment are wrapped in a
+ * 【历史日期】 block just like historical records, so all visits are
+ * displayed uniformly.
+ *
+ * Any previously inserted historical records (marked by --------------------------------------------------)
+ * are stripped first so the result is always a clean re-assembly.
  *
  * Records are sorted by visit date descending (newest first).
- * 
+ *
  * Format:
  *   Header (性别/年龄/出生年月/主诉/脉象/舌象)
  *   --------------------------------------------------
- *   【历史日期】YYYY-MM-DD
- *   【诊断】... (all diagnosis content for this date merged)
- *   【治疗】... (all treatment content for this date merged)
+ *   【历史日期】YYYY-MM-DD (current visit)
+ *   【诊断】... (body content after ---)
+ *   【治疗】... (current treatment)
+ *   --------------------------------------------------
+ *   【历史日期】YYYY-MM-DD (historical)
+ *   【诊断】...
+ *   【治疗】...
  *   --------------------------------------------------
  *   ...
  */
 export function assembleHistoryContent(
   currentDiagnosis: string,
   records: RecordListItem[],
+  currentTreatment?: string,
+  currentDate?: string,
 ): string {
-  const header = extractHeader(currentDiagnosis);
-  
-  if (records.length === 0) return header;
+  const { header, body } = extractCurrentVisit(currentDiagnosis);
 
-  // Group records by visit date
+  const separator = '\n--------------------------------------------------\n';
+
+  // Build current visit block if there's body or treatment content
+  const currentVisitBlock = (body || currentTreatment)
+    ? `【历史日期】${currentDate || ''}\n【诊断】${body}\n【治疗】${currentTreatment || ''}`
+    : null;
+
+  // Group historical records by visit date
   const groupedByDate = records.reduce((acc, r) => {
     const date = r.visit_date || '';
     if (!acc[date]) acc[date] = [];
@@ -70,24 +106,28 @@ export function assembleHistoryContent(
 
   // Sort dates descending
   const sortedDates = Object.keys(groupedByDate).sort((a, b) => b.localeCompare(a));
-  
-  const separator = '\n--------------------------------------------------\n';
-  const blocks = sortedDates.map((date) => {
+
+  const historyBlocks = sortedDates.map((date) => {
     const dateRecords = groupedByDate[date];
-    // Merge all diagnosis content for this date into one block
     const allDiagnosis = dateRecords
       .map(r => stripDuplicateHeader(r.diagnosis || ''))
       .filter(d => d.trim())
       .join('\n');
-    // Merge all treatment content for this date into one block
     const allTreatment = dateRecords
       .map(r => (r.treatment || '').trim())
       .filter(t => t)
       .join('\n');
     return `【历史日期】${date}\n【诊断】${allDiagnosis}\n【治疗】${allTreatment}`;
   });
-  
-  return header + separator + blocks.join(separator) + separator;
+
+  // Combine all blocks
+  const allBlocks = currentVisitBlock
+    ? [currentVisitBlock, ...historyBlocks]
+    : historyBlocks;
+
+  if (allBlocks.length === 0) return header;
+
+  return header + separator + allBlocks.join(separator) + separator;
 }
 
 interface HistoryRecordSelectModalProps {
@@ -96,6 +136,10 @@ interface HistoryRecordSelectModalProps {
   patientName?: string;
   /** Current diagnosis text — used to extract the header block to preserve. */
   currentDiagnosis: string;
+  /** Current treatment text — included in the current visit's 【治疗】 block. */
+  currentTreatment?: string;
+  /** Current visit date (YYYY-MM-DD) — used as the 【历史日期】 for the current visit. */
+  currentDate?: string;
   onClose: () => void;
   onConfirm: (assembledContent: string) => void;
 }
@@ -105,6 +149,8 @@ export default function HistoryRecordSelectModal({
   patientId,
   patientName,
   currentDiagnosis,
+  currentTreatment,
+  currentDate,
   onClose,
   onConfirm,
 }: HistoryRecordSelectModalProps) {
@@ -200,7 +246,7 @@ export default function HistoryRecordSelectModal({
     const selected = Array.from(selectedIds)
       .map((id) => selectedRecords.get(id))
       .filter((r): r is RecordListItem => Boolean(r));
-    const assembled = assembleHistoryContent(currentDiagnosis, selected);
+    const assembled = assembleHistoryContent(currentDiagnosis, selected, currentTreatment, currentDate);
     onConfirm(assembled);
     onClose();
   };
